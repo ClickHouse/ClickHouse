@@ -433,6 +433,11 @@ void collectBoundTableExpressions(const QueryTreeNodePtr & node, BoundTableExpre
         if (table_node->hasOriginalAST() && !table_node->isMaterializedCTE())
             bound.emplace(table_node->getOriginalAST().get(), table_node->toAST());
     }
+    else if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+    {
+        /// A folded expression keeps its resolved source outside of the children.
+        collectBoundTableExpressions(constant_node->getSourceExpression(), bound);
+    }
     else if (const auto * table_function_node = node->as<TableFunctionNode>())
     {
         if (table_function_node->hasOriginalAST() && table_function_node->isResolved())
@@ -445,7 +450,19 @@ void collectBoundTableExpressions(const QueryTreeNodePtr & node, BoundTableExpre
             collectBoundTableExpressions(child, bound);
 }
 
-void replaceBoundTableExpressions(IAST & ast, const BoundTableExpressions & bound)
+/// `db.t AS s` cannot define the table alias `s`, so an aliased operand and the references to its alias are sent as written.
+void collectAliasedInOperands(const IAST & ast, std::unordered_set<const IAST *> & operands)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name)
+        && function->arguments->children.size() == 2 && !function->arguments->children[1]->tryGetAlias().empty())
+        operands.insert(function->arguments->children[1].get());
+
+    for (const auto & child : ast.children)
+        collectAliasedInOperands(*child, operands);
+}
+
+void replaceBoundTableExpressions(
+    IAST & ast, const BoundTableExpressions & bound, const std::unordered_set<const IAST *> & aliased_in_operands)
 {
     if (auto * table_expression = ast.as<ASTTableExpression>())
     {
@@ -457,14 +474,13 @@ void replaceBoundTableExpressions(IAST & ast, const BoundTableExpressions & boun
     else if (auto * function = ast.as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
     {
         auto & arguments = function->arguments->children;
-        /// `db.t AS s` cannot define the table alias `s`, so an aliased operand is sent as written.
-        if (arguments.size() == 2 && arguments[1]->tryGetAlias().empty())
+        if (arguments.size() == 2 && !aliased_in_operands.contains(arguments[1].get()))
             if (auto it = bound.find(arguments[1].get()); it != bound.end())
                 arguments[1] = it->second;
     }
 
     for (const auto & child : ast.children)
-        replaceBoundTableExpressions(*child, bound);
+        replaceBoundTableExpressions(*child, bound, aliased_in_operands);
 }
 
 /// Replaces the table expressions of `query` with the tables and table functions the analyzer resolves them to.
@@ -474,10 +490,14 @@ void bindViewQuery(QueryTreeNodePtr & query, const ContextPtr & context)
     auto copy = buildQueryTree(ast, context);
     ASTPtr rewritten = copy->getOriginalAST();
 
+    std::unordered_set<const IAST *> aliased_in_operands;
+    collectAliasedInOperands(*rewritten, aliased_in_operands);
+
     /// The tree keeps only the value of a scalar subquery, the analyzer hands the subquery here.
     QueryTreeNodes scalar_subqueries;
     QueryAnalyzer analyzer(/*only_analyze=*/ true);
     analyzer.setResolvedScalarSubqueriesSink(&scalar_subqueries);
+    analyzer.setAliasedInOperands(&aliased_in_operands);
     analyzer.resolve(copy, {}, context);
 
     BoundTableExpressions bound;
@@ -485,7 +505,7 @@ void bindViewQuery(QueryTreeNodePtr & query, const ContextPtr & context)
     for (const auto & subquery : scalar_subqueries)
         collectBoundTableExpressions(subquery, bound);
 
-    replaceBoundTableExpressions(*rewritten, bound);
+    replaceBoundTableExpressions(*rewritten, bound, aliased_in_operands);
     if (!rewritten->as<ASTSelectWithUnionQuery>())
     {
         ast->as<ASTSelectWithUnionQuery &>().list_of_selects->children = {rewritten};
@@ -1598,7 +1618,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
-        if (alias_node->hasOriginalAST())
+        /// A table reached through an alias gets the AST of the reference, not of the alias definition.
+        bool keep_alias_ast = aliased_in_operands && alias_node->hasOriginalAST()
+            && aliased_in_operands->contains(alias_node->getOriginalAST().get());
+        if (identifier_lookup.isTableExpressionLookup() && identifier_lookup.original_ast_node && !keep_alias_ast)
+            alias_identifier_lookup.original_ast_node = identifier_lookup.original_ast_node;
+        else if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 

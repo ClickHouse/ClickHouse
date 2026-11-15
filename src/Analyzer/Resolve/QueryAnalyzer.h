@@ -132,6 +132,9 @@ public:
     /// Every scalar subquery this analyzer resolves is appended to `sink` before it is replaced by its value.
     void setResolvedScalarSubqueriesSink(QueryTreeNodes * sink) { resolved_scalar_subqueries = sink; }
 
+    /// A table reached through the alias of one of these `IN` operands keeps the AST of the operand, not of the reference.
+    void setAliasedInOperands(const std::unordered_set<const IAST *> * operands) { aliased_in_operands = operands; }
+
 private:
     /// Utility functions
 
@@ -418,6 +421,7 @@ private:
     bool parameterized_view_arguments_in_resolve_process = false;
 
     QueryTreeNodes * resolved_scalar_subqueries = nullptr;
+    const std::unordered_set<const IAST *> * aliased_in_operands = nullptr;
 };
 
 }
