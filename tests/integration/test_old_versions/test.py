@@ -54,6 +54,9 @@ def setup_nodes(setup_cluster):
     finally:
         for n in old_nodes:
             n.query(
+                """SYSTEM FLUSH DISTRIBUTED dist_table"""
+            )
+            n.query(
                 """DROP TABLE dist_table SYNC"""
             )
 

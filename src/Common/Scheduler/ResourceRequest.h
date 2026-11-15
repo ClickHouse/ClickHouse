@@ -1,10 +1,14 @@
 #pragma once
 
-#include <boost/intrusive/list.hpp>
+#include <Common/Scheduler/CostUnit.h>
+#include <Common/Priority.h>
+
 #include <base/types.h>
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/set.hpp>
 #include <array>
-#include <limits>
 #include <exception>
+#include <utility>
 
 namespace DB
 {
@@ -12,55 +16,104 @@ namespace DB
 // Forward declarations
 class ISchedulerQueue;
 class ISchedulerConstraint;
-
-/// Cost in terms of used resource (e.g. bytes for network IO)
-using ResourceCost = Int64;
-constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
+class RequestQueue;
+class ISchedulingAlgorithm;
+class FifoAlgorithm;
+class FairAlgorithm;
+class LasAlgorithm;
+class PriorityAlgorithm;
+class CPUSlotsAllocation;
+class ResourceSchedulingContext;
+struct ResourceQueryState;
+/// Fallback per-query state for requests not stamped by a classifier (defined in ResourceLink.cpp).
+/// Keeps `scheduling.state` non-null so the schedulers dereference it without a null check.
+extern ResourceQueryState default_scheduling_state;
 
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
 
-/*
- * Request for a resource consumption. The main moving part of the scheduling subsystem.
- * Resource requests processing workflow:
- *
- * ----1=2222222222222=3=4=555555555555555=6-----> time
- *     ^     ^         ^ ^          ^      ^
- *     |     |         | |          |      |
- *  enqueue wait dequeue execute consume finish
- *
- *  1) Request is enqueued using ISchedulerQueue::enqueueRequest().
- *  2) Request competes with others for access to a resource; effectively just waiting in a queue.
- *  3) Scheduler calls ISchedulerNode::dequeueRequest() that returns the request.
- *  4) Callback ResourceRequest::execute() is called to provide access to the resource.
- *  5) The resource consumption is happening outside of the scheduling subsystem.
- *  6) ResourceRequest::finish() is called when consumption is finished.
- *
- * Steps (5) and (6) can be omitted if constraint is not used by the resource.
- *
- * Request can be created on stack or heap.
- * Request ownership is done outside of the scheduling subsystem.
- * After (6) request can be destructed safely.
- *
- * Request can also be canceled before (3) using ISchedulerQueue::cancelRequest().
- * Returning false means it is too late for request to be canceled. It should be processed in a regular way.
- * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen.
- */
-class ResourceRequest : public boost::intrusive::list_base_hook<>
+/// Request to the resource scheduler. The main moving part of the scheduling for time-shared resources.
+///
+/// Requests processing workflow:
+///
+/// ----1=2222222222222=3=4=555555555555555=6-----> time
+///     ^     ^         ^ ^          ^      ^
+///     |     |         | |          |      |
+///  enqueue wait dequeue execute consume finish
+///
+///  1) Request is enqueued using ISchedulerQueue::enqueueRequest().
+///  2) Request competes with others for access to a resource; effectively just waiting in a queue.
+///  3) Scheduler calls ITimeSharedNode::dequeueRequest() that returns the request.
+///  4) Callback ResourceRequest::execute() is called to provide access to the resource.
+///  5) The resource consumption is happening outside of the scheduling subsystem.
+///  6) ResourceRequest::finish() is called when consumption is finished.
+///
+/// Steps (5) and (6) can be omitted if constraint is not used by the resource.
+/// For example, memory reservations scheduler does not use constraints and instead checks limits during dequeueing.
+///
+/// Request can be created on stack or heap.
+/// Request ownership is done outside of the scheduling subsystem.
+/// After (6) request can be destructed safely.
+///
+/// Request can be canceled before (3) using ISchedulerQueue::cancelRequest().
+/// Returning false means it is too late for request to be canceled. It should be processed in a regular way.
+/// Returning true means successful cancel and therefore steps (4) and (5) are not going to happen.
+class ResourceRequest
 {
 public:
     /// Cost of request execution; should be filled before request enqueueing and remain constant until `finish()`.
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
-    ResourceCost cost;
+    ResourceCost cost{};
 
     /// If true, request is not throttled by the scheduler
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
 
+    /// Query-aware scheduling state (`fair` / `las` / `priority`), filled at enqueue by the
+    /// `RequestQueue` schedulers and reset by `reset()`.
+    struct
+    {
+        /// Per-query scheduling cost for the query's own virtual-runtime / attained-service
+        /// accounting: the request's ORIGINAL declared cost, captured before any `ResourceBudget`
+        /// adjustment. `ResourceBudget::ask()` rewrites `cost` queue-wide, which would let one query's
+        /// misestimate bleed into another query's fairness state, so per-query scheduling keeps its
+        /// own declared cost.
+        ResourceCost cost{};
+
+        /// Non-owning pointer to the query's scheduling context (query-global config: weight,
+        /// priority, …), stamped onto the link by the classifier and copied here just before
+        /// `enqueueRequest()` (cleared by `reset()`). The classifier owns it for the query's
+        /// lifetime, so it never dangles while the request is queued.
+        ResourceSchedulingContext * context = nullptr;
+
+        /// Non-owning pointer to this query's per-resource state for the target leaf: the classifier
+        /// resolved it (one slot per attached leaf) and stamped it onto the link; copied here at
+        /// enqueue. Lets `fair`/`las` reach the per-resource state with a single dereference — no map
+        /// or lookup. Same lifetime as `context`. Defaults to the shared fallback state (never null),
+        /// so the schedulers dereference it unconditionally; a classifier link overwrites it.
+        ResourceQueryState * state = &default_scheduling_state;
+
+        /// Ordering key for `fair` / `las`, constant while the request is in the intrusive ordered
+        /// set. `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
+        /// sequence number for a stable FIFO tie-break (also used by `priority`).
+        std::pair<double, UInt64> key{0.0, 0};
+
+        /// Ordering key for the `priority` scheduler (lower value first, then `key.second` for FIFO).
+        /// Set at enqueue from the query's `workload_priority` setting (`Int64`, negatives allowed).
+        Priority priority;
+
+        /// `fair` only: the virtual-runtime increment this request added to its query at push
+        /// (`charge / effective_weight`). Kept so cancelling a still-queued request can subtract it
+        /// back out — otherwise the query is charged for service it never received, delaying its
+        /// future requests. Zero for the other algorithms.
+        double vruntime_increment = 0.0;
+    } scheduling;
+
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
     /// Vector is not used to avoid allocations in the scheduler thread
-    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints;
+    /// NOTE: this is not used for allocations (see ResourceAllocation::parent instead)
+    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints{};
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
     {
@@ -71,9 +124,19 @@ public:
     void reset(ResourceCost cost_)
     {
         cost = cost_;
+        // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
+        // (which later rewrites `cost` only). For queues without a budget the two stay equal.
+        scheduling.cost = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
-        // Note that list_base_hook should be reset independently (by intrusive list)
+        // Clear per-request query identity and ordering key so a reused request (e.g. the
+        // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
+        scheduling.context = nullptr;
+        scheduling.state = &default_scheduling_state;
+        scheduling.key = {0.0, 0};
+        scheduling.priority = {};
+        scheduling.vruntime_increment = 0.0;
+        // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 
     virtual ~ResourceRequest() = default;
@@ -96,6 +159,27 @@ public:
     /// Is called from the scheduler thread to fill `constraints` chain
     /// Returns `true` iff constraint was added successfully
     bool addConstraint(ISchedulerConstraint * new_constraint);
+
+private:
+    friend class ISchedulingAlgorithm; // moves requests between algorithms through `EnqueuedList`
+    friend class FifoAlgorithm; // uses `enqueued_hook` for the `fifo` scheduler
+    friend class FairAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `fair` scheduler
+    friend class LasAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `las` scheduler
+    friend class PriorityAlgorithm; // uses `scheduling_hook` + `scheduling.key` for the `priority` scheduler
+    friend class RequestQueue;
+    friend class CPUSlotsAllocation; // hack for tests only
+
+    /// For an intrusive list of enqueued requests (the `fifo` scheduler).
+    /// NOTE: Can only be accessed under the owning queue's mutex.
+    boost::intrusive::list_member_hook<> enqueued_hook;
+    using EnqueuedHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::list_member_hook<>, &ResourceRequest::enqueued_hook>;
+    using EnqueuedList = boost::intrusive::list<ResourceRequest, EnqueuedHook>;
+
+    /// For an intrusive ordered set of enqueued requests (the `fair` and `las` schedulers).
+    /// A request is in at most one of the two containers (list or set) at a time.
+    /// NOTE: Can only be accessed under the owning queue's mutex.
+    boost::intrusive::set_member_hook<> scheduling_hook;
+    using SchedulingHook = boost::intrusive::member_hook<ResourceRequest, boost::intrusive::set_member_hook<>, &ResourceRequest::scheduling_hook>;
 };
 
 }

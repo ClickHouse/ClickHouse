@@ -33,6 +33,13 @@ for _ in {1..100}; do
     sleep 0.5
 done
 
+# Wait for the MV to finish writing to copy_02572 as well.
+# The buffer flush pipeline writes to data_02572 first (sink), then processes MVs (post-sink).
+# Data may appear in data_02572 before the MV completes writing to copy_02572.
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT -q "select * from copy_02572;" | grep -q "1" && break
+    sleep 0.5
+done
 
 ${CLICKHOUSE_CLIENT} --ignore-error --query "select * from data_02572; select * from copy_02572;"
 

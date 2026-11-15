@@ -1,0 +1,88 @@
+-- { echo }
+
+-- Both operands within a single 64-bit limb.
+SELECT intDiv(toUInt128(1000000007), toUInt128(997)), modulo(toUInt128(1000000007), toUInt128(997));
+SELECT intDiv(toInt128(-1000000007), toInt128(997)), modulo(toInt128(-1000000007), toInt128(997));
+SELECT intDiv(toInt128(1000000007), toInt128(-997)), modulo(toInt128(1000000007), toInt128(-997));
+SELECT intDiv(toInt128(-1000000007), toInt128(-997)), modulo(toInt128(-1000000007), toInt128(-997));
+
+-- A dividend smaller than the divisor, so the quotient is zero and the remainder is the dividend.
+SELECT intDiv(toUInt128(7), toUInt128(8)), modulo(toUInt128(7), toUInt128(8));
+SELECT intDiv(toUInt128(0), toUInt128(997)), modulo(toUInt128(0), toUInt128(997));
+
+-- A divisor of one divides exactly, and a divisor equal to the dividend gives one.
+SELECT intDiv(toUInt128(18446744073709551615), toUInt128(1)), modulo(toUInt128(18446744073709551615), toUInt128(1));
+SELECT intDiv(toUInt128(18446744073709551615), toUInt128(18446744073709551615));
+
+-- Either operand at the limb boundary, which is where a narrow path stops applying.
+SELECT intDiv(toUInt128(18446744073709551615), toUInt128(3)), modulo(toUInt128(18446744073709551615), toUInt128(3));
+SELECT intDiv(toUInt128('18446744073709551616'), toUInt128(3)), modulo(toUInt128('18446744073709551616'), toUInt128(3));
+SELECT intDiv(toUInt128('18446744073709551617'), toUInt128('18446744073709551616'));
+SELECT modulo(toUInt128('18446744073709551617'), toUInt128('18446744073709551616'));
+SELECT intDiv(toUInt128('340282366920938463463374607431768211455'), toUInt128(18446744073709551615));
+SELECT modulo(toUInt128('340282366920938463463374607431768211455'), toUInt128(18446744073709551615));
+
+-- Both operands spanning two limbs.
+SELECT intDiv(toUInt128('340282366920938463463374607431768211455'), toUInt128('18446744073709551617'));
+SELECT modulo(toUInt128('340282366920938463463374607431768211455'), toUInt128('18446744073709551617'));
+SELECT intDiv(toInt128('-170141183460469231731687303715884105727'), toInt128('18446744073709551617'));
+SELECT modulo(toInt128('-170141183460469231731687303715884105727'), toInt128('18446744073709551617'));
+
+-- The extremes of each type.
+SELECT intDiv(toUInt128('340282366920938463463374607431768211455'), toUInt128(1));
+SELECT intDiv(toInt128('-170141183460469231731687303715884105728'), toInt128(1));
+SELECT intDiv(toInt128('-170141183460469231731687303715884105728'), toInt128(2));
+SELECT modulo(toInt128('-170141183460469231731687303715884105728'), toInt128(3));
+
+-- Dividing by zero is an error, not something undefined.
+SELECT intDiv(toUInt128(1), toUInt128(0)); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(toUInt128(1), toUInt128(0)); -- { serverError ILLEGAL_DIVISION }
+
+-- `Decimal128` rounding divides by the scale multiplier once per row, which is the shape that
+-- reaches this division for ordinary values.
+SELECT round(toDecimal128(number, 0), -2), floor(toDecimal128(number, 0), -2), ceil(toDecimal128(number, 0), -2),
+       trunc(toDecimal128(number, 0), -2), roundBankers(toDecimal128(number, 0), -2)
+FROM numbers(6) ORDER BY number;
+
+SELECT round(toDecimal128(-number, 0), -2), floor(toDecimal128(-number, 0), -2), ceil(toDecimal128(-number, 0), -2),
+       trunc(toDecimal128(-number, 0), -2), roundBankers(toDecimal128(-number, 0), -2)
+FROM numbers(6) ORDER BY number;
+
+SELECT round(toDecimal128('12345.6789', 4), 2), round(toDecimal128('12345.6789', 4), -2),
+       trunc(toDecimal128('-12345.6789', 4), 2), toDecimal128(toDecimal128('12345.6789', 4), 2);
+
+-- Formatting a 128-bit value strips digit blocks off with a division each.
+SELECT toString(toUInt128('340282366920938463463374607431768211455')),
+       toString(toInt128('-170141183460469231731687303715884105728')),
+       toString(toUInt128(18446744073709551615)),
+       toDecimalString(toDecimal128('-0.0000000001', 10), 10);
+
+-- Division and modulo agree across the whole boundary range: a division is exact iff the remainder
+-- is zero, and the identity q * b + r = a has to hold for every one of these operands.
+SELECT count(), countIf(intDiv(a, b) * b + modulo(a, b) != a)
+FROM
+(
+    SELECT toUInt128(a) AS a, toUInt128(b) AS b
+    FROM (SELECT arrayJoin([toUInt128(0), toUInt128(1), toUInt128(2), toUInt128(997),
+                            toUInt128(18446744073709551614), toUInt128(18446744073709551615),
+                            toUInt128('18446744073709551616'), toUInt128('18446744073709551617'),
+                            toUInt128('340282366920938463463374607431768211454'),
+                            toUInt128('340282366920938463463374607431768211455')]) AS a) AS lhs
+    CROSS JOIN (SELECT arrayJoin([toUInt128(1), toUInt128(2), toUInt128(997),
+                                  toUInt128(18446744073709551614), toUInt128(18446744073709551615),
+                                  toUInt128('18446744073709551616'), toUInt128('18446744073709551617'),
+                                  toUInt128('340282366920938463463374607431768211455')]) AS b) AS rhs
+);
+
+SELECT count(), countIf(intDiv(a, b) * b + modulo(a, b) != a)
+FROM
+(
+    SELECT toInt128(a) AS a, toInt128(b) AS b
+    FROM (SELECT arrayJoin([toInt128(0), toInt128(1), toInt128(-1), toInt128(997), toInt128(-997),
+                            toInt128(9223372036854775807), toInt128('-9223372036854775808'),
+                            toInt128('170141183460469231731687303715884105727'),
+                            toInt128('-170141183460469231731687303715884105727')]) AS a) AS lhs
+    CROSS JOIN (SELECT arrayJoin([toInt128(1), toInt128(-1), toInt128(997), toInt128(-997),
+                                  toInt128(9223372036854775807),
+                                  toInt128('170141183460469231731687303715884105727')]) AS b) AS rhs
+);

@@ -83,14 +83,13 @@ private:
 std::vector<String> getArraySizeStreams(
     const NameAndTypePair & column,
     const Block & block,
-    const SerializationByName & serializations,
+    const PartSerializations & serializations,
     const MergeTreeSettings & settings)
 {
-    auto it = serializations.find(column.name);
-    if (it == serializations.end())
+    auto serialization = serializations.tryGet(column.name);
+    if (!serialization)
         return {};
 
-    const auto & serialization = it->second;
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Wide;
 
@@ -230,9 +229,12 @@ NameSet getHorizontalPhaseColumns(
         key_columns.emplace(storage_columns.front().name);
 
     /// Include partition key columns to keep minmax index inputs in horizontal phase
-    const auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey());
-    for (const auto & name : minmax_columns)
-        addColumnNameOrBase(name, storage_columns_name_set, key_columns);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    if (!partition_key.column_names.empty())
+    {
+        for (const auto & name : partition_key.expression->getRequiredColumns())
+            addColumnNameOrBase(name, storage_columns_name_set, key_columns);
+    }
 
     /// Include TTL expression columns to keep TTL inputs in horizontal phase
     addColumnsFromTTLDescription(metadata_snapshot->getRowsTTL(), storage_columns_name_set, key_columns);
@@ -473,11 +475,8 @@ void VerticalInsertTask::classifyColumns()
     horizontal_columns = std::move(grouped_horizontal);
 
     /// Classify statistics by column
-    for (const auto & stat : statistics)
-    {
-        const String & stat_column = stat->getColumnName();
-        statistics_by_column[stat_column].push_back(stat);
-    }
+    for (const auto & [stat_column, stat] : statistics)
+        statistics_by_column[stat_column].emplace(stat_column, stat);
 
     /// Partition columns into merging and gathering
     for (const auto & column : storage_columns)
@@ -501,8 +500,8 @@ void VerticalInsertTask::classifyColumns()
             auto stat_it = statistics_by_column.find(column.name);
             if (stat_it != statistics_by_column.end())
             {
-                for (auto & stat : stat_it->second)
-                    merging_statistics.push_back(std::move(stat));
+                for (auto & [stat_column, stat] : stat_it->second)
+                    merging_statistics.emplace(stat_column, std::move(stat));
                 statistics_by_column.erase(stat_it);
             }
         }
@@ -696,12 +695,14 @@ void VerticalInsertTask::executeHorizontalPhase()
         horizontal_skip_indexes,
         codec,
         index_granularity,
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
         merging_block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        static_cast<WrittenOffsetSubstreams *>(nullptr),
+        /*try_adaptive_codec=*/ false,
+        stream_base_manifest);
 
     if (!horizontal_output->getIndexGranularity())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index granularity is not initialized for horizontal output in vertical insert");
@@ -913,7 +914,10 @@ struct VerticalInsertTask::VerticalPhaseState
             task.codec,
             task.horizontal_output->getIndexGranularity(),
             batch_uncompressed_bytes,
-            static_cast<WrittenOffsetSubstreams *>(nullptr));
+            static_cast<WrittenOffsetSubstreams *>(nullptr),
+            /*try_adaptive_codec=*/ false,
+            task.horizontal_output->getSkipIndicesPackedWriter(),
+            task.stream_base_manifest);
 
         ProfileEvents::increment(ProfileEvents::VerticalInsertWritersCreated);
         ProfileEvents::increment(ProfileEvents::VerticalInsertWriterFlushes);
@@ -993,8 +997,8 @@ struct VerticalInsertTask::VerticalPhaseState
         auto it_stat = task.statistics_by_column.find(column.name);
         if (it_stat != task.statistics_by_column.end())
         {
-            for (auto & stat : it_stat->second)
-                batch_statistics.push_back(std::move(stat));
+            for (auto & [stat_column, stat] : it_stat->second)
+                batch_statistics.emplace(stat_column, std::move(stat));
             task.statistics_by_column.erase(it_stat);
         }
 
@@ -1128,8 +1132,11 @@ void VerticalInsertTask::finalizeDelayedStream(DelayedColumnStream & delayed, bo
     vertical_checksums.add(std::move(delayed.checksums));
     if (!delayed.substreams.empty())
     {
-        for (const auto & [column_name, substreams] : delayed.substreams.getColumnsSubstreams())
+        const auto column_names = delayed.substreams.getColumnNames();
+        for (size_t column_position = 0; column_position < column_names.size(); ++column_position)
         {
+            const auto & column_name = column_names[column_position];
+            const auto & substreams = delayed.substreams.getColumnSubstreams(column_position);
             auto [it, inserted] = vertical_substreams_by_column.emplace(column_name, substreams);
             if (!inserted)
             {

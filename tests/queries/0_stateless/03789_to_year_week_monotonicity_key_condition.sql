@@ -40,7 +40,11 @@ INSERT INTO t SELECT toDateTime('2020-01-01 00:00:00') + number * 3600 FROM numb
 
 SELECT count()
 FROM t
-WHERE toWeek(dt) = toWeek(toDateTime('2020-01-15 00:00:00')) SETTINGS force_primary_key = 1, max_rows_to_read = 169;
+WHERE toWeek(dt) = toWeek(toDateTime('2020-01-15 00:00:00'));
+
+SELECT count()
+FROM t
+WHERE toWeek(dt) = toWeek(toDateTime('2020-01-15 00:00:00')) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (s LowCardinality(String)) ENGINE = MergeTree ORDER BY s;

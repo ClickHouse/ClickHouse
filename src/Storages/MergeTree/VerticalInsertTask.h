@@ -129,6 +129,8 @@ private:
     ColumnsStatistics merging_statistics;
 
     /// State for horizontal phase output
+    /// Shared by the horizontal output and the per-batch column outputs, which write streams of the same part.
+    StreamBaseManifestPtr stream_base_manifest = std::make_shared<StreamBaseManifest>();
     std::unique_ptr<MergedBlockOutputStream> horizontal_output;
     MergedColumnOnlyOutputStream * active_column_writer = nullptr;
 

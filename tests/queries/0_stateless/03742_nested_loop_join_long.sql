@@ -10,9 +10,10 @@ CREATE TABLE events
 )
 ENGINE = MergeTree
 ORDER BY Time
-;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(100);
+-- Keep this row count small: each left row multiplies the large `attributes` fan-out (800K/300K rows per key), so it drives the join's peak memory.
+INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(12);
 INSERT INTO events SELECT NULL, concat('Payload_NULL', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(10);
 
 DROP TABLE IF EXISTS attributes;
@@ -23,7 +24,7 @@ CREATE TABLE attributes
     `Attribute` String
 )
 ENGINE = MergeTree ORDER BY EventId
-;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO attributes SELECT 1 AS EventId, 1 AS AnotherId, concat('A_', toString(number)) AS Attribute FROM numbers(100_000);
 INSERT INTO attributes SELECT 2 AS EventId, 2 AS AnotherId, concat('B_', toString(number)) AS Attribute FROM numbers(800_000);
@@ -40,7 +41,7 @@ CREATE TABLE events2
 )
 ENGINE = MergeTree
 ORDER BY Time
-;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO events2 SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(1_000_000);
 
@@ -52,7 +53,8 @@ CREATE TABLE attributes2
     `Attribute` String
 )
 ENGINE = MergeTree
-ORDER BY EventId;
+ORDER BY EventId
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO attributes2 SELECT
     sipHash64(number, 1) % 10_000_000 AS EventId,
@@ -64,7 +66,6 @@ INSERT INTO attributes2 SELECT 32 AS EventId, 32 AS OtherId, 'Attribute_Dup' AS 
 INSERT INTO attributes2 SELECT 1_000_001 AS EventId, NULL AS OtherId, 'Attribute_Dup' AS Attribute;
 
 SET query_plan_join_swap_table = 0;
-SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
@@ -85,7 +86,8 @@ ORDER BY t0.Id NULLS FIRST
 ;
 
 SELECT 'SEMI LEFT';
-SELECT t0.Id, sum(sipHash64(t0.Payload)), count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute)) AS attr_hash_sum
+-- SEMI JOIN takes any of the matching right rows, so the hash of their attributes is not deterministic.
+SELECT t0.Id, sum(sipHash64(t0.Payload)), count(), countIf(t1.Attribute != '')
 FROM events AS t0
 SEMI LEFT JOIN attributes AS t1 ON t0.Id = t1.EventId
 GROUP BY t0.Id

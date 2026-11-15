@@ -1,0 +1,19 @@
+The join keys are really serialized Sparse
+probe_sparse	1
+probe_sparse_arr	1
+Sparse key, key presence only
+4000	3200	800	160	3200	800
+Sparse key, dictionary attribute read
+336000	4000	3200	800
+Sparse default key 0 is really found
+800	3200	160
+Sparse key, aggregation in order
+1	1	50
+Sparse key replicated by ARRAY JOIN, attribute read
+378000	4500	900	3600
+Sparse mapping equals dense mapping
+1
+Sparse mapping equals hash join mapping
+1
+Direct join is still chosen for the sparse key
+1
