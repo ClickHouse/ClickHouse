@@ -352,7 +352,11 @@ class ClickHouseVersion(CHVersion):
         return self == other or self < other
 
     def __hash__(self):
-        return hash(self.__repr__)
+        # Only the fields __eq__ compares: two versions that are equal as
+        # releases (same numbers, possibly different revision, githash or
+        # version type) must hash the same, or sets and dicts treat them as
+        # different keys.
+        return hash((self.major, self.minor, self.patch, self.tweak))
 
     def __str__(self):
         return f"{self.string}"
