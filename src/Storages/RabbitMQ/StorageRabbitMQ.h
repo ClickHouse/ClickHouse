@@ -38,6 +38,10 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
+    /// A streaming query reads stream queues with its own connection, see `RabbitMQStreamSource`.
+    /// The messages of other queues are gone once consumed, so there is nothing to stream from with a cursor.
+    bool supportsStreaming() const override { return hasStreamQueues(); }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -205,7 +209,17 @@ private:
     bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
     bool hasDependencies(const StorageID & table_id);
 
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode, bool has_stream_queues);
+
+    /// The queues are stream queues (`x-queue-type = stream` in `rabbitmq_queue_settings_list`).
+    bool hasStreamQueues() const;
+
+    void readStream(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr local_context);
 
     static String getRandomName()
     {

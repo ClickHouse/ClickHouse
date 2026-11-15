@@ -28,6 +28,9 @@
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <Storages/RabbitMQ/RabbitMQStreamSource.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
@@ -51,6 +54,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -95,6 +99,7 @@ static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -254,7 +259,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode]));
+    storage_metadata.setVirtuals(createVirtuals((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode], hasStreamQueues()));
     setInMemoryMetadata(storage_metadata);
 
     rabbitmq_context = addSettings(getContext());
@@ -316,7 +321,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
 StorageRabbitMQ::~StorageRabbitMQ() = default;
 
-VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode, bool has_stream_queues)
 {
     VirtualColumnsDescription desc;
 
@@ -332,6 +337,13 @@ VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMo
     {
         desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
         desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    }
+
+    /// The last ones, see `RabbitMQSource`. They are filled only by a streaming query, see `RabbitMQStreamSource`.
+    if (has_stream_queues)
+    {
+        desc.addEphemeral("_queue", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_offset", std::make_shared<DataTypeInt64>(), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -901,6 +913,51 @@ void StorageRabbitMQ::unbindExchange()
 }
 
 
+bool StorageRabbitMQ::hasStreamQueues() const
+{
+    return std::any_of(queue_settings_list.begin(), queue_settings_list.end(), [](const String & setting)
+    {
+        auto [key, value] = std::pair{setting.substr(0, setting.find('=')), setting.substr(std::min(setting.size(), setting.find('=') + 1))};
+        boost::trim(key);
+        boost::trim(value);
+        return key == "x-queue-type" && value == "stream";
+    });
+}
+
+void StorageRabbitMQ::readStream(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr local_context)
+{
+    const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine RabbitMQ");
+
+    auto modified_context = addSettings(local_context);
+
+    RabbitMQStreamSource::Params params{
+        .configuration = configuration,
+        .queues = queues,
+        .exchange_name = exchange_name,
+        .format_name = format_name,
+        .handle_error_mode = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
+        .max_block_size = getMaxBlockSize(),
+        .poll_timeout_ms = std::max<size_t>(100, modified_context->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
+        .table_name = getStorageID().getTableName(),
+    };
+
+    auto source = std::make_shared<RabbitMQStreamSource>(
+        std::move(params), storage_snapshot, modified_context, column_names, stream_settings, log);
+    source->setStorageLimits(query_info.storage_limits);
+
+    auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    step->setStepDescription("Read from RabbitMQ STREAM");
+    query_plan.addStep(std::move(step));
+    query_plan.addInterpreterContext(modified_context);
+}
+
 void StorageRabbitMQ::read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -913,6 +970,12 @@ void StorageRabbitMQ::read(
 {
     if (!initialized)
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "RabbitMQ setup not finished. Connection might be lost");
+
+    if (query_info.isStream())
+    {
+        readStream(query_plan, column_names, storage_snapshot, query_info, local_context);
+        return;
+    }
 
     if (num_created_consumers == 0)
     {

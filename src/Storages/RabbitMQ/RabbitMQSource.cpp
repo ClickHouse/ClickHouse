@@ -375,6 +375,11 @@ Chunk RabbitMQSource::generateImpl()
                         virtual_columns[8]->insertDefault();
                     }
                 }
+
+                /// `_queue` and `_offset` of stream queues are known only to a streaming query, see `RabbitMQStreamSource`.
+                const size_t num_filled = handle_error_mode == StreamingHandleErrorMode::STREAM ? 9 : 7;
+                for (size_t j = num_filled; j < virtual_columns.size(); ++j)
+                    virtual_columns[j]->insertDefault();
             }
 
             if (is_dead_letter)

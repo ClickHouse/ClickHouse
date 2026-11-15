@@ -4488,6 +4488,88 @@ def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
     assert_eq_with_retry(instance, metric_query, str(before))
 
 
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
+    """`STREAM` reads the partitions with its own consumer, starting after the offsets of the cursor
+    {topic: {partition: offset}}, without consuming the messages for the consumer group."""
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    # A dot in the topic name is escaped in the cursor.
+    topic = f"stream.cursor_{suffix}"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    with k.kafka_topic(admin_client, topic, num_partitions=2):
+        producer = k.get_kafka_producer(kafka_cluster.kafka_port, k.producer_serializer, 15)
+
+        def produce(partition, keys):
+            for key in keys:
+                producer.send(topic=topic, value=json.dumps({"key": key}), partition=partition)
+            producer.flush()
+
+        produce(0, [0, 1, 2])
+        produce(1, [10, 11])
+
+        instance.query(
+            create_query_generator(
+                kafka_table,
+                "key UInt64",
+                topic_list=topic,
+                consumer_group=topic,
+            )
+        )
+
+        def query(q):
+            return instance.query(q, settings={"enable_streaming_queries": 1})
+
+        everything = "0\t0\t0\n0\t1\t1\n0\t2\t2\n1\t0\t10\n1\t1\t11\n"
+        select_everything = f"SELECT _partition, _offset, key FROM test.{kafka_table} STREAM BOUNDED ORDER BY ALL"
+        assert query(select_everything) == everything
+        # Nothing was consumed for the consumer group, so the same messages are read again.
+        assert query(select_everything) == everything
+
+        assert (
+            query(f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{topic}': {{'0': 0, '1': 1}}}} ORDER BY ALL")
+            == "1\n2\n"
+        )
+
+        # An unbounded stream waits for new messages.
+        produce(0, [3])
+        produce(1, [12])
+        assert (
+            query(
+                f"SELECT key FROM (SELECT key FROM test.{kafka_table} STREAM CURSOR {{'{topic}': {{'0': 2, '1': 1}}}} LIMIT 2) ORDER BY ALL"
+            )
+            == "3\n12\n"
+        )
+
+        # An incremental refresh appends only the messages that arrived after the previous refresh.
+        instance.query(f"CREATE TABLE test.{kafka_table}_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+        instance.query(
+            f"""CREATE MATERIALIZED VIEW test.{kafka_table}_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+                TO test.{kafka_table}_target EMPTY AS SELECT key FROM test.{kafka_table}"""
+        )
+
+        def refresh():
+            instance.query(f"SYSTEM REFRESH VIEW test.{kafka_table}_mv")
+            instance.query(f"SYSTEM WAIT VIEW test.{kafka_table}_mv")
+            return instance.query(f"SELECT count(), sum(key) FROM test.{kafka_table}_target")
+
+        assert refresh() == "7\t39\n"
+        produce(1, [13])
+        assert refresh() == "8\t52\n"
+        assert refresh() == "8\t52\n"
+
+        instance.query(f"DROP TABLE test.{kafka_table}_mv")
+        instance.query(f"DROP TABLE test.{kafka_table}_target")
+        instance.query(f"DROP TABLE test.{kafka_table}")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
