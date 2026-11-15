@@ -19,6 +19,10 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// Whether filling the column from its default evaluates an expression, which can read other columns and throw.
+/// A literal default is not evaluated this way.
+bool isDefaultComputed(const ColumnsDescription & columns, const String & column_name);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);

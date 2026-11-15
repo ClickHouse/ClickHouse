@@ -1,5 +1,6 @@
 -- A read that needs no column does not use a column that some parts do not store, or that a pending mutation drops or
--- renames away there: reading it computes its default, which reads other columns and can throw.
+-- renames away there if its default is computed: computing it can read other columns and throw. A dropped column with
+-- no default or a literal one is still used (t_clear, t_literal).
 
 DROP TABLE IF EXISTS t_materialized;
 CREATE TABLE t_materialized (k UInt64, flag UInt8, url String) ENGINE = MergeTree ORDER BY k
@@ -44,6 +45,16 @@ SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 1, optim
 SELECT count() FROM t_readd SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_readd GROUP BY _part SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_readd;
+
+DROP TABLE IF EXISTS t_readd_throw;
+CREATE TABLE t_readd_throw (k UInt64, s String, c UInt8) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_readd_throw;
+INSERT INTO t_readd_throw SELECT number, toString(number), 0 FROM numbers(1000);
+ALTER TABLE t_readd_throw DROP COLUMN c, ADD COLUMN c UInt8 DEFAULT throwIf(1) SETTINGS alter_sync = 0;
+SELECT count() FROM t_readd_throw SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_readd_throw SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_readd_throw;
 
 DROP TABLE IF EXISTS t_rename;
 CREATE TABLE t_rename (k UInt64, s String, a UInt8) ENGINE = MergeTree ORDER BY k
@@ -127,3 +138,24 @@ UPDATE t_patch_target SET k = k + 1 WHERE 1 SETTINGS enable_lightweight_update =
 SELECT count() FROM t_patch_target SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 SELECT count() FROM t_patch_target SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 DROP TABLE t_patch_target;
+
+DROP TABLE IF EXISTS t_clear;
+CREATE TABLE t_clear (k UInt8, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_clear;
+INSERT INTO t_clear SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_clear CLEAR COLUMN k IN PARTITION ID 'all' SETTINGS alter_sync = 0;
+SELECT count() FROM t_clear SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_clear SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_clear WHERE _part_offset % 2 = 0 SETTINGS max_bytes_to_read = 100000;
+DROP TABLE t_clear;
+
+DROP TABLE IF EXISTS t_literal;
+CREATE TABLE t_literal (k UInt8 DEFAULT 0, s String, m String MATERIALIZED s) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_literal;
+INSERT INTO t_literal SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_literal CLEAR COLUMN k IN PARTITION ID 'all' SETTINGS alter_sync = 0;
+SELECT count() FROM t_literal SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_literal SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+DROP TABLE t_literal;
