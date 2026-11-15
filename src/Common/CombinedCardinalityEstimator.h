@@ -16,13 +16,12 @@ namespace ErrorCodes
 namespace details
 {
 
-enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
-
-static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
+enum class ContainerType : uint8_t
 {
-    uint8_t res = std::max(static_cast<uint8_t>(lhs), static_cast<uint8_t>(rhs));
-    return static_cast<ContainerType>(res);
-}
+    SMALL = 1,
+    MEDIUM = 2,
+    LARGE = 3
+};
 
 }
 
@@ -78,6 +77,15 @@ public:
         destroy();
     }
 
+    void ALWAYS_INLINE prefetch(Key value) const
+    {
+        const auto container_type = getContainerType();
+        if (container_type == details::ContainerType::MEDIUM)
+            getContainer<Medium>().prefetch(value);
+        else if (container_type == details::ContainerType::LARGE)
+            getContainer<Large>().prefetch(value);
+    }
+
     void insert(Key value)
     {
         auto container_type = getContainerType();
@@ -110,51 +118,123 @@ public:
             getContainer<Large>().insert(value);
     }
 
+    /// Equivalent to calling insert for each value, but dispatches on the container type
+    /// once per batch and runs a loop per container, which also lets the container's insert be inlined.
+    void insertMany(const Key * values, size_t n)
+    {
+        size_t i = 0;
+        while (i < n)
+        {
+            auto container_type = getContainerType();
+
+            if (container_type == details::ContainerType::SMALL)
+            {
+                for (; i < n; ++i)
+                {
+                    if (small.find(values[i]) != small.end())
+                        continue;
+
+                    if (small.full())
+                    {
+                        toMedium();
+                        break;
+                    }
+
+                    small.insert(values[i]);
+                }
+            }
+            else if (container_type == details::ContainerType::MEDIUM)
+            {
+                auto & container = getContainer<Medium>();
+
+                if (container.size() >= medium_set_size_max)
+                {
+                    toLarge();
+                    continue;
+                }
+
+                size_t max_unique_values = std::min(n - i, medium_set_size_max - container.size());
+                size_t batch_end = i + max_unique_values;
+
+                /// Add up to max_unique_values without checking the size in the loop.
+                for (; i < batch_end; ++i)
+                {
+                    container.insert(values[i]);
+                }
+
+                for (; i < n; ++i)
+                {
+                    if (container.size() >= medium_set_size_max)
+                    {
+                        toLarge();
+                        break;
+                    }
+
+                    container.insert(values[i]);
+                }
+            }
+            else if (container_type == details::ContainerType::LARGE)
+            {
+                auto & container = getContainer<Large>();
+                for (; i < n; ++i)
+                    container.insert(values[i]);
+            }
+        }
+    }
+
     UInt64 size() const
     {
         auto container_type = getContainerType();
 
         if (container_type == details::ContainerType::SMALL)
             return small.size();
-        else if (container_type == details::ContainerType::MEDIUM)
+        if (container_type == details::ContainerType::MEDIUM)
             return getContainer<Medium>().size();
-        else if (container_type == details::ContainerType::LARGE)
+        if (container_type == details::ContainerType::LARGE)
             return getContainer<Large>().size();
-        else
-            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+        throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
     }
 
     void merge(const Self & rhs)
     {
         auto container_type = getContainerType();
-        auto max_container_type = details::max(container_type, rhs.getContainerType());
+        auto rhs_container_type = rhs.getContainerType();
 
-        if (container_type != max_container_type)
+        /// When rhs is `HyperLogLogCounter` and we are not, copy it and insert our values into the copy:
+        /// copying is much cheaper than walking all buckets of `HyperLogLogCounter` one at a time.
+        /// This is common, as merging into an empty state happens in `-Merge`, `AggregatingSortedTransform`
+        /// and squashing of aggregate function columns.
+        /// The result is the same, because `HyperLogLogCounter` does not depend on the order of insertion.
+        /// Medium sets are not copied: the layout of a hash table depends on the order of insertion,
+        /// and so does, through the order of iteration, when a later merge converts it to `HyperLogLogCounter`.
+        if (rhs_container_type == details::ContainerType::LARGE && container_type != details::ContainerType::LARGE)
         {
-            if (max_container_type == details::ContainerType::MEDIUM)
-                toMedium();
-            else if (max_container_type == details::ContainerType::LARGE)
-                toLarge();
+            toLarge(std::make_unique<Large>(rhs.getContainer<Large>()));
+            return;
         }
 
-        if (rhs.getContainerType() == details::ContainerType::SMALL)
+        if (rhs_container_type == details::ContainerType::MEDIUM && container_type == details::ContainerType::SMALL)
+            toMedium();
+
+        /// Here our container is not smaller than the one of rhs.
+        if (rhs_container_type == details::ContainerType::SMALL)
         {
             for (const auto & x : rhs.small)
                 insert(x.getValue());
         }
-        else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
+        else if (rhs_container_type == details::ContainerType::MEDIUM)
         {
             for (const auto & x : rhs.getContainer<Medium>())
                 insert(x.getValue());
         }
-        else if (rhs.getContainerType() == details::ContainerType::LARGE)
+        else
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        UInt8 v;
+        UInt8 v = 0;
         readBinary(v, in);
         auto container_type = static_cast<details::ContainerType>(v);
 
@@ -170,48 +250,6 @@ public:
             toLarge();
             getContainer<Large>().read(in);
         }
-    }
-
-    void readAndMerge(DB::ReadBuffer & in)
-    {
-        auto container_type = getContainerType();
-
-        /// If readAndMerge is called with an empty state, just deserialize
-        /// the state is specified as a parameter.
-        if ((container_type == details::ContainerType::SMALL) && small.empty())
-        {
-            read(in);
-            return;
-        }
-
-        UInt8 v;
-        readBinary(v, in);
-        auto rhs_container_type = static_cast<details::ContainerType>(v);
-
-        auto max_container_type = details::max(container_type, rhs_container_type);
-
-        if (container_type != max_container_type)
-        {
-            if (max_container_type == details::ContainerType::MEDIUM)
-                toMedium();
-            else if (max_container_type == details::ContainerType::LARGE)
-                toLarge();
-        }
-
-        if (rhs_container_type == details::ContainerType::SMALL)
-        {
-            typename Small::Reader reader(in);
-            while (reader.next())
-                insert(reader.get());
-        }
-        else if (rhs_container_type == details::ContainerType::MEDIUM)
-        {
-            typename Medium::Reader reader(in);
-            while (reader.next())
-                insert(reader.get());
-        }
-        else if (rhs_container_type == details::ContainerType::LARGE)
-            getContainer<Large>().readAndMerge(in);
     }
 
     void write(DB::WriteBuffer & out) const
@@ -242,14 +280,13 @@ private:
         setContainerType(details::ContainerType::MEDIUM);
     }
 
-    void toLarge()
+    /// Inserts our values into `tmp_large` (an empty counter by default) and switches to it.
+    void toLarge(std::unique_ptr<Large> tmp_large = std::make_unique<Large>())
     {
         auto container_type = getContainerType();
 
         if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_large = std::make_unique<Large>();
 
         if (container_type == details::ContainerType::SMALL)
         {
@@ -287,13 +324,13 @@ private:
     }
 
     template <typename T>
-    inline T & getContainer()
+    T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
     template <typename T>
-    inline const T & getContainer() const
+    const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);
     }
@@ -304,7 +341,7 @@ private:
         address |= static_cast<UInt8>(t);
     }
 
-    inline details::ContainerType getContainerType() const
+    details::ContainerType getContainerType() const
     {
         return static_cast<details::ContainerType>(address & ~mask);
     }

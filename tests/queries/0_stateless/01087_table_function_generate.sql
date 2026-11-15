@@ -195,3 +195,5 @@ SELECT a, b, c, d, e, f, g, hex(h) FROM test_table_2 ORDER BY a, b, c, d, e, f, 
 SELECT '-';
 
 DROP TABLE IF EXISTS test_table_2;
+
+select * from generateRandom('x UInt64', Null, 10, 2) limit 2 format Null;

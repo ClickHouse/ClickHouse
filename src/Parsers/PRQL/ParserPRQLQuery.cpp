@@ -1,7 +1,7 @@
 #include <string>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 
-#include "Parsers/Lexer.h"
+#include <Parsers/Lexer.h>
 #include "config.h"
 
 #if USE_PRQL
@@ -31,7 +31,7 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 #if !USE_PRQL
     throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect!");
+        ErrorCodes::SUPPORT_IS_DISABLED, "PRQL is not available. Rust code or PRQL itself may be disabled. Use another dialect.");
 #else
     const auto * begin = pos->begin;
 
@@ -69,7 +69,9 @@ bool ParserPRQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         "",
         false,
         max_query_size,
-        max_parser_depth);
+        max_parser_depth,
+        max_parser_backtracks,
+        true);
 
     if (!node)
         throw Exception(

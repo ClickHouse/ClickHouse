@@ -19,18 +19,42 @@
 
 
 #include <ios>
+#include <memory>
+#include <functional>
 #include "Poco/Any.h"
 #include "Poco/Buffer.h"
 #include "Poco/Exception.h"
 #include "Poco/Net/Net.h"
 #include "Poco/Net/StreamSocket.h"
 #include "Poco/Timespan.h"
+#include "Poco/Net/Throttler.h"
 
 
 namespace Poco
 {
 namespace Net
 {
+
+
+    class IHTTPSessionDataHooks
+    /// Interface to control stream of data bytes being sent or received though socket by HTTPSession
+    /// It allows to monitor, throttle and schedule data streams with syscall granulatrity
+    {
+    public:
+        virtual ~IHTTPSessionDataHooks() = default;
+
+        virtual void atStart(int bytes) = 0;
+        /// Called before sending/receiving data `bytes` to/from socket.
+
+        virtual void atFinish(int bytes) = 0;
+        /// Called when sending/receiving of data `bytes` is successfully finished.
+
+        virtual void atFail() = 0;
+        /// If an error occurred during send/receive `fail()` is called instead of `finish()`.
+    };
+
+
+    using HTTPSessionDataHooksPtr = std::shared_ptr<IHTTPSessionDataHooks>;
 
 
     class Net_API HTTPSession
@@ -61,8 +85,29 @@ namespace Net
         setTimeout(const Poco::Timespan & connectionTimeout, const Poco::Timespan & sendTimeout, const Poco::Timespan & receiveTimeout);
         /// Sets different timeouts for the HTTP session.
 
+        void setReceiveThrottler(const ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data received through the socket.
+
+        void setSendThrottler(const ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data sent through the socket.
+
         Poco::Timespan getTimeout() const;
         /// Returns the timeout for the HTTP session.
+
+        Poco::Timespan getConnectionTimeout() const;
+        /// Returns connection timeout for the HTTP session.
+
+        Poco::Timespan getSendTimeout() const;
+        /// Returns send timeout for the HTTP session.
+
+        Poco::Timespan getReceiveTimeout() const;
+        /// Returns receive timeout for the HTTP session.
+
+        void setSendDataHooks(const HTTPSessionDataHooksPtr & sendDataHooks = {});
+        /// Sets data hooks that will be called on every sent to the socket.
+
+        void setReceiveDataHooks(const HTTPSessionDataHooksPtr & receiveDataHooks = {});
+        /// Sets data hooks that will be called on every receive from the socket.
 
         bool connected() const;
         /// Returns true if the underlying socket is connected.
@@ -114,6 +159,51 @@ namespace Net
         /// obtain any data already read from the socket, but not
         /// yet processed.
 
+        int getCharRaw();
+        /// Returns the next byte of the message, or `eof` at the end of the connection.
+        ///
+        /// Buffered: it refills the internal buffer from the socket when needed, so parsing a
+        /// response line, a header block or a chunk header byte by byte costs one system call
+        /// per buffer, not one per byte. Bytes past the parsed part stay in the buffer and are
+        /// returned by the following `readRaw`.
+
+        int readRaw(char * buffer, std::streamsize length);
+        /// Reads up to `length` bytes, bypassing the iostream layer entirely.
+        ///
+        /// Returns the number of bytes read, which can be less than `length`,
+        /// or 0 when the peer has closed the connection. Data left over in the
+        /// internal buffer by header parsing is returned first, everything else
+        /// is read from the socket straight into `buffer`.
+        ///
+        /// Intended for clients that do their own buffering (in ClickHouse, the
+        /// `ReadBuffer` hierarchy) and want neither the extra copy nor the small
+        /// buffer of `HTTPBasicStreamBuf`.
+
+        int writeRaw(const char * buffer, std::streamsize length);
+        /// Writes up to `length` bytes to the socket, bypassing the iostream layer.
+        ///
+        /// Returns the number of bytes written, which can be less than `length`,
+        /// so callers have to loop. See `readRaw` for the motivation.
+
+        void writeAllRaw(const char * buffer, std::streamsize length);
+        /// Same as `writeRaw`, but loops until all `length` bytes are written.
+        /// Throws `MessageException` if the socket stops accepting data.
+
+        int buffered() const;
+        /// Returns the number of bytes in the buffer.
+
+        int fillBuffer();
+        /// Appends data from the socket to the read buffer, after moving the unread bytes to its
+        /// beginning. On a socket that the caller has set to non-blocking mode, takes only what has
+        /// already arrived. Returns the number of bytes added, 0 when nothing is available or the
+        /// buffer is full, and -1 when the peer has closed the connection.
+
+        const char * bufferedData() const { return _pCurrent; }
+        /// Returns the unread bytes of the read buffer; `buffered` is their number.
+
+        void consumeBuffered(int length) { _pCurrent += length; }
+        /// Marks `length` unread bytes of the read buffer as read.
+
     protected:
         HTTPSession();
         /// Creates a HTTP session using an
@@ -158,9 +248,6 @@ namespace Net
         int receive(char * buffer, int length);
         /// Reads up to length bytes.
 
-        int buffered() const;
-        /// Returns the number of bytes in the buffer.
-
         void refill();
         /// Refills the internal buffer.
 
@@ -199,8 +286,14 @@ namespace Net
         Poco::Timespan _connectionTimeout;
         Poco::Timespan _receiveTimeout;
         Poco::Timespan _sendTimeout;
+        ThrottlerPtr _receiveThrottler;
+        ThrottlerPtr _sendThrottler;
         Poco::Exception * _pException;
         Poco::Any _data;
+
+        // Data hooks
+        HTTPSessionDataHooksPtr _sendDataHooks;
+        HTTPSessionDataHooksPtr _receiveDataHooks;
 
         friend class HTTPStreamBuf;
         friend class HTTPHeaderStreamBuf;
@@ -217,12 +310,35 @@ namespace Net
         return _keepAlive;
     }
 
-
     inline Poco::Timespan HTTPSession::getTimeout() const
     {
         return _receiveTimeout;
     }
 
+    inline Poco::Timespan HTTPSession::getConnectionTimeout() const
+    {
+        return _connectionTimeout;
+    }
+
+    inline Poco::Timespan HTTPSession::getSendTimeout() const
+    {
+        return _sendTimeout;
+    }
+
+    inline Poco::Timespan HTTPSession::getReceiveTimeout() const
+    {
+        return _receiveTimeout;
+    }
+
+    inline void HTTPSession::setSendDataHooks(const HTTPSessionDataHooksPtr & sendDataHooks)
+    {
+        _sendDataHooks = sendDataHooks;
+    }
+
+    inline void HTTPSession::setReceiveDataHooks(const HTTPSessionDataHooksPtr & receiveDataHooks)
+    {
+        _receiveDataHooks = receiveDataHooks;
+    }
 
     inline StreamSocket & HTTPSession::socket()
     {

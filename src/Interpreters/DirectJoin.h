@@ -6,6 +6,8 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <atomic>
+
 #include <QueryPipeline/SizeLimits.h>
 
 #include <Interpreters/IKeyValueEntity.h>
@@ -31,28 +33,31 @@ public:
         const Block & right_sample_block_with_storage_column_names_);
 
     std::string getName() const override { return "DirectKeyValueJoin"; }
-    virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
-    virtual bool addBlockToJoin(const Block &, bool) override;
-    virtual void checkTypesOfKeys(const Block &) const override;
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::DIRECT); }
+    const TableJoin & getTableJoin() const override { return *table_join; }
+
+    /// Each left row's key is looked up once and the row is emitted in input order.
+    bool preservesLeftBlockOrder() const override { return true; }
+
+    bool addBlockToJoin(const Block &, size_t, JoinBuildContext) override;
+    void checkTypesOfKeys(const Block &) const override;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
-    virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
+    JoinResultPtr joinBlock(Block block) override;
 
-    virtual size_t getTotalRowCount() const override { return 0; }
+    size_t getTotalRowCount() const override { return 0; }
 
-    virtual size_t getTotalByteCount() const override { return 0; }
+    size_t getTotalByteCount() const override { return 0; }
 
-    virtual bool alwaysReturnsEmptySet() const override { return false; }
+    StepAnalysisReport getAnalysisReport() const override;
 
-    virtual bool isFilled() const override { return true; }
+    bool alwaysReturnsEmptySet() const override { return false; }
 
-    virtual IBlocksStreamPtr
-    getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
-    {
-        return nullptr;
-    }
+    bool isFilled() const override { return true; }
+
+    IBlocksStreamPtr getNonJoinedBlocks(const Block &, const Block &, UInt64) const override { return nullptr; }
 
 private:
     std::shared_ptr<TableJoin> table_join;
@@ -62,6 +67,8 @@ private:
     Block sample_block_with_columns_to_add;
     LoggerPtr log;
 
+    std::atomic<UInt64> left_rows_total{0};
+    std::atomic<UInt64> left_rows_matched{0};
 };
 
 }

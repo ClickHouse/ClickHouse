@@ -1,14 +1,23 @@
 #pragma once
 
 #include <Formats/IndexForNativeFormat.h>
+#include <Formats/NativeReaderTypeCache.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <Core/BlockMissingValues.h>
+#include <DataTypes/Serializations/ISerialization.h>
+
+#include <map>
+#include <memory>
+#include <optional>
 
 namespace DB
 {
 
+using ValueSizeMap = std::map<std::string, double>;
+
 class CompressedReadBufferFromFile;
+struct FormatSettings;
 
 /** Deserializes the stream of blocks from the native binary format (with names and column types).
   * Designed for communication between servers.
@@ -19,26 +28,36 @@ class CompressedReadBufferFromFile;
 class NativeReader
 {
 public:
+    /// Kinds accepted from the peer unless the caller declares its own set. `Detached` is excluded
+    /// because it yields a column that does not match the declared type, which few callers handle.
+    static constexpr ISerialization::KindSet default_allowed_kinds
+        = ISerialization::KindSet::all().without(ISerialization::Kind::DETACHED);
+
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
+    /// The overloads without FormatSettings exist so that this header does not need its definition.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_);
+    NativeReader(
+        ReadBuffer & istr_,
+        UInt64 server_revision_,
+        std::optional<FormatSettings> format_settings_,
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
+    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
     NativeReader(
         ReadBuffer & istr_,
         const Block & header_,
         UInt64 server_revision_,
-        bool skip_unknown_columns_ = false,
-        bool null_as_default_ = false,
-        bool allow_types_conversion_ = false,
-        BlockMissingValues * block_missing_values_ = nullptr);
+        std::optional<FormatSettings> format_settings_,
+        BlockMissingValues * block_missing_values_ = nullptr,
+        NativeReaderTypeCache * type_cache_ = nullptr,
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
-
-    static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
     Block getHeader() const;
 
@@ -46,14 +65,26 @@ public:
 
     Block read();
 
+    static void readData(
+        const ISerialization & serialization,
+        IColumn & column,
+        ReadBuffer & istr,
+        const FormatSettings * format_settings,
+        size_t rows,
+        const NameAndTypePair * name_and_type,
+        ValueSizeMap * avg_value_size_hints_);
+
 private:
+    /// The type for a type name read from the stream, from `type_cache` when it has the name.
+    DataTypePtr getTypeByName(const String & type_name);
+
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    bool skip_unknown_columns = false;
-    bool null_as_default = false;
-    bool allow_types_conversion = false;
+    std::shared_ptr<const FormatSettings> format_settings;
     BlockMissingValues * block_missing_values = nullptr;
+    NativeReaderTypeCache * type_cache = nullptr;
+    ISerialization::KindSet allowed_kinds = default_allowed_kinds;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
@@ -63,9 +94,8 @@ private:
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.
     CompressedReadBufferFromFile * istr_concrete = nullptr;
 
-    PODArray<double> avg_value_size_hints;
-
-    void updateAvgValueSizeHints(const Block & block);
+    /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
+    ValueSizeMap avg_value_size_hints;
 };
 
 }

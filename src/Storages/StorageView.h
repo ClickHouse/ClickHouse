@@ -1,32 +1,61 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
 {
 
-class StorageView final : public IStorage
+class StorageView final : public StorageWithCommonVirtualColumns
 {
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         const String & comment,
-        const bool is_parameterized_view_=false);
+        bool is_parameterized_view_ = false);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+    /// `readImpl` forwards the requested column NAMES into the inner query, whose column types may
+    /// differ from the view's declared ones, so a rewritten `arr.size0` may not resolve there.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    void read(
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
+    StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
+
+    /// A view whose query runs with privileges other than the invoker's (`SQL SECURITY DEFINER` or `NONE`)
+    /// can hide rows that the invoker must not see. Such a view is sealed: it is read through an opaque step,
+    /// so no optimization of the outer query can evaluate an outer expression on the rows the view drops,
+    /// or use an outer predicate to analyze the indexes of the tables behind it.
+    /// A plain projection of a `MergeTree` table hides no rows unless the view's context has a row policy on it,
+    /// or the invoker has a row policy on the view itself, so it stays transparent.
+    bool isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+
+    /// A sealed view hides nothing from a query that runs with the identity of the view's own query (its definer,
+    /// with the definer's default roles), so such a query reads it transparently.
+    bool isReadByDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+
+    /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
+    /// Returns nullptr otherwise.
+    StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -36,15 +65,20 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static void replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    void drop() override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+
+    static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot, const bool parameterized_view)
     {
         replaceWithSubquery(select_query, metadata_snapshot->getSelectQuery().inner_query->clone(), view_name, parameterized_view);
     }
 
-    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, const bool parameterized_view);
+    static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+
+    static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
     bool is_parameterized_view;

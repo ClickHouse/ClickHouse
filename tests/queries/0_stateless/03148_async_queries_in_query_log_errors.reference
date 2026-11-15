@@ -1,0 +1,44 @@
+
+system.asynchronous_insert_log
+Row 1:
+──────
+database:                 default
+table:                    async_insert_landing
+query:                    INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 0, async_insert = 1 FORMAT Values
+format:                   Values
+error:                    DB::Exc*****on: Cannot parse string 'Invalid' as UInt32:
+populated_flush_query_id: 1
+system.query_log
+Row 1:
+──────
+type:           QueryStart
+read_rows:      0
+read_bytes:     0
+written_rows:   0
+written_bytes:  0
+result_rows:    0
+result_bytes:   0
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 0, async_insert = 1 FORMAT Values
+query_kind:     AsyncInsertFlush
+databases:      ['default']
+tables:         ['default.async_insert_landing']
+columns:        []
+views:          []
+exception_code: 0
+
+Row 2:
+──────
+type:           QueryFinish
+read_rows:      0
+read_bytes:     0
+written_rows:   0
+written_bytes:  0
+result_rows:    0
+result_bytes:   0
+query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_async_insert = 0, async_insert = 1 FORMAT Values
+query_kind:     AsyncInsertFlush
+databases:      ['default']
+tables:         ['default.async_insert_landing']
+columns:        []
+views:          []
+exception_code: 0

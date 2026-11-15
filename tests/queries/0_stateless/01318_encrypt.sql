@@ -13,43 +13,43 @@
 -----------------------------------------------------------------------------------------
 -- error cases
 -----------------------------------------------------------------------------------------
-SELECT aes_encrypt_mysql(); --{serverError 42} not enough arguments
-SELECT aes_encrypt_mysql('aes-128-ecb'); --{serverError 42} not enough arguments
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text'); --{serverError 42} not enough arguments
+SELECT aes_encrypt_mysql(); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT aes_encrypt_mysql('aes-128-ecb'); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text'); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
 
 -- Mode
-SELECT aes_encrypt_mysql(789, 'text', 'key'); --{serverError 43} bad mode type
-SELECT aes_encrypt_mysql('blah blah blah', 'text', 'key'); -- {serverError 36} garbage mode value
-SELECT aes_encrypt_mysql('des-ede3-ecb', 'text', 'key'); -- {serverError 36} bad mode value of valid cipher name
-SELECT aes_encrypt_mysql('aes-128-gcm', 'text', 'key'); -- {serverError 36} mode is not supported by _mysql-functions
+SELECT aes_encrypt_mysql(789, 'text', 'key'); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad mode type
+SELECT aes_encrypt_mysql('blah blah blah', 'text', 'key'); -- {serverError BAD_ARGUMENTS} garbage mode value
+SELECT aes_encrypt_mysql('des-ede3-ecb', 'text', 'key'); -- {serverError BAD_ARGUMENTS} bad mode value of valid cipher name
+SELECT aes_encrypt_mysql('aes-128-gcm', 'text', 'key'); -- {serverError BAD_ARGUMENTS} mode is not supported by _mysql-functions
 
-SELECT encrypt(789, 'text', 'key'); --{serverError 43} bad mode type
-SELECT encrypt('blah blah blah', 'text', 'key'); -- {serverError 36} garbage mode value
-SELECT encrypt('des-ede3-ecb', 'text', 'key'); -- {serverError 36} bad mode value of valid cipher name
+SELECT encrypt(789, 'text', 'key'); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad mode type
+SELECT encrypt('blah blah blah', 'text', 'key'); -- {serverError BAD_ARGUMENTS} garbage mode value
+SELECT encrypt('des-ede3-ecb', 'text', 'key'); -- {serverError BAD_ARGUMENTS} bad mode value of valid cipher name
 
 
 -- Key
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 456); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad key type
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key'); -- {serverError BAD_ARGUMENTS} key is too short
 
-SELECT encrypt('aes-128-ecb', 'text'); --{serverError 42} key is missing
-SELECT encrypt('aes-128-ecb', 'text', 456); --{serverError 43} bad key type
-SELECT encrypt('aes-128-ecb', 'text', 'key'); -- {serverError 36} key is too short
-SELECT encrypt('aes-128-ecb', 'text', 'keykeykeykeykeykeykeykeykeykeykeykey'); -- {serverError 36} key is to long
+SELECT encrypt('aes-128-ecb', 'text'); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} key is missing
+SELECT encrypt('aes-128-ecb', 'text', 456); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad key type
+SELECT encrypt('aes-128-ecb', 'text', 'key'); -- {serverError BAD_ARGUMENTS} key is too short
+SELECT encrypt('aes-128-ecb', 'text', 'keykeykeykeykeykeykeykeykeykeykeykey'); -- {serverError BAD_ARGUMENTS} key is to long
 
 -- IV
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 1011); --{serverError 43} bad IV type 6
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 'iv'); --{serverError 36} IV is too short 4
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 1011); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad IV type 6
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 'iv'); --{serverError BAD_ARGUMENTS} IV is too short 4
 
-SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 1011); --{serverError 43} bad IV type 1
-SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 'iviviviviviviviviviviviviviviviviviviviviv'); --{serverError 36} IV is too long 3
-SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 'iv'); --{serverError 36} IV is too short 2
+SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 1011); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad IV type 1
+SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 'iviviviviviviviviviviviviviviviviviviviviv'); --{serverError BAD_ARGUMENTS} IV is too long 3
+SELECT encrypt('aes-128-cbc', 'text', 'keykeykeykeykeyk', 'iv'); --{serverError BAD_ARGUMENTS} IV is too short 2
 
 --AAD
-SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError 42} too many arguments
+SELECT aes_encrypt_mysql('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} too many arguments
 
-SELECT encrypt('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError 43} bad AAD type
-SELECT encrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad AAD type
+SELECT encrypt('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad AAD type
+SELECT encrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError ILLEGAL_TYPE_OF_ARGUMENT} bad AAD type
 
 -----------------------------------------------------------------------------------------
 -- Validate against predefined ciphertext,plaintext,key and IV for MySQL compatibility mode

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
 
@@ -10,6 +10,7 @@ namespace DB
 
 class WriteBuffer;
 class Context;
+class IDataType;
 
 
 /** Stream to output data in format "each value in separate row".
@@ -18,7 +19,7 @@ class Context;
 class VerticalRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    VerticalRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
@@ -54,8 +55,12 @@ private:
     size_t field_number = 0;
     size_t row_number = 0;
 
-    using NamesAndPaddings = std::vector<String>;
+    using NamesAndPaddings = VectorWithMemoryTracking<String>;
     NamesAndPaddings names_and_paddings;
+
+    VectorWithMemoryTracking<UInt8> is_number;
+    VectorWithMemoryTracking<UInt8> is_json;
+    bool color;
 };
 
 }

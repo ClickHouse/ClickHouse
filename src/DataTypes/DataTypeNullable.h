@@ -17,8 +17,10 @@ public:
     std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
+    void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     Field getDefault() const override;
 
@@ -41,10 +43,30 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
+    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
+    bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
+    bool hasDynamicStructure() const override { return nested_data_type->hasDynamicStructure(); }
+    std::unique_ptr<SubcolumnInfo>
+    getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
+    {
+        nested_data_type->forEachKnownDynamicSubcolumnName(callback, array_level);
+    }
+    bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
+    bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
+
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested_data_type;
+    }
+
 private:
-    SerializationPtr doGetDefaultSerialization() const override;
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;
 };
@@ -57,5 +79,7 @@ DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
+
+bool canContainNull(const IDataType & type);
 
 }

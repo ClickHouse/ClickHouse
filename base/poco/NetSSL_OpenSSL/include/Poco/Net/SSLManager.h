@@ -17,6 +17,7 @@
 #ifndef NetSSL_SSLManager_INCLUDED
 #define NetSSL_SSLManager_INCLUDED
 
+#include <unordered_map>
 
 #include <openssl/ssl.h>
 #include "Poco/BasicEvent.h"
@@ -29,9 +30,6 @@
 #include "Poco/Net/VerificationErrorArgs.h"
 #include "Poco/SharedPtr.h"
 #include "Poco/Util/AbstractConfiguration.h"
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
 
 
 namespace Poco
@@ -77,6 +75,7 @@ namespace Net
     ///            <verificationDepth>1..9</verificationDepth>
     ///            <loadDefaultCAFile>true|false</loadDefaultCAFile>
     ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH</cipherList>
+    ///            <cipherSuites>TLS_AES_256_GCM_SHA384</cipherSuites>
     ///            <preferServerCiphers>true|false</preferServerCiphers>
     ///            <privateKeyPassphraseHandler>
     ///                <name>KeyFileHandler</name>
@@ -95,11 +94,10 @@ namespace Net
     ///            <requireTLSv1>true|false</requireTLSv1>
     ///            <requireTLSv1_1>true|false</requireTLSv1_1>
     ///            <requireTLSv1_2>true|false</requireTLSv1_2>
-    ///            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
+    ///            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2,tlsv1_3</disableProtocols>
     ///            <dhParamsFile>dh.pem</dhParamsFile>
     ///            <ecdhCurve>prime256v1</ecdhCurve>
     ///          </server|client>
-    ///          <fips>false</fips>
     ///       </openSSL>
     ///    </AppConfig>
     ///
@@ -118,7 +116,9 @@ namespace Net
     ///      will fail if a certificate chain larger than this is encountered.
     ///    - loadDefaultCAFile (boolean): Specifies whether the builtin CA certificates from OpenSSL are used.
     ///    - cipherList (string): Specifies the supported ciphers in OpenSSL notation
-    ///      (e.g. "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH").
+    ///      (e.g. "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"). Applies to TLS 1.2 and earlier only.
+    ///    - cipherSuites (string): Specifies the supported TLS 1.3 cipher suites in OpenSSL
+    ///      notation (e.g. "TLS_AES_256_GCM_SHA384"). If empty, the OpenSSL defaults are used.
     ///    - preferServerCiphers (bool): When choosing a cipher, use the server's preferences instead of the
     ///      client preferences. When not called, the SSL server will always follow the clients
     ///      preferences. When called, the SSL/TLS server will choose following its own
@@ -146,13 +146,11 @@ namespace Net
     ///    - requireTLSv1_1 (boolean): Require a TLSv1.1 connection.
     ///    - requireTLSv1_2 (boolean): Require a TLSv1.2 connection.
     ///    - disableProtocols (string): A comma-separated list of protocols that should be
-    ///      disabled. Valid protocol names are sslv2, sslv3, tlsv1, tlsv1_1, tlsv1_2.
+    ///      disabled. Valid protocol names are sslv2, sslv3, tlsv1, tlsv1_1, tlsv1_2, tlsv1_3.
     ///    - dhParamsFile (string): Specifies a file containing Diffie-Hellman parameters.
     ///      If not specified or empty, the default parameters are used.
     ///    - ecdhCurve (string): Specifies the name of the curve to use for ECDH, based
     ///      on the curve names specified in RFC 4492. Defaults to "prime256v1".
-    ///    - fips: Enable or disable OpenSSL FIPS mode. Only supported if the OpenSSL version
-    ///      that this library is built against supports FIPS mode.
     {
     public:
         typedef Poco::SharedPtr<PrivateKeyPassphraseHandler> PrivateKeyPassphraseHandlerPtr;
@@ -219,6 +217,13 @@ namespace Net
         /// Unless initializeClient() has been called, the first call to this method initializes the default Context
         /// from the application configuration.
 
+        Context::Ptr getCustomServerContext(const std::string & name);
+        /// Return custom Context used by the server.
+
+        Context::Ptr setCustomServerContext(const std::string & name, Context::Ptr ctx);
+        /// Set custom Context used by the server.
+        /// Return pointer on inserted Context or on old Context if exists.
+
         PrivateKeyPassphraseHandlerPtr serverPassphraseHandler();
         /// Returns the configured passphrase handler of the server. If none is set, the method will create a default one
         /// from an application configuration.
@@ -257,6 +262,36 @@ namespace Net
 
         static const std::string CFG_SERVER_PREFIX;
         static const std::string CFG_CLIENT_PREFIX;
+
+        static const std::string CFG_PRIV_KEY_FILE;
+        static const std::string CFG_CERTIFICATE_FILE;
+        static const std::string CFG_CA_LOCATION;
+        static const std::string CFG_VER_MODE;
+        static const Context::VerificationMode VAL_VER_MODE;
+        static const std::string CFG_VER_DEPTH;
+        static const int VAL_VER_DEPTH;
+        static const std::string CFG_ENABLE_DEFAULT_CA;
+        static const bool VAL_ENABLE_DEFAULT_CA;
+        static const std::string CFG_CIPHER_LIST;
+        static const std::string CFG_CYPHER_LIST; // for backwards compatibility
+        static const std::string VAL_CIPHER_LIST;
+        static const std::string CFG_CIPHER_SUITES;
+        static const std::string CFG_PREFER_SERVER_CIPHERS;
+        static const std::string CFG_DELEGATE_HANDLER;
+        static const std::string VAL_DELEGATE_HANDLER;
+        static const std::string CFG_CERTIFICATE_HANDLER;
+        static const std::string VAL_CERTIFICATE_HANDLER;
+        static const std::string CFG_CACHE_SESSIONS;
+        static const std::string CFG_SESSION_ID_CONTEXT;
+        static const std::string CFG_SESSION_CACHE_SIZE;
+        static const std::string CFG_SESSION_TIMEOUT;
+        static const std::string CFG_EXTENDED_VERIFICATION;
+        static const std::string CFG_REQUIRE_TLSV1;
+        static const std::string CFG_REQUIRE_TLSV1_1;
+        static const std::string CFG_REQUIRE_TLSV1_2;
+        static const std::string CFG_DISABLE_PROTOCOLS;
+        static const std::string CFG_DH_PARAMS_FILE;
+        static const std::string CFG_ECDH_CURVE;
 
     protected:
         static int verifyClientCallback(int ok, X509_STORE_CTX * pStore);
@@ -314,39 +349,7 @@ namespace Net
         InvalidCertificateHandlerPtr _ptrClientCertificateHandler;
         Poco::FastMutex _mutex;
 
-        static const std::string CFG_PRIV_KEY_FILE;
-        static const std::string CFG_CERTIFICATE_FILE;
-        static const std::string CFG_CA_LOCATION;
-        static const std::string CFG_VER_MODE;
-        static const Context::VerificationMode VAL_VER_MODE;
-        static const std::string CFG_VER_DEPTH;
-        static const int VAL_VER_DEPTH;
-        static const std::string CFG_ENABLE_DEFAULT_CA;
-        static const bool VAL_ENABLE_DEFAULT_CA;
-        static const std::string CFG_CIPHER_LIST;
-        static const std::string CFG_CYPHER_LIST; // for backwards compatibility
-        static const std::string VAL_CIPHER_LIST;
-        static const std::string CFG_PREFER_SERVER_CIPHERS;
-        static const std::string CFG_DELEGATE_HANDLER;
-        static const std::string VAL_DELEGATE_HANDLER;
-        static const std::string CFG_CERTIFICATE_HANDLER;
-        static const std::string VAL_CERTIFICATE_HANDLER;
-        static const std::string CFG_CACHE_SESSIONS;
-        static const std::string CFG_SESSION_ID_CONTEXT;
-        static const std::string CFG_SESSION_CACHE_SIZE;
-        static const std::string CFG_SESSION_TIMEOUT;
-        static const std::string CFG_EXTENDED_VERIFICATION;
-        static const std::string CFG_REQUIRE_TLSV1;
-        static const std::string CFG_REQUIRE_TLSV1_1;
-        static const std::string CFG_REQUIRE_TLSV1_2;
-        static const std::string CFG_DISABLE_PROTOCOLS;
-        static const std::string CFG_DH_PARAMS_FILE;
-        static const std::string CFG_ECDH_CURVE;
-
-#ifdef OPENSSL_FIPS
-        static const std::string CFG_FIPS_MODE;
-        static const bool VAL_FIPS_MODE;
-#endif
+        std::unordered_map<std::string, Context::Ptr> _mapPtrServerContexts;
 
         friend class Poco::SingletonHolder<SSLManager>;
         friend class Context;

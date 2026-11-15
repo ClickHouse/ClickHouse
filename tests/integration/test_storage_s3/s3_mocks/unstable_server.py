@@ -1,8 +1,6 @@
 import http.server
 import random
 import re
-import socket
-import struct
 import sys
 import time
 
@@ -99,11 +97,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     # self.wfile._sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 0, 0))
                     # self.wfile._sock.shutdown(socket.SHUT_RDWR)
                     # self.wfile._sock.close()
-                    print("Dropping connection")
+                    self.log_message("Dropping connection %s", self.path)
                     break
 
         if self.path == "/root/slow_send_test.csv":
-            self.send_block_size = 81920
+            # Stream the whole dataset with a 1s stall after each block so the
+            # slow-GET path is still exercised. A 1 MiB block keeps the number
+            # of stalls (~17 for the full file) low enough to bound test time.
+            self.send_block_size = 1024 * 1024
 
             for c, i in enumerate(
                 range(self.from_bytes, self.end_bytes, self.send_block_size)
@@ -118,5 +119,5 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
 
 
-httpd = http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+httpd = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
 httpd.serve_forever()

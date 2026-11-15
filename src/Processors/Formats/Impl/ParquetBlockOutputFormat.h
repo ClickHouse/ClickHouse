@@ -3,39 +3,31 @@
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
-
-namespace arrow
-{
-class Array;
-class DataType;
-}
-
-namespace parquet
-{
-namespace arrow
-{
-    class FileWriter;
-}
-}
 
 namespace DB
 {
 
-class CHColumnToArrowColumn;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
-class ParquetBlockOutputFormat : public IOutputFormat
+class ParquetBlockOutputFormat final : public IOutputFormat
 {
 public:
-    ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_);
     ~ParquetBlockOutputFormat() override;
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
-    String getContentType() const override { return "application/octet-stream"; }
+    UnorderedMapWithMemoryTracking<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+    VectorWithMemoryTracking<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
 private:
     struct MemoryToken
@@ -48,10 +40,10 @@ private:
             set(b);
         }
 
-        MemoryToken(MemoryToken && t)
+        MemoryToken(MemoryToken && t) /// NOLINT
           : parent(std::exchange(t.parent, nullptr)), bytes(std::exchange(t.bytes, 0)) {}
 
-        MemoryToken & operator=(MemoryToken && t)
+        MemoryToken & operator=(MemoryToken && t) /// NOLINT
         {
             parent = std::exchange(t.parent, nullptr);
             bytes = std::exchange(t.bytes, 0);
@@ -79,13 +71,13 @@ private:
 
         MemoryToken mem;
 
-        ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
+        explicit ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
     };
 
     struct RowGroupState
     {
         size_t tasks_in_flight = 0;
-        std::vector<std::vector<ColumnChunk>> column_chunks;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnChunk>> column_chunks;
         size_t num_rows = 0;
     };
 
@@ -101,7 +93,7 @@ private:
         /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
-        std::vector<ColumnPtr> column_pieces;
+        Columns column_pieces;
 
         Parquet::ColumnChunkWriteState state;
 
@@ -111,16 +103,17 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
-    void writeRowGroup(std::vector<Chunk> chunks);
-    void writeUsingArrow(std::vector<Chunk> chunks);
+    void writeRowGroup(Chunks chunks);
     void writeRowGroupInOneThread(Chunk chunk);
-    void writeRowGroupInParallel(std::vector<Chunk> chunks);
+    void writeRowGroupInParallel(Chunks chunks);
 
-    void threadFunction();
+    void threadFunction(ThreadGroupPtr & thread_group);
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
+    void stopThreads();
 
     /// Called in single-threaded fashion. Writes to the file.
     void reapCompletedRowGroups(std::unique_lock<std::mutex> & lock);
@@ -128,32 +121,35 @@ private:
     const FormatSettings format_settings;
 
     /// Chunks to squash together to form a row group.
-    std::vector<Chunk> staging_chunks;
+    Chunks staging_chunks;
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
 
-    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
-    std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
-
     Parquet::WriteOptions options;
+    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
+    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
-    std::vector<parquet::format::RowGroup> row_groups_complete;
-    size_t base_offset = 0;
-
+    Parquet::FileWriteState file_state;
+    UnorderedMapWithMemoryTracking<String, size_t> column_sizes_on_disk;
+    VectorWithMemoryTracking<UInt64> row_group_offsets;
+    size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
-    std::condition_variable condvar; // wakes up consume()
-    std::unique_ptr<ThreadPool> pool;
+    std::condition_variable condvar; // wakes up consume() and stopThreads()
+    /// Shared by all Parquet writers of the process (`getParquetEncoderThreadPool`).
+    ThreadPool * pool = nullptr;
 
     std::atomic_bool is_stopped{false};
     std::exception_ptr background_exception = nullptr;
 
     /// Invariant: if there's at least one task then there's at least one thread.
+    /// Counts the jobs scheduled on `pool` until they exit, queued ones included.
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 
-    std::deque<Task> task_queue;
-    std::deque<RowGroupState> row_groups;
+    DequeWithMemoryTracking<Task> task_queue;
+    DequeWithMemoryTracking<RowGroupState> row_groups;
+    FormatFilterInfoPtr format_filter_info;
 };
 
 }

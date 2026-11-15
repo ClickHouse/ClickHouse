@@ -1,10 +1,16 @@
 #include <Planner/PlannerSorting.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/Settings.h>
+
+#include <Common/FieldAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Formats/FormatFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/SortNode.h>
@@ -13,6 +19,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
+}
 
 namespace ErrorCodes
 {
@@ -36,7 +47,7 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
     return result;
 }
 
-std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
+std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKind(const QueryTreeNodePtr & node)
 {
     const auto & constant_node = node->as<ConstantNode &>();
 
@@ -50,7 +61,29 @@ std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const Que
     return {constant_node.getValue(), {}};
 }
 
-FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
+/// `FillingTransform` turns a numeric `FROM` / `TO` bound of a `DateTime64` sort key (a number of seconds) into the
+/// ticks of a plain `Decimal64`, which knows nothing of the calendar window, and then writes the filled values into the
+/// `DateTime64` column. A `Date` / `Date32` bound is worse off: its raw day number would be taken as a number of seconds.
+/// Convert such a bound here, where the query settings are known, as the value it materializes: the same
+/// `date_time_overflow_behavior` outcome as `CAST` gives for the same constant (see `dateTime64OutOfWindow`).
+/// A `DateTime64` bound of another scale is converted too: widening a coarser bound (a scale-0 value in the year 2299
+/// on a `DateTime64(9)` key) can leave the window of the sort key, and `FillingTransform` requires the same type anyway.
+/// The bound then carries the type of the sort key, which `FillingTransform` accepts as is.
+void convertDateTime64FillBound(Field & value, DataTypePtr & value_type, const DataTypePtr & sort_key_type, const FormatSettings & format_settings)
+{
+    if (value.isNull() || !value_type)
+        return;
+
+    const bool date_time64_of_other_type = isDateTime64(value_type) && !value_type->equals(*sort_key_type);
+    if (!date_time64_of_other_type
+        && !isNumber(value_type) && !isDecimal(value_type) && !isDateOrDate32(value_type) && !isDateTime(value_type))
+        return;
+
+    value = convertFieldToTypeOrThrow(value, *sort_key_type, value_type.get(), format_settings, /*convert_inexact_floats=*/true);
+    value_type = sort_key_type;
+}
+
+FillColumnDescription extractWithFillDescription(const SortNode & sort_node, const ContextPtr & context)
 {
     FillColumnDescription fill_column_description;
 
@@ -70,7 +103,7 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     if (sort_node.hasFillStep())
     {
-        auto extract_result = extractWithFillStepValue(sort_node.getFillStep());
+        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStep());
         fill_column_description.fill_step = std::move(extract_result.first);
         fill_column_description.step_kind = std::move(extract_result.second);
     }
@@ -80,36 +113,24 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         fill_column_description.fill_step = Field(direction_value);
     }
 
-    if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
-        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-            "WITH FILL STEP value cannot be zero");
-
-    if (sort_node.getSortDirection() == SortDirection::ASCENDING)
+    if (sort_node.getFillStaleness())
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_step, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STEP value cannot be negative for sorting in ascending direction");
-
-        if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_to, fill_column_description.fill_from))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
-        }
+        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStaleness());
+        fill_column_description.fill_staleness = std::move(extract_result.first);
+        fill_column_description.staleness_kind = std::move(extract_result.second);
     }
-    else
+
+    const auto sort_key_type = removeNullable(sort_node.getExpression()->getResultType());
+    if (isDateTime64(sort_key_type))
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_step))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STEP value cannot be positive for sorting in descending direction");
-
-        if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_from, fill_column_description.fill_to))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
-        }
+        const auto format_settings = getFormatSettings(context);
+        convertDateTime64FillBound(fill_column_description.fill_from, fill_column_description.fill_from_type, sort_key_type, format_settings);
+        convertDateTime64FillBound(fill_column_description.fill_to, fill_column_description.fill_to_type, sort_key_type, format_settings);
     }
+
+    if (const auto reason = checkFillDescription(fill_column_description, sort_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
+        !reason.empty())
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "{}", reason);
 
     return fill_column_description;
 }
@@ -138,18 +159,24 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
 
         if (sort_node_typed.withFill())
         {
-            FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed, planner_context.getQueryContext());
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
         }
         else
         {
-            sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            if (sort_node_typed.getColumnName().empty())
+                sort_column_description.emplace_back(column_name, direction, nulls_direction, collator);
+            else
+                sort_column_description.emplace_back(sort_node_typed.getColumnName(), column_name, direction, nulls_direction, collator);
         }
     }
 
     const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-    sort_column_description.compile_sort_description = settings.compile_sort_description;
-    sort_column_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+    sort_column_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_column_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
 
     return sort_column_description;
 }

@@ -1,17 +1,16 @@
 #pragma once
 
 #include <cstddef>
-#include <deque>
-#include <set>
-
-#include <fmt/core.h>
+#include <Common/DevectorWithMemoryTracking.h>
+#include <Processors/Chunk.h>
 #include <fmt/format.h>
-
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 
 /** A pair of marks that defines the range of rows in a part. Specifically,
@@ -23,7 +22,7 @@ struct MarkRange
     size_t end;
 
     MarkRange() = default;
-    MarkRange(const size_t begin_, const size_t end_) : begin{begin_}, end{end_} {}
+    MarkRange(size_t begin_, size_t end_);
 
     size_t getNumberOfMarks() const;
 
@@ -31,16 +30,28 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public std::deque<MarkRange>
+struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
 {
-    using std::deque<MarkRange>::deque;
+    enum class SearchAlgorithm : uint8_t
+    {
+        Unknown,
+        BinarySearch,
+        GenericExclusionSearch,
+    };
+
+    using DevectorWithMemoryTracking<MarkRange>::devector;
 
     size_t getNumberOfMarks() const;
+    bool isOneRangeForWholePart(size_t num_marks_in_part) const;
 
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
+
+    SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
+
+using MarkRangesPtr = std::shared_ptr<const MarkRanges>;
 
 /** Get max range.end from ranges.
  */
@@ -50,8 +61,39 @@ std::string toString(const MarkRanges & ranges);
 
 void assertSortedAndNonIntersecting(const MarkRanges & ranges);
 
-}
+/// Lineage information: from which table, part and mark range does the chunk come from?
+/// This information is needed by the query condition cache.
+class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
+{
+public:
+    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_);
+    void appendMarkRanges(const MarkRanges & mark_ranges_);
 
+    UUID table_uuid;
+    String part_name;
+    size_t marks_count;
+    bool has_final_mark;
+    MarkRanges mark_ranges;
+
+    /// True if a transform between the reading step and the consumer of this info dropped rows
+    /// from the chunk (e.g. `FilterSortedStreamByRange` which drops the other layers' rows when
+    /// a read is split into layers for FINAL or for join-by-PK-ranges).
+    bool has_dropped_rows = false;
+
+    /// If not zero, the chunk holds all rows of `mark_ranges` in order, and every mark has this number
+    /// of rows (except the last mark of the part, which can have fewer). Then the query condition cache
+    /// can record the marks without matches of a chunk that is filtered only partially (`FilterTransform`).
+    size_t rows_per_mark = 0;
+};
+
+using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
+
+struct MarkRangeHash
+{
+    size_t operator()(const MarkRange & range) const;
+};
+
+}
 
 template <>
 struct fmt::formatter<DB::MarkRange>
@@ -69,7 +111,7 @@ struct fmt::formatter<DB::MarkRange>
     }
 
     template <typename FormatContext>
-    auto format(const DB::MarkRange & range, FormatContext & ctx)
+    auto format(const DB::MarkRange & range, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
     }

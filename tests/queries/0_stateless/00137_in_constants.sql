@@ -13,6 +13,7 @@ SELECT 'Hello' IN (SELECT 'Hello');
 SELECT materialize('Hello') IN (SELECT 'Hello');
 SELECT 'Hello' IN (SELECT materialize('Hello'));
 SELECT materialize('Hello') IN (SELECT materialize('Hello'));
+SELECT toDate('2020-01-01') IN (toDateTime('2020-01-01', 'UTC'));
 
 SELECT 2 IN (SELECT 1);
 SELECT materialize(2) IN (SELECT 1);

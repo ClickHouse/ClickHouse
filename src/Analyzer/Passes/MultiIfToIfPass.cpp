@@ -2,10 +2,20 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/if.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsBool optimize_multiif_to_if;
+    extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
+}
 
 namespace
 {
@@ -23,7 +33,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_multiif_to_if)
+        if (!getSettings()[Setting::optimize_multiif_to_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -34,7 +44,8 @@ public:
             return;
 
         auto if_function_value = if_function_ptr->build(function_node->getArgumentColumns());
-        if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
+        /// A `group_by_use_nulls` copy of a `GROUP BY` key is the key made `Nullable`; `resolveAsFunction` keeps it `Nullable`.
+        if (!if_function_value->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
         {
             /** We faced some corner case, when result type of `if` and `multiIf` are different.
               * For example, currently `if(NULL`, a, b)` returns type of `a` column,
@@ -52,9 +63,17 @@ private:
 
 }
 
-void MultiIfToIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    auto if_function_ptr = FunctionFactory::instance().get("if", context);
+    const auto & settings = context->getSettingsRef();
+    /// Mirror FunctionIf::create so the rewritten `if` reproduces the exact result type of a real
+    /// `if`. Otherwise, with `optimize_if_transform_const_strings_to_lowcardinality` enabled, the
+    /// `multiIf` returns `LowCardinality(String)` while a flag-less `if` returns `String`, the
+    /// type-equality guard below fails, and the `multiIf` is never rewritten.
+    const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+        && !settings[Setting::optimize_if_transform_strings_to_enum];
+    auto if_function_ptr = createInternalFunctionIfOverloadResolver(
+        settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype], use_low_cardinality_optimisation);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

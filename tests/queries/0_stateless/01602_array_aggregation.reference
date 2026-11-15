@@ -2,6 +2,10 @@ Array min 	1
 Array max 	6
 Array sum 	21
 Array avg 	3.5
+Array min :
+[1]
+Array max :
+[3]
 Table array int min
 1
 0

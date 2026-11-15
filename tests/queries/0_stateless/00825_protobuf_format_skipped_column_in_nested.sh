@@ -11,7 +11,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS table_skipped_column_in_nested_00825;
 
 CREATE TABLE table_skipped_column_in_nested_00825 (

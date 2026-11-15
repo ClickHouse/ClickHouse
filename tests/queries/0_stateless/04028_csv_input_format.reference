@@ -1,0 +1,12 @@
+0	10	aaa	yyy
+1	20	bbb	zzz
+0	10	aaa	yyy
+1	20	bbb	zzz
+0	aaa
+1	bbb
+0	10	aaa	yyy	0
+1	20	bbb	zzz	0
+0	10	aaa	yyy	0
+1	20	bbb	zzz	0
+0	aaa	0
+1	bbb	0

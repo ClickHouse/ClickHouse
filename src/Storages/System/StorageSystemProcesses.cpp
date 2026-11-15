@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -8,10 +9,13 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/typeid_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+
+#include <Poco/Net/SocketAddress.h>
 
 
 namespace DB
@@ -19,37 +23,40 @@ namespace DB
 
 ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     auto description = ColumnsDescription
     {
-        {"is_initial_query", std::make_shared<DataTypeUInt8>()},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
 
         {"user", std::make_shared<DataTypeString>(), "The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the default user. The field contains the username for a specific query, not for a query that this query initiated."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID, if defined."},
-        {"address", DataTypeFactory::instance().get("IPv6"), "The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at system.processes on the query requestor server."},
-        {"port", std::make_shared<DataTypeUInt16>()},
+        {"address", DataTypeFactory::instance().get("IPv6"), "The IP address the query was made from. The same for distributed processing. To track where a distributed query was originally made from, look at system.processes on the query requestor server."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The client port the query was made from."},
 
-        {"initial_user", std::make_shared<DataTypeString>()},
-        {"initial_query_id", std::make_shared<DataTypeString>()},
-        {"initial_address", DataTypeFactory::instance().get("IPv6")},
-        {"initial_port", std::make_shared<DataTypeUInt16>()},
+        {"initial_user", std::make_shared<DataTypeString>(), "Name of the user who ran the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
+        {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
 
-        {"interface", std::make_shared<DataTypeUInt8>()},
+        {"interface", getReportedClientInterfaceEnum(), "The interface which was used to send the query, as reported by the client. `Unknown` if the reported interface is not one this server recognizes."},
 
-        {"os_user", std::make_shared<DataTypeString>()},
-        {"client_hostname", std::make_shared<DataTypeString>()},
-        {"client_name", std::make_shared<DataTypeString>()},
-        {"client_revision", std::make_shared<DataTypeUInt64>()},
-        {"client_version_major", std::make_shared<DataTypeUInt64>()},
-        {"client_version_minor", std::make_shared<DataTypeUInt64>()},
-        {"client_version_patch", std::make_shared<DataTypeUInt64>()},
+        {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
+        {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
+        {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
+        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
+        {"client_revision", std::make_shared<DataTypeUInt64>(), "Revision of the clickhouse-client or another TCP client."},
+        {"client_version_major", std::make_shared<DataTypeUInt64>(), "Major version of the clickhouse-client or another TCP client."},
+        {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
+        {"client_version_patch", std::make_shared<DataTypeUInt64>(), "Patch component of the clickhouse-client or another TCP client version."},
 
-        {"http_method", std::make_shared<DataTypeUInt8>()},
-        {"http_user_agent", std::make_shared<DataTypeString>()},
-        {"http_referer", std::make_shared<DataTypeString>()},
-        {"forwarded_for", std::make_shared<DataTypeString>()},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
+        {"http_user_agent", std::make_shared<DataTypeString>(), "HTTP header UserAgent passed in the HTTP query."},
+        {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
+        {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
 
-        {"quota_key", std::make_shared<DataTypeString>()},
-        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
+        {"quota_key", std::make_shared<DataTypeString>(), "The quota key specified in the quotas setting (see keyed)."},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>(), "The number of times query was retransmitted between server nodes internally."},
 
         {"elapsed", std::make_shared<DataTypeFloat64>(), "The time in seconds since request execution started."},
         {"is_cancelled", std::make_shared<DataTypeUInt8>(), "Was query cancelled."},
@@ -57,18 +64,23 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"read_rows", std::make_shared<DataTypeUInt64>(), "The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers."},
         {"total_rows_approx", std::make_shared<DataTypeUInt64>(), "The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known."},
-        {"written_rows", std::make_shared<DataTypeUInt64>()},
-        {"written_bytes", std::make_shared<DataTypeUInt64>()},
+        {"written_rows", std::make_shared<DataTypeUInt64>(), "The amount of rows written to the storage."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "The amount of bytes written to the storage."},
         {"memory_usage", std::make_shared<DataTypeInt64>(), "Amount of RAM the query uses. It might not include some types of dedicated memory"},
-        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The current peak of memory usage."},
+        {"spillable_memory_bytes", std::make_shared<DataTypeInt64>(), "The current spillable memory."},
         {"query", std::make_shared<DataTypeString>(), "The query text. For INSERT, it does not include the data to insert."},
-        {"query_kind", std::make_shared<DataTypeString>()},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
+        {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
 
-        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
+        {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string), "The list of modified user-level settings."},
 
-        {"current_database", std::make_shared<DataTypeString>()},
+        {"current_database", std::make_shared<DataTypeString>(), "The name of the current database."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 
     description.setAliases({
@@ -81,9 +93,10 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
     return description;
 }
 
-void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
+    const bool show_secrets = canDisplaySecrets(context);
 
     for (const auto & process : info)
     {
@@ -93,25 +106,26 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 
         res_columns[i++]->insert(process.client_info.current_user);
         res_columns[i++]->insert(process.client_info.current_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.current_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.current_address->port());
 
         res_columns[i++]->insert(process.client_info.initial_user);
         res_columns[i++]->insert(process.client_info.initial_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.initial_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.initial_address->port());
 
-        res_columns[i++]->insert(UInt64(process.client_info.interface));
+        res_columns[i++]->insert(reportedClientInterfaceEnumValue(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
-        res_columns[i++]->insert(process.client_info.client_hostname);
+        res_columns[i++]->insert(process.client_info.getClientHostName());
         res_columns[i++]->insert(process.client_info.client_name);
+        res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
         res_columns[i++]->insert(process.client_info.client_version_patch);
 
-        res_columns[i++]->insert(UInt64(process.client_info.http_method));
+        res_columns[i++]->insert(reportedClientHTTPMethodEnumValue(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
         res_columns[i++]->insert(process.client_info.http_referer);
         res_columns[i++]->insert(process.client_info.forwarded_for);
@@ -129,7 +143,9 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.written_bytes);
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
+        res_columns[i++]->insert(process.spillable_memory_bytes);
         res_columns[i++]->insert(process.query);
+        res_columns[i++]->insert(process.normalized_query_hash);
         res_columns[i++]->insert(magic_enum::enum_name(process.query_kind));
 
         {
@@ -139,6 +155,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
                 threads_array.emplace_back(thread_id);
             res_columns[i++]->insert(threads_array);
         }
+
+        res_columns[i++]->insert(process.peak_threads_usage);
 
         {
             IColumn * column = res_columns[i++].get();
@@ -155,7 +173,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToMapColumn(column, true);
+                process.query_settings->dumpToMapColumn(column, true, show_secrets);
             else
             {
                 column->insertDefault();
@@ -163,7 +181,11 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         res_columns[i++]->insert(process.current_database);
+        res_columns[i++]->insert(process.is_internal);
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProcesses) }

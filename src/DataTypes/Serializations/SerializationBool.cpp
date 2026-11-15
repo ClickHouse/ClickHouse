@@ -1,3 +1,5 @@
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -19,6 +21,14 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BOOL;
 }
 
+UInt128 SerializationBool::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Bool");
+    hash.update(nested_->getHash());
+    return hash.get128();
+}
+
 namespace
 {
 
@@ -28,7 +38,7 @@ constexpr char str_false[6] = "false";
 const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 {
     const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only serialize columns of type UInt8.{}", column.getName());
     return col;
 }
@@ -36,7 +46,7 @@ const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
     auto * col =  typeid_cast<ColumnUInt8 *>(&column);
-    if (!checkAndGetColumn<ColumnUInt8>(&column))
+    if (!col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only deserialize columns of type UInt8.{}",
                         column.getName());
     return col;
@@ -189,17 +199,17 @@ ReturnType deserializeImpl(
     }
 
     buf.rollbackToCheckpoint();
-    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
+    if (settings.allow_special_bool_values && tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
         {
+            restore_column_if_needed();
             if constexpr (throw_exception)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BOOL,
                     "Cannot continue parsing after parsed bool value because it will result in the loss of some data. It may happen if "
                     "bool_true_representation or bool_false_representation contains some delimiters of input format");
-            restore_column_if_needed();
             return ReturnType(false);
         }
         return ReturnType(true);
@@ -222,10 +232,24 @@ ReturnType deserializeImpl(
 
 }
 
+void SerializationBool::deserializeBinary(DB::Field & field, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    nested_serialization->deserializeBinary(field, istr, settings);
+    if (!settings.binary.read_bool_field_as_int)
+        field = bool(field.safeGet<bool>());
+}
 
 SerializationBool::SerializationBool(const SerializationPtr &nested_)
         : SerializationWrapper(nested_)
 {
+}
+
+void SerializationBool::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// Hive's LazySimpleSerDe boolean parser only accepts the fixed words `true`/`false`, so write them
+    /// unconditionally rather than delegating to serializeCustom, which honors bool_true_representation /
+    /// bool_false_representation and could emit tokens Hive reads as null/invalid.
+    serializeSimple(column, row_num, ostr, settings);
 }
 
 void SerializationBool::serializeText(const IColumn & column, size_t row_num, WriteBuffer &ostr, const FormatSettings & settings) const
@@ -242,8 +266,10 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
-
-    deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
+    if (settings.tsv.crlf_end_of_line_input)
+        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || *buf.position() == '\r'; });
+    else
+        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
 
 bool SerializationBool::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -259,7 +285,12 @@ void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num,
     serializeSimple(column, row_num, ostr, settings);
 }
 
-void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
+void SerializationBool::serializeTextJSONPretty(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings, size_t) const
+{
+    serializeSimple(column, row_num, ostr, settings);
+}
+
+void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings & settings) const
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
@@ -270,7 +301,10 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
     char first_char = *istr.position();
     if (first_char == 't' || first_char == 'f')
         readBoolTextWord(value, istr);
-    else if (first_char == '1' || first_char == '0')
+    /// Numeric 1/0 is only accepted when special bool values are allowed, mirroring the text/CSV
+    /// paths. This keeps Variant/Dynamic JSON inference (which disables special bool values) from
+    /// greedily reading 1/0 as Bool instead of a wider integer type.
+    else if ((first_char == '1' || first_char == '0') && settings.allow_special_bool_values)
         readBoolText(value, istr);
     else
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL,
@@ -279,7 +313,7 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
     col->insert(value);
 }
 
-bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings &) const
+bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     if (istr.eof())
         return false;
@@ -292,7 +326,7 @@ bool SerializationBool::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuf
         if (!readBoolTextWord<bool>(value, istr))
             return false;
     }
-    else if (first_char == '1' || first_char == '0')
+    else if ((first_char == '1' || first_char == '0') && settings.allow_special_bool_values)
     {
         /// Doesn't throw.
         readBoolText(value, istr);
@@ -385,9 +419,13 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
             col->insert(false);
             break;
         case '1':
+            /// Advance the position like every other branch, otherwise the container reader
+            /// re-reads the same digit and fails with CANNOT_READ_ARRAY_FROM_TEXT.
+            ++istr.position();
             col->insert(true);
             break;
         case '0':
+            ++istr.position();
             col->insert(false);
             break;
         case '\'':
@@ -416,6 +454,13 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     }
 
     return ReturnType(true);
+}
+
+SerializationPtr SerializationBool::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationBool(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationBool(nested_); });
 }
 
 void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

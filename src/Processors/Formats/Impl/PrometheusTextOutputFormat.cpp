@@ -12,7 +12,11 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
+#include <Core/Field.h>
+
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,6 +30,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {
@@ -35,18 +41,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 constexpr auto FORMAT_NAME = "Prometheus";
 
-static bool isDataTypeMapString(const DataTypePtr & type)
+bool isDataTypeMapString(const DataTypePtr & in_type, bool optional)
 {
+    const auto & type = optional ? removeNullable(in_type) : in_type;
     if (!isMap(type))
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
-    return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+    return isStringOrFixedString(removeLowCardinality(type_map->getKeyType()))
+        && isStringOrFixedString(removeLowCardinality(type_map->getValueType()));
 }
 
-template <typename ResType, typename Pred>
-static void getColumnPos(const Block & header, const String & col_name, Pred pred, ResType & res)
+bool isAcceptableString(const DataTypePtr & type, bool optional)
+{
+    const auto& t1 = removeLowCardinality(type);
+    const auto& t2 = optional ? removeNullable(t1) : t1;
+    return isStringOrFixedString(t2);
+}
+
+template <typename Pred, typename ResType>
+void getColumnPos(const Block & header, const String & col_name, Pred&& pred, ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -56,7 +74,7 @@ static void getColumnPos(const Block & header, const String & col_name, Pred pre
     {
         res = header.getPositionByName(col_name);
         const auto & col = header.getByName(col_name);
-        if (!pred(is_optional ? removeNullable(col.type) : col.type))
+        if (!pred(col.type, is_optional))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal type '{}' of column '{}' for output format '{}'",
                 col.type->getName(), col_name, FORMAT_NAME);
@@ -71,17 +89,19 @@ static void getColumnPos(const Block & header, const String & col_name, Pred pre
     }
 }
 
-static Float64 tryParseFloat(const String & s)
+Float64 tryParseFloat(const String & s)
 {
     Float64 t = 0;
     ReadBufferFromString buf(s);
-    tryReadFloatText(t, buf);
+    tryReadFloatTextPrecise(t, buf);
     return t;
+}
+
 }
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
-    const Block & header_,
+    SharedHeader header_,
     const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
@@ -89,12 +109,17 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString<DataTypePtr>, pos.name);
-    getColumnPos(header, "value", isNumber<DataTypePtr>, pos.value);
+    auto is_number = [](const DataTypePtr & type, bool optional)
+    {
+        return isNumber(optional ? removeNullable(type) : type);
+    };
 
-    getColumnPos(header, "help", isStringOrFixedString<DataTypePtr>, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString<DataTypePtr>, pos.type);
-    getColumnPos(header, "timestamp", isNumber<DataTypePtr>, pos.timestamp);
+    getColumnPos(header, "name", isAcceptableString, pos.name);
+    getColumnPos(header, "value", is_number, pos.value);
+
+    getColumnPos(header, "help", isAcceptableString, pos.help);
+    getColumnPos(header, "type", isAcceptableString, pos.type);
+    getColumnPos(header, "timestamp", is_number, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
@@ -122,11 +147,11 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
@@ -280,10 +305,10 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
 {
     Field field;
     col_map->get(row_num, field);
-    const auto & map_field = field.get<Map>();
+    const auto & map_field = field.safeGet<Map>();
     for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_element.get<Tuple>();
+        const auto & map_entry = map_element.safeGet<Tuple>();
 
         String entry_key;
         String entry_value;
@@ -333,15 +358,102 @@ void PrometheusTextOutputFormat::finalizeImpl()
     flushCurrentMetric();
 }
 
+void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory)
 {
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
+
+    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
+    factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
+
+    factory.setDocumentation("Prometheus", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+Exposes metrics in the [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+
+For this format, it is a requirement for the output table to be structured correctly, by the following rules:
+
+- Columns `name` ([String](/reference/data-types/string)) and `value` (number) are required.
+- Rows may optionally contain `help` ([String](/reference/data-types/string)) and `timestamp` (number).
+- Column `type` ([String](/reference/data-types/string)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+- Each metric value may also have some `labels` ([Map(String, String)](/reference/data-types/map)).
+- Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+
+There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 
+Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, which are converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
+
+## Example usage {#example-usage}
+
+```yaml
+┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
+│ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.2'}                   │   100392 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.5'}                   │   129389 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'1'}                     │   133988 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'+Inf'}                  │   144320 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'sum':''}                     │    53423 │             0 │
+│ http_requests_total                 │ counter   │ Total number of HTTP requests             │ {'method':'post','code':'200'} │     1027 │ 1395066363000 │
+│ http_requests_total                 │ counter   │                                           │ {'method':'post','code':'400'} │        3 │ 1395066363000 │
+│ metric_without_timestamp_and_labels │           │                                           │ {}                             │    12.47 │             0 │
+│ rpc_duration_seconds                │ summary   │ A summary of the RPC duration in seconds. │ {'quantile':'0.01'}            │     3102 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.05'}            │     3272 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.5'}             │     4773 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.9'}             │     9001 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.99'}            │    76656 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'count':''}                   │     2693 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'sum':''}                     │ 17560473 │             0 │
+│ something_weird                     │           │                                           │ {'problem':'division by zero'} │      inf │      -3982045 │
+└─────────────────────────────────────┴───────────┴───────────────────────────────────────────┴────────────────────────────────┴──────────┴───────────────┘
+```
+
+Will be formatted as:
+
+```text
+# HELP http_request_duration_seconds A histogram of the request duration.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.05"} 24054
+http_request_duration_seconds_bucket{le="0.1"} 33444
+http_request_duration_seconds_bucket{le="0.5"} 129389
+http_request_duration_seconds_bucket{le="1"} 133988
+http_request_duration_seconds_bucket{le="+Inf"} 144320
+http_request_duration_seconds_sum 53423
+http_request_duration_seconds_count 144320
+
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{code="200",method="post"} 1027 1395066363000
+http_requests_total{code="400",method="post"} 3 1395066363000
+
+metric_without_timestamp_and_labels 12.47
+
+# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+rpc_duration_seconds{quantile="0.5"} 4773
+rpc_duration_seconds{quantile="0.9"} 9001
+rpc_duration_seconds{quantile="0.99"} 76656
+rpc_duration_seconds_sum 17560473
+rpc_duration_seconds_count 2693
+
+something_weird{problem="division by zero"} +Inf -3982045
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

@@ -1,11 +1,17 @@
 #include <base/sleep.h>
+#include <base/defines.h>
 
 #include <ctime>
 #include <cerrno>
+#include <system_error>
 
 #if defined(OS_DARWIN)
 #include <mach/mach.h>
 #include <mach/mach_time.h>
+#endif
+
+#if USE_SILK
+#include <silk/fibers/fiber.h>
 #endif
 
 /**
@@ -19,9 +25,16 @@
   */
 void sleepForNanoseconds(uint64_t nanoseconds)
 {
+#if USE_SILK
+    if (silk::FiberScheduler::getCurrentFiberId().raw != 0)
+    {
+        silk::FiberScheduler::sleep(nanoseconds);
+        return;
+    }
+#endif
 #if defined(OS_DARWIN)
     //https://developer.apple.com/library/archive/technotes/tn2169/_index.html
-    //https://dshil.github.io/blog/missed-os-x-clock-guide/
+    //https://web.archive.org/web/20240208082627/https://dshil.github.io/blog/missed-os-x-clock-guide/
     static mach_timebase_info_data_t timebase_info{};
     if (timebase_info.denom == 0)
         mach_timebase_info(&timebase_info);
@@ -30,11 +43,25 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     uint64_t now = mach_absolute_time();
 
     while (mach_wait_until(now + time_to_wait) != KERN_SUCCESS);
+#elif defined(THREAD_SANITIZER)
+    /// TSan intercepts nanosleep but NOT clock_nanosleep. When a function is intercepted,
+    /// TSan sets in_blocking_func which causes profiling signals (SI_TIMER) to be delivered
+    /// immediately rather than deferred. Without this, TSan defers the signal and delivers
+    /// it later when the ucontext_t's registers point to stale stack memory, producing
+    /// unusable stack traces in the query profiler.
+    /// The downside of nanosleep is that it uses relative timeouts, so repeated signal
+    /// interruptions can cause drift, but this is acceptable under sanitizers.
+    constexpr uint64_t resolution = 1'000'000'000;
+    struct timespec req;
+    req.tv_sec = static_cast<time_t>(nanoseconds / resolution);
+    req.tv_nsec = static_cast<long>(nanoseconds % resolution);
+    while (nanosleep(&req, &req) == -1 && errno == EINTR);
 #else
     constexpr auto clock_type = CLOCK_MONOTONIC;
 
-    struct timespec current_time;
-    clock_gettime(clock_type, &current_time);
+    struct timespec current_time{};
+    if (0 != clock_gettime(clock_type, &current_time))
+        throw std::system_error(std::error_code(errno, std::system_category()));
 
     constexpr uint64_t resolution = 1'000'000'000;
     struct timespec finish_time = current_time;

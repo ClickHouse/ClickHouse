@@ -10,13 +10,13 @@ namespace DB
 
 bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTDropIndexQuery>();
+    auto query = make_intrusive<ASTDropIndexQuery>();
     node = query;
 
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_on("ON");
-    ParserKeyword s_if_exists("IF EXISTS");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_on(Keyword::ON);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserIdentifier index_name_p;
 
     String cluster_str;

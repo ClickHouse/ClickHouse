@@ -1,0 +1,22 @@
+-- single-table conjunct above RIGHT JOIN
+0	0	0	2	2
+-- single-table conjunct above FULL JOIN
+0	0	0	2	2
+-- single-table conjunct above RIGHT JOIN, semi join below
+0	0	2	2
+-- two-table conjunct above RIGHT JOIN
+0	0	0	2	2
+-- single-table conjunct above RIGHT JOIN, join_use_nulls = 1
+\N	\N	\N	2	2
+-- constant false conjunct above RIGHT JOIN
+-- ON clause above RIGHT JOIN not referencing the joined table
+0	0	0	2	1
+0	0	0	2	2
+-- inner join step reading the padded side of a RIGHT JOIN
+1	1	7
+3	0	7
+4	0	7
+-- the same with a LEFT JOIN of a subquery
+1	1	7
+3	0	7
+4	0	7

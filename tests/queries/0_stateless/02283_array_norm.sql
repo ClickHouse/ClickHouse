@@ -34,13 +34,13 @@ SELECT id, L1Norm(materialize([5., 6.])) FROM vec1f;
 SELECT id, L1Norm(v), L2Norm(v), L2SquaredNorm(v), LpNorm(v, 2.7), LinfNorm(v) FROM vec1d;
 SELECT id, L1Norm(materialize([5., 6.])) FROM vec1d;
 
-SELECT L1Norm(1, 2); -- { serverError 42 }
+SELECT L1Norm(1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT LpNorm([1,2]); -- { serverError 42 }
-SELECT LpNorm([1,2], -3.4); -- { serverError 69 }
-SELECT LpNorm([1,2], 'aa'); -- { serverError 43 }
-SELECT LpNorm([1,2], [1]); -- { serverError 43 }
-SELECT LpNorm([1,2], materialize(3.14)); -- { serverError 44 }
+SELECT LpNorm([1,2]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT LpNorm([1,2], -3.4); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT LpNorm([1,2], 'aa'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT LpNorm([1,2], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT LpNorm([1,2], materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
 
 DROP TABLE vec1;
 DROP TABLE vec1f;

@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
@@ -36,7 +37,7 @@ ColumnsDescription StorageSystemSettingsProfiles::getColumnsDescription()
 }
 
 
-void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -70,12 +71,14 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, Conte
         auto apply_to_ast = apply_to.toASTWithNames(access_control);
         column_apply_to_all.push_back(apply_to_ast->all);
 
-        for (const auto & role_name : apply_to_ast->names)
-            column_apply_to_list.insertData(role_name.data(), role_name.length());
+        if (apply_to_ast->names)
+            for (const auto & role_name : apply_to_ast->names->toStrings())
+                column_apply_to_list.insertData(role_name.data(), role_name.length());
         column_apply_to_list_offsets.push_back(column_apply_to_list.size());
 
-        for (const auto & role_name : apply_to_ast->except_names)
-            column_apply_to_except.insertData(role_name.data(), role_name.length());
+        if (apply_to_ast->except_names)
+            for (const auto & role_name : apply_to_ast->except_names->toStrings())
+                column_apply_to_except.insertData(role_name.data(), role_name.length());
         column_apply_to_except_offsets.push_back(column_apply_to_except.size());
     };
 
@@ -101,10 +104,13 @@ void StorageSystemSettingsProfiles::backupData(
 }
 
 void StorageSystemSettingsProfiles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsProfiles) }

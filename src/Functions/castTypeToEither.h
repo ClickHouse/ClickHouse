@@ -15,7 +15,7 @@ static bool castTypeToEither(const T * type, F && f)
 template <class ...Args>
 static bool castTypeToEither(TypeList<Args...>, const auto * type, auto && f)
 {
-    return ((typeid_cast<const Args *>(type) != nullptr && std::forward<decltype(f)>(f)(*typeid_cast<const Args *>(type))) || ...);
+    return ((typeid_cast<const Args *>(type) != nullptr && f(*typeid_cast<const Args *>(type))) || ...);
 }
 
 }

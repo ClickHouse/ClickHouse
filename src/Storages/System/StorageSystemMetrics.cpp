@@ -1,4 +1,5 @@
-
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,7 +26,7 @@ ColumnsDescription StorageSystemMetrics::getColumnsDescription()
     return description;
 }
 
-void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
@@ -38,3 +39,6 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMetrics) }

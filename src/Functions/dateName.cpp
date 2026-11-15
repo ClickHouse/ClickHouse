@@ -15,12 +15,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <base/TypeList.h>
+
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
@@ -53,7 +53,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl : public IFunction
+class FunctionDateNameImpl final : public IFunction
 {
 public:
     static constexpr auto name = "dateName";
@@ -71,52 +71,29 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}",
-                getName(),
-                arguments.size());
+        return "(const String, DateOrDateTime, [const String]) -> String";
+    }
 
-        if (!WhichDataType(arguments[0].type).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1 argument of function {}. Must be string",
-                arguments[0].type->getName(),
-                getName());
-
-        WhichDataType first_argument_type(arguments[1].type);
-
-        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
-                arguments[1].type->getName(),
-                getName());
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 3 argument of function {}. Must be string",
-                arguments[2].type->getName(),
-                getName());
-
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
-        [[maybe_unused]] size_t input_rows_count) const override
+        size_t input_rows_count) const override
     {
         ColumnPtr res;
+        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
+        {
+            if (!res)
+                res = executeType<DataType>(arguments, result_type, input_rows_count);
+        });
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type))
-            || (res = executeType<DataTypeDate32>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+        if (!res)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",
@@ -127,7 +104,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[1].column.get());
         if (!times)
@@ -143,8 +120,8 @@ public:
 
         String date_part = date_part_column->getValue<String>();
 
-        const DateLUTImpl * time_zone_tmp;
-        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
+        const DateLUTImpl * time_zone_tmp = nullptr;
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else
             time_zone_tmp = &DateLUT::instance();
@@ -162,8 +139,8 @@ public:
         auto & result_column_data = result_column->getChars();
         auto & result_column_offsets = result_column->getOffsets();
 
-        /* longest possible word 'Wednesday' with zero terminator */
-        static constexpr size_t longest_word_length = 9 + 1;
+        /* longest possible word, 'Wednesday' */
+        static constexpr size_t longest_word_length = 9;
 
         result_column_data.resize_fill(times_data.size() * longest_word_length);
         result_column_offsets.resize(times_data.size());
@@ -175,7 +152,7 @@ public:
         using TimeType = DateTypeToTimeType<DataType>;
         callOnDatePartWriter<TimeType>(date_part, [&](const auto & writer)
         {
-            for (size_t i = 0; i < times_data.size(); ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
                 {
@@ -187,8 +164,6 @@ public:
                     writer.write(buffer, times_data[i], time_zone);
                 }
 
-                /// Null terminator
-                ++buffer.position();
                 result_column_offsets[i] = buffer.position() - begin;
             }
         });
@@ -214,7 +189,7 @@ private:
     template <typename Time>
     struct QuarterWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToQuarterImpl::execute(source, timezone), buffer);
         }
@@ -223,7 +198,7 @@ private:
     template <typename Time>
     struct MonthWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             const auto month = ToMonthImpl::execute(source, timezone);
             static constexpr std::string_view month_names[] =
@@ -249,7 +224,7 @@ private:
     template <typename Time>
     struct WeekWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToISOWeekImpl::execute(source, timezone), buffer);
         }
@@ -258,7 +233,7 @@ private:
     template <typename Time>
     struct DayOfYearWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToDayOfYearImpl::execute(source, timezone), buffer);
         }
@@ -267,7 +242,7 @@ private:
     template <typename Time>
     struct DayWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToDayOfMonthImpl::execute(source, timezone), buffer);
         }
@@ -276,7 +251,7 @@ private:
     template <typename Time>
     struct WeekDayWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             static constexpr std::string_view day_names[] =
@@ -297,7 +272,7 @@ private:
     template <typename Time>
     struct HourWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToHourImpl::execute(source, timezone), buffer);
         }
@@ -306,7 +281,7 @@ private:
     template <typename Time>
     struct MinuteWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToMinuteImpl::execute(source, timezone), buffer);
         }
@@ -315,7 +290,7 @@ private:
     template <typename Time>
     struct SecondWriter
     {
-        static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
+        static void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
             writeText(ToSecondImpl::execute(source, timezone), buffer);
         }
@@ -354,7 +329,49 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the specified part of the date.
+
+Possible values:
+- 'year'
+- 'quarter'
+- 'month'
+- 'week'
+- 'dayofyear'
+- 'day'
+- 'weekday'
+- 'hour'
+- 'minute'
+- 'second'
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+dateName(date_part, date[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"date_part", "The part of the date that you want to extract.", {"String"}},
+        {"datetime", "A date or date with time value.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the specified part of date.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Extract different date parts", R"(
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value)
+        )",
+        R"(
+┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
+│ 2021                         │ April                         │ 14                          │
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

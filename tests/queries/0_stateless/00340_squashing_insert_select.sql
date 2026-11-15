@@ -1,3 +1,5 @@
+-- Tags: log-engine
+
 DROP TABLE IF EXISTS numbers_squashed;
 CREATE TABLE numbers_squashed AS system.numbers ENGINE = StripeLog;
 
@@ -6,6 +8,8 @@ SET max_block_size = 10000;
 
 SET min_insert_block_size_rows = 1000000;
 SET min_insert_block_size_bytes = 0;
+
+set max_insert_threads = 1;
 
 INSERT INTO numbers_squashed SELECT * FROM system.numbers LIMIT 10000000;
 SELECT blockSize() AS b, count() / b AS c FROM numbers_squashed GROUP BY blockSize() ORDER BY c DESC;

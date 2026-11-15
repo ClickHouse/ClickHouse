@@ -1,1 +1,1 @@
-SELECT DISTINCT intDiv(number, nan) FROM numbers(10); -- { serverError 153 }
+SELECT DISTINCT intDiv(number, nan) FROM numbers(10); -- { serverError ILLEGAL_DIVISION }

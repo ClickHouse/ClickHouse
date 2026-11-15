@@ -12,7 +12,9 @@ INSERT INTO complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'va
 INSERT INTO complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
 INSERT INTO complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
-{% for dictionary_config in ['', 'SHARDS 16'] -%}
+INSERT INTO complex_key_simple_attributes_source_table SELECT number + 10 as id, concat('id_key_', toString(id)), toString(id), toString(id) FROM numbers_mt(1_000_000);
+
+{% for dictionary_config in ['', 'SHARDS 16 SHARD_LOAD_QUEUE_BACKLOG 2'] -%}
 
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_complex_key_simple_attributes;
 CREATE DICTIONARY hashed_array_dictionary_complex_key_simple_attributes
@@ -43,7 +45,7 @@ SELECT dictGetOrDefault('hashed_array_dictionary_complex_key_simple_attributes',
 SELECT 'dictHas';
 SELECT dictHas('hashed_array_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM hashed_array_dictionary_complex_key_simple_attributes ORDER BY (id, id_key);
+SELECT * FROM hashed_array_dictionary_complex_key_simple_attributes ORDER BY (id, id_key) LIMIT 3;
 
 DROP DICTIONARY hashed_array_dictionary_complex_key_simple_attributes;
 
@@ -64,8 +66,9 @@ ENGINE = TinyLog;
 INSERT INTO complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
 INSERT INTO complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
 INSERT INTO complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
+INSERT INTO complex_key_complex_attributes_source_table SELECT number + 10 as id, concat('id_key_', toString(id)), toString(id), toString(id) FROM numbers_mt(1_000_000);
 
-{% for dictionary_config in ['', 'SHARDS 16'] -%}
+{% for dictionary_config in ['', 'SHARDS 16 SHARD_LOAD_QUEUE_BACKLOG 2'] -%}
 
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_complex_key_complex_attributes;
 CREATE DICTIONARY hashed_array_dictionary_complex_key_complex_attributes
@@ -97,7 +100,7 @@ SELECT dictGetOrDefault('hashed_array_dictionary_complex_key_complex_attributes'
 SELECT 'dictHas';
 SELECT dictHas('hashed_array_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM hashed_array_dictionary_complex_key_complex_attributes ORDER BY (id, id_key);
+SELECT * FROM hashed_array_dictionary_complex_key_complex_attributes ORDER BY (id, id_key) LIMIT 3;
 
 {% endfor %}
 

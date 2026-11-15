@@ -3,13 +3,15 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
 class ASTKillQueryQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class Type
+    enum class Type : uint8_t
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
@@ -24,19 +26,22 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTKillQueryQuery>(*this);
+        auto clone = make_intrusive<ASTKillQueryQuery>(*this);
+        clone->children.clear();
+
         if (where_expression)
-        {
-            clone->where_expression = where_expression->clone();
-            clone->children = {clone->where_expression};
-        }
+            clone->set(clone->where_expression, where_expression->clone());
+
+        cloneOutputOptions(*clone);
 
         return clone;
     }
 
     String getID(char) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
     {

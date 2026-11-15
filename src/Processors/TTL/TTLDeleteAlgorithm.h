@@ -10,7 +10,7 @@ namespace DB
 class TTLDeleteAlgorithm final : public ITTLAlgorithm
 {
 public:
-    TTLDeleteAlgorithm(const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
+    TTLDeleteAlgorithm(const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;

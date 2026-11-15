@@ -1,0 +1,16 @@
+::nonexistentfile.csv
+1
+nonexistent::nonexistentfile.csv
+1
+nonexistent :: nonexistentfile.csv
+1
+nonexistent ::nonexistentfile.csv
+1
+nonexistent.tar.gz :: nonexistentfile.csv
+1
+nonexistent.zip:: nonexistentfile.csv
+1
+nonexistent.tar.gz :: nonexistentfile.csv SETTINGS allow_archive_path_syntax=0
+1
+nonexistent.zip:: nonexistentfile.csv SETTINGS allow_archive_path_syntax=0
+1

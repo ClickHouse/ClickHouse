@@ -1,73 +1,161 @@
+#include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Common/HiddenSecret.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+}
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_SLOW_PARSING;
+}
+
+/// The mutation entry keeps the real text of the command, because the mutation is executed from it
+/// (on every replica, for replicated tables). Hide the secrets on the way out instead, the way
+/// `system.distributed_ddl_queue` does. The command is formatted the same way as the stored text,
+/// so only the secrets differ from it.
+static String hideSecretsInCommand(const ContextPtr & context, const String & command)
+{
+    /// Nothing to parse, see `MutationCommand::ast`.
+    if (command.empty())
+        return command;
+
+    const auto & settings = context->getSettingsRef();
+    ParserAlterCommandList parser;
+    ASTPtr ast;
+    try
+    {
+        ast = parseQuery(parser, command, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
+    catch (const Exception & e)
+    {
+        /// The text may be unparseable on another server version, so hide the whole command instead of failing the table.
+        if (e.code() != ErrorCodes::SYNTAX_ERROR
+            && e.code() != ErrorCodes::TOO_DEEP_RECURSION
+            && e.code() != ErrorCodes::TOO_SLOW_PARSING)
+            throw;
+        return String(HIDDEN_SECRET);
+    }
+
+    return ast->formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
 
 
 ColumnsDescription StorageSystemMutations::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        { "database",                   std::make_shared<DataTypeString>(), "The name of the database to which the mutation was applied."},
-        { "table",                      std::make_shared<DataTypeString>(), "The name of the table to which the mutation was applied."},
-        { "mutation_id",                std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the <table_path_in_clickhouse_keeper>/mutations/ directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
-        { "command",                    std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
-        { "create_time",                std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
-        { "block_numbers.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
-        { "block_numbers.number",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
+        { "database",                      std::make_shared<DataTypeString>(), "The name of the database to which the mutation was applied."},
+        { "table",                         std::make_shared<DataTypeString>(), "The name of the table to which the mutation was applied."},
+        { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
+        { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
+        { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
+        { "finish_time",                   std::make_shared<DataTypeDateTime>(),
+            "Date and time when the mutation was completed. Zero if the mutation is not completed yet or if its completion time is unknown. "
+            "For non-replicated tables the value is tracked in memory and is reset when the table is reloaded (e.g. on server restart). "
+            "For replicated tables the value is per-replica; after a restart, the completion time of the most recently completed mutation "
+            "is restored from Keeper, while older completed mutations report zero."
+        },
+        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
+        { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
-        { "parts_to_do_names",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
-        { "parts_to_do",                std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
-        { "is_done",                    std::make_shared<DataTypeUInt8>(),
+        { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
+        { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
+        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
+        { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
+        { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
             "1 if the mutation is completed, "
             "0 if the mutation is still in process. "
         },
-        { "is_killed",                  std::make_shared<DataTypeUInt8>() },
-        { "latest_failed_part",         std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
-        { "latest_fail_time",           std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
-        { "latest_fail_reason",         std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
+        { "is_killed", std::make_shared<DataTypeUInt8>(),
+            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud. "
+            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized. "
+            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period. "
+            "This can occur if another long-running mutation is blocking the killed mutation. This is a normal situation."
+        },
+        { "latest_failed_part",           std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
+        { "latest_fail_time",             std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
+        { "latest_fail_reason",           std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
+        { "latest_fail_error_code_name",  std::make_shared<DataTypeString>(), "The error code of the exception that caused the most recent part mutation failure."},
     };
 }
 
+Block StorageSystemMutations::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
 
-void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+    const bool show_secrets = canDisplaySecrets(context);
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
+    /// from resolving every table of every database just to throw the rows away afterwards.
+    const auto database_name_filter = extractNameFilter(predicate, "database", context);
+    const auto table_name_filter = extractNameFilter(predicate, "table", context);
+
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (database_name_filter && !database_name_filter(db.first))
+            continue;
+
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        for (; iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
@@ -100,7 +188,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             { col_table, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;
@@ -117,6 +205,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
+            /// NOLINT(storage-cast): `merge_tree_tables` is filled with already resolved storages.
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
         }
@@ -137,24 +226,65 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             for (const String & part_name : status.parts_to_do_names)
                 parts_to_do_names.emplace_back(part_name);
 
-            size_t col_num = 0;
-            res_columns[col_num++]->insert(database);
-            res_columns[col_num++]->insert(table);
+            Array parts_in_progress_names;
+            parts_to_do_names.reserve(status.parts_in_progress_names.size());
+            for (const String & part_name : status.parts_in_progress_names)
+                parts_in_progress_names.emplace_back(part_name);
 
-            res_columns[col_num++]->insert(status.id);
-            res_columns[col_num++]->insert(status.command);
-            res_columns[col_num++]->insert(UInt64(status.create_time));
-            res_columns[col_num++]->insert(block_partition_ids);
-            res_columns[col_num++]->insert(block_numbers);
-            res_columns[col_num++]->insert(parts_to_do_names);
-            res_columns[col_num++]->insert(parts_to_do_names.size());
-            res_columns[col_num++]->insert(status.is_done);
-            res_columns[col_num++]->insert(status.is_killed);
-            res_columns[col_num++]->insert(status.latest_failed_part);
-            res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
-            res_columns[col_num++]->insert(status.latest_fail_reason);
+            Map parts_postpone_reasons_map;
+            parts_postpone_reasons_map.reserve(status.parts_postpone_reasons.size());
+            for (const auto & [part_name, reason] : status.parts_postpone_reasons)
+            {
+                Tuple key_value;
+                key_value.emplace_back(part_name);
+                key_value.emplace_back(reason);
+                parts_postpone_reasons_map.emplace_back(std::move(key_value));
+            }
+
+            size_t src_index = 0;
+            size_t res_index = 0;
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(database);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.id);
+            /// Parsing the command costs much more than everything else here, so it is done only when the column is queried.
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(show_secrets ? status.command : hideSecretsInCommand(context, status.command));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.create_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.finish_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(block_partition_ids);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(block_numbers);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_in_progress_names);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_to_do_names);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_to_do_names.size());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(parts_postpone_reasons_map);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.is_done);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.is_killed);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_failed_part);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(status.latest_fail_time));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_fail_reason);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.latest_fail_error_code_name);
         }
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMutations) }

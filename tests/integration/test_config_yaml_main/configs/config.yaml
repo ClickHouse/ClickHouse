@@ -21,7 +21,6 @@ grpc:
   compression_level: medium
   max_send_message_size: -1
   max_receive_message_size: -1
-  verbose_logs: false
 openSSL:
   server:
     certificateFile: /etc/clickhouse-server/server.crt
@@ -85,20 +84,17 @@ query_thread_log:
   table: query_thread_log
   partition_by: toYYYYMM(event_date)
   flush_interval_milliseconds: 7500
-metric_log:
-  database: system
-  table: metric_log
-  flush_interval_milliseconds: 7500
-  collect_interval_milliseconds: 1000
 asynchronous_metric_log:
   database: system
   table: asynchronous_metric_log
   flush_interval_milliseconds: 60000
+iceberg_metadata_log:
+  database: system
+  table: iceberg_metadata_log
+  flush_interval_milliseconds: 2000
 opentelemetry_span_log:
-  engine: |-
-    engine MergeTree
-                partition by toYYYYMM(finish_date)
-                order by (finish_date, finish_time_us, trace_id)
+  partition_by: toYYYYMM(event_date)
+  order_by: event_date, finish_time_us
   database: system
   table: opentelemetry_span_log
   flush_interval_milliseconds: 7500

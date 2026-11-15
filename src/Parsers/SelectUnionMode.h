@@ -1,13 +1,14 @@
 #pragma once
 
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 namespace DB
 {
-enum class SelectUnionMode
+enum class SelectUnionMode : uint8_t
 {
-    UNION_DEFAULT,
+    UNION_DEFAULT = 0,
     UNION_ALL,
     UNION_DISTINCT,
     EXCEPT_DEFAULT,
@@ -19,6 +20,7 @@ enum class SelectUnionMode
 };
 
 const char * toString(SelectUnionMode mode);
+SelectUnionMode parseSelectUnionMode(const std::string & str);
 
 using SelectUnionModes = std::vector<SelectUnionMode>;
 using SelectUnionModesSet = std::unordered_set<SelectUnionMode>;

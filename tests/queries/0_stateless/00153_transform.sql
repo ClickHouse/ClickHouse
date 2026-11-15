@@ -12,7 +12,7 @@ SELECT transform(1, [2, 3], ['Bigmir)net', 'Google'], 'Остальные') AS t
 SELECT transform(2, [2, 3], ['Bigmir)net', 'Google'], 'Остальные') AS title;
 SELECT transform(3, [2, 3], ['Bigmir)net', 'Google'], 'Остальные') AS title;
 SELECT transform(4, [2, 3], ['Bigmir)net', 'Google'], 'Остальные') AS title;
-SELECT transform('hello', 'wrong', 1); -- { serverError 43 }
-SELECT transform('hello', ['wrong'], 1); -- { serverError 43 }
-SELECT transform('hello', ['wrong'], [1]); -- { serverError 43 }
-SELECT transform(tuple(1), ['sdf'], [1]); -- { serverError 43 }
+SELECT transform('hello', 'wrong', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT transform('hello', ['wrong'], 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT transform('hello', ['wrong'], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT transform(tuple(1), ['sdf'], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

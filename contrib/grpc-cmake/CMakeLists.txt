@@ -6,11 +6,15 @@ if(NOT ENABLE_GRPC)
   return()
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+
 set(_gRPC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
 set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
 if(TARGET OpenSSL::SSL)
   set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
+
+  add_definitions(-DOPENSSL_NO_ENGINE)
 else()
   set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
 endif()
@@ -18,8 +22,12 @@ endif()
 include(grpc.cmake)
 include(protobuf_generate_grpc.cmake)
 
-set(gRPC_CPP_PLUGIN $<TARGET_FILE:grpc_cpp_plugin>)
-set(gRPC_PYTHON_PLUGIN $<TARGET_FILE:grpc_python_plugin>)
+if (OS_SUNOS)
+  # illumos declares FIONREAD in sys/filio.h rather than sys/ioctl.h.
+  foreach (target grpc grpc_unsecure)
+    target_compile_options(${target} PRIVATE "SHELL:-include sys/filio.h")
+  endforeach()
+endif()
 
 set(gRPC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/grpc/include")
 if(gRPC_USE_UNSECURE_LIBRARIES)

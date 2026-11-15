@@ -1,4 +1,6 @@
 #include <zlib.h>
+#include <lzma.h>
+#include <base/unaligned.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
@@ -10,7 +12,7 @@ namespace
 template <class T>
 struct CRCBase
 {
-    T tab[256];
+    T tab[8][256];
     explicit CRCBase(T polynomial)
     {
         for (size_t i = 0; i < 256; ++i)
@@ -18,8 +20,11 @@ struct CRCBase
             T c = static_cast<T>(i);
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
-            tab[i] = c;
+            tab[0][i] = c;
         }
+        for (size_t k = 1; k < 8; ++k)
+            for (size_t i = 0; i < 256; ++i)
+                tab[k][i] = (tab[k - 1][i] >> 8) ^ tab[0][tab[k - 1][i] & 0xff];
     }
 };
 
@@ -28,13 +33,29 @@ struct CRCImpl
 {
     using ReturnType = T;
 
-    static T makeCRC(const unsigned char *buf, size_t size)
+    static T makeCRC(const unsigned char *buf, size_t size, T crc = 0)
     {
         static CRCBase<ReturnType> base(polynomial);
 
-        T crc = 0;
-        for (size_t i = 0; i < size; ++i)
-            crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
+        while (size >= 8)
+        {
+            /// Low byte of n is the next input byte. A native load is big-endian on s390x.
+            UInt64 n = static_cast<UInt64>(crc) ^ unalignedLoadLittleEndian<UInt64>(buf);
+            crc = base.tab[7][n & 0xff]
+                ^ base.tab[6][(n >> 8) & 0xff]
+                ^ base.tab[5][(n >> 16) & 0xff]
+                ^ base.tab[4][(n >> 24) & 0xff]
+                ^ base.tab[3][(n >> 32) & 0xff]
+                ^ base.tab[2][(n >> 40) & 0xff]
+                ^ base.tab[1][(n >> 48) & 0xff]
+                ^ base.tab[0][(n >> 56) & 0xff];
+            buf += sizeof(UInt64);
+            size -= sizeof(UInt64);
+        }
+
+        while (size--)
+            crc = base.tab[0][(crc ^ *(buf++)) & 0xff] ^ (crc >> 8);
+
         return crc;
     }
 };
@@ -43,21 +64,54 @@ constexpr UInt64 CRC64_ECMA = 0xc96c5795d7870f42ULL;
 struct CRC64ECMAImpl : public CRCImpl<UInt64, CRC64_ECMA>
 {
     static constexpr auto name = "CRC64";
+
+    static UInt64 makeCRC(const unsigned char * buf, size_t size)
+    {
+#if defined(__x86_64__)
+        /// xz uses PCLMUL on x86 and is faster at every length. Elsewhere it has only a slice-by-4 table, slower than ours.
+        /// xz starts from and finally inverts `~0`.
+        return ~lzma_crc64(buf, size, ~0ULL);
+#else
+        return CRCImpl::makeCRC(buf, size);
+#endif
+    }
 };
 
 constexpr UInt32 CRC32_IEEE = 0xedb88320;
+
+/// On x86, zlib-ng uses PCLMUL only from 64 bytes and a byte loop below, where our slicing-by-8 table is faster.
+/// On ARM it uses the CRC32 instructions at every length and is always faster.
+bool useZlibNG([[maybe_unused]] size_t size)
+{
+#if defined(__x86_64__)
+    return size >= 64;
+#else
+    return true;
+#endif
+}
+
 struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
 {
     static constexpr auto name = "CRC32IEEE";
+
+    static UInt32 makeCRC(const unsigned char * buf, size_t size)
+    {
+        if (!useZlibNG(size))
+            return CRCImpl::makeCRC(buf, size);
+        return ~static_cast<UInt32>(crc32_z(0xFFFFFFFFUL, buf, size));
+    }
 };
 
-struct CRC32ZLIBImpl
+struct CRC32ZLibImpl
 {
     using ReturnType = UInt32;
     static constexpr auto name = "CRC32";
 
     static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
+        /// zlib starts from and finally inverts `0xFFFFFFFF`.
+        if (!useZlibNG(size))
+            return ~CRCImpl<UInt32, CRC32_IEEE>::makeCRC(buf, size, ~0U);
         return static_cast<UInt32>(crc32_z(0L, buf, size));
     }
 };
@@ -78,49 +132,47 @@ namespace
 template <class Impl>
 struct CRCFunctionWrapper
 {
-    static constexpr auto is_fixed_to_constant = true;
+    /// If the function will return constant value for FixedString data type.
+    static constexpr auto is_fixed_to_constant = false;
     using ReturnType = typename Impl::ReturnType;
 
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
-
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = doCRC(data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = doCRC(data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & data, size_t n, ReturnType & res) { res = doCRC(data, 0, n); }
-
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
+    static void vectorFixedToConstant(const ColumnString::Chars & data, size_t n, ReturnType & res, size_t)
     {
-        size_t size = data.size() / n;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            res[i] = doCRC(data, i * n, n);
-        }
+        res = doCRC(data, 0, n);
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res, size_t input_rows_count)
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            res[i] = doCRC(data, i * n, n);
+    }
+
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", std::string(Impl::name));
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t, PaddedPODArray<ReturnType> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", std::string(Impl::name));
     }
@@ -133,13 +185,14 @@ private:
     }
 };
 
-template <class T>
+template <typename T>
 using FunctionCRC = FunctionStringOrArrayToT<CRCFunctionWrapper<T>, T, typename T::ReturnType>;
+
 // The same as IEEE variant, but uses 0xffffffff as initial value
 // This is the default
 //
-// (And zlib is used here, since it has optimized version)
-using FunctionCRC32ZLIB = FunctionCRC<CRC32ZLIBImpl>;
+// (And ZLib is used here, since it has optimized version)
+using FunctionCRC32ZLib = FunctionCRC<CRC32ZLibImpl>;
 // Uses CRC-32-IEEE 802.3 polynomial
 using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
@@ -147,17 +200,76 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
 }
 
-template <class T>
-void registerFunctionCRCImpl(FunctionFactory & factory)
-{
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
-}
-
 REGISTER_FUNCTION(CRC)
 {
-    registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
-    registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);
-    registerFunctionCRCImpl<FunctionCRC64ECMA>(factory);
+    FunctionDocumentation::Description description_crc32 = R"(
+Calculates the CRC32 checksum of a string using the CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+)";
+    FunctionDocumentation::Syntax syntax_crc32 = "CRC32(s)";
+    FunctionDocumentation::Arguments arguments_crc32 = {
+        {"s", "String to calculate CRC32 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc32 = {"Returns the CRC32 checksum of the string.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_crc32 = {
+    {
+        "Usage example",
+        "SELECT CRC32('ClickHouse')",
+        R"(
+┌─CRC32('ClickHouse')─┐
+│          1538217360 │
+└─────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_crc32 = {description_crc32, syntax_crc32, arguments_crc32, {}, returned_value_crc32, examples_crc32, introduced_in, category};
+
+    FunctionDocumentation::Description description_crc32ieee = R"(
+Calculates the CRC32 checksum of a string using the CRC-32-IEEE 802.3 polynomial.
+)";
+    FunctionDocumentation::Syntax syntax_crc32ieee = "CRC32IEEE(s)";
+    FunctionDocumentation::Arguments arguments_crc32ieee = {
+        {"s", "String to calculate CRC32 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc32ieee = {"Returns the CRC32 checksum of the string.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_crc32ieee = {
+    {
+        "Usage example",
+        "SELECT CRC32IEEE('ClickHouse');",
+        R"(
+┌─CRC32IEEE('ClickHouse')─┐
+│              3089448422 │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_crc32ieee = {description_crc32ieee, syntax_crc32ieee, arguments_crc32ieee, {}, returned_value_crc32ieee, examples_crc32ieee, introduced_in, category};
+
+    FunctionDocumentation::Description description_crc64 = R"(
+Calculates the CRC64 checksum of a string using the CRC-64-ECMA polynomial.
+)";
+    FunctionDocumentation::Syntax syntax_crc64 = "CRC64(s)";
+    FunctionDocumentation::Arguments arguments_crc64 = {
+        {"s", "String to calculate CRC64 for.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_crc64 = {"Returns the CRC64 checksum of the string.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_crc64 = {
+    {
+        "Usage example",
+        "SELECT CRC64('ClickHouse');",
+        R"(
+┌──CRC64('ClickHouse')─┐
+│ 12126588151325169346 │
+└──────────────────────┘
+    )"
+    }
+    };
+    FunctionDocumentation documentation_crc64 = {description_crc64, syntax_crc64, arguments_crc64, {}, returned_value_crc64, examples_crc64, introduced_in, category};
+
+    factory.registerFunction<FunctionCRC32ZLib>(documentation_crc32, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC32IEEE>(documentation_crc32ieee, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC64ECMA>(documentation_crc64, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -1,0 +1,332 @@
+#include <Core/BaseSettings.h>
+#include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/SettingsObsoleteMacros.h>
+#include <Core/Settings.h>
+#include <IO/S3AuthSettings.h>
+#include <IO/S3Defines.h>
+#include <IO/S3Common.h>
+#include <Common/Config/ConfigurationWithUsageTracking.h>
+#include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
+
+namespace DB
+{
+
+
+#define CLIENT_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
+    DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
+    DECLARE(UInt64, http_keep_alive_timeout, S3::DEFAULT_KEEP_ALIVE_TIMEOUT, "", 0) \
+    DECLARE(UInt64, http_keep_alive_max_requests, S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS, "", 0) \
+    DECLARE(UInt64, expiration_window_seconds, S3::DEFAULT_EXPIRATION_WINDOW_SECONDS, "", 0) \
+    DECLARE(Bool, use_environment_credentials, S3::DEFAULT_USE_ENVIRONMENT_CREDENTIALS, "", 0) \
+    DECLARE(Bool, no_sign_request, S3::DEFAULT_NO_SIGN_REQUEST, "", 0) \
+    DECLARE(Bool, use_insecure_imds_request, false, "", 0) \
+    DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
+    DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
+    DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
+
+#define AUTH_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(String, access_key_id, "", "", 0) \
+    DECLARE(String, secret_access_key, "", "", 0) \
+    DECLARE(String, session_token, "", "", 0) \
+    DECLARE(String, region, "", "", 0) \
+    DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
+    DECLARE(String, role_arn, "", "", 0) \
+    DECLARE(String, role_session_name, "", "", 0) \
+    DECLARE(String, external_id, "", "", 0) \
+    DECLARE(String, http_client, "", "", 0) \
+    DECLARE(String, service_account, "", "", 0) \
+    DECLARE(String, metadata_service, "", "", 0) \
+    DECLARE(String, request_token_path, "", "", 0) \
+    DECLARE(String, google_adc_client_id, "", "", 0) \
+    DECLARE(String, google_adc_client_secret, "", "", 0) \
+    DECLARE(String, google_adc_refresh_token, "", "", 0) \
+    DECLARE(String, google_service_account_key, "", "", 0) \
+
+/// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
+/// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
+/// `storage_connections_*` and `http_connections_*` server settings instead. The name is still
+/// accepted - in a disk configuration, in a named collection, and over the wire, where these
+/// settings are serialized by name - so that an existing configuration keeps working.
+#define OBSOLETE_S3AUTH_SETTINGS(M, ALIAS) \
+    MAKE_OBSOLETE(M, UInt64, max_connections, 1024) \
+
+#define CLIENT_SETTINGS_LIST(M, ALIAS) \
+    CLIENT_SETTINGS(M, ALIAS) \
+    AUTH_SETTINGS(M, ALIAS) \
+    OBSOLETE_S3AUTH_SETTINGS(M, ALIAS)
+
+DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
+
+/// The settings are serialized with `writeChangedBinary` (see `serialize`), including by code outside of this repository.
+CLIENT_SETTINGS_LIST(ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION, ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION)
+
+namespace S3
+{
+
+
+S3AuthSettings::S3AuthSettings() : impl(std::make_unique<S3AuthSettingsImpl>())
+{
+}
+
+S3AuthSettings::S3AuthSettings(
+    const Poco::Util::AbstractConfiguration & config, const DB::Settings & settings, const std::string & config_prefix)
+    : S3AuthSettings()
+{
+    for (auto & field : impl->allMutable())
+    {
+        auto path = fmt::format("{}.{}", config_prefix, field.getName());
+
+        bool updated = S3::setValueFromConfig(config, path, field);
+        if (!updated)
+        {
+            auto setting_name = "s3_" + field.getName();
+            if (settings.has(setting_name) && settings.isChanged(setting_name))
+                field.setValue(settings.get(setting_name));
+        }
+    }
+
+    resetObsoleteSettings();
+
+    headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "header"));
+    access_headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "access_header"));
+
+    server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    /// See the comment in `getHTTPHeaders`.
+    config.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_prefix + ".user"));
+    for (const auto & key : keys)
+    {
+        if (startsWith(key, "user"))
+            users.insert(config.getString(config_prefix + "." + key));
+    }
+}
+
+S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
+    : headers(settings.headers)
+    , access_headers(settings.access_headers)
+    , users(settings.users)
+    , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
+    , google_credentials_explicit(settings.google_credentials_explicit)
+    , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
+{
+}
+
+S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept = default;
+
+S3AuthSettings::S3AuthSettings(const DB::Settings & settings) : impl(std::make_unique<S3AuthSettingsImpl>())
+{
+    updateFromSettings(settings, /* if_changed */ false);
+}
+
+S3AuthSettings::~S3AuthSettings() = default;
+
+S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
+
+S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept = default;
+
+bool S3AuthSettings::operator==(const S3AuthSettings & right)
+{
+    if (headers != right.headers)
+        return false;
+
+    if (access_headers != right.access_headers)
+        return false;
+
+    if (users != right.users)
+        return false;
+
+    if (server_side_encryption_kms_config != right.server_side_encryption_kms_config)
+        return false;
+
+    return *impl == *right.impl;
+}
+
+void S3AuthSettings::updateFromSettings(const DB::Settings & settings, bool if_changed)
+{
+    for (auto & field : impl->allMutable())
+    {
+        const auto setting_name = "s3_" + field.getName();
+        if (settings.has(setting_name) && (!if_changed || settings.isChanged(setting_name)))
+        {
+            field.setValue(settings.get(setting_name));
+        }
+    }
+
+    resetObsoleteSettings();
+}
+
+void S3AuthSettings::resetObsoleteSettings()
+{
+    for (const auto & field : impl->all())
+    {
+        if (field.getTier() == SettingsTierType::OBSOLETE && field.isValueChanged())
+            impl->resetToDefault(field.getName());
+    }
+}
+
+bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
+{
+    S3AuthSettings copy{*this};
+    copy.updateIfChanged(other);
+    return *this != copy;
+}
+
+void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
+{
+    /// The Google credential mechanisms (the ADC triple and `google_service_account_key`) are mutually exclusive, so a
+    /// layer that supplies one of them replaces the other one of this base as well, instead of leaving an ambiguous
+    /// pair: a key of an endpoint section replaces the ADC triple of the general `<s3>` section, and a key that takes
+    /// the place of the ADC triple in the server config replaces, on reload, the triple an existing table kept from
+    /// the previous config. A single layer that supplies both is still refused when the client is built.
+    if (settings.impl->isChanged("google_service_account_key"))
+    {
+        impl->set("google_adc_client_id", "");
+        impl->set("google_adc_client_secret", "");
+        impl->set("google_adc_refresh_token", "");
+    }
+    if (settings.impl->isChanged("google_adc_client_id") || settings.impl->isChanged("google_adc_client_secret")
+        || settings.impl->isChanged("google_adc_refresh_token"))
+        impl->set("google_service_account_key", "");
+
+    for (auto & setting : settings.impl->all())
+    {
+        if (setting.isValueChanged())
+            impl->set(setting.getName(), setting.getValue());
+    }
+
+    if (!settings.headers.empty())
+        headers = settings.headers;
+
+    if (!settings.access_headers.empty())
+        access_headers = settings.access_headers;
+
+    if (!settings.users.empty())
+        users.insert(settings.users.begin(), settings.users.end());
+
+    if (settings.server_side_encryption_kms_config.key_id.has_value()
+        || settings.server_side_encryption_kms_config.encryption_context.has_value()
+        || settings.server_side_encryption_kms_config.key_id.has_value())
+        server_side_encryption_kms_config = settings.server_side_encryption_kms_config;
+
+    resetObsoleteSettings();
+}
+
+void S3AuthSettings::clearServerManagedRequestAuth()
+{
+    headers.clear();
+    access_headers.clear();
+    impl->set("server_side_encryption_customer_key_base64", "");
+    server_side_encryption_kms_config = {};
+}
+
+void S3AuthSettings::clearRoleArn()
+{
+    impl->set("role_arn", "");
+    impl->set("role_session_name", "");
+    impl->set("external_id", "");
+}
+
+void S3AuthSettings::clearServerManagedGcpOAuth()
+{
+    impl->set("http_client", "");
+    impl->set("service_account", "");
+    impl->set("metadata_service", "");
+    impl->set("request_token_path", "");
+    impl->set("google_adc_client_id", "");
+    impl->set("google_adc_client_secret", "");
+    impl->set("google_adc_refresh_token", "");
+    impl->set("google_service_account_key", "");
+}
+
+NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
+{
+    bool auth_settings_is_default = !impl->isChanged("access_key_id");
+    if (access_headers.empty() || !auth_settings_is_default)
+        return headers;
+
+    NormalizedHTTPHeaderEntries result(headers);
+    result.append(access_headers);
+
+    return result;
+}
+
+
+void S3AuthSettings::serialize(WriteBuffer & out, ContextPtr) const
+{
+    impl->writeChangedBinary(out);
+
+    writeVarUInt(headers.size(), out);
+    for (const auto & header : headers)
+    {
+        writeStringBinary(header.name, out);
+        writeStringBinary(header.value, out);
+    }
+
+    writeVarUInt(access_headers.size(), out);
+    for (const auto & access_header : access_headers)
+    {
+        writeStringBinary(access_header.name, out);
+        writeStringBinary(access_header.value, out);
+    }
+
+    writeVarUInt(users.size(), out);
+    for (const auto & user : users)
+    {
+        writeStringBinary(user, out);
+    }
+
+    ///TODO ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+}
+
+S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
+{
+    S3AuthSettings result;
+    result.impl = std::make_unique<S3AuthSettingsImpl>();
+    result.impl->readBinary(in);
+    result.resetObsoleteSettings();
+
+    size_t headers_size = 0;
+    readVarUInt(headers_size, in);
+    for (size_t i = 0; i < headers_size; ++i)
+    {
+        std::string name;
+        std::string value;
+        readStringBinary(name, in);
+        readStringBinary(value, in);
+        result.headers.push_back({name, value});
+    }
+
+    size_t access_headers_size = 0;
+    readVarUInt(access_headers_size, in);
+    for (size_t i = 0; i < access_headers_size; ++i)
+    {
+        std::string name;
+        std::string value;
+        readStringBinary(name, in);
+        readStringBinary(value, in);
+        result.access_headers.push_back({name, value});
+    }
+    size_t users_size = 0;
+    readVarUInt(users_size, in);
+    for (size_t i = 0; i < users_size; ++i)
+    {
+        std::string user;
+        readStringBinary(user, in);
+        result.users.insert(user);
+    }
+
+    ///TODO ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+    return result;
+}
+
+}
+}

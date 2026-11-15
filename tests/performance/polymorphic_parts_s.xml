@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
+        <async_insert>0</async_insert>
+    </settings>
+
     <create_query>
         CREATE TABLE hits_wide AS hits_10m_single ENGINE = MergeTree()
         PARTITION BY toYYYYMM(EventDate)
@@ -22,12 +27,14 @@
     <settings>
         <max_block_size>1</max_block_size>
         <min_insert_block_size_rows>1</min_insert_block_size_rows>
+        <!-- Write the parts in one thread: parallel writers make each run wait for the disk writes of the runs before it -->
+        <max_insert_threads>1</max_insert_threads>
     </settings>
 
-    <!-- 100 parts -->
-    <query>INSERT INTO hits_wide(UserID)    SELECT rand() FROM  numbers(100)</query>
-    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(1000)</query>
-    <query>INSERT INTO hits_buffer(UserID)  SELECT rand() FROM numbers(100)</query>
+    <!-- 50 parts -->
+    <query>INSERT INTO hits_wide(UserID)    SELECT rand() FROM  numbers(50)</query>
+    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(500)</query>
+    <query>INSERT INTO hits_buffer(UserID)  SELECT rand() FROM numbers(50)</query>
 
     <drop_query>DROP TABLE IF EXISTS hits_wide</drop_query>
     <drop_query>DROP TABLE IF EXISTS hits_compact</drop_query>

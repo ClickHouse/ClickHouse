@@ -11,16 +11,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
-namespace
-{
 
 using namespace GatherUtils;
 
 template <typename Name, typename Impl>
-class HasSubsequenceImpl : public IFunction
+class HasSubsequenceImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -39,19 +36,9 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {};}
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<UInt8>>();
+        return "(String, String) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -129,9 +116,11 @@ private:
 
         if (!needle_size)
             return 1;
+        if (!haystack_size)
+            return 0;
 
-        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
-        auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
+        auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
         if (!haystack_code_point || !needle_code_point)
             return 0;
 
@@ -142,17 +131,15 @@ private:
                 needle_pos += UTF8::seqLength(*needle_pos);
                 if (needle_pos >= needle_end)
                     break;
-                needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+                needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
             }
             haystack_pos += UTF8::seqLength(*haystack_pos);
             if (haystack_pos >= haystack_end)
                 break;
-            haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+            haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
         }
         return needle_pos == needle_end;
     }
 };
-
-}
 
 }

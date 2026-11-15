@@ -1,0 +1,155 @@
+#pragma once
+
+#include <Parsers/IAST.h>
+#include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
+
+#include <optional>
+
+namespace Poco::JSON { class Object; }
+
+namespace DB
+{
+class ASTColumns;
+class ASTStorage;
+
+/// Information about target tables (external or inner) of a materialized view or a TimeSeries table.
+/// See ASTViewTargets for more details.
+struct ViewTarget
+{
+    ~ViewTarget();
+    ViewTarget();
+    ViewTarget(const ViewTarget & other);
+    ViewTarget & operator=(const ViewTarget & other);
+
+    enum Kind
+    {
+        /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view:
+        ///     CREATE MATERIALIZED VIEW db.mv_name {TO [db.]to_target | ENGINE to_engine} AS SELECT ...
+        To,
+
+        /// If `kind == ViewTarget::Inner` then `ViewTarget` contains information about a separately-specified inner table.
+        /// It was produced by the INNER ENGINE clause of the removed WINDOW VIEW; kept so that old DDL log entries still parse.
+        Inner,
+
+        /// The "samples" table for a TimeSeries table, contains samples.
+        Samples,
+
+        /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
+        RecentSamples,
+
+        /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
+        Tags,
+
+        /// The optional "time ranges" table of a TimeSeries table: the minimum and the maximum timestamp of each time series,
+        /// used to filter time series by time. Tables of earlier versions kept these columns in the "tags" table.
+        TimeRanges,
+
+        /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
+        /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
+        MetricFamilies,
+    };
+
+    explicit ViewTarget(Kind kind_);
+
+    Kind kind = To;
+
+    /// StorageID of the target table, if it's not inner.
+    /// That storage ID can be seen for example after "TO" in a statement like CREATE MATERIALIZED VIEW ... TO ...
+    StorageID table_id = StorageID::createEmpty();
+
+    /// UUID of the target table, if it's inner.
+    /// The UUID is calculated automatically and can be seen for example after "TO INNER UUID" in a statement like
+    /// CREATE MATERIALIZED VIEW ... TO INNER UUID ...
+    UUID inner_uuid = UUIDHelpers::Nil;
+
+    /// Table engine of the target table, if it's inner.
+    /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
+    ASTPtr inner_engine;
+
+    /// Column list for the inner table (only for inner targets, not external ones).
+    ASTPtr inner_columns; /// points to ASTColumns
+
+    /// AST of the target table, used when the name of the target table is written with query parameters
+    /// and thus cannot be stored in `table_id` until those parameters are substituted with actual values.
+    /// For example: CREATE MATERIALIZED VIEW mv TO {dst:Identifier} AS SELECT * FROM src
+    ASTPtr table_ast; /// points to ASTTableIdentifier
+};
+
+/// Information about all target tables (external or inner) of a view.
+///
+/// For example, for a materialized view:
+///     CREATE MATERIALIZED VIEW db.mv_name [TO [db.]to_target | ENGINE to_engine] AS SELECT ...
+/// this class contains information about the "TO" table: its name and database (if it's external), its UUID and engine (if it's inner).
+class ASTViewTargets : public IAST
+{
+public:
+    std::vector<ViewTarget> targets;
+
+    /// Manipulates AST of the target table which has query parameters in its definition.
+    /// Passing nullptr to setTableASTWithQueryParams removes that AST.
+    void setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast);
+    bool hasTableASTWithQueryParams(ViewTarget::Kind kind) const;
+    ASTPtr getTableASTWithQueryParams(ViewTarget::Kind kind);
+
+    /// Sets the StorageID of the target table, if it's not inner.
+    /// That storage ID can be seen for example after "TO" in a statement like CREATE MATERIALIZED VIEW ... TO ...
+    void setTableID(ViewTarget::Kind kind, const StorageID & table_id_);
+    StorageID getTableID(ViewTarget::Kind kind) const;
+    bool hasTableID(ViewTarget::Kind kind) const;
+
+    /// Replaces an empty database in the StorageID of the target table with a specified database.
+    void setCurrentDatabase(const String & current_database);
+
+    /// Sets the UUID of the target table, if it's inner.
+    /// The UUID is calculated automatically and can be seen for example after "TO INNER UUID" in a statement like
+    /// CREATE MATERIALIZED VIEW ... TO INNER UUID ...
+    void setInnerUUID(ViewTarget::Kind kind, const UUID & inner_uuid_);
+    UUID getInnerUUID(ViewTarget::Kind kind) const;
+    bool hasInnerUUID(ViewTarget::Kind kind) const;
+
+    void resetInnerUUIDs();
+    bool hasInnerUUIDs() const;
+
+    /// Sets the table engine of the target table, if it's inner.
+    /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
+    void setInnerEngine(ViewTarget::Kind kind, ASTPtr new_inner_engine);
+    ASTStorage * getInnerEngine(ViewTarget::Kind kind) const;
+    std::vector<ASTStorage *> getInnerEngines() const;
+
+    /// Sets the column list for the inner target table.
+    void setInnerColumns(ViewTarget::Kind kind, ASTPtr new_inner_columns);
+    ASTColumns * getInnerColumns(ViewTarget::Kind kind) const;
+
+    /// Returns a list of all kinds of views in this ASTViewTargets.
+    std::vector<ViewTarget::Kind> getKinds() const;
+
+    /// Returns information about a target table.
+    /// The function returns null if such target doesn't exist.
+    const ViewTarget * tryGetTarget(ViewTarget::Kind kind) const;
+
+    /// Removes a target table with all its properties.
+    /// The function does nothing if such target doesn't exist.
+    void removeTarget(ViewTarget::Kind kind);
+
+    String getID(char) const override { return "ViewTargets"; }
+
+    ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+    /// Writes the JSON representation. `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h),
+    /// it affects the names of the target kinds.
+    void writeJSON(WriteBuffer & out, std::optional<UInt64> time_series_version) const;
+
+    /// Formats information only about a specific target table.
+    /// `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h), it affects the keywords.
+    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {}) const;
+    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {});
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
+};
+
+}

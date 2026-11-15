@@ -45,6 +45,15 @@ struct SelectQueryOptions
     bool is_create_parameterized_view = false;
     /// Bypass setting constraints for some internal queries such as projection ASTs.
     bool ignore_setting_constraints = false;
+    bool is_create_view = false; /// this select is a part of CREATE [MATERIALIZED] VIEW query
+
+    /// Bypass access check for select query.
+    /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
+    bool ignore_access_check = false;
+
+    /// Check access rights for tables inside subqueries even in only_analyze mode.
+    /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
+    bool check_subquery_table_access = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -52,14 +61,41 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
-    SelectQueryOptions(
+    bool build_logical_plan = false;
+    bool is_local_shard_plan = false;
+    bool ignore_rename_columns = false;
+
+    /// The plan is built for a local shard/replica of a distributed query, so its blocks are
+    /// consumed in this process and must not be marshalled: `UnmarshallBlocksTransform` exists
+    /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
+    bool is_local_plan_for_distributed_query = false;
+
+    /// IN and scalar subqueries read the view source instead of the source table. Set by `InterpreterSelectQueryAnalyzer`
+    /// when it is given the view source as storage, and passed on to the replan of the query for a `Merge` child or for
+    /// the blocks of a `Buffer`.
+    bool view_source_in_subqueries = false;
+
+    size_t max_step_description_length = 0;
+
+    bool force_materialize_cte = false;
+
+    /// The query is printed from a resolved query tree, so its integer constants are not positions.
+    bool positional_arguments_already_resolved = false;
+
+    /// The query as received from the initiator of a distributed read, not a subquery of it.
+    bool is_secondary_query_root = false;
+
+    SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
-        size_t depth = 0,
+        size_t subquery_depth_ = 0,
         bool is_subquery_ = false,
         bool settings_limit_offset_done_ = false)
-        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_),
-        settings_limit_offset_done(settings_limit_offset_done_)
-    {}
+        : to_stage(stage)
+        , subquery_depth(subquery_depth_)
+        , is_subquery(is_subquery_)
+        , settings_limit_offset_done(settings_limit_offset_done_)
+    {
+    }
 
     SelectQueryOptions copy() const { return *this; }
 
@@ -67,9 +103,18 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
+        out.is_local_shard_plan = false;
+        out.is_local_plan_for_distributed_query = false;
+        out.is_secondary_query_root = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
+    }
+
+    SelectQueryOptions & createView(bool value = true)
+    {
+        is_create_view = value;
+        return *this;
     }
 
     SelectQueryOptions createParameterizedView() const
@@ -129,6 +174,18 @@ struct SelectQueryOptions
         return *this;
     }
 
+    SelectQueryOptions & ignoreAccessCheck(bool value = true)
+    {
+        ignore_access_check = value;
+        return *this;
+    }
+
+    SelectQueryOptions & checkSubqueryTableAccess(bool value = true)
+    {
+        check_subquery_table_access = value;
+        return *this;
+    }
+
     SelectQueryOptions & setInternal(bool value = false)
     {
         is_internal = value;
@@ -151,6 +208,24 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & forceMaterializeCTE(bool value = true)
+    {
+        force_materialize_cte = value;
+        return *this;
+    }
+
+    SelectQueryOptions & positionalArgumentsAlreadyResolved(bool value = true)
+    {
+        positional_arguments_already_resolved = value;
+        return *this;
+    }
+
+    SelectQueryOptions & secondaryQueryRoot(bool value = true)
+    {
+        is_secondary_query_root = value;
         return *this;
     }
 };

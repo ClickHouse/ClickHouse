@@ -16,6 +16,8 @@ public:
     explicit ParserTablesInSelectQuery(bool allow_alias_without_as_keyword_ = true)
         : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "table, table function, subquery or list of joined tables"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -38,8 +40,6 @@ protected:
 private:
     bool is_first;
     bool allow_alias_without_as_keyword;
-
-    static void parseJoinStrictness(Pos & pos, ASTTableJoin & table_join);
 };
 
 

@@ -23,10 +23,9 @@
         <compression_level>medium</compression_level>
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-        <verbose_logs>false</verbose_logs>
     </grpc>
     <openSSL>
-        <server> 
+        <server>
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
@@ -101,9 +100,9 @@
     <query_log>
         <database>system</database>
         <table>query_log</table>
-        
+
         <partition_by>toYYYYMM(event_date)</partition_by>
-        
+
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
 
@@ -122,13 +121,6 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
 
-    <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-    </metric_log>
-
     <asynchronous_metric_log>
         <database>system</database>
         <table>asynchronous_metric_log</table>
@@ -137,15 +129,18 @@
     </asynchronous_metric_log>
 
     <opentelemetry_span_log>
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, finish_time_us</order_by>
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </opentelemetry_span_log>
+
+    <iceberg_metadata_log>
+        <database>system</database>
+        <table>iceberg_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+    </iceberg_metadata_log>
 
     <crash_log>
         <database>system</database>

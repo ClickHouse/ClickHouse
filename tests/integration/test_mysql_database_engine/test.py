@@ -1,19 +1,23 @@
 import contextlib
+import itertools
 import time
 from string import Template
+import uuid
 
 import pymysql.cursors
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mysql_pass
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml", "configs/backups.xml"],
     user_configs=["configs/users.xml"],
-    with_mysql=True,
+    with_mysql8=True,
     stay_alive=True,
 )
 
@@ -28,13 +32,21 @@ def started_cluster():
 
 
 class MySQLNodeInstance:
-    def __init__(self, user, password, hostname, port):
+    def __init__(self, cluster, name, user, password, hostname, port):
+        self.cluster = cluster
+        self.name = name
+        self.docker_id = self.cluster.get_instance_docker_id(self.name)
+        self.ipv6_address = None
+
         self.user = user
         self.port = port
         self.hostname = hostname
         self.password = password
         self.mysql_connection = None  # lazy init
         self.ip_address = hostname
+
+    def exec_in_container(self, cmd, **kwargs):
+        return self.cluster.exec_in_container(self.docker_id, cmd, **kwargs)
 
     def query(self, execution_query):
         if self.mysql_connection is None:
@@ -43,6 +55,7 @@ class MySQLNodeInstance:
                 password=self.password,
                 host=self.hostname,
                 port=self.port,
+                autocommit=True,
             )
         with self.mysql_connection.cursor() as cursor:
 
@@ -70,7 +83,9 @@ class MySQLNodeInstance:
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -78,7 +93,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}')"
         )
         assert "test_database" in clickhouse_node.query("SHOW DATABASES")
 
@@ -121,7 +136,9 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
 def test_clickhouse_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -132,7 +149,7 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}')"
         )
 
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_database")
@@ -148,6 +165,17 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
         )
         clickhouse_node.query("ATTACH TABLE test_database.test_table")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_database")
+        # Test DETACH PERMANENTLY for system.detached_tables (PR #107943)
+        clickhouse_node.query("DETACH TABLE test_database.test_table PERMANENTLY")
+        is_perm = clickhouse_node.query("SELECT is_permanently FROM system.detached_tables WHERE database = 'test_database' AND table = 'test_table'").strip()
+        assert is_perm == "1", f"Expected is_permanently=1, got {is_perm}"
+        clickhouse_node.query("ATTACH TABLE test_database.test_table")
+
+        # Test ordinary DETACH TABLE (not PERMANENTLY) for system.detached_tables (PR #107943)
+        clickhouse_node.query("DETACH TABLE test_database.test_table")
+        is_perm_ordinary = clickhouse_node.query("SELECT is_permanently FROM system.detached_tables WHERE database = 'test_database' AND table = 'test_table'").strip()
+        assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
+        clickhouse_node.query("ATTACH TABLE test_database.test_table")
 
         clickhouse_node.query("DROP DATABASE test_database")
         assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
@@ -158,7 +186,9 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
 def test_clickhouse_dml_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -169,7 +199,7 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test_database, 'root', 'clickhouse')"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', test_database, 'root', '{mysql_pass}')"
         )
 
         assert (
@@ -197,7 +227,9 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
 def test_clickhouse_join_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test")
@@ -218,10 +250,10 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
         clickhouse_node.query("DROP TABLE IF EXISTS default.t1_remote_mysql SYNC")
         clickhouse_node.query("DROP TABLE IF EXISTS default.t2_remote_mysql SYNC")
         clickhouse_node.query(
-            "CREATE TABLE default.t1_remote_mysql AS mysql('mysql57:3306','test','t1_mysql_local','root','clickhouse')"
+            f"CREATE TABLE default.t1_remote_mysql AS mysql('mysql80:3306','test','t1_mysql_local','root','{mysql_pass}')"
         )
         clickhouse_node.query(
-            "CREATE TABLE default.t2_remote_mysql AS mysql('mysql57:3306','test','t2_mysql_local','root','clickhouse')"
+            f"CREATE TABLE default.t2_remote_mysql AS mysql('mysql80:3306','test','t2_mysql_local','root','{mysql_pass}')"
         )
         clickhouse_node.query(
             "INSERT INTO `default`.`t1_remote_mysql` VALUES ('EN','A',''),('RU','B','AAA')"
@@ -246,18 +278,21 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
 def test_bad_arguments_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
             "root",
-            "clickhouse",
-            started_cluster.mysql_ip,
-            port=started_cluster.mysql_port,
+            mysql_pass,
+            started_cluster.mysql8_ip,
+            port=started_cluster.mysql8_port,
         )
     ) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
+            mysql_node.query("DROP DATABASE IF EXISTS test_bad_arguments")
             mysql_node.query(
-                "CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
+                "CREATE DATABASE test_bad_arguments DEFAULT CHARACTER SET 'utf8'"
             )
             clickhouse_node.query(
-                "CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql57:3306', test_bad_arguments, root, 'clickhouse')"
+                f"CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql80:3306', test_bad_arguments, root, '{mysql_pass}')"
             )
         assert "Database engine MySQL requested literal argument." in str(
             exception.value
@@ -268,7 +303,9 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
 def test_column_comments_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -276,7 +313,7 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}')"
         )
         assert "test_database" in clickhouse_node.query("SHOW DATABASES")
 
@@ -304,16 +341,18 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test")
         mysql_node.query(
-            "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
+            "CREATE DATABASE test DEFAULT CHARACTER SET 'utf8'"
         )
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse')",
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', test, 'root', '{mysql_pass}')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"},
         )
 
@@ -331,7 +370,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         )
 
         clickhouse_node.query(
-            "CREATE DATABASE test_database_1 ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
+            f"CREATE DATABASE test_database_1 ENGINE = MySQL('mysql80:3306', test, 'root', '{mysql_pass}') SETTINGS mysql_datatypes_support_level = 'decimal,datetime64'",
             settings={"mysql_datatypes_support_level": "decimal"},
         )
 
@@ -693,7 +732,7 @@ def arryToString(expected_clickhouse_values):
         pytest.param(
             "timestamp_default",
             "timestamp",
-            "DateTime",
+            "Nullable(DateTime)",
             timestamp_values,
             "",
             "decimal,datetime64",
@@ -702,7 +741,7 @@ def arryToString(expected_clickhouse_values):
         pytest.param(
             "timestamp_6",
             "timestamp(6)",
-            "DateTime64(6)",
+            "Nullable(DateTime64(6))",
             timestamp_values,
             "",
             "decimal,datetime64",
@@ -815,10 +854,12 @@ def test_mysql_types(
 
     with contextlib.closing(
         MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
             "root",
-            "clickhouse",
-            started_cluster.mysql_ip,
-            port=started_cluster.mysql_port,
+            mysql_pass,
+            started_cluster.mysql8_ip,
+            port=started_cluster.mysql8_port,
         )
     ) as mysql_node:
         execute_query(
@@ -842,7 +883,7 @@ def test_mysql_types(
             clickhouse_node,
             [
                 "DROP TABLE IF EXISTS ${ch_mysql_table};",
-                "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+                "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + f"'{mysql_pass}')",
             ],
             settings=clickhouse_query_settings,
         )
@@ -875,7 +916,7 @@ def test_mysql_types(
             clickhouse_node,
             [
                 "DROP DATABASE IF EXISTS ${ch_mysql_db}",
-                "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql57:3306', '${mysql_db}', 'root', 'clickhouse')",
+                "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql80:3306', '${mysql_db}', 'root'," + f"'{mysql_pass}')",
             ],
             settings=clickhouse_query_settings,
         )
@@ -902,7 +943,7 @@ def test_mysql_types(
         assert (
             execute_query(
                 clickhouse_node,
-                "SELECT toTypeName(value) FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1",
+                "SELECT toTypeName(value) FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + f"'{mysql_pass}') LIMIT 1",
                 settings=clickhouse_query_settings,
             )
             == expected_ch_type
@@ -911,7 +952,7 @@ def test_mysql_types(
         # Validate values
         assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
-            "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+            "SELECT value FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + f"'{mysql_pass}')",
             settings=clickhouse_query_settings,
         )
 
@@ -919,7 +960,9 @@ def test_mysql_types(
 def test_predefined_connection_configuration(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -943,7 +986,7 @@ def test_predefined_connection_configuration(started_cluster):
         result = clickhouse_node.query("show create table test_database.test_table")
         assert (
             result.strip()
-            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, table = \\'test_table\\')"
+            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, `table` = \\'test_table\\')"
         )
 
         clickhouse_node.query("DROP DATABASE test_database")
@@ -971,13 +1014,15 @@ def test_predefined_connection_configuration(started_cluster):
 def test_restart_server(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_restart")
         clickhouse_node.query("DROP DATABASE IF EXISTS test_restart")
         clickhouse_node.query_and_get_error(
-            "CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_restart', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_restart ENGINE = MySQL('mysql80:3306', 'test_restart', 'root', '{mysql_pass}')"
         )
         assert "test_restart" not in clickhouse_node.query("SHOW DATABASES")
 
@@ -986,7 +1031,7 @@ def test_restart_server(started_cluster):
             "CREATE TABLE `test_restart`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
         )
         clickhouse_node.query(
-            "CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_restart', 'root', 'clickhouse')"
+            f"CREATE DATABASE test_restart ENGINE = MySQL('mysql80:3306', 'test_restart', 'root', '{mysql_pass}')"
         )
 
         assert "test_restart" in clickhouse_node.query("SHOW DATABASES")
@@ -1004,7 +1049,9 @@ def test_restart_server(started_cluster):
 def test_memory_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -1015,7 +1062,7 @@ def test_memory_leak(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') SETTINGS connection_auto_close = 1"
         )
         clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`")
 
@@ -1026,7 +1073,9 @@ def test_memory_leak(started_cluster):
 def test_password_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
-            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
         )
     ) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
@@ -1037,8 +1086,429 @@ def test_password_leak(started_cluster):
 
         clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
-            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') SETTINGS connection_auto_close = 1"
         )
         assert "clickhouse" not in clickhouse_node.query(
             "SHOW CREATE test_database.test_table"
         )
+
+
+def test_mysql_database_engine_comment(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_database ENGINE = MySQL('mysql80:3306', 'test_database', 'root', '{mysql_pass}') \
+            comment 'test mysql database engine comment'"
+        )
+        assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+
+        assert (
+            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
+            == "test mysql database engine comment"
+        )
+
+        clickhouse_node.query(
+           "ALTER DATABASE test_database MODIFY COMMENT 'new comment on mysql database engine'"
+        )
+
+        assert (
+            clickhouse_node.query("SELECT comment FROM system.databases WHERE name='test_database'").rstrip()
+            == "new comment on mysql database engine"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
+
+        mysql_node.query("DROP DATABASE test_database")
+
+
+def test_backup_database(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS backup_database")
+        mysql_node.query("CREATE DATABASE backup_database DEFAULT CHARACTER SET 'utf8'")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS backup_database")
+        clickhouse_node.query(
+            f"CREATE DATABASE backup_database ENGINE = MySQL('mysql80:3306', 'backup_database', 'root', '{mysql_pass}')"
+        )
+
+        backup_id = uuid.uuid4().hex
+        backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+        clickhouse_node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+        clickhouse_node.query("DROP DATABASE backup_database SYNC")
+        assert "backup_database" not in clickhouse_node.query("SHOW DATABASES")
+
+        clickhouse_node.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
+        assert (
+            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
+            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
+        )
+
+        clickhouse_node.query("DROP DATABASE backup_database")
+        mysql_node.query("DROP DATABASE backup_database")
+
+
+def test_mysql_detached_table_reconciliation(started_cluster):
+    """
+    Test that detached tables are reconciled against remote MySQL schema.
+
+    Scenario:
+    1. Create MySQL database in ClickHouse pointing to remote MySQL
+    2. Create a table on remote MySQL
+    3. DETACH the table in ClickHouse (it appears in system.detached_tables)
+    4. DROP the table on remote MySQL
+    5. Trigger schema refresh in ClickHouse (any query that calls fetchTablesIntoLocalCache)
+    6. Verify the table no longer appears in system.detached_tables
+
+    This tests the reconciliation logic added in destroyLocalCacheExtraTables
+    that mirrors DatabasePostgreSQL::removeOutdatedTables behavior.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_reconcile")
+        mysql_node.query("CREATE DATABASE test_reconcile DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE test_reconcile.test_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(50)) ENGINE=InnoDB"
+        )
+        mysql_node.query("INSERT INTO test_reconcile.test_table VALUES (1, 'test')")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_reconcile")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_reconcile ENGINE = MySQL('mysql80:3306', 'test_reconcile', 'root', '{mysql_pass}')"
+        )
+
+        assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_reconcile")
+        count = clickhouse_node.query("SELECT count() FROM test_reconcile.test_table").strip()
+        assert count == "1", f"Expected 1 row, got {count}"
+
+        clickhouse_node.query("DETACH TABLE test_reconcile.test_table")
+
+        detached_count = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert detached_count == "1", f"Expected table in detached_tables, got count {detached_count}"
+
+        is_perm = clickhouse_node.query(
+            "SELECT is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert is_perm == "0", f"Expected is_permanently=0, got {is_perm}"
+
+        mysql_node.query("DROP TABLE test_reconcile.test_table")
+
+        mysql_tables = mysql_node.query("SHOW TABLES FROM test_reconcile")
+        assert "test_table" not in mysql_tables, "Table should be dropped from MySQL"
+
+        clickhouse_node.query("SHOW TABLES FROM test_reconcile")
+
+        try:
+            clickhouse_node.query("SHOW CREATE TABLE test_reconcile.nonexistent")
+        except QueryRuntimeException:
+            pass
+
+        detached_count_after = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert detached_count_after == "0", (
+            f"Expected table to disappear from detached_tables after reconciliation, "
+            f"but count is {detached_count_after}"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_reconcile")
+        mysql_node.query("DROP DATABASE test_reconcile")
+
+
+def test_mysql_detached_table_reconciliation_permanent(started_cluster):
+    """
+    Test reconciliation for PERMANENTLY detached tables.
+
+    Verifies that:
+    1. The .remove_flag marker file is preserved even when the remote table is dropped
+    2. Permanent detach shows is_permanently=1 before and after reconciliation
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_reconcile_perm")
+        mysql_node.query("CREATE DATABASE test_reconcile_perm DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE test_reconcile_perm.perm_table "
+            "(id INT NOT NULL PRIMARY KEY) ENGINE=InnoDB"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_reconcile_perm")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_reconcile_perm ENGINE = MySQL('mysql80:3306', 'test_reconcile_perm', 'root', '{mysql_pass}')"
+        )
+
+        assert "perm_table" in clickhouse_node.query("SHOW TABLES FROM test_reconcile_perm")
+
+        clickhouse_node.query("DETACH TABLE test_reconcile_perm.perm_table PERMANENTLY")
+
+        is_perm = clickhouse_node.query(
+            "SELECT is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_reconcile_perm' AND table = 'perm_table'"
+        ).strip()
+        assert is_perm == "1", f"Expected is_permanently=1 for PERMANENTLY detached, got {is_perm}"
+
+        mysql_node.query("DROP TABLE test_reconcile_perm.perm_table")
+
+        clickhouse_node.query("SHOW TABLES FROM test_reconcile_perm")
+
+        detached_result = clickhouse_node.query(
+            "SELECT table, is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_reconcile_perm' AND table = 'perm_table' "
+            "FORMAT TabSeparated"
+        ).strip()
+        assert detached_result == "perm_table\t1", (
+            f"Expected permanent detach marker to be preserved after remote drop. "
+            f"Expected 'perm_table\\t1', got '{detached_result}'"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_reconcile_perm")
+        mysql_node.query("DROP DATABASE test_reconcile_perm")
+
+
+def test_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
+    """
+    Regression test for permanent detach marker preservation and ordinary detach pruning.
+
+    When a table is permanently detached (via DETACH TABLE PERMANENTLY or DROP TABLE),
+    and the remote MySQL table is subsequently dropped, the .remove_flag marker should
+    be PRESERVED (not deleted by reconciliation). If a same-name table is later recreated
+    remotely, it should stay hidden in ClickHouse until explicit ATTACH TABLE.
+
+    Conversely, ordinary DETACH TABLE entries (without PERMANENTLY) should be PRUNED when
+    the remote table disappears, as there is nothing left to ATTACH.
+
+    This test verifies that both on-demand reconciliation (via SHOW TABLES or similar)
+    and background reconciliation (cleanOutdatedTables thread) correctly:
+    1. Preserve permanent detach markers (.remove_flag files)
+    2. Prune ordinary detach entries (no marker)
+
+    The test creates BOTH a permanent and an ordinary detach to ensure has_non_permanent_detach
+    evaluates to true, which gates the background reconciliation block in DatabaseMySQL.cpp.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_perm_marker")
+        mysql_node.query("CREATE DATABASE test_perm_marker DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE test_perm_marker.permanent_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
+        )
+        mysql_node.query(
+            "CREATE TABLE test_perm_marker.ordinary_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_perm_marker")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_perm_marker ENGINE = MySQL('mysql80:3306', 'test_perm_marker', 'root', '{mysql_pass}')"
+        )
+
+        # Verify both tables are visible initially
+        tables = clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+        assert "permanent_table" in tables
+        assert "ordinary_table" in tables
+
+        # Permanently detach one table (creates .remove_flag marker)
+        clickhouse_node.query("DETACH TABLE test_perm_marker.permanent_table PERMANENTLY")
+
+        # Ordinary detach the other table (no marker)
+        clickhouse_node.query("DETACH TABLE test_perm_marker.ordinary_table")
+
+        # Verify both show in system.detached_tables with correct is_permanently values
+        detached_permanent = clickhouse_node.query(
+            "SELECT table, is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table' "
+            "FORMAT TabSeparated"
+        ).strip()
+        assert detached_permanent == "permanent_table\t1", (
+            f"Expected 'permanent_table\\t1', got '{detached_permanent}'"
+        )
+
+        detached_ordinary = clickhouse_node.query(
+            "SELECT table, is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_perm_marker' AND table = 'ordinary_table' "
+            "FORMAT TabSeparated"
+        ).strip()
+        assert detached_ordinary == "ordinary_table\t0", (
+            f"Expected 'ordinary_table\\t0', got '{detached_ordinary}'"
+        )
+
+        # Drop BOTH remote MySQL tables
+        mysql_node.query("DROP TABLE test_perm_marker.permanent_table")
+        mysql_node.query("DROP TABLE test_perm_marker.ordinary_table")
+
+        # Wait for background reconciliation thread to run (cleanOutdatedTables sleeps 30s between runs)
+        # DO NOT call SHOW TABLES or any other on-demand trigger here - that would bypass the background
+        # reconciliation path we're testing (destroyLocalCacheExtraTables would prune ordinary_table
+        # immediately, causing has_non_permanent_detach to become false, which skips the background fetch).
+        # Use polling pattern to ensure background cleaner genuinely executes its fetch+reconcile path
+        max_wait = 65
+        start_time = time.time()
+        bg_reconciliation_verified = False
+
+        while time.time() - start_time < max_wait:
+            detached_tables = clickhouse_node.query(
+                "SELECT table, is_permanently FROM system.detached_tables "
+                "WHERE database = 'test_perm_marker' "
+                "ORDER BY table FORMAT TabSeparated"
+            ).strip()
+
+            # Expected state after background reconciliation:
+            # - permanent_table still present with is_permanently=1 (marker preserved)
+            # - ordinary_table removed (entry pruned)
+            if detached_tables == "permanent_table\t1":
+                bg_reconciliation_verified = True
+                break
+
+            time.sleep(5)  # Check every 5 seconds
+
+        assert bg_reconciliation_verified, (
+            f"REGRESSION: Background reconciliation did not complete correctly within {max_wait}s. "
+            f"Expected only 'permanent_table\\t1', final state: '{detached_tables}'"
+        )
+
+        # Now recreate the remote permanent_table with the same name to verify marker preservation
+        # prevents it from reappearing
+        mysql_node.query(
+            "CREATE TABLE test_perm_marker.permanent_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(100)) ENGINE=InnoDB"
+        )
+        mysql_node.query("INSERT INTO test_perm_marker.permanent_table VALUES (1, 'should not appear')")
+
+        # Trigger schema refresh
+        clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+
+        # The table should still NOT appear in ClickHouse (preserved permanent detach)
+        visible_tables = clickhouse_node.query("SHOW TABLES FROM test_perm_marker").strip()
+        assert "permanent_table" not in visible_tables, (
+            f"REGRESSION: Permanently detached table reappeared after remote table was recreated. "
+            f"Tables: {visible_tables}"
+        )
+
+        # Verify it's still in detached_tables
+        still_detached = clickhouse_node.query(
+            "SELECT table, is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table' "
+            "FORMAT TabSeparated"
+        ).strip()
+        assert still_detached == "permanent_table\t1", (
+            f"Expected 'permanent_table\\t1' after remote recreation, got '{still_detached}'"
+        )
+
+        # The table should only become visible again after explicit ATTACH TABLE
+        clickhouse_node.query("ATTACH TABLE test_perm_marker.permanent_table")
+
+        # Now it should be visible
+        assert "permanent_table" in clickhouse_node.query("SHOW TABLES FROM test_perm_marker")
+
+        # And no longer in detached_tables
+        final_detached_count = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_perm_marker' AND table = 'permanent_table'"
+        ).strip()
+        assert final_detached_count == "0", (
+            f"Expected count=0 after ATTACH, got {final_detached_count}"
+        )
+
+        # Verify we can query the data
+        result = clickhouse_node.query("SELECT value FROM test_perm_marker.permanent_table WHERE id = 1").strip()
+        assert result == "should not appear"
+
+        # Cleanup
+        clickhouse_node.query("DROP DATABASE test_perm_marker")
+        mysql_node.query("DROP DATABASE test_perm_marker")
+
+
+def test_mysql_database_tables_use_connection_auto_close(started_cluster):
+    queries = 5
+    users = ["auto_close_reuse", "auto_close_default"]
+    ids = itertools.count(2)
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_auto_close")
+        mysql_node.query("CREATE DATABASE test_auto_close")
+        mysql_node.query("CREATE TABLE test_auto_close.t (id INT NOT NULL PRIMARY KEY)")
+        mysql_node.query("INSERT INTO test_auto_close.t VALUES (1)")
+        for user in users:
+            mysql_node.query(f"DROP USER IF EXISTS '{user}'@'%'")
+            mysql_node.query(f"CREATE USER '{user}'@'%' IDENTIFIED BY '{mysql_pass}'")
+            mysql_node.query(f"GRANT ALL PRIVILEGES ON test_auto_close.* TO '{user}'@'%'")
+
+        def select(database):
+            assert clickhouse_node.query(f"SELECT id FROM {database}.t WHERE id = 1") == "1\n"
+
+        def insert(database):
+            clickhouse_node.query(f"INSERT INTO {database}.t VALUES ({next(ids)})")
+
+        def opened_connections(database, user, run=select):
+            # The first query fills the table's pool; count the connections the next queries open.
+            run(database)
+            accounts = f"SELECT SUM(TOTAL_CONNECTIONS) FROM performance_schema.accounts WHERE USER = '{user}'"
+            before = int(mysql_node.query(accounts))
+            for _ in range(queries):
+                run(database)
+            return int(mysql_node.query(accounts)) - before
+
+        try:
+            clickhouse_node.query(
+                f"CREATE DATABASE test_auto_close_reuse ENGINE = MySQL('mysql80:3306', 'test_auto_close', 'auto_close_reuse', '{mysql_pass}') SETTINGS connection_auto_close = 0"
+            )
+            clickhouse_node.query(
+                f"CREATE DATABASE test_auto_close_default ENGINE = MySQL('mysql80:3306', 'test_auto_close', 'auto_close_default', '{mysql_pass}')"
+            )
+
+            for run in (select, insert):
+                assert opened_connections("test_auto_close_default", "auto_close_default", run) == queries
+                assert opened_connections("test_auto_close_reuse", "auto_close_reuse", run) == 0
+
+            clickhouse_node.query("DROP TABLE test_auto_close_reuse.t")
+            clickhouse_node.query("ATTACH TABLE test_auto_close_reuse.t")
+            assert opened_connections("test_auto_close_reuse", "auto_close_reuse") == 0
+        finally:
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_auto_close_reuse")
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_auto_close_default")
+            for user in users:
+                mysql_node.query(f"DROP USER IF EXISTS '{user}'@'%'")
+            mysql_node.query("DROP DATABASE IF EXISTS test_auto_close")

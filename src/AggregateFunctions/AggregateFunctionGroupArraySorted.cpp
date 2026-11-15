@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -8,29 +9,23 @@
 #include <type_traits>
 #include <utility>
 
-#include <Common/RadixSort.h>
-#include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 
 #include <Columns/IColumn.h>
-#include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -47,23 +42,24 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupArraySortedStrategy
+enum class GroupArraySortedStrategy : uint8_t
 {
     heap,
     sort
 };
+
 
 constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 1000000;
 
 template <typename T, GroupArraySortedStrategy strategy>
 struct GroupArraySortedData
 {
+    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
+
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
+    using Array = typename std::conditional_t<is_value_generic_field, VectorWithMemoryTracking<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
-
-    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     Array values;
 
@@ -75,7 +71,7 @@ struct GroupArraySortedData
         }
         else
         {
-            return CompareHelper<T>::less(lhs, rhs, -1);
+            return CompareHelper<T>::less(lhs, rhs, 1);
         }
     }
 
@@ -139,11 +135,17 @@ struct GroupArraySortedData
         {
             bool try_sort = trySort(values.begin(), values.end(), Comparator());
             if (!try_sort)
-                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), values.size());
+            {
+                auto * sort_end = values.end();
+                /// RadixSort puts NaNs with the sign bit set first, so move all NaNs to the end and sort the rest.
+                if constexpr (is_floating_point<T>)
+                    sort_end = std::partition(values.begin(), values.end(), [](T value) { return !isNaN(value); });
+                RadixSort<RadixSortNumTraits<T>>::executeLSD(values.data(), static_cast<size_t>(sort_end - values.begin()));
+            }
         }
 
         if (values.size() > max_elements)
-            values.resize(max_elements, arena);
+            resize(max_elements, arena);
     }
 
     ALWAYS_INLINE void partialSortAndLimitIfNeeded(size_t max_elements, Arena * arena)
@@ -152,7 +154,23 @@ struct GroupArraySortedData
             return;
 
         ::nth_element(values.begin(), values.begin() + max_elements, values.end(), Comparator());
-        values.resize(max_elements, arena);
+        resize(max_elements, arena);
+    }
+
+    ALWAYS_INLINE void resize(size_t n, Arena * arena)
+    {
+        if constexpr (is_value_generic_field)
+            values.resize(n);
+        else
+            values.resize(n, arena);
+    }
+
+    ALWAYS_INLINE void push_back(T && element, Arena * arena)
+    {
+        if constexpr (is_value_generic_field)
+            values.push_back(element);
+        else
+            values.push_back(element, arena);
     }
 
     ALWAYS_INLINE void addElement(T && element, size_t max_elements, Arena * arena)
@@ -170,12 +188,12 @@ struct GroupArraySortedData
                 return;
             }
 
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             std::push_heap(values.begin(), values.end(), Comparator());
         }
         else
         {
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             partialSortAndLimitIfNeeded(max_elements, arena);
         }
     }
@@ -253,7 +271,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & rhs_values = this->data(rhs).values;
         for (auto rhs_element : rhs_values)
@@ -304,20 +322,21 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elements);
 
         auto & values = this->data(place).values;
-        values.resize_exact(size, arena);
 
-        if constexpr (std::is_same_v<T, Field>)
+        if constexpr (Data::is_value_generic_field)
         {
+            values.resize(size);
             for (Field & element : values)
             {
-                UInt8 is_null = 0;
-                readBinary(is_null, buf);
-                if (!is_null)
+                bool has_value = false;
+                readBinary(has_value, buf);
+                if (has_value)
                     serialization->deserializeBinary(element, buf, {});
             }
         }
         else
         {
+            values.resize_exact(size, arena);
             if constexpr (std::endian::native == std::endian::little)
             {
                 buf.readStrict(reinterpret_cast<char *>(values.data()), size * sizeof(values[0]));
@@ -363,10 +382,10 @@ AggregateFunctionPtr createWithNumericOrTimeType(const IDataType & argument_type
 template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
-    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, args...);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArray(
@@ -380,21 +399,20 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should have limit argument", name);
     }
-    else if (parameters.size() == 1)
+    if (parameters.size() == 1)
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
-
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        max_elems = parameters[0].get<UInt64>();
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0)
+            || (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
+
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Function {} does not support this number of arguments", name);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} does not support this number of arguments", name);
 
     if (max_elems > group_array_sorted_sort_strategy_max_elements_threshold)
         return createAggregateFunctionGroupArraySortedImpl<GroupArraySortedSort>(argument_types[0], parameters, max_elems);
@@ -404,11 +422,53 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 }
 
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Returns an array with the first N items in ascending order.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupArraySorted(N)(column)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "Column for which to group into an array.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"N", "The number of elements to return.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the first N items in ascending order.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Getting first 10 numbers",
+        R"(
+SELECT groupArraySorted(10)(number) FROM numbers(100);
+        )",
+        R"(
+┌─groupArraySorted(10)(number)─┐
+│ [0,1,2,3,4,5,6,7,8,9]        │
+└──────────────────────────────┘
+        )"
+    },
+    {
+        "String sorting example",
+        R"(
+SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM numbers(5));
+        )",
+        R"(
+┌─groupArraySorted(5)(str)─┐
+│ ['0','1','2','3','4']    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
 }
 
 }

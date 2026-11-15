@@ -1,9 +1,9 @@
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstddef>
-#include <mutex>
 
-#include <Interpreters/Set.h>
+#include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -11,6 +11,10 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
+
+#include <Poco/String.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -23,28 +27,28 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<size_t> getColumnIndices(const Block & block, const Names & column_names)
+VectorWithMemoryTracking<size_t> getColumnIndices(const Block & block, const Names & column_names)
 {
-    std::vector<size_t> indices;
+    VectorWithMemoryTracking<size_t> indices;
     for (const auto & name : column_names)
         indices.push_back(block.getPositionByName(name));
     return indices;
 }
 
-Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & indices)
+Columns getColumnsByIndices(const Chunk & chunk, const VectorWithMemoryTracking<size_t> & indices)
 {
     Columns columns;
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
     {
-        auto col = recursiveRemoveSparse(all_cols.at(index));
+        auto col = removeSpecialRepresentations(all_cols.at(index));
         columns.push_back(std::move(col));
     }
 
     return columns;
 }
 
-ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chunk & chunk, const std::vector<size_t> & indices)
+ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chunk & chunk, const VectorWithMemoryTracking<size_t> & indices)
 {
     Block block = sample_block.cloneEmpty();
     block.setColumns(getColumnsByIndices(chunk, indices));
@@ -54,7 +58,7 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
-    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
+    SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -128,7 +132,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -154,7 +158,7 @@ IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                stat.consumed_rows > 0 ? (100 - 100.0 * stat.result_rows / stat.consumed_rows) : 0);
+                stat.consumed_rows > 0 ? (100 - 100.0 * static_cast<double>(stat.result_rows) / static_cast<double>(stat.consumed_rows)) : 0);
         }
         else
         {

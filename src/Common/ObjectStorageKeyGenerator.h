@@ -1,22 +1,23 @@
 #pragma once
 
-#include "ObjectStorageKey.h"
-#include <memory>
+#include <Common/ObjectStorageKey.h>
 
 namespace DB
 {
 
-class IObjectStorageKeysGenerator
+class IObjectStorageKeyGenerator
 {
 public:
-    virtual ObjectStorageKey generate(const String & path) const = 0;
-    virtual ~IObjectStorageKeysGenerator() = default;
+    virtual ~IObjectStorageKeyGenerator() = default;
+
+    /// Generates an object storage key based on a path in the virtual filesystem.
+    /// @returns Keys that should be used to save data.
+    virtual ObjectStorageKey generate() const = 0;
 };
 
-using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
+using ObjectStorageKeyGeneratorPtr = std::shared_ptr<IObjectStorageKeyGenerator>;
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorAsIsWithPrefix(String key_prefix);
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByPrefix(String key_prefix);
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByTemplate(String key_template);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template);
 
 }

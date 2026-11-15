@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Interpreters/AggregateDescription.h>
-#include <Core/Block.h>
-#include <Processors/Chunk.h>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
 
-using ColumnsMask = std::vector<bool>;
+class Block;
+using ColumnsMask = VectorWithMemoryTracking<bool>;
 
 ColumnsMask getAggregatesMask(const Block & header, const AggregateDescriptions & aggregates);
 

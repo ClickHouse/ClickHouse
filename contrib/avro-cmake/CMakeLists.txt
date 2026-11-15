@@ -17,7 +17,7 @@ if (EXISTS "${AVROCPP_ROOT_DIR}/../../share/VERSION.txt")
         AVRO_VERSION)
 endif()
 
-string(REPLACE "\n" "" AVRO_VERSION  ${AVRO_VERSION})
+string(REPLACE "\n" "" AVRO_VERSION "${AVRO_VERSION}")
 set (AVRO_VERSION_MAJOR ${AVRO_VERSION})
 set (AVRO_VERSION_MINOR "0")
 
@@ -60,11 +60,19 @@ target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
 target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
 target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
 
-# create a symlink to include headers with <avro/...>
-set(AVRO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
-ADD_CUSTOM_TARGET(avro_symlink_headers ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${AVRO_INCLUDE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink "${AVROCPP_ROOT_DIR}/api" "${AVRO_INCLUDE_DIR}/avro"
-)
-add_dependencies(_avrocpp avro_symlink_headers)
-target_include_directories(_avrocpp SYSTEM BEFORE PUBLIC "${AVRO_INCLUDE_DIR}")
+# The `bzip2` and `xz` codecs use the Boost.Iostreams filters, which are not part of `boost::iostreams`,
+# because Boost is added before the compression libraries.
+set (BOOST_IOSTREAMS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/boost/libs/iostreams/src")
+
+if (TARGET ch_contrib::bzip2)
+    target_sources (_avrocpp PRIVATE "${BOOST_IOSTREAMS_SOURCE_DIR}/bzip2.cpp")
+    target_compile_definitions (_avrocpp PUBLIC BZIP2_CODEC_AVAILABLE)
+    target_link_libraries (_avrocpp PRIVATE ch_contrib::bzip2)
+endif ()
+
+if (TARGET ch_contrib::xz)
+    target_sources (_avrocpp PRIVATE "${BOOST_IOSTREAMS_SOURCE_DIR}/lzma.cpp")
+    target_compile_definitions (_avrocpp PUBLIC XZ_CODEC_AVAILABLE)
+    target_compile_definitions (_avrocpp PRIVATE BOOST_IOSTREAMS_LZMA_NO_MULTITHREADED)
+    target_link_libraries (_avrocpp PRIVATE ch_contrib::xz)
+endif ()

@@ -1,0 +1,223 @@
+#pragma once
+
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Resolve/IdentifierLookup.h>
+
+#include <Core/Joins.h>
+
+#include <Interpreters/Context_fwd.h>
+
+#include <Storages/IStorage_fwd.h>
+
+namespace DB
+{
+
+struct GetColumnsOptions;
+struct IdentifierResolveScope;
+struct AnalysisTableExpressionData;
+struct StorageID;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+class QueryNode;
+class JoinNode;
+class ColumnNode;
+class TableNode;
+
+using ProjectionName = String;
+using ProjectionNames = std::vector<ProjectionName>;
+
+struct Settings;
+
+/// Checks whether access to a specific side of a SEMI/ANTI JOIN is allowed.
+/// Used both during identifier resolution and qualified matcher resolution.
+struct SemiAntiJoinSideChecker
+{
+    bool is_semi = false;
+    bool is_anti = false;
+    bool skip_left = false;
+    bool skip_right = false;
+
+    SemiAntiJoinSideChecker() = default;
+
+    SemiAntiJoinSideChecker(
+        const JoinNode & join_node,
+        JoinStrictness strictness,
+        JoinKind kind,
+        const ContextPtr & context,
+        const IQueryTreeNode * resolving_join_on_expression);
+
+    bool shouldSkipSide(JoinTableSide side) const;
+
+    /// The side that stays visible when the compatibility settings hide the other one.
+    /// Returns nullopt when both sides remain visible.
+    std::optional<JoinTableSide> preservedSideOrNone() const;
+
+    /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
+    /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
+    void throwIfTableAccessDenied(
+        JoinTableSide side,
+        const IQueryTreeNode & node_for_error_message,
+        const IQueryTreeNode & scope_node) const;
+};
+
+class IdentifierResolver
+{
+public:
+
+    explicit IdentifierResolver(std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name_)
+        : node_to_projection_name(node_to_projection_name_)
+    {}
+
+    /// Utility functions
+
+    static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path, const ContextPtr & context);
+
+    static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
+        const QueryTreeNodePtr & resolved_identifier,
+        DataTypePtr result_type,
+        const JoinKind & join_kind,
+        std::optional<JoinTableSide> resolved_side,
+        IdentifierResolveScope & scope);
+
+    /// Resolve identifier functions
+
+    static bool tryBindIdentifierToAliases(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
+    static bool tryBindIdentifierToJoinUsingColumn(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
+    static bool tryBindIdentifierToTableExpression(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    /// Check whether the identifier binds to any table expression of the scope other than `table_expression_node`.
+    /// A table expression which a SEMI/ANTI JOIN hides from the current context (see `isTableExpressionHiddenBySemiAntiJoin`)
+    /// is not a competing binder: its columns are not visible, so they cannot make another name ambiguous.
+    static bool tryBindIdentifierToTableExpressions(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    /// Returns true if `table_expression_node` is on the non-preserved side of a SEMI/ANTI JOIN of the nearest
+    /// query scope's join tree and a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides that side from
+    /// everything outside that join's own ON expression (see `SemiAntiJoinSideChecker`).
+    static bool isTableExpressionHiddenBySemiAntiJoin(
+        const IQueryTreeNode * table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    static bool tryBindIdentifierToArrayJoinExpressions(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
+    /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const Identifier & table_identifier,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
+
+    /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
+    /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
+    /// Returns nullptr if the identifier does not match any nested prefix in the table.
+    static QueryTreeNodePtr tryResolveIdentifierAsNestedPrefix(
+        const Identifier & identifier,
+        const AnalysisTableExpressionData & table_expression_data,
+        const ContextPtr & context);
+
+    static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
+        const Identifier & table_identifier,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage = nullptr);
+
+    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
+    static void checkAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context);
+
+    /// Suggest a same/similar-named table when a table identifier cannot be resolved,
+    /// possibly in another database (e.g. `system.functions` for a bare `functions`).
+    /// Returns a (database, table) pair, or an empty pair when there is no good hint.
+    static std::pair<String, String> tryGetTableNameHint(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
+
+    QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
+        const Identifier & expression_identifier,
+        size_t identifier_bind_size,
+        const QueryTreeNodePtr & compound_expression,
+        String compound_expression_source,
+        IdentifierResolveScope & scope,
+        bool can_be_not_found = false);
+
+    IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(
+        const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
+
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(
+        const QueryTreeNodePtr & resolved_expression,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromJoinTreeNode(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & join_tree_node,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromJoinTree(
+        const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
+
+private:
+    QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromStorage(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        const AnalysisTableExpressionData & table_expression_data,
+        IdentifierResolveScope & scope,
+        size_t identifier_column_qualifier_parts,
+        bool can_be_not_found = false);
+
+    IdentifierResolveResult tryResolveIdentifierFromTableExpression(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromCrossJoin(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromJoin(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    QueryTreeNodePtr matchArrayJoinSubcolumns(
+        const QueryTreeNodePtr & array_join_column_inner_expression,
+        const ColumnNode & array_join_column_expression_typed,
+        const QueryTreeNodePtr & resolved_expression,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromArrayJoin(
+        const IdentifierLookup & identifier_lookup,
+        const TableExpressionNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(
+        const QueryTreeNodePtr & resolved_expression,
+        IdentifierResolveScope & scope,
+        ColumnNode & array_join_column_expression_typed,
+        QueryTreeNodePtr & array_join_column_inner_expression);
+
+    /// Global expression node to projection name map
+    std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name;
+};
+
+}

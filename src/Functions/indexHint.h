@@ -1,14 +1,13 @@
 #pragma once
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** The `indexHint` function takes any number of any arguments and always returns one.
   *
@@ -22,7 +21,7 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
   *
   * The function can be used for debugging purposes, as well as for (hidden from the user) query conversions.
   */
-class FunctionIndexHint : public IFunction
+class FunctionIndexHint final : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
@@ -30,6 +29,9 @@ public:
     {
         return std::make_shared<FunctionIndexHint>();
     }
+
+    static FunctionOverloadResolverPtr createImplied();
+    static FunctionIndexHint * tryGet(const FunctionBasePtr & function_base);
 
     bool isVariadic() const override
     {
@@ -42,6 +44,15 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// Arguments are never evaluated and the result is always UInt8, so a Nothing-typed
+    /// argument must not force the declared return type to Nothing (which would mismatch
+    /// the UInt8 column produced by executeImpl).
+    bool useDefaultImplementationForNothing() const override { return false; }
+
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+
     bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -50,9 +61,10 @@ public:
     {
         return name;
     }
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "() -> UInt8 OR (Any, ...) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -60,11 +72,16 @@ public:
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
-    void setActions(ActionsDAGPtr actions_) { actions = std::move(actions_); }
-    const ActionsDAGPtr & getActions() const { return actions; }
+    void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
+    const ActionsDAG & getActions() const { return actions; }
+
+    void setImplied(bool implied_) { implied = implied_; }
+    bool isImplied() const { return implied; }
 
 private:
-    ActionsDAGPtr actions;
+    ActionsDAG actions;
+    /// The condition follows from the other conjuncts of the `and` that holds the hint.
+    bool implied = false;
 };
 
 }

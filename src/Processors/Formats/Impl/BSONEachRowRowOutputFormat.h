@@ -1,13 +1,15 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteBuffer.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Core/NamesAndTypes.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/BSONTypes.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 
 namespace DB
 {
+
+class Block;
 
 /*
  * Class for formatting data in BSON format.
@@ -47,7 +49,7 @@ class BSONEachRowRowOutputFormat final : public IRowOutputFormat
 {
 public:
     BSONEachRowRowOutputFormat(
-        WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+        WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override { return "BSONEachRowRowOutputFormat"; }
 
@@ -61,7 +63,7 @@ private:
         size_t row_num,
         const String & name,
         const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
 
     /// Count field size in bytes that we will get after serialization in BSON format.
     /// It's needed to calculate document size before actual serialization,
@@ -72,7 +74,7 @@ private:
         size_t row_num,
         const String & name,
         const String & path,
-        std::unordered_map<String, size_t> & nested_document_sizes);
+        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
 
     NamesAndTypes fields;
     FormatSettings settings;

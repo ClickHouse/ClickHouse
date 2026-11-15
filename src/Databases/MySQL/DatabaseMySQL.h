@@ -5,11 +5,9 @@
 
 #include <mysqlxx/Pool.h>
 
-#include <Core/MultiEnum.h>
-#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
+#include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -22,18 +20,25 @@
 #include <unordered_set>
 #include <vector>
 
+
 namespace DB
 {
 
 class Context;
+struct AlterCommand;
+struct MySQLSettings;
+enum class MySQLDataTypesSupport : uint8_t;
 
-enum class MySQLDataTypesSupport;
+/// Log level for an exception that `DatabaseMySQL` tolerates: Warning for a connection failure to
+/// the (unreachable) remote, Error for anything else. Must be called from within a catch block.
+/// Exposed so that `gtest_mysql_tolerated_connection_failure` can pin the classification.
+LogsLevel mysqlToleratedConnectionFailureLogLevel();
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL final : public IDatabase, WithContext
+class DatabaseMySQL final : public DatabaseWithAltersOnDiskBase, WithContext
 {
 public:
     ~DatabaseMySQL() override;
@@ -46,21 +51,19 @@ public:
         const String & database_name_in_mysql,
         std::unique_ptr<MySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
-        bool attach);
+        bool attach,
+        UUID uuid);
 
     String getEngineName() const override { return "MySQL"; }
+    UUID getUUID() const override { return db_uuid; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
+    bool isRemoteDatabase() const override { return true; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
-
-    ASTPtr getCreateDatabaseQuery() const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
@@ -81,12 +84,17 @@ public:
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -105,7 +113,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    std::unordered_set<String> remove_or_detach_tables;
+    mutable std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 
@@ -119,7 +127,12 @@ private:
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time, ContextPtr context) const TSA_REQUIRES(mutex);
 
+    StoragePtr createStorage(const String & table_name, const ColumnsDescription & columns) const TSA_REQUIRES(mutex);
+
     ThreadFromGlobalPool thread;
+
+    bool persistent = true;
+    const UUID db_uuid;
 };
 
 }

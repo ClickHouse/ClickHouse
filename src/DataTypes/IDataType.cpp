@@ -1,21 +1,23 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 
+#include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
+#include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <DataTypes/Serializations/SerializationDetached.h>
 
 namespace DB
 {
@@ -25,9 +27,74 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
+IDataType::IDataType() = default;
+
 IDataType::~IDataType() = default;
+
+String IDataType::getName() const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetName();
+}
+
+const DataTypePtr & IDataType::getChild(size_t index) const
+{
+    /// Reached only for a type without children, which never has a valid index.
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Data type {} has {} children, but child {} was requested", getName(), getNumberOfChildren(), index);
+}
+
+DataTypes IDataType::getChildren() const
+{
+    const size_t num_children = getNumberOfChildren();
+    DataTypes children;
+    children.reserve(num_children);
+    for (size_t i = 0; i < num_children; ++i)
+        children.push_back(getChild(i));
+    return children;
+}
+
+DataTypePtr IDataType::cloneWithChildren(const DataTypes & new_children) const
+{
+    const size_t num_children = getNumberOfChildren();
+    if (new_children.size() != num_children)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Data type {} has {} children, but {} were given to cloneWithChildren",
+            getName(), num_children, new_children.size());
+
+    return doCloneWithChildren(new_children);
+}
+
+DataTypePtr IDataType::doCloneWithChildren(const DataTypes &) const
+{
+    /// Reached only for a type without children, which `cloneWithChildren` has already checked.
+    return shared_from_this();
+}
+
+String IDataType::getPrettyName(size_t indent) const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetPrettyName(indent);
+}
+
+void IDataType::updateHash(SipHash & hash) const
+{
+    if (custom_name)
+    {
+        hash.update(custom_name->getName().size());
+        hash.update(custom_name->getName());
+    }
+    else
+        hash.update(size_t(0));
+
+    hash.update(getTypeId());
+    updateHashImpl(hash);
+}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -35,7 +102,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     size_t column_size = column.size();
     if (column_size > 10)
     {
-        double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
+        double current_avg_value_size = static_cast<double>(column.byteSize()) / static_cast<double>(column_size);
 
         /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
         if (current_avg_value_size > avg_value_size_hint)
@@ -45,16 +112,22 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     }
 }
 
-MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
+
+MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 {
     auto column = createColumn();
-    if (serialization.getKind() == ISerialization::Kind::SPARSE)
-        return ColumnSparse::create(std::move(column));
-
-    return column;
+    return column->cloneResized(size);
 }
 
-ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
+MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
+{
+    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
+    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
+    /// the ColumnConst produced by the quantized-vector codebook serialization.
+    return serialization.wrapColumnForDeserialization(createColumn());
+}
+
+MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
     column->insert(field);
@@ -62,7 +135,7 @@ ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 }
 
 
-ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
+MutableColumnConstPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 {
     return createColumnConst(size, getDefault());
 }
@@ -77,38 +150,122 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
-void IDataType::forEachSubcolumn(
-    const SubcolumnCallback & callback,
-    const SubstreamData & data)
+namespace
 {
-    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
-    {
-        for (size_t i = 0; i < subpath.size(); ++i)
-        {
-            size_t prefix_len = i + 1;
-            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
-            {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
-                callback(subpath, name, subdata);
-            }
-            subpath[i].visited = true;
-        }
-    };
 
-    ISerialization::EnumerateStreamsSettings settings;
-    settings.position_independent_encoding = false;
-    data.serialization->enumerateStreams(settings, callback_with_data, data);
+/// `nested` is the result of resolving the rest of the name dynamically; its path continues ours.
+std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization::SubstreamPath & path, size_t prefix_len, const IDataType::SubcolumnInfo * nested)
+{
+    auto result = std::make_unique<IDataType::SubcolumnInfo>();
+    /// The selected leaf is the end of the whole path: when the rest of the name was resolved dynamically
+    /// it lives in `nested`, while `path[prefix_len - 1]` is only the prefix the dynamic type matched.
+    const ISerialization::Substream * selected_terminal
+        = nested && !nested->substreams_path.empty() ? &nested->substreams_path.back() : nullptr;
+    result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
+    result->substreams_path.assign(path.begin(), path.begin() + prefix_len);
+    if (nested)
+        result->substreams_path.insert(result->substreams_path.end(), nested->substreams_path.begin(), nested->substreams_path.end());
+    return result;
 }
 
-template <typename Ptr>
-Ptr IDataType::getForSubcolumn(
+
+/// A subcolumn the type at `path[i]` resolved dynamically, completed to a subcolumn of the whole type: the creator of
+/// that element applied, specialized to the selected leaf, and the path continued from the prefix.
+std::unique_ptr<IDataType::SubcolumnInfo> wrapDynamicSubcolumn(
+    ISerialization::SubstreamPath path, size_t i, std::unique_ptr<IDataType::SubcolumnInfo> dynamic_subcolumn_info)
+{
+    if (auto creator = path[i].creator)
+    {
+        /// Offer the creator the leaf that was really selected, which lives at the end
+        /// of the dynamically resolved path, not at `prefix_len - 1` of this one.
+        if (!dynamic_subcolumn_info->substreams_path.empty())
+        {
+            if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn_info->substreams_path.back()))
+                creator = std::move(specialized);
+        }
+
+        /// Build the serialization before the type is wrapped, so that a creator
+        /// inspecting its prev_type argument sees the type the serialization
+        /// actually serializes. Same order as in ISerialization::createFromPath.
+        dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+        dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
+        dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
+    }
+
+    path[i].data = dynamic_subcolumn_info->data;
+    return makeSubcolumnInfo(path, i + 1, dynamic_subcolumn_info.get());
+}
+
+}
+
+void IDataType::forEachSubcolumn(
+    const SubcolumnCallback & callback,
+    const SubstreamData & data,
+    size_t initial_array_level)
+{
+    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+    {
+        for (size_t i = 0; i < subpath.size(); ++i)
+        {
+            size_t prefix_len = i + 1;
+            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
+            {
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
+                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
+                auto path_copy = subpath;
+                path_copy.resize(prefix_len);
+                callback(path_copy, name, subdata);
+
+                /// The subcolumns this element's type declares but resolves dynamically, under its name, wrapped as a
+                /// prefix match wraps them.
+                if (const auto & element_data = subpath[i].data; element_data.type)
+                {
+                    size_t array_level = initial_array_level + ISerialization::getArrayLevel(subpath, prefix_len);
+                    element_data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
+                    {
+                        if (auto info = element_data.type->getDynamicSubcolumnInfo(known_name, element_data, array_level, false))
+                        {
+                            auto wrapped = wrapDynamicSubcolumn(subpath, i, std::move(info));
+                            callback(wrapped->substreams_path, name + "." + known_name, wrapped->data);
+                        }
+                    }, array_level);
+                }
+            }
+            subpath[i].visited = true;
+        }
+    };
+
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    /// Dynamic subcolumns are listed through forEachKnownDynamicSubcolumnName.
+    settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
+    data.serialization->enumerateStreams(settings, callback_with_data, data);
+
+    /// The same for the type itself.
+    if (data.type)
+    {
+        data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
+        {
+            if (auto info = data.type->getDynamicSubcolumnInfo(known_name, data, initial_array_level, false))
+                callback(info->substreams_path, known_name, info->data);
+        }, initial_array_level);
+    }
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     std::string_view subcolumn_name,
     const SubstreamData & data,
-    Ptr SubstreamData::*member,
-    bool throw_if_null) const
+    size_t initial_array_level,
+    bool throw_if_null)
 {
-    Ptr res;
+    std::unique_ptr<IDataType::SubcolumnInfo> res;
+    /// Track whether res was set by an exact name match, so that exact matches
+    /// always take priority over prefix (dynamic subcolumn) matches.
+    /// This matters when e.g. JSON has typed paths "a" (Array(JSON)) and "a.b" (Int64):
+    /// without this, the prefix match on "a" would fire first (sorted order) and
+    /// the exact match on "a.b" would be skipped because res is already set.
+    bool res_from_exact_match = false;
 
     ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
     {
@@ -117,10 +274,30 @@ Ptr IDataType::getForSubcolumn(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
-                if (name == subcolumn_name)
-                    res = ISerialization::createFromPath(subpath, prefix_len).*member;
+                /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
+                /// which also keeps the first subcolumn when there are name collisions
+                /// (e.g. "null" can match both Nullable's null-map and a Tuple element named "null").
+                /// Exact matches always take priority over prefix matches regardless of iteration order.
+                if (name == subcolumn_name && !res_from_exact_match)
+                {
+                    res = makeSubcolumnInfo(subpath, prefix_len, nullptr);
+                    res_from_exact_match = true;
+                }
+                /// Check if this subcolumn is a prefix of requested subcolumn and it can create dynamic subcolumns.
+                /// Only use prefix matches when no exact match has been found.
+                else if (!res_from_exact_match && subcolumn_name.starts_with(name + ".") && subpath[i].data.type && subpath[i].data.type->hasDynamicSubcolumnsData())
+                {
+                    auto dynamic_subcolumn_name = subcolumn_name.substr(name.size() + 1);
+                    auto dynamic_subcolumn_info = subpath[i].data.type->getDynamicSubcolumnInfo(
+                        dynamic_subcolumn_name,
+                        subpath[i].data,
+                        initial_array_level + ISerialization::getArrayLevel(subpath, prefix_len),
+                        false);
+                    if (dynamic_subcolumn_info)
+                        res = wrapDynamicSubcolumn(subpath, i, std::move(dynamic_subcolumn_info));
+                }
             }
             subpath[i].visited = true;
         }
@@ -128,12 +305,42 @@ Ptr IDataType::getForSubcolumn(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
+    /// Don't enumerate dynamic subcolumns, they are handled separately.
+    settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
+    settings.array_level = initial_array_level;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
+    if (!res && data.type->hasDynamicSubcolumnsData())
+        res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, settings.array_level, throw_if_null);
+
     if (!res && throw_if_null)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());
 
     return res;
+}
+
+String IDataType::getSubcolumnNameForZeroArrayLevel(std::string_view subcolumn_name, const SubstreamPath & resolved_path)
+{
+    if (!SerializationArray::isArraySizesSubcolumn(resolved_path))
+        return String(subcolumn_name);
+
+    /// `ArraySizes` is terminal, so the number is always in the last component, and the depth of the
+    /// sizes inside the resolved path is the number they get at level 0.
+    auto dot_pos = subcolumn_name.rfind('.');
+    auto prefix = dot_pos == std::string_view::npos ? std::string_view{} : subcolumn_name.substr(0, dot_pos + 1);
+    return String(prefix) + "size" + toString(ISerialization::getArrayLevel(resolved_path));
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getDynamicSubcolumnInfo(
+    std::string_view /*subcolumn_name*/,
+    const SubstreamData & /*data*/,
+    size_t /*initial_array_level*/,
+    bool throw_if_null) const
+{
+    if (throw_if_null)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnInfo is not implemented for type {}", getName());
+    return nullptr;
 }
 
 bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
@@ -141,34 +348,84 @@ bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
     return tryGetSubcolumnType(subcolumn_name) != nullptr;
 }
 
+bool IDataType::hasDynamicSubcolumns() const
+{
+    if (hasDynamicSubcolumnsData())
+        return true;
+
+    bool has_dynamic_subcolumns = false;
+    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    auto callback = [&](const SubstreamPath &, const String &, const SubstreamData & subcolumn_data)
+    {
+        has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData();
+    };
+    forEachSubcolumn(callback, data);
+    return has_dynamic_subcolumns;
+}
+
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
-    return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, false);
+    return tryGetSubcolumnType(subcolumn_name, getDefaultSerialization());
+}
+
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
+    auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
+    return subcolumn_data ? subcolumn_data->data.type : nullptr;
 }
 
 DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
-    return getForSubcolumn<DataTypePtr>(subcolumn_name, data, &SubstreamData::type, true);
+    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.type;
+}
+
+std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name) const
+{
+    return tryGetSubcolumnInfo(subcolumn_name, getDefaultSerialization());
+}
+
+std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
+    auto info = getSubcolumnInfo(subcolumn_name, data, {}, false);
+    if (!info)
+        return {};
+    return std::move(*info);
 }
 
 ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
-    return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, false);
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
+    {
+        auto subcolumn = tryGetSubcolumn(subcolumn_name, column_const->getDataColumnPtr());
+        if (!subcolumn)
+            return nullptr;
+        return ColumnConst::create(subcolumn, column_const->size());
+    }
+
+    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
+    auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
+    return subcolumn_data ? subcolumn_data->data.column : nullptr;
 }
 
 ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withColumn(column);
-    return getForSubcolumn<ColumnPtr>(subcolumn_name, data, &SubstreamData::column, true);
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
+        return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
+
+    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
+    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    if (!subcolumn)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subcolumn {} of type {} cannot be extracted from a column in memory", subcolumn_name, getName());
+    return subcolumn;
 }
 
 SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
 {
-    auto data = SubstreamData(serialization);
-    return getForSubcolumn<SerializationPtr>(subcolumn_name, data, &SubstreamData::serialization, true);
+    auto data = SubstreamData(serialization).withType(getPtr());
+    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.serialization;
 }
 
 Names IDataType::getSubcolumnNames() const
@@ -177,7 +434,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, SubstreamData(getDefaultSerialization()).withType(getPtr()));
     return res;
 }
 
@@ -188,6 +445,7 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::insertManyDefaultsInto(IColumn & column, size_t n) const
 {
+    column.reserve(column.size() + n);
     for (size_t i = 0; i < n; ++i)
         insertDefaultInto(column);
 }
@@ -202,43 +460,62 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
-MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfo::Settings & settings) const
+MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
+    return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
+    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+}
 
-    return std::make_shared<SerializationInfo>(ISerialization::getKind(column), SerializationInfo::Settings{});
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const
 {
+    checkStackSize();
+
     if (custom_serialization)
         return custom_serialization;
 
-    return doGetDefaultSerialization();
+    return doGetSerialization(SerializationInfoSettings{});
 }
 
-SerializationPtr IDataType::getSparseSerialization() const
+SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationSparse>(getDefaultSerialization());
-}
+    for (auto kind : kind_stack)
+    {
+        if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
+            serialization = SerializationSparse::create(serialization);
+        else if (kind == ISerialization::Kind::DETACHED)
+            serialization = SerializationDetached::create(serialization);
+        else if (kind == ISerialization::Kind::REPLICATED)
+            serialization = SerializationReplicated::create(serialization);
+    }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
-{
-    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization();
-
-    return getDefaultSerialization();
+    return serialization;
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKind());
+    return wrapSerializationBasedOnKindStack(getSerialization(info.getSettings()), info.getKindStack(), info.getSettings());
+}
+
+SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const
+{
+    checkStackSize();
+
+    if (custom_serialization)
+        return custom_serialization;
+
+    return doGetSerialization(settings);
 }
 
 // static
@@ -255,6 +532,19 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
 }
 
 // static
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings)
+{
+    if (column.isSubcolumn())
+    {
+        const auto & type_in_storage = column.getTypeInStorage();
+        auto serialization = type_in_storage->getSerialization(settings);
+        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), serialization);
+    }
+
+    return column.type->getSerialization(settings);
+}
+
+// static
 SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
 {
     if (column.isSubcolumn())
@@ -266,5 +556,105 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column)
 
     return column.type->getDefaultSerialization();
 }
+
+#define FOR_TYPES_OF_TYPE(M) \
+    M(TypeIndex) \
+    M(const IDataType &) \
+    M(const DataTypePtr &) \
+    M(WhichDataType)
+
+#define DISPATCH(TYPE) \
+bool isUInt8(TYPE data_type) { return WhichDataType(data_type).isUInt8(); } \
+bool isUInt16(TYPE data_type) { return WhichDataType(data_type).isUInt16(); } \
+bool isUInt32(TYPE data_type) { return WhichDataType(data_type).isUInt32(); } \
+bool isUInt64(TYPE data_type) { return WhichDataType(data_type).isUInt64(); } \
+bool isUInt128(TYPE data_type) { return WhichDataType(data_type).isUInt128(); } \
+bool isUInt256(TYPE data_type) { return WhichDataType(data_type).isUInt256(); } \
+bool isNativeUInt(TYPE data_type) { return WhichDataType(data_type).isNativeUInt(); } \
+bool isUInt(TYPE data_type) { return WhichDataType(data_type).isUInt(); } \
+\
+bool isInt8(TYPE data_type) { return WhichDataType(data_type).isInt8(); } \
+bool isInt16(TYPE data_type) { return WhichDataType(data_type).isInt16(); } \
+bool isInt32(TYPE data_type) { return WhichDataType(data_type).isInt32(); } \
+bool isInt64(TYPE data_type) { return WhichDataType(data_type).isInt64(); } \
+bool isInt128(TYPE data_type) { return WhichDataType(data_type).isInt128(); } \
+bool isInt256(TYPE data_type) { return WhichDataType(data_type).isInt256(); } \
+bool isNativeInt(TYPE data_type) { return WhichDataType(data_type).isNativeInt(); } \
+bool isInt(TYPE data_type) { return WhichDataType(data_type).isInt(); } \
+\
+bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } \
+bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
+\
+bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
+bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
+\
+bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
+bool isNativeFloat(TYPE data_type) { return WhichDataType(data_type).isNativeFloat(); } \
+\
+bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
+bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
+bool isNumber(TYPE data_type) { return WhichDataType(data_type).isNumber(); } \
+\
+bool isEnum8(TYPE data_type) { return WhichDataType(data_type).isEnum8(); } \
+bool isEnum16(TYPE data_type) { return WhichDataType(data_type).isEnum16(); } \
+bool isEnum(TYPE data_type) { return WhichDataType(data_type).isEnum(); } \
+\
+bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
+bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
+bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
+bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
+bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
+bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
+bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
+bool isTimeOrTime64(TYPE data_type) { return WhichDataType(data_type).isTimeOrTime64(); } \
+bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
+bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
+bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \
+\
+bool isString(TYPE data_type) { return WhichDataType(data_type).isString(); } \
+bool isFixedString(TYPE data_type) { return WhichDataType(data_type).isFixedString(); } \
+bool isStringOrFixedString(TYPE data_type) { return WhichDataType(data_type).isStringOrFixedString(); } \
+\
+bool isUUID(TYPE data_type) { return WhichDataType(data_type).isUUID(); } \
+bool isIPv4(TYPE data_type) { return WhichDataType(data_type).isIPv4(); } \
+bool isIPv6(TYPE data_type) { return WhichDataType(data_type).isIPv6(); } \
+bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
+bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
+bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
+bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
+bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
+bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
+bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
+bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
+bool isQBit(TYPE data_type) { return WhichDataType(data_type).isQBit(); } \
+\
+bool isColumnedAsNumber(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isInteger() || which.isFloat() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6(); \
+} \
+\
+bool isColumnedAsDecimal(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isDecimal() || which.isDateTime64() || which.isTime64(); \
+} \
+\
+bool isNotCreatable(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isNothing() || which.isFunction() || which.isSet(); \
+} \
+\
+bool isNotDecimalButComparableToDecimal(TYPE data_type) \
+{ \
+    WhichDataType which(data_type); \
+    return which.isInt() || which.isUInt() || which.isFloat(); \
+} \
+
+FOR_TYPES_OF_TYPE(DISPATCH)
+
+#undef DISPATCH
+#undef FOR_TYPES_OF_TYPE
 
 }

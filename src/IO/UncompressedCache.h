@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/JemallocCacheAllocator.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -18,11 +19,43 @@ namespace DB
 {
 
 
+/// Cache entries are the server's, not the query's that inserts or evicts them.
+template <typename T>
+struct ServerOwnedCacheEntryAllocator
+{
+    using value_type = T;
+
+    ServerOwnedCacheEntryAllocator() = default;
+    template <typename U>
+    explicit ServerOwnedCacheEntryAllocator(const ServerOwnedCacheEntryAllocator<U> &) {}
+
+    T * allocate(size_t n)
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        return static_cast<T *>(::operator new(n * sizeof(T)));
+    }
+
+    void deallocate(T * p, size_t n) noexcept
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        ::operator delete(p, n * sizeof(T));
+    }
+
+    template <typename U>
+    bool operator==(const ServerOwnedCacheEntryAllocator<U> &) const { return true; }
+};
+
 struct UncompressedCacheCell
 {
-    Memory<> data;
-    size_t compressed_size;
-    UInt32 additional_bytes;
+    Memory<JemallocCacheAllocator> data;
+    size_t compressed_size{};
+    UInt32 additional_bytes{};
+
+    ~UncompressedCacheCell()
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        data = {};
+    }
 };
 
 struct UncompressedSizeWeightFunction
@@ -33,6 +66,7 @@ struct UncompressedSizeWeightFunction
     }
 };
 
+extern template class CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 /** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
   */
@@ -42,18 +76,14 @@ private:
     using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, 0, size_ratio) {}
+    UncompressedCache(const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        double size_ratio);
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file, size_t offset)
-    {
-        SipHash hash;
-        hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.update(offset);
-
-        return hash.get128();
-    }
+    static UInt128 hash(const String & path_to_file, size_t offset);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
@@ -69,9 +99,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
         ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
     }
 };
 

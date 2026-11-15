@@ -29,7 +29,7 @@ select * from t order by n;
 
 select 'exception on create and fill';
 -- table is not created if select fails
-create or replace table join engine=Join(ANY, INNER, n) as select * from t where throwIf(n); -- { serverError 395 }
+create or replace table join engine=Join(ANY, INNER, n) as select * from t where throwIf(n); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 select count() from system.tables where database=currentDatabase() and name='join';
 
 -- table is created and filled
@@ -38,7 +38,7 @@ select * from numbers(10) as t any join join on t.number=join.n order by n;
 
 -- table is not replaced if select fails
 insert into t(n) values (4);
-replace table join engine=Join(ANY, INNER, n) as select * from t where throwIf(n); -- { serverError 395 }
+replace table join engine=Join(ANY, INNER, n) as select * from t where throwIf(n); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 select * from numbers(10) as t any join join on t.number=join.n order by n;
 
 -- table is replaced

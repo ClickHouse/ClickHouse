@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Replace predicate having Date/DateTime converters with their preimages"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

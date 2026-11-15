@@ -1,10 +1,10 @@
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/FunctionHelpers.h>
-#include <Core/Block.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -19,7 +19,12 @@ namespace ErrorCodes
 
 std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name)
 {
-    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column);
+    /// The name can arrive wrapped, e.g. from `now(toLowCardinality('UTC'))`. The column is absent
+    /// when the argument is not a constant, and the check below reports that.
+    const auto full_column = column ? column->convertToFullColumnIfLowCardinality() : nullptr;
+    /// The callers that validate this argument - `now`, `now64`, `toTimezone` and the shared
+    /// date/time helpers - accept `String` or `FixedString`, so accept both here as well.
+    const ColumnConst * time_zone_column = full_column ? checkAndGetColumnConstStringOrFixedString(full_column.get()) : nullptr;
 
     if (!time_zone_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -38,20 +43,18 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
     {
         return extractTimeZoneNameFromColumn(arguments[time_zone_arg_num].column.get(), arguments[time_zone_arg_num].name);
     }
-    else
-    {
-        if (arguments.size() <= datetime_arg_num)
-            return {};
 
-        const auto & dt_arg = arguments[datetime_arg_num].type.get();
-        /// If time zone is attached to an argument of type DateTime.
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
-            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
-            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-
+    if (arguments.size() <= datetime_arg_num)
         return {};
-    }
+
+    const auto & dt_arg = arguments[datetime_arg_num].type.get();
+    /// If time zone is attached to an argument of type DateTime.
+    if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+    if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+
+    return {};
 }
 
 const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
@@ -63,20 +66,18 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
         return DateLUT::instance(time_zone);
     }
-    else
-    {
-        if (arguments.size() <= datetime_arg_num)
-            return DateLUT::instance();
 
-        const auto & dt_arg = arguments[datetime_arg_num].type.get();
-        /// If time zone is attached to an argument of type DateTime.
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
-            return type->getTimeZone();
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
-            return type->getTimeZone();
-
+    if (arguments.size() <= datetime_arg_num)
         return DateLUT::instance();
-    }
+
+    const auto & dt_arg = arguments[datetime_arg_num].type.get();
+    /// If time zone is attached to an argument of type DateTime.
+    if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
+        return type->getTimeZone();
+    if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
+        return type->getTimeZone();
+
+    return DateLUT::instance();
 }
 
 }

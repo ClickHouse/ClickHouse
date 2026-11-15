@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -8,15 +9,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 namespace
 {
 
-class FunctionCurrentSchemas : public IFunction
+class FunctionCurrentSchemas final : public IFunction
 {
     const String db_name;
 
@@ -42,14 +39,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        // For compatibility, function implements the same signature as Postgres'
-        const bool argument_is_valid = arguments.size() == 1 && isBool(arguments.front());
-        if (!argument_is_valid)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be bool", getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(Bool) -> Array(String)";
     }
 
     bool isDeterministic() const override { return false; }
@@ -67,22 +59,40 @@ public:
 
 REGISTER_FUNCTION(CurrentSchema)
 {
-    factory.registerFunction<FunctionCurrentSchemas>(FunctionDocumentation
-         {
-             .description=R"(
-Returns a single-element array with the name of the current database
+    FunctionDocumentation::Description description = R"(
+Same as function [`currentDatabase`](#currentDatabase) but
+- accepts a boolean argument which is ignored
+- returns the database name as an array with a single value.
 
-Requires a boolean parameter, but it is ignored actually. It is required just for compatibility with the implementation of this function in other DB engines.
+Function `currentSchemas` only exists for compatibility with PostgreSQL.
+Please use `currentDatabase` instead.
 
-[example:common]
-)",
-            .examples{
-             {"common", "SELECT current_schemas(true);", "['default']"}
-        }
-        },
-        FunctionFactory::CaseInsensitive);
-    factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::CaseInsensitive);
+Also see the [`SET` statement](/reference/statements/use).
+    )";
+    FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
+    FunctionDocumentation::Arguments arguments = {
+        {"bool", "A boolean value, which is ignored.", {"Bool"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current database.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT currentSchemas(true)
+        )",
+        R"(
+┌─currentSchemas(true)─┐
+│ ['default']          │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
+    factory.registerFunction<FunctionCurrentSchemas>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);
 }
 
 }

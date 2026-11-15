@@ -53,7 +53,7 @@ public:
     {}
 
     template <typename ... Args>
-    inline auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
+    auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, Args && ... args) const
     {
         /// Type conversion from float to integer may be required.
         /// We are Ok with implementation specific result for out of range and denormals conversion.
@@ -65,6 +65,10 @@ public:
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// The transforms taking the components use only the whole part: round it towards negative infinity,
+            /// same as below, so that a value before the epoch with a fractional part is not moved to the next second.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
 
             const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -90,14 +94,14 @@ public:
 
     template <typename T, typename... Args>
     requires(!std::same_as<T, DateTime64>)
-    inline auto execute(const T & t, Args &&... args) const
+    auto execute(const T & t, Args &&... args) const
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
     }
 
 
     template <typename ... Args>
-    inline auto NO_SANITIZE_UNDEFINED executeExtendedResult(const DateTime64 & t, Args && ... args) const
+    auto NO_SANITIZE_UNDEFINED executeExtendedResult(const DateTime64 & t, Args && ... args) const
     {
         /// Type conversion from float to integer may be required.
         /// We are Ok with implementation specific result for out of range and denormals conversion.
@@ -109,6 +113,9 @@ public:
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
             auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// See `execute`.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -124,14 +131,20 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            /// Round towards negative infinity, same as in `execute`. Without this a value in the last
+            /// fractional second before a day boundary is attributed to the next day, which disagrees
+            /// with `execute` and breaks monotonicity analysis that compares factors across both paths.
+            if (t.value < 0 && components.fractional)
+                --components.whole;
+
             return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
 
     template <typename T, typename ... Args>
     requires (!std::same_as<T, DateTime64>)
-    inline auto executeExtendedResult(const T & t, Args && ... args) const
+    auto executeExtendedResult(const T & t, Args && ... args) const
     {
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);
     }

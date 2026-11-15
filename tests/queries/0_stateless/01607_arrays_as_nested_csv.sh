@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Array(String)) ENGINE = Memory;
 "
@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --input_format_csv_arrays_as_nested_csv 1 --query "INSERT I
 """Hello"", ""world"", ""42"""" TV"""
 END
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
 SELECT * FROM test;
 DROP TABLE IF EXISTS test;
 "

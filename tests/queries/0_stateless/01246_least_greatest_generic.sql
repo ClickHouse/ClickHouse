@@ -17,7 +17,7 @@ SELECT least(toNullable(123), 456);
 
 SELECT LEAST(-1, 18446744073709551615) x, toTypeName(x);
 -- This can be improved
-SELECT LEAST(-1., 18446744073709551615); -- { serverError 43 }
+SELECT LEAST(-1., 18446744073709551615); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT LEAST(-1., 18446744073709551615.);
 SELECT greatest(-1, 1, 4294967295);
@@ -33,4 +33,4 @@ SELECT greatest([], [NULL]);
 SELECT LEAST([NULL], [0]);
 SELECT GREATEST([NULL], [0]);
 
-SELECT Greatest();  -- { serverError 42 }
+SELECT Greatest();  -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

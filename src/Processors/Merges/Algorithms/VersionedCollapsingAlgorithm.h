@@ -1,9 +1,9 @@
 #pragma once
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <queue>
 
 namespace DB
 {
@@ -18,10 +18,11 @@ class VersionedCollapsingAlgorithm final : public IMergingAlgorithmWithSharedChu
 public:
     /// Don't need version column. It's in primary key.
     VersionedCollapsingAlgorithm(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_, const String & sign_column_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
 
@@ -29,8 +30,6 @@ public:
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     size_t sign_column_number = 0;
 
     const size_t max_rows_in_queue;
@@ -39,7 +38,7 @@ private:
     FixedSizeDequeWithGaps<RowRef> current_keys;
     Int8 sign_in_queue = 0;
 
-    std::queue<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
+    QueueWithMemoryTracking<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     void insertGap(size_t gap_size);
     void insertRow(size_t skip_rows, const RowRef & row);

@@ -1,6 +1,5 @@
 -- { echo }
 drop table if exists map_test;
-set allow_experimental_map_type = 1;
 create table map_test engine=TinyLog() as (select (number + 1) as n, map(1, 1, number,2) as m from numbers(1, 5));
 
 select mapPopulateSeries(m) from map_test;
@@ -31,6 +30,6 @@ select mapPopulateSeries(map(toInt32(-10), toInt32(1), 2, 1)) as res, toTypeName
 select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1)) as res, toTypeName(res);
 select mapPopulateSeries(map(toInt64(-10), toInt64(1), 2, 1), toInt64(-5)) as res, toTypeName(res);
 
-select mapPopulateSeries(); -- { serverError 42 }
-select mapPopulateSeries('asdf'); -- { serverError 43 }
-select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError 43 }
+select mapPopulateSeries(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select mapPopulateSeries('asdf'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapPopulateSeries(map('1', 1, '2', 1)) as res, toTypeName(res); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

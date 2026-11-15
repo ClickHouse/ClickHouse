@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+-- With shared merge tree non deterministic mutations are allowed
 DROP TABLE IF EXISTS t_mutations_nondeterministic SYNC;
 
 SET mutations_sync = 2;

@@ -1,0 +1,28 @@
+0
+2
+0
+1
+1
+2
+1
+2
+0
+QUERY id: 0
+  PROJECTION COLUMNS
+    b UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: b, result_type: UInt8, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, cte_name: t
+      PROJECTION COLUMNS
+        b UInt8
+      PROJECTION
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_2, constant_value_type: UInt8
+      JOIN TREE
+        TABLE id: 6, alias: __table2, table_name: system.one
+
+SELECT __table1.b AS b
+FROM
+t AS __table1

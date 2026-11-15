@@ -1,0 +1,10 @@
+----- START -----
+----- CONST -----
+133
+31
+(3,4)
+----- 4294967296, 2 -----
+----- ERRORS -----
+----- SIGNATURE -----
+(NativeUInt...{1..2}) -> UInt64 OR (Tuple(NativeUInt), NativeUInt) -> UInt64 OR (Tuple(NativeUInt, NativeUInt), NativeUInt, NativeUInt) -> UInt64
+----- END -----

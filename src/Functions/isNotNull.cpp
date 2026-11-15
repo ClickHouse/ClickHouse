@@ -1,22 +1,35 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Core/ColumnNumbers.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 namespace DB
 {
+namespace Setting
+{
+}
+
 namespace
 {
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
-class FunctionIsNotNull : public IFunction
+class FunctionIsNotNull final : public IFunction
 {
 public:
     static constexpr auto name = "isNotNull";
@@ -31,6 +44,23 @@ public:
         return name;
     }
 
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
+        /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
+        if (isNothing(result_type))
+            return nullptr;
+
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(0));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(1));
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -38,63 +68,121 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "(Any) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
 
-        if (isVariant(elem.type))
+        if (isVariant(elem.type) || isDynamic(elem.type))
         {
-            const auto & discriminators = checkAndGetColumn<ColumnVariant>(*elem.column)->getLocalDiscriminators();
+            const auto & column_variant = isVariant(elem.type) ? checkAndGetColumn<ColumnVariant>(*elem.column) : checkAndGetColumn<ColumnDynamic>(*elem.column).getVariantColumn();
+            const auto & discriminators = column_variant.getLocalDiscriminators();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.reserve(discriminators.size());
-            for (auto discr : discriminators)
-                data.push_back(discr != ColumnVariant::NULL_DISCRIMINATOR);
+            data.resize(discriminators.size());
+            for (size_t i = 0; i < discriminators.size(); ++i)
+                data[i] = discriminators[i] != ColumnVariant::NULL_DISCRIMINATOR;
             return res;
         }
 
         if (elem.type->isLowCardinalityNullable())
         {
-            const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
-            const size_t null_index = low_cardinality_column->getDictionary().getNullValueIndex();
+            const auto & low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
+            const size_t null_index = low_cardinality_column.getDictionary().getNullValueIndex();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.reserve(low_cardinality_column->size());
-            for (size_t i = 0; i != low_cardinality_column->size(); ++i)
-                data.push_back(low_cardinality_column->getIndexAt(i) != null_index);
+            data.resize(low_cardinality_column.size());
+            for (size_t i = 0; i != low_cardinality_column.size(); ++i)
+                data[i] = (low_cardinality_column.getIndexAt(i) != null_index);
             return res;
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
             const auto & src_data = nullable->getNullMapData();
             auto & res_data = assert_cast<ColumnUInt8 &>(*res_column).getData();
-
-            for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = !src_data[i];
-
+            vector(src_data, res_data);
             return res_column;
         }
-        else
-        {
-            /// Since no element is nullable, return a constant one.
-            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
-        }
-    }
-};
 
+        /// Since no element is nullable, return a constant one.
+        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+        {
+            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
+        }
+        else
+            return b.getInt8(1);
+    }
+#endif
+
+private:
+    static void vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
+    {
+        size_t size = null_map.size();
+        for (size_t i = 0; i < size; ++i)
+            res[i] = !null_map[i];
+    }
+
+};
 }
 
 REGISTER_FUNCTION(IsNotNull)
 {
-    factory.registerFunction<FunctionIsNotNull>();
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is not `NULL`.
+
+Also see: operator [`IS NOT NULL`](/reference/operators#is_not_null).
+    )";
+    FunctionDocumentation::Syntax syntax = "isNotNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of non-compound data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is not `NULL`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT x FROM t_null WHERE isNotNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsNotNull>(documentation);
 }
 
 }

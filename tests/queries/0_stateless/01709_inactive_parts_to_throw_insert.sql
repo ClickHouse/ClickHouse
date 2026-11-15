@@ -7,6 +7,6 @@ insert into data_01709 values (2);
 
 optimize table data_01709 final;
 
-insert into data_01709 values (3); -- { serverError 252 }
+insert into data_01709 values (3); -- { serverError TOO_MANY_PARTS }
 
 drop table data_01709;

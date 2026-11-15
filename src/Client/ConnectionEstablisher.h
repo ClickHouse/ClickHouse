@@ -1,11 +1,8 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
-#include <Common/Fiber.h>
-#include <Common/FiberStack.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -20,35 +17,38 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
                           const Settings & settings_,
                           LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
+    /// The connection is returned from the connection pool and it can be stale (the server may have
+    /// closed it while it was idle). The pooled connection is not pinged before use: pinging it adds
+    /// an unnecessary Ping-Pong round trip when the connection is still alive. Instead, a stale
+    /// connection is detected by a zero-timeout poll (see Connection::forceConnected) or, failing
+    /// that, by retrying - either here (a pooled connection that fails its first request is
+    /// reconnected once) or at a higher level (ConnectionPoolWithFailover retries the next replica).
     void run(TryResult & result, std::string & fail_message);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
     LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
 };
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 /// Class for nonblocking establishing connection to the replica.
-/// It runs establishing connection process in fiber and sets special
+/// It runs establishing connection process in coroutine and sets special
 /// read callback which is called when reading from socket blocks.
 /// When read callback is called, socket and receive timeout are added in epoll
 /// and execution returns to the main program.
@@ -58,7 +58,7 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
                                const Settings & settings_,
                                LoggerPtr log_,
@@ -115,11 +115,11 @@ private:
     /// We use timer descriptor for checking socket receive timeout.
     TimerDescriptor timeout_descriptor;
     Poco::Timespan timeout;
-    AsyncEventTimeoutType timeout_type;
+    AsyncEventTimeoutType timeout_type{};
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     int socket_fd = -1;
     std::string socket_description;
 

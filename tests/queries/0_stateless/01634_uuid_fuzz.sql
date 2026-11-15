@@ -1,1 +1,1 @@
-SELECT toUUID(-1.1); -- { serverError 48 }
+SELECT toUUID(-1.1); -- { serverError NOT_IMPLEMENTED }

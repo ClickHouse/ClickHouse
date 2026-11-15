@@ -2,8 +2,6 @@
 
 #include <base/defines.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -15,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -47,6 +46,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Change it to never return LowCardinality, making it consistent when using __groupingForRollup / groupingForforCube
+    /// with __grouping_set
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
@@ -55,7 +58,10 @@ public:
     template <typename AggregationKeyChecker>
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, AggregationKeyChecker checker) const
     {
-        const auto * grouping_set_column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        /// The analyzer passes `__grouping_set` as a full column, but a direct call of the
+        /// function can pass a constant.
+        const auto grouping_set_column_full = arguments[0].column->convertToFullColumnIfConst();
+        const auto & grouping_set_column = checkAndGetColumn<ColumnUInt64>(*grouping_set_column_full);
 
         auto result = ColumnUInt64::create();
         auto & result_data = result->getData();
@@ -64,7 +70,7 @@ public:
         const auto * result_table = likely(force_compatibility) ? COMPATIBLE_MODE : INCOMPATIBLE_MODE;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 set_index = grouping_set_column->getElement(i);
+            UInt64 set_index = grouping_set_column.getElement(i);
 
             UInt64 value = 0;
             for (auto index : arguments_indexes)
@@ -76,7 +82,7 @@ public:
     }
 };
 
-class FunctionGrouping : public FunctionGroupingBase
+class FunctionGrouping final : public FunctionGroupingBase
 {
 public:
     explicit FunctionGrouping(bool force_compatibility_)
@@ -92,14 +98,14 @@ public:
     }
 };
 
-class FunctionGroupingOrdinary : public FunctionGroupingBase
+class FunctionGroupingOrdinary final : public FunctionGroupingBase
 {
 public:
     FunctionGroupingOrdinary(ColumnNumbers arguments_indexes_, bool force_compatibility_)
         : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
     {}
 
-    String getName() const override { return "groupingOrdinary"; }
+    String getName() const override { return "__groupingOrdinary"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -110,7 +116,7 @@ public:
     }
 };
 
-class FunctionGroupingForRollup : public FunctionGroupingBase
+class FunctionGroupingForRollup final : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -120,7 +126,7 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "groupingForRollup"; }
+    String getName() const override { return "__groupingForRollup"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -133,13 +139,20 @@ public:
                 // | (a, b)       |   1   |
                 // | (a)          |   2   |
                 // | ()           |   3   |
+
+                /// A direct call of the function can pass any set index; without the check an
+                /// index above the key count would give a wrong value from unsigned wrap-around.
+                if (set_index > aggregation_keys_number)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, ROLLUP over {} keys has {} grouping sets",
+                        set_index, aggregation_keys_number, aggregation_keys_number + 1);
                 return arg_index < aggregation_keys_number - set_index;
             }
         );
     }
 };
 
-class FunctionGroupingForCube : public FunctionGroupingBase
+class FunctionGroupingForCube final : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -150,7 +163,7 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "groupingForCube"; }
+    String getName() const override { return "__groupingForCube"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -163,6 +176,13 @@ public:
                 // | (a)          |   1   |
                 // | (b)          |   2   |
                 // | ()           |   3   |
+
+                /// A direct call of the function can pass any set index; without the check an
+                /// index outside the sets would give a wrong value from unsigned wrap-around.
+                if (set_index >= (ONE << aggregation_keys_number))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, CUBE over {} keys has {} grouping sets",
+                        set_index, aggregation_keys_number, ONE << aggregation_keys_number);
                 auto set_mask = (ONE << aggregation_keys_number) - 1 - set_index;
                 return set_mask & (ONE << (aggregation_keys_number - arg_index - 1));
             }
@@ -170,7 +190,7 @@ public:
     }
 };
 
-class FunctionGroupingForGroupingSets : public FunctionGroupingBase
+class FunctionGroupingForGroupingSets final : public FunctionGroupingBase
 {
     ColumnNumbersSetList grouping_sets;
 public:
@@ -181,13 +201,18 @@ public:
             grouping_sets.emplace_back(set.begin(), set.end());
     }
 
-    String getName() const override { return "groupingForGroupingSets"; }
+    String getName() const override { return "__groupingForGroupingSets"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
             {
+                /// A direct call of the function can pass any set index; without the check an
+                /// index outside the sets would read out of bounds.
+                if (set_index >= grouping_sets.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, there are {} grouping sets", set_index, grouping_sets.size());
                 return grouping_sets[set_index].contains(arg_index);
             }
         );

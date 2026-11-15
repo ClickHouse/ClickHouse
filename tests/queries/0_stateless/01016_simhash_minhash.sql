@@ -111,8 +111,8 @@ SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinH
 SELECT 'wordShingleMinHashCaseInsensitiveUTF8';
 SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinHashCaseInsensitiveUTF8(s, 2, 3) as h FROM defaults GROUP BY h ORDER BY h;
 
-SELECT wordShingleSimHash('foobar', 9223372036854775807); -- { serverError 69 }
-SELECT wordShingleSimHash('foobar', 1001); -- { serverError 69 }
-SELECT wordShingleSimHash('foobar', 0); -- { serverError 69 }
+SELECT wordShingleSimHash('foobar', 9223372036854775807); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT wordShingleSimHash('foobar', 1001); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT wordShingleSimHash('foobar', 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 DROP TABLE defaults;

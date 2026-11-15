@@ -1,4 +1,5 @@
-#include "RedisCommon.h"
+#include <Storages/RedisCommon.h>
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -31,8 +32,6 @@ String storageTypeToKeyType(RedisStorageType type)
             return "string";
         case RedisStorageType::HASH_MAP:
             return "hash";
-        default:
-            return "none";
     }
 
     UNREACHABLE();
@@ -46,8 +45,6 @@ String serializeStorageType(RedisStorageType storage_type)
             return "simple";
         case RedisStorageType::HASH_MAP:
             return "hash_map";
-        default:
-            return "none";
     }
 }
 
@@ -55,7 +52,7 @@ RedisStorageType parseStorageType(const String & storage_type_str)
 {
     if (storage_type_str == "hash_map")
         return RedisStorageType::HASH_MAP;
-    else if (!storage_type_str.empty() && storage_type_str != "simple")
+    if (!storage_type_str.empty() && storage_type_str != "simple")
         throw Exception(ErrorCodes::INVALID_REDIS_STORAGE_TYPE, "Unknown storage type {} for Redis dictionary", storage_type_str);
 
     return RedisStorageType::SIMPLE;
@@ -77,7 +74,8 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
     {
         try
         {
-            client->connect(configuration.host, configuration.port);
+            /// Resolve the host through the DNS cache instead of letting Poco resolve it on connect.
+            client->connect(DNSResolver::instance().resolveAddress(configuration.host, static_cast<UInt16>(configuration.port)));
 
             if (!configuration.password.empty())
             {

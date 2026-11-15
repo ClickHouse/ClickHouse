@@ -22,4 +22,4 @@ SELECT values * 5 FROM my_table WHERE arrayExists(x -> x > 5, values);
 DROP TABLE my_table;
 SELECT [6, 6, 3] % 2;
 SELECT [6, 6, 3] / 2.5::Decimal(1, 1);
-SELECT [1] / 'a'; -- { serverError 43 }
+SELECT [1] / 'a'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

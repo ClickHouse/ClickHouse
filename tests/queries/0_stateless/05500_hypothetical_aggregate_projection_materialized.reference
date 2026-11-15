@@ -1,0 +1,12 @@
+Baseline (after PK + partition + existing indexes):
+marks: 10
+With p (aggregate projection, hypothetical):
+marks: 5
+marks_span: 5 to 39
+verdict: too close to call
+m_inserted: parent level 0
+m_materialized: parent level 0
+m_inserted: 500 rows, 5 marks
+m_materialized: 500 rows, 39 marks
+inserted: 5 marks
+materialized: 10 marks

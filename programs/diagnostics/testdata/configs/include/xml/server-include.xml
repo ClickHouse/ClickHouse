@@ -1,8 +1,0 @@
-<clickhouse>
-    <network_max>5000000</network_max>
-    <test_profile>
-        <test_p>
-        </test_p>
-    </test_profile>
-    <pg_port>9008</pg_port>
-</clickhouse>

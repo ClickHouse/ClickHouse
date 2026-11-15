@@ -1,21 +1,24 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Columns/IColumn.h>
 #include <Common/SimpleIncrement.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>
 
+#include <filesystem>
+
 namespace DB
 {
 
+class AccessFlags;
+
+struct DistributedSettings;
 struct Settings;
 class Context;
 
@@ -30,6 +33,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+class SettingsChanges;
+
+class ConnectionPoolWithFailover;
+using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+
+class IStorageCluster;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -58,23 +68,14 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach_,
+        LoadingStrictnessLevel mode,
+        /// Whether the sharding key comes from a definition the user supplies now, rather than from
+        /// stored metadata being replayed - see the constructor.
+        bool is_fresh_definition,
         ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
-
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        bool attach,
-        ClusterPtr owned_cluster_ = {});
+        ASTPtr remote_table_function_ptr_ = {},
+        bool is_remote_function_ = false,
+        bool is_remote_database_proxy_ = false);
 
     ~StorageDistributed() override;
 
@@ -84,7 +85,11 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    /// Distributed only serializes the query to shards; it never reads columns locally, so rewriting
+    /// functions to subcolumns brings no benefit and breaks shard-side skip-index analysis (a rewritten
+    /// subcolumn no longer matches an index defined on the original expression). Same as IStorageCluster.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
     /// Do not apply moving to PREWHERE optimization for distributed tables,
@@ -92,18 +97,7 @@ public:
     bool canMoveConditionsToPrewhere() const override { return false; }
 
     bool isRemote() const override { return true; }
-
-    /// Snapshot for StorageDistributed contains descriptions
-    /// of columns of type Object for each shard at the moment
-    /// of the start of query.
-    struct SnapshotData : public StorageSnapshot::Data
-    {
-        ColumnsDescriptionByShardNum objects_by_shard;
-    };
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
-    StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
+    bool readsFromOtherTables() const override { return true; }
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -119,7 +113,7 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -134,7 +128,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void initializeFromDisk();
     void shutdown(bool is_drop) override;
@@ -142,11 +136,11 @@ public:
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
+    /// The local background `INSERT` queue is a transient send buffer, not data of this table.
+    bool hasUnreplicatedTableDataOnDisk() const override { return false; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
-
-    NamesAndTypesList getVirtuals() const override;
 
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
@@ -154,9 +148,8 @@ public:
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
-    void flushClusterNodesAllData(ContextPtr context);
+    void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
-    /// Used by ClusterCopier
     size_t getShardCount() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
@@ -165,16 +158,34 @@ private:
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
+    /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
+    void checkShardingKeySetsAreBuilt() const;
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
+
+    /// @param flush - if true the do flush (DistributedAsyncInsertDirectoryQueue::flushAllData()),
+    /// otherwise only shutdown (DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush())
+    void flushClusterNodesAllDataImpl(ContextPtr context, const SettingsChanges & settings_changes, bool flush);
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
 
+    /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
+    /// taken for a directory queue. The files in it are left untouched, and the old name is saved
+    /// in a file next to them.
+    void renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const;
+
+    /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
+    /// directory queue, so `TRUNCATE TABLE` has to drop them separately.
+    void removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const;
+
+    /// A guard that syncs the directory on destruction if `fsync_directories` is set, nullptr otherwise.
+    SyncGuardPtr getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const;
+
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
-    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+    std::shared_ptr<DistributedAsyncInsertDirectoryQueue> getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
     /// Parse the address corresponding to the directory name of the directory queue
     Cluster::Addresses parseAddresses(const std::string & name) const;
@@ -192,15 +203,7 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result) const;
-
-    ClusterPtr skipUnusedShards(
-        ClusterPtr cluster,
-        const SelectQueryInfo & query_info,
-        const TreeRewriterResultPtr & syntax_analyzer_result,
-        const StorageSnapshotPtr & storage_snapshot,
-        ContextPtr context) const;
+        const SelectQueryInfo & query_info) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
@@ -221,22 +224,49 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
+
+    /// The stage `getQueryProcessingStage` returns, chosen after the shards to query are known.
+    QueryProcessingStage::Enum chooseQueryProcessingStage(
+        QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const;
+
+    bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
+
+    /// Throws when the remote table has a column among `key_columns` whose conversion to the type
+    /// declared here does not preserve the order and distinctness (see `conversionPreservesOrder`),
+    /// because the shards then sort or reduce by one type and the initiator relies on another.
+    /// `std::nullopt` means the key columns are unknown, and then every column is checked. The remote table is only
+    /// visible when a shard of `cluster` is this server; nothing is checked otherwise.
+    void checkRemoteTableConversionPreservesOrder(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ClusterPtr & cluster,
+        const std::optional<NameSet> & key_columns) const;
+
+    /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
+    /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
+    /// path (shard pruning under `optimize_skip_unused_shards`/`force_optimize_skip_unused_shards`,
+    /// the distributed group-by optimization) must behave as if such a table has no sharding key,
+    /// exactly like a `Distributed` table declared without one.
+    bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
-    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
-    void delayInsertOrThrowIfNeeded() const;
+    void delayInsertOrThrowIfNeeded(const std::function<bool()> & is_cancelled) const;
 
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline>
+    distributedWriteFromClusterStorage(IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
+
+    static VirtualColumnsDescription createVirtuals();
 
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
+    StorageID remote_storage;
 
     LoggerPtr log;
 
@@ -247,8 +277,13 @@ private:
     const String cluster_name;
 
     bool has_sharding_key;
+    ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
+    bool sharding_key_has_unbuilt_set = false;
     String sharding_key_column_name;
 
     /// Used for global monotonic ordering of files to send.
@@ -266,14 +301,14 @@ private:
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
 
-    DistributedSettings distributed_settings;
+    std::unique_ptr<DistributedSettings> distributed_settings;
 
     struct ClusterNodeData
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolWithFailoverPtr connection_pool;
         Cluster::Addresses addresses;
-        size_t clusters_version;
+        size_t clusters_version{};
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
@@ -281,6 +316,24 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
+
+    bool is_remote_function;
+
+    /// The storage is a table of a `Remote` database: a transient proxy over the remote table with
+    /// no data of its own. Such a proxy enforces the caller's own rights on
+    /// `remote_database.remote_table` in `read`/`write` when a shard points to this server, where
+    /// the query runs directly under the caller and the stored engine credentials do not apply
+    /// (the ordinary resolution path of the database validates only `SHOW_COLUMNS`; the `remote`
+    /// table function performs the same check at storage construction time instead, in
+    /// `TableFunctionRemote::executeImpl`, because there the query kind is known by then). It also
+    /// rejects `TRUNCATE`, which for a `Distributed` storage only clears the on-disk async-insert
+    /// spool: the proxy has none, so it would be a silent no-op reported as success.
+    bool is_remote_database_proxy;
+
+    void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
+
+/// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
+SecretArgumentsSpec remoteSecretArguments();
 
 }

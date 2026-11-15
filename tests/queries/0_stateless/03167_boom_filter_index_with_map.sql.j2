@@ -1,0 +1,31 @@
+DROP TABLE IF EXISTS boom_filter_map_1;
+DROP TABLE IF EXISTS boom_filter_map_2;
+
+{% for type in ['Int8', 'Int16', 'Int32', 'Int64', 'UInt8', 'UInt16', 'UInt32', 'UInt64'] -%}
+
+CREATE TABLE boom_filter_map_1
+(
+    `m` Map(String, {{ type }}),
+    INDEX index_models_value_bloom_filter mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+    ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE boom_filter_map_2
+(
+    `m` Map({{ type }}, String),
+    INDEX index_models_value_bloom_filter mapKeys(m) TYPE bloom_filter GRANULARITY 1
+)
+    ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO boom_filter_map_1 (m) values (map('xxx', 56));
+INSERT INTO boom_filter_map_2 (m) values (map(56, 'xxx'));
+
+SELECT m FROM boom_filter_map_1 WHERE  (m['xxx']) = 56;
+SELECT m FROM boom_filter_map_2 WHERE  (m[56]) = 'xxx';
+
+DROP TABLE IF EXISTS boom_filter_map_1;
+DROP TABLE IF EXISTS boom_filter_map_2;
+
+{% endfor -%}

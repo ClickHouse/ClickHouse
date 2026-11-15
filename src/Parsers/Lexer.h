@@ -1,6 +1,11 @@
 #pragma once
 
+#if !defined(LEXER_STANDALONE_BUILD)
+
 #include <stddef.h>
+#include <stdint.h>
+
+#endif
 
 
 namespace DB
@@ -44,6 +49,7 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
+    M(Caret) \
     M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \
@@ -53,7 +59,12 @@ namespace DB
     M(GreaterOrEquals) \
     M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
+    M(PipeOperator)           /** |>. Pipe operator: FROM t |> WHERE x |> SELECT y */ \
     M(Concatenation)          /** String concatenation operator: || */ \
+    M(Tilde)                  /** ~. Used in PostgreSQL as the regular expression match operator. */ \
+    M(TildeAsterisk)          /** ~*. Used in PostgreSQL as the case-insensitive regular expression match operator. */ \
+    M(NotTilde)               /** !~. Used in PostgreSQL as the regular expression not-match operator. */ \
+    M(NotTildeAsterisk)       /** !~*. Used in PostgreSQL as the case-insensitive regular expression not-match operator. */ \
     \
     M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
     M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \
@@ -75,15 +86,17 @@ namespace DB
     M(ErrorMaxQuerySizeExceeded) \
 
 
-enum class TokenType
+enum class TokenType : uint8_t
 {
 #define M(TOKEN) TOKEN,
 APPLY_FOR_TOKENS(M)
 #undef M
 };
 
+#if !defined(LEXER_STANDALONE_BUILD)
 const char * getTokenName(TokenType type);
 const char * getErrorTokenDescription(TokenType type);
+#endif
 
 
 struct Token
@@ -107,7 +120,11 @@ class Lexer
 {
 public:
     Lexer(const char * begin_, const char * end_, size_t max_query_size_ = 0)
-            : begin(begin_), pos(begin_), end(end_), max_query_size(max_query_size_) {}
+        : begin(begin_), pos(begin_), end(end_),
+        max_query_size(max_query_size_ <= max_query_size_limit ? max_query_size_ : max_query_size_limit)
+    {
+    }
+
     Token nextToken();
 
 private:
@@ -116,6 +133,9 @@ private:
     const char * const end;
 
     const size_t max_query_size;
+
+    /// Some reasonable size to at least avoid pointer overflows.
+    static constexpr size_t max_query_size_limit = 1'000'000'000;
 
     Token nextTokenImpl();
 

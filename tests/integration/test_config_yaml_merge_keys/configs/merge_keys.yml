@@ -1,0 +1,41 @@
+---
+settings_common: &settings_common
+  max_threads: 1
+  max_final_threads: 1
+
+settings_extended: &settings_extended
+  max_final_threads: 2
+
+profiles:
+  profile_1:
+    <<: *settings_common
+  profile_2:
+    <<: *settings_common
+    max_threads: 4
+  profile_3:
+    max_threads: 4
+    <<: *settings_common
+  profile_4:
+    <<: *settings_common
+    <<: *settings_extended
+    max_threads: 4
+  profile_5:
+    <<: [*settings_common, *settings_extended]
+    max_threads: 4
+
+users:
+  user_1:
+    profile: profile_1
+    password: ""
+  user_2:
+    profile: profile_2
+    password: ""
+  user_3:
+    profile: profile_3
+    password: ""
+  user_4:
+    profile: profile_4
+    password: ""
+  user_5:
+    profile: profile_5
+    password: ""

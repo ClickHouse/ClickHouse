@@ -1,4 +1,6 @@
 SET join_algorithm = 'hash';
+SET query_plan_join_swap_table = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 SELECT n, j FROM (SELECT number as n FROM numbers(4)) nums
 ANY LEFT JOIN (
@@ -16,7 +18,7 @@ ANY LEFT JOIN (
     FROM numbers(4000)
 ) js2
 USING n
-ORDER BY n; -- { serverError 191 }
+ORDER BY n; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 SET join_algorithm = 'partial_merge';
 

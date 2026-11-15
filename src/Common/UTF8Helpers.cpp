@@ -1,9 +1,11 @@
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <widechar_width.h>
 #include <bit>
-
+#include <cstring>
+#include <type_traits>
 
 namespace DB
 {
@@ -57,7 +59,7 @@ struct UTF8Decoder
     UInt32 decode(UInt8 byte)
     {
         UInt32 type = TABLE[byte];
-        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & (byte);
+        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & byte;
         state = TABLE[256 + state * 16 + type];
         return state;
     }
@@ -97,103 +99,140 @@ namespace
 enum ComputeWidthMode
 {
     Width,              /// Calculate and return visible width
-    BytesBeforLimit     /// Calculate and return the maximum number of bytes when substring fits in visible width.
+    BytesBeforeLimit    /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
+
+/// One bit per byte of a block of `block_size` bytes that is not printable ASCII (32 to 126), lowest bit first.
+/// Turning the lanes into bits is endian dependent.
+template <size_t block_size>
+ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
+{
+    using Bytes = UInt8 __attribute__((ext_vector_type(block_size)));
+    using Mask = bool __attribute__((ext_vector_type(block_size)));
+    using Bits = std::conditional_t<block_size == 32, UInt32, UInt16>;
+    static_assert(std::endian::native == std::endian::little);
+
+    Bytes bytes;
+    memcpy(&bytes, data, block_size);
+    /// A byte is printable iff `bytes - 32` is in [0, 94] (unsigned lanes, so the wraparound is well defined).
+    /// `x >> 7` is set for x >= 128 and `(x + 33) >> 7` for x in [95, 127], so the union is set exactly for x > 94.
+    /// A comparison is not used because its result type would depend on `-faltivec-src-compat` on PowerPC.
+    const Bytes x = bytes - static_cast<UInt8>(32);
+    return __builtin_bit_cast(Bits, __builtin_convertvector((x | (x + static_cast<UInt8>(33))) >> 7, Mask));
+}
 
 template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
+    bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
     {
         /// Quickly skip regular ASCII
-
-#if defined(__SSE2__)
-        const auto lower_bound = _mm_set1_epi8(32);
-        const auto upper_bound = _mm_set1_epi8(126);
-
-        while (i + 15 < size)
+        if constexpr (std::endian::native == std::endian::little)
         {
-            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
-
-            const uint16_t non_regular_width_mask = _mm_movemask_epi8(
-                _mm_or_si128(
-                    _mm_cmplt_epi8(bytes, lower_bound),
-                    _mm_cmpgt_epi8(bytes, upper_bound)));
-
-            if (non_regular_width_mask)
+            /// At a byte that is not printable ASCII, e.g. every byte of a multi-byte character, the blocks
+            /// cannot skip anything, and the mask is expensive to build on ARM, which has no `movemask`.
+            if (!is_escape_sequence && isPrintableASCII(data[i]))
             {
-                auto num_regular_chars = std::countr_zero(non_regular_width_mask);
-                width += num_regular_chars;
-                i += num_regular_chars;
-                break;
-            }
-            else
-            {
-                i += 16;
-                width += 16;
+                /// Advance by whole blocks until one has a byte to stop at, so that the next load does not
+                /// wait for the position of that byte.
+                UInt32 non_printable = 0;
+                for (; i + 32 <= size; i += 32, width += 32)
+                    if ((non_printable = nonPrintableASCIIMask<32>(&data[i])))
+                        break;
+
+                if (!non_printable && i + 16 <= size)
+                {
+                    non_printable = nonPrintableASCIIMask<16>(&data[i]);
+                    if (!non_printable)
+                    {
+                        i += 16;
+                        width += 16;
+                    }
+                }
+
+                if (non_printable)
+                {
+                    const size_t printable = std::countr_zero(non_printable);
+                    i += printable;
+                    width += printable;
+                }
             }
         }
-#endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            ++width;
+            bool ignore_width = is_escape_sequence && (isCSIParameterByte(data[i]) || isCSIIntermediateByte(data[i]));
+
+            if (ignore_width || (data[i] == '[' && is_escape_sequence))
+            {
+                /// don't count the width
+            }
+            else if (is_escape_sequence && isCSIFinalByte(data[i]))
+            {
+                is_escape_sequence = false;
+            }
+            else
+            {
+                ++width;
+            }
             ++i;
         }
 
         /// Now i points to position in bytes after regular ASCII sequence
         /// and if width > limit, then (width - limit) is the number of extra ASCII characters after width limit.
-        if (mode == BytesBeforLimit && width > limit)
+
+        if (mode == BytesBeforeLimit && width > limit)
             return i - (width - limit);
 
-        switch (decoder.decode(data[i]))
+        if (i < size)
         {
-            case UTF8Decoder::REJECT:
+            switch (decoder.decode(data[i]))
             {
-                decoder.reset();
-                // invalid sequences seem to have zero width in modern terminals
-                // tested in libvte-based, alacritty, urxvt and xterm
-                i -= rollback;
-                rollback = 0;
-                break;
+                case UTF8Decoder::REJECT:
+                {
+                    decoder.reset();
+                    // invalid sequences seem to have zero width in modern terminals
+                    // tested in libvte-based, alacritty, urxvt and xterm
+                    i -= rollback;
+                    rollback = 0;
+                    break;
+                }
+                case UTF8Decoder::ACCEPT:
+                {
+                    // TODO: multiline support for '\n'
+
+                    // special treatment for '\t' and for ESC
+                    size_t next_width = width;
+                    if (decoder.codepoint == '\x1b')
+                        is_escape_sequence = true;
+                    else if (decoder.codepoint == '\t')
+                        next_width += 8 - (prefix + width) % 8;
+                    else
+                        next_width += wcwidth(decoder.codepoint);
+
+                    if (mode == BytesBeforeLimit && next_width > limit)
+                        return i - rollback;
+                    width = next_width;
+
+                    rollback = 0;
+                    break;
+                }
+                // continue if we meet other values here
+                default:
+                    ++rollback;
             }
-            case UTF8Decoder::ACCEPT:
-            {
-                // there are special control characters that manipulate the terminal output.
-                // (`0x08`, `0x09`, `0x0a`, `0x0b`, `0x0c`, `0x0d`, `0x1b`)
-                // Since we don't touch the original column data, there is no easy way to escape them.
-                // TODO: escape control characters
-                // TODO: multiline support for '\n'
-
-                // special treatment for '\t'
-                size_t next_width = width;
-                if (decoder.codepoint == '\t')
-                    next_width += 8 - (prefix + width) % 8;
-                else
-                    next_width += wcwidth(decoder.codepoint);
-
-                if (mode == BytesBeforLimit && next_width > limit)
-                    return i - rollback;
-                width = next_width;
-
-                rollback = 0;
-                break;
-            }
-            // continue if we meet other values here
-            default:
-                ++rollback;
         }
     }
 
     // no need to handle trailing sequence as they have zero width
-    return (mode == BytesBeforLimit) ? size : width;
+    return (mode == BytesBeforeLimit) ? size : width;
 }
 
 }
-
 
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 {
@@ -202,7 +241,46 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
-    return computeWidthImpl<BytesBeforLimit>(data, size, prefix, limit);
+    return computeWidthImpl<BytesBeforeLimit>(data, size, prefix, limit);
+}
+
+
+size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept
+{
+    size_t code_point = 0;
+    size_t bytes = 0;
+
+    while (bytes < size && code_point < limit)
+    {
+        bytes += seqLength(data[bytes]);
+        ++code_point;
+    }
+
+    return std::min(bytes, size);
+}
+
+
+size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length)
+{
+    static const Poco::UTF8Encoding utf8;
+    int res = utf8.convert(
+        code_point,
+        reinterpret_cast<uint8_t *>(out_bytes),
+        static_cast<int>(out_length));
+    chassert(res >= 0);
+    return res;
+}
+
+std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length)
+{
+    static const Poco::UTF8Encoding utf8;
+    int res = utf8.queryConvert(
+        reinterpret_cast<const uint8_t *>(in_bytes),
+        static_cast<int>(in_length));
+
+    if (res >= 0)
+        return res;
+    return {};
 }
 
 }

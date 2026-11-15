@@ -1,1 +1,1 @@
-SELECT fromModifiedJulianDay(9223372036854775807 :: Int64); -- { serverError 490 }
+SELECT fromModifiedJulianDay(9223372036854775807 :: Int64); -- { serverError CANNOT_FORMAT_DATETIME }

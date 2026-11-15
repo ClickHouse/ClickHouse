@@ -1,0 +1,24 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    (sumIf(toInt64(1), 1)) Tuple(Int64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tuple, function_type: ordinary, result_type: Tuple(Int64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: sumIf, function_type: aggregate, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  CONSTANT id: 6, constant_value: Int64_1, constant_value_type: Int64
+                    EXPRESSION
+                      FUNCTION id: 7, function_name: toInt64, function_type: ordinary, result_type: Int64
+                        ARGUMENTS
+                          LIST id: 8, nodes: 1
+                            CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+                  CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 12, nodes: 1
+          CONSTANT id: 13, constant_value: UInt64_100, constant_value_type: UInt8
+  SETTINGS optimize_rewrite_sum_if_to_count_if=1

@@ -1,7 +1,13 @@
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
@@ -9,7 +15,11 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
+
+#include <Core/callOnTypeIndex.h>
+#include <Core/BlockMissingValues.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -22,6 +32,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -83,7 +94,7 @@ static void mixNumberColumns(
 
                 return true;
             }
-            else if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
+            if (auto col_defs = checkAndGetColumn<ColVecType>(col_defaults.get()))
             {
                 auto & src = col_defs->getData();
                 for (size_t i = 0; i < defaults_mask.size(); ++i)
@@ -101,7 +112,8 @@ static void mixNumberColumns(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
-static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
+static MutableColumnPtr mixColumns(
+    const ColumnWithTypeAndName & col_read,
     const ColumnWithTypeAndName & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
@@ -129,9 +141,54 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
     return column_mixed;
 }
 
+/// The column that `name` is or is a subcolumn of.
+static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    if (columns.has(name))
+        return name;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = columns.tryGet(String(column_name));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return column->name;
+    }
+    return name;
+}
+
+/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
+/// absent from `header`, whose defaults are inlined into the evaluation.
+static NameSet getHeaderColumnsReadByDefault(
+    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
+{
+    NameSet result;
+    NameSet visited{column_name};
+    VectorWithMemoryTracking<ASTPtr> expressions{column_defaults.at(column_name).expression};
+    while (!expressions.empty())
+    {
+        auto expression = expressions.back()->clone();
+        expressions.pop_back();
+
+        RequiredSourceColumnsVisitor::Data data;
+        RequiredSourceColumnsVisitor(data).visit(expression);
+        for (const auto & required : data.requiredColumns())
+        {
+            auto name = getColumnOfSubcolumn(columns, required);
+            if (!visited.insert(name).second)
+                continue;
+
+            if (header.has(name))
+                result.insert(name);
+            else if (auto it = column_defaults.find(name); it != column_defaults.end())
+                expressions.push_back(it->second.expression);
+        }
+    }
+    return result;
+}
+
 
 AddingDefaultsTransform::AddingDefaultsTransform(
-    const Block & header,
+    SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
     ContextPtr context_)
@@ -144,87 +201,229 @@ AddingDefaultsTransform::AddingDefaultsTransform(
 }
 
 
+void AddingDefaultsTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+
+    ExpressionActionsPtr actions;
+    {
+        std::lock_guard lock(current_actions_mutex);
+        actions = current_actions;
+    }
+
+    if (!actions)
+        return;
+
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
+}
+
+
 void AddingDefaultsTransform::transform(Chunk & chunk)
 {
     if (column_defaults.empty())
         return;
 
-    const BlockMissingValues & block_missing_values = input_format.getMissingValues();
-    if (block_missing_values.empty())
+    const auto * block_missing_values = input_format.getMissingValues();
+    /// `BlockMissingValues::empty` is also true when the mask holds no columns at all, where the lookups below would be out of range.
+    if (!block_missing_values || block_missing_values->empty())
         return;
 
     const auto & header = getOutputPort().getHeader();
     size_t num_rows = chunk.getNumRows();
     auto res = header.cloneWithColumns(chunk.detachColumns());
 
-    /// res block already has all columns values, with default value for type
-    /// (not value specified in table). We identify which columns we need to
-    /// recalculate with help of block_missing_values.
-    Block evaluate_block{res};
-    /// remove columns for recalculation
-    for (const auto & column : column_defaults)
+    /// Identify columns that need defaults computed
+    VectorWithMemoryTracking<std::pair<String, size_t>> columns_needing_defaults;
+    for (const auto & [col_name, col_default] : column_defaults)
     {
-        if (evaluate_block.has(column.first))
-        {
-            size_t column_idx = res.getPositionByName(column.first);
-            if (block_missing_values.hasDefaultBits(column_idx))
-                evaluate_block.erase(column.first);
-        }
-    }
-
-    if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
-
-    auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
-    if (dag)
-    {
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
-        actions->execute(evaluate_block);
-    }
-
-    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
-
-    for (const ColumnWithTypeAndName & column_def : evaluate_block)
-    {
-        const String & column_name = column_def.name;
-
-        if (!column_defaults.contains(column_name) || !res.has(column_name))
+        if (!res.has(col_name))
             continue;
-
-        size_t block_column_position = res.getPositionByName(column_name);
-        ColumnWithTypeAndName & column_read = res.getByPosition(block_column_position);
-        const auto & defaults_mask = block_missing_values.getDefaultsBitmask(block_column_position);
-
-        checkCalculated(column_read, column_def, defaults_mask.size());
-
-        if (!defaults_mask.empty())
-        {
-            /// TODO: FixedString
-            if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
-            {
-                MutableColumnPtr column_mixed = IColumn::mutate(std::move(column_read.column));
-                mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def.column, defaults_mask);
-                column_read.column = std::move(column_mixed);
-            }
-            else
-            {
-                MutableColumnPtr column_mixed = mixColumns(column_read, column_def, defaults_mask);
-                mixed_columns.emplace(block_column_position, std::move(column_mixed));
-            }
-        }
+        size_t column_idx = res.getPositionByName(col_name);
+        if (block_missing_values->hasDefaultBits(column_idx))
+            columns_needing_defaults.emplace_back(col_name, column_idx);
     }
 
-    if (!mixed_columns.empty())
+    if (columns_needing_defaults.empty())
     {
-        /// replace columns saving block structure
-        MutableColumns mutation = res.mutateColumns();
-        for (size_t position = 0; position < mutation.size(); ++position)
+        chunk.setColumns(res.getColumns(), num_rows);
+        return;
+    }
+
+    /// Build dependency graph: for each column needing defaults, find which other
+    /// columns (that also need defaults) its default expression depends on.
+    /// This is needed because if column `s` has DEFAULT concat('test', CAST(n, 'String'))
+    /// and column `n` has DEFAULT 42, when inserting {"n": 2} we need to first compute
+    /// n's defaults (for rows where n is missing), mix them into the block, and only
+    /// then compute s's defaults so that s can see the correct values of n.
+    UnorderedMapWithMemoryTracking<String, NameSet> dependencies;
+    UnorderedSetWithMemoryTracking<String> columns_needing_defaults_set;
+    for (const auto & [col_name, col_idx] : columns_needing_defaults)
+        columns_needing_defaults_set.insert(col_name);
+
+    for (const auto & [col_name, col_idx] : columns_needing_defaults)
+    {
+        NameSet deps;
+        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header))
         {
-            auto it = mixed_columns.find(position);
-            if (it != mixed_columns.end())
-                mutation[position] = std::move(it->second);
+            if (columns_needing_defaults_set.contains(read))
+                deps.insert(read);
         }
-        res.setColumns(std::move(mutation));
+        dependencies[col_name] = std::move(deps);
+    }
+
+    /// Process columns in dependency order (topological sort).
+    /// In each iteration, process columns whose dependencies have all been satisfied.
+    UnorderedSetWithMemoryTracking<String> processed;
+    UnorderedMapWithMemoryTracking<size_t, MutableColumnPtr> mixed_columns;
+
+    while (processed.size() < columns_needing_defaults.size())
+    {
+        /// Find columns ready to process (all dependencies satisfied)
+        VectorWithMemoryTracking<std::pair<String, size_t>> ready;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
+        {
+            if (processed.contains(col_name))
+                continue;
+
+            bool all_deps_ready = true;
+            for (const auto & dep : dependencies[col_name])
+            {
+                if (!processed.contains(dep))
+                {
+                    all_deps_ready = false;
+                    break;
+                }
+            }
+            if (all_deps_ready)
+                ready.emplace_back(col_name, col_idx);
+        }
+
+        if (ready.empty())
+        {
+            /// Circular dependency detected - process all remaining columns together
+            /// to preserve old behavior for edge cases
+            for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            {
+                if (!processed.contains(col_name))
+                    ready.emplace_back(col_name, col_idx);
+            }
+        }
+
+        /// Build evaluate_block: start from res (which has updated values from previous iterations),
+        /// then remove only the columns we're computing defaults for in this iteration
+        Block evaluate_block{res};
+        NamesAndTypesList required_columns_list;
+
+        for (const auto & [col_name, col_idx] : ready)
+        {
+            if (evaluate_block.has(col_name))
+                evaluate_block.erase(col_name);
+            const auto & col = header.getByPosition(col_idx);
+            required_columns_list.emplace_back(col.name, col.type);
+        }
+
+        if (!evaluate_block.columns())
+            evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), num_rows),
+                                   std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+        /// Evaluate defaults for the ready columns
+        auto dag = evaluateMissingDefaults(evaluate_block, required_columns_list, columns, context, false);
+        if (dag)
+        {
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
+            auto actions = std::make_shared<ExpressionActions>(
+                ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
+                ExpressionActionsSettings(context, CompileExpressions::yes), true);
+
+            /// Publish the actions before anything can observe the cancellation, so that a
+            /// concurrent `onCancel` can always forward `cancelExecution` into a function that is
+            /// about to run or already running. Publishing after the check below would leave a
+            /// window where `onCancel` sees no actions and the evaluation still starts one action.
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions = actions;
+            }
+
+            /// The task can be dispatched before the query is cancelled and start running after it:
+            /// skip the whole default evaluation instead of running one action of it. A cancellation
+            /// landing after this check reaches the running function through the published actions,
+            /// if it supports interruption.
+            if (isCancelled())
+            {
+                {
+                    std::lock_guard lock(current_actions_mutex);
+                    current_actions.reset();
+                }
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
+            actions->execute(evaluate_block, false, false, &getCancellationFlag());
+
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions.reset();
+            }
+
+            if (isCancelled())
+            {
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+        }
+
+        /// Mix the computed defaults back into res
+        for (const auto & [col_name, col_idx] : ready)
+        {
+            if (!evaluate_block.has(col_name))
+            {
+                processed.insert(col_name);
+                continue;
+            }
+
+            const auto & column_def = evaluate_block.getByName(col_name);
+            ColumnWithTypeAndName & column_read = res.getByPosition(col_idx);
+            const auto & defaults_mask = block_missing_values->getDefaultsBitmask(col_idx);
+
+            checkCalculated(column_read, column_def, defaults_mask.size());
+
+            if (!defaults_mask.empty())
+            {
+                column_read.column = removeSpecialRepresentations(column_read.column);
+                auto column_def_cleaned = removeSpecialRepresentations(column_def.column);
+
+                /// TODO: FixedString
+                if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
+                {
+                    MutableColumnPtr column_mixed = IColumn::mutate(std::move(column_read.column));
+                    mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def_cleaned, defaults_mask);
+                    column_read.column = std::move(column_mixed);
+                }
+                else
+                {
+                    ColumnWithTypeAndName column_def_for_mix{column_def_cleaned, column_def.type, column_def.name};
+                    MutableColumnPtr column_mixed = mixColumns(column_read, column_def_for_mix, defaults_mask);
+                    mixed_columns.emplace(col_idx, std::move(column_mixed));
+                }
+            }
+
+            processed.insert(col_name);
+        }
+
+        /// Apply non-numeric mixed columns to res after each iteration
+        /// so they're available for the next iteration's evaluate_block
+        if (!mixed_columns.empty())
+        {
+            MutableColumns mutation = res.mutateColumns();
+            for (auto & [position, mixed_col] : mixed_columns)
+                mutation[position] = std::move(mixed_col);
+            res.setColumns(std::move(mutation));
+            mixed_columns.clear();
+        }
     }
 
     chunk.setColumns(res.getColumns(), num_rows);

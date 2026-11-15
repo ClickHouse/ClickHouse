@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/ZstdContext.h>
 
 #include <zstd.h>
 
@@ -20,15 +21,13 @@ public:
         int compression_level,
         int window_log = 0,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
+        char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
         size_t alignment = 0,
         bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_) /// NOLINT(bugprone-move-forwarding-reference)
     {
         initialize(compression_level, window_log);
     }
-
-    ~ZstdDeflatingWriteBuffer() override;
 
     void sync() override
     {
@@ -40,19 +39,22 @@ private:
 
     void nextImpl() override;
 
+    void finalizeImpl() override;
+
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    void finalizeBefore() override;
-    void finalizeAfter() override;
+    void finalFlushBefore() override;
+    void finalFlushAfter() override;
 
     void flush(ZSTD_EndDirective mode);
 
-    ZSTD_CCtx * cctx;
-    ZSTD_inBuffer input;
-    ZSTD_outBuffer output;
+    ZstdCCtxPtr cctx;
+    ZSTD_inBuffer input{};
+    ZSTD_outBuffer output{};
 
     size_t total_out = 0;
+    bool frame_started = false;
     bool compress_empty = true;
 };
 

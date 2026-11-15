@@ -5,9 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnArray.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <Dictionaries/IDictionary.h>
 
@@ -127,7 +125,7 @@ namespace detail
             auto hierarchy_key = keys[i];
             size_t current_hierarchy_depth = 0;
 
-            bool is_key_valid = std::forward<IsKeyValidFunc>(is_key_valid_func)(hierarchy_key);
+            bool is_key_valid = is_key_valid_func(hierarchy_key);
 
             if (!is_key_valid)
             {
@@ -152,7 +150,7 @@ namespace detail
 
                     size_t array_element_offset = index.array_element_offset;
 
-                    size_t previous_offset_size = offset > 0 ? offsets[offset - 1] : 0;
+                    size_t previous_offset_size = offsets[offset - 1];
                     size_t start_index = previous_offset_size + array_element_offset;
                     size_t end_index = offsets[offset];
 
@@ -167,7 +165,7 @@ namespace detail
                 elements.emplace_back(hierarchy_key);
                 ++current_hierarchy_depth;
 
-                std::optional<UInt64> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
+                std::optional<UInt64> parent_key = get_parent_key_func(hierarchy_key);
 
                 if (!parent_key.has_value())
                     break;
@@ -197,7 +195,7 @@ namespace detail
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_func)
     {
-        assert(keys.size() == in_keys.size());
+        chassert(keys.size() == in_keys.size());
 
         PaddedPODArray<UInt8> result;
         result.resize_fill(keys.size());
@@ -337,7 +335,7 @@ namespace detail
                     if (depth == key_range_requires_update)
                     {
                         auto * it = already_processed_keys_to_range.find(key);
-                        assert(it);
+                        chassert(it);
 
                         auto & range_to_update = it->getMapped();
                         range_to_update.end_index = descendants.size();

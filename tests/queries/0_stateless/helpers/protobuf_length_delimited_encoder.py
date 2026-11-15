@@ -4,9 +4,8 @@
 # To do that this script has been written.
 
 import argparse
-import os.path
 import io
-import struct
+import os.path
 import subprocess
 import sys
 import tempfile
@@ -89,7 +88,13 @@ def decode(input, output, format_schema, format):
             raise EOFError("Unexpected end of file")
         protoc = os.getenv("PROTOC_BINARY", "protoc")
         with subprocess.Popen(
-            [protoc, "--decode", format_schema.message_type, format_schema.schemaname],
+            [
+                protoc,
+                "--experimental_editions",
+                "--decode",
+                format_schema.message_type,
+                format_schema.schemaname,
+            ],
             cwd=format_schema.schemadir,
             stdin=subprocess.PIPE,
             stdout=output,
@@ -126,7 +131,13 @@ def encode(input, output, format_schema, format):
             msg += line
         protoc = os.getenv("PROTOC_BINARY", "protoc")
         with subprocess.Popen(
-            [protoc, "--encode", format_schema.message_type, format_schema.schemaname],
+            [
+                protoc,
+                "--experimental_editions",
+                "--encode",
+                format_schema.message_type,
+                format_schema.schemaname,
+            ],
             cwd=format_schema.schemadir,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -208,20 +219,20 @@ if __name__ == "__main__":
     group.add_argument(
         "--encode",
         action="store_true",
-        help="Specify to encode length-delimited messages."
+        help="Specify to encode length-delimited messages. "
         "The utility will read text-format messages of the given type from the input and write it in binary to the output.",
     )
     group.add_argument(
         "--decode",
         action="store_true",
-        help="Specify to decode length-delimited messages."
+        help="Specify to decode length-delimited messages. "
         "The utility will read messages in binary from the input and write text-format messages to the output.",
     )
     group.add_argument(
         "--decode_and_check",
         action="store_true",
         help="The same as --decode, and the utility will then encode "
-        " the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
+        "the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
     )
     args = parser.parse_args()
 

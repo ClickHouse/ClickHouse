@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-cpu-aarch64
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,4 +20,3 @@ $CLICKHOUSE_LOCAL -q "select count() from file('$ERRORS_FILE', CSV)"
 rm $ERRORS_FILE
 
 rm $FILE
-

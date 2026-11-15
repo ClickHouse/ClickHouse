@@ -20,6 +20,7 @@
 
 #include <istream>
 #include <ostream>
+#include "Poco/Net/HTTPResponseParser.h"
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/HTTPSessionFactory.h"
 #include "Poco/Net/Net.h"
@@ -210,10 +211,23 @@ namespace Net
         void setKeepAliveTimeout(const Poco::Timespan & timeout);
         /// Sets the connection timeout for HTTP connections.
 
-        const Poco::Timespan & getKeepAliveTimeout() const;
+        Poco::Timespan getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
-        virtual std::ostream & sendRequest(HTTPRequest & request);
+        void setKeepAliveMaxRequests(int max_requests);
+
+        int getKeepAliveMaxRequests() const;
+
+        int getKeepAliveRequest() const;
+
+        bool isKeepAliveExpired(double reliability = 1.0) const;
+        /// Returns if the connection is expired with some margin as fraction of timeout as reliability
+
+        double getKeepAliveReliability() const;
+        /// Returns the current fraction of keep alive timeout when connection is considered safe to use
+        /// It helps to avoid situation when a client uses nearly expired connection and receives NoMessageException
+
+        virtual std::ostream & sendRequest(HTTPRequest & request, uint64_t * connect_time, uint64_t * first_byte_time);
         /// Sends the header for the given HTTP request to
         /// the server.
         ///
@@ -232,6 +246,74 @@ namespace Net
         /// be reused and persistent connections are enabled
         /// to ensure a new connection will be set up
         /// for the next request.
+
+        std::ostream & sendRequest(HTTPRequest & request) { return sendRequest(request, nullptr, nullptr); }
+
+        enum class BodyEncoding
+        {
+            NoBody, /// There is no message body at all.
+            ContentLength, /// The body is exactly `content_length` bytes long.
+            Chunked, /// The body uses chunked transfer encoding.
+            UntilEOF, /// The body ends when the connection is closed.
+        };
+
+        struct BodyInfo
+        {
+            BodyEncoding encoding = BodyEncoding::NoBody;
+            Poco::UInt64 content_length = 0;
+        };
+
+        virtual BodyInfo sendRequestHeaders(HTTPRequest & request, uint64_t * connect_time, uint64_t * first_byte_time);
+        /// Sends the request line and the headers of the given request to the server
+        /// without creating any `std::iostream`, and returns how the request body has
+        /// to be framed by the caller.
+        ///
+        /// This is the iostream-free counterpart of `sendRequest`: the caller writes the
+        /// body itself with `writeAllRaw`, applying the returned framing. The session
+        /// adjusts the request's `Host`, `Connection` and proxy headers exactly as
+        /// `sendRequest` does.
+        ///
+        /// The caller has to report the completion of the body with
+        /// `setRequestBodyComplete`, so that connection reuse can tell a fully sent
+        /// request from an interrupted one.
+        ///
+        /// A request with `Expect: 100-continue` is rejected with `NotImplementedException`:
+        /// waiting for `100 Continue` is only possible with `peekResponse` after `sendRequest`.
+
+        BodyInfo sendRequestHeaders(HTTPRequest & request) { return sendRequestHeaders(request, nullptr, nullptr); }
+
+        BodyInfo onResponseHeadersReceived(const HTTPResponse & response);
+        /// Performs the keep-alive bookkeeping that follows the parsing of a response
+        /// header, and returns how the response body is framed.
+        ///
+        /// This is the iostream-free counterpart of the second half of `receiveResponse`,
+        /// for callers that parse the response header themselves. The caller has to
+        /// report the completion of the body with `setResponseBodyComplete`.
+
+        bool isRequestBodyComplete();
+        /// Whether the body of the last request was transferred to the end. A connection with a
+        /// half-sent request must not be reused: the rest of the body would be taken for the
+        /// beginning of the next request.
+        ///
+        /// It works for both the iostream-based `sendRequest` and the iostream-free
+        /// `sendRequestHeaders`: for the former the state is taken from the body stream itself.
+
+        void setRequestBodyComplete(bool value) { _requestBodyComplete = value; }
+        /// Reports the completion of a request body written by the caller of `sendRequestHeaders`.
+
+        HTTPResponseParser & responseParser() { return _responseParser; }
+        /// The parser of the response to the current request, reset with the default limits by
+        /// `sendRequest` and `sendRequestHeaders`. The response reader continues it until the
+        /// final response header is complete.
+
+        bool isResponseBodyComplete();
+        /// Whether the body of the last response was read to the end. A connection with an
+        /// unread response body must not be reused: the rest of the body would be taken for the
+        /// beginning of the next response.
+
+        void setResponseBodyComplete(bool value) { _responseBodyComplete = value; }
+        /// Reports the completion of a response body read by the caller of
+        /// `onResponseHeadersReceived`.
 
         virtual std::istream & receiveResponse(HTTPResponse & response);
         /// Receives the header for the response to the previous
@@ -275,7 +357,11 @@ namespace Net
         /// This method should only be called if the request contains
         /// a "Expect: 100-continue" header.
 
-        void flushRequest();
+        bool receiveEarlyResponse(HTTPResponse & response);
+        /// After sending the request failed, drops the rest of it and reads the response header the
+        /// server has already sent. If true, receiveResponse() must be called with the same response.
+
+        virtual void flushRequest();
         /// Flushes the request stream.
         ///
         /// Normally this method does not need to be called.
@@ -283,7 +369,7 @@ namespace Net
         /// fully sent if receiveResponse() is not called, e.g.,
         /// because the underlying socket will be detached.
 
-        void reset();
+        virtual void reset();
         /// Resets the session and closes the socket.
         ///
         /// The next request will initiate a new connection,
@@ -303,13 +389,16 @@ namespace Net
         /// Returns true if the proxy should be bypassed
         /// for the current host.
 
+        const Poco::Timestamp & getLastRequest() const;
+        /// Returns time when connection has been used last time
+
     protected:
         enum
         {
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        virtual void reconnect();
+        virtual void reconnect(uint64_t * connect_time);
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);
@@ -338,6 +427,15 @@ namespace Net
         /// Calls proxyConnect() and attaches the resulting StreamSocket
         /// to the HTTPClientSession.
 
+        void setLastRequest(Poco::Timestamp time);
+
+        void assign(HTTPClientSession & session);
+        /// Takes away socket and properties from another `session`, which is then reset.
+        /// This is helpful to organize connection pools.
+        /// NOTE: it does NOT take away throttlers and data hooks, keeps its own.
+
+        void setKeepAliveRequest(int request);
+
         HTTPSessionFactory _proxySessionFactory;
         /// Factory to create HTTPClientSession to proxy.
     private:
@@ -346,14 +444,20 @@ namespace Net
         Poco::UInt16 _port;
         ProxyConfig _proxyConfig;
         Poco::Timespan _keepAliveTimeout;
+        int _keepAliveCurrentRequest = 0;
+        int _keepAliveMaxRequests = 1000;
         Poco::Timestamp _lastRequest;
         bool _reconnect;
         bool _mustReconnect;
         bool _expectResponseBody;
         bool _responseReceived;
+        bool _requestBodyComplete = true;
+        HTTPResponseParser _responseParser;
+        bool _responseBodyComplete = true;
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;
 
+        static const double _defaultKeepAliveReliabilityLevel;
         static ProxyConfig _globalProxyConfig;
 
         HTTPClientSession(const HTTPClientSession &);
@@ -433,11 +537,30 @@ namespace Net
     }
 
 
-    inline const Poco::Timespan & HTTPClientSession::getKeepAliveTimeout() const
+    inline Poco::Timespan HTTPClientSession::getKeepAliveTimeout() const
     {
         return _keepAliveTimeout;
     }
 
+    inline const Poco::Timestamp & HTTPClientSession::getLastRequest() const
+    {
+        return _lastRequest;
+    }
+
+    inline double HTTPClientSession::getKeepAliveReliability() const
+    {
+        return _defaultKeepAliveReliabilityLevel;
+    }
+
+    inline int HTTPClientSession::getKeepAliveMaxRequests() const
+    {
+        return _keepAliveMaxRequests;
+    }
+
+    inline int HTTPClientSession::getKeepAliveRequest() const
+    {
+        return _keepAliveCurrentRequest;
+    }
 
 }
 } // namespace Poco::Net

@@ -9,7 +9,8 @@ CREATE TABLE r (
      s Int64,
      PROJECTION p
          (SELECT a, quantilesTimingMerge(0.5, 0.95, 0.99)(q), sum(s) GROUP BY a)
-) Engine=SummingMergeTree order by (x, a);
+) Engine=SummingMergeTree order by (x, a)
+SETTINGS deduplicate_merge_projection_mode = 'drop';  -- should set it to rebuild once projection is supported with SummingMergeTree
 
 insert into r
 select number%100 x,
@@ -27,5 +28,7 @@ SELECT
 FROM cluster('test_cluster_two_shards', currentDatabase(), r)
 WHERE a = 'x'
 settings prefer_localhost_replica=0;
+
+SELECT quantilesTimingMerge(0.95)(q), quantilesTimingMerge(toInt64(1))(q) FROM remote('127.0.0.{1,2}', currentDatabase(), r);
 
 DROP TABLE r;

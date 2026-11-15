@@ -1,10 +1,20 @@
-#include <Columns/MaskOperations.h>
-#include <Columns/ColumnFunction.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnNothing.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/MaskOperations.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
+#include <Common/assert_cast.h>
+
 #include <algorithm>
 
 namespace DB
@@ -24,7 +34,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
 
     ssize_t from = data.size() - 1;
     ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
+    data.resize_exact(mask.size());
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
@@ -63,6 +73,7 @@ INSTANTIATE(Int32)
 INSTANTIATE(Int64)
 INSTANTIATE(Int128)
 INSTANTIATE(Int256)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 INSTANTIATE(Decimal32)
@@ -70,6 +81,7 @@ INSTANTIATE(Decimal64)
 INSTANTIATE(Decimal128)
 INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
+INSTANTIATE(Time64)
 INSTANTIATE(char *)
 INSTANTIATE(UUID)
 INSTANTIATE(IPv4)
@@ -77,43 +89,41 @@ INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
-template <bool inverted, bool column_is_short, typename Container>
-size_t extractMaskNumericImpl(
+template <bool inverted, bool compact, typename Container>
+static size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
+    if constexpr (!compact)
     {
         if (data.size() != mask.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
     }
 
-    size_t ones_count = 0;
     size_t data_index = 0;
-
+    size_t ones_count = 0;
     size_t mask_size = mask.size();
-    size_t data_size = data.size();
 
-    size_t i = 0;
-    for (; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
             continue;
 
-        UInt8 value;
-        size_t index;
-        if constexpr (column_is_short)
+        /// A compact result contains only the rows selected by the incoming mask.
+        /// Keep `NULL` state in the original row positions while consuming selected values in order.
+        size_t index = i;
+        if constexpr (compact)
         {
-            index = data_index;
-            ++data_index;
+            if (data_index == data.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The selected column has fewer rows than the mask");
+            index = data_index++;
         }
-        else
-            index = i;
 
+        UInt8 value = 0;
         if (null_bytemap && (*null_bytemap)[index])
         {
             value = null_value;
@@ -132,17 +142,17 @@ size_t extractMaskNumericImpl(
         mask[i] = value;
     }
 
-    if constexpr (column_is_short)
+    if constexpr (compact)
     {
-        if (data_index != data_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
+        if (data_index != data.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The selected column has more rows than the mask");
     }
 
     return ones_count;
 }
 
-template <bool inverted, typename NumericType>
-bool extractMaskNumeric(
+template <bool inverted, bool compact, typename NumericType>
+static bool extractMaskNumeric(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -155,11 +165,8 @@ bool extractMaskNumeric(
         return false;
 
     const auto & data = numeric_column->getData();
-    size_t ones_count;
-    if (column->size() < mask.size())
-        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
-    else
-        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
+    size_t ones_count = 0;
+    ones_count = extractMaskNumericImpl<inverted, compact>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
@@ -167,13 +174,13 @@ bool extractMaskNumeric(
 }
 
 template <bool inverted>
-MaskInfo extractMaskFromConstOrNull(
+static MaskInfo extractMaskFromConstOrNull(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
-    UInt8 value;
+    UInt8 value = 0;
     if (column->onlyNull())
     {
         value = null_value;
@@ -195,8 +202,8 @@ MaskInfo extractMaskFromConstOrNull(
     return {.has_ones = ones_count > 0, .has_zeros = ones_count != mask.size()};
 }
 
-template <bool inverted>
-MaskInfo extractMaskImpl(
+template <bool inverted, bool compact = false>
+static MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & col,
     UInt8 null_value,
@@ -206,27 +213,28 @@ MaskInfo extractMaskImpl(
     auto column = col->convertToFullColumnIfLowCardinality();
 
     /// Special implementation for Null and Const columns.
-    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
+    if (column->onlyNull() || checkAndGetColumn<ColumnConst>(&*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column))
     {
         const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
-        return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
+        return extractMaskImpl<inverted, compact>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
-    MaskInfo mask_info;
+    MaskInfo mask_info{};
 
-    if (!(extractMaskNumeric<inverted, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt64>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int8>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
+    if (!(extractMaskNumeric<inverted, compact, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, UInt64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, compact, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());
 
     return mask_info;
@@ -274,31 +282,166 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
+/// Whether the default value of a column of this type (the zero value, as inserted by `IColumn::insertDefault`
+/// and `IColumn::expand`) can be not a valid value of the type. It is the case for `Enum` without an element
+/// with the value 0, also nested in `Nullable`, `Tuple` or a typed path of `JSON`. Other types are not checked,
+/// because their default value is either valid, or empty (`Array`, `Map`) or `NULL` (`Variant`, `Dynamic`).
+static bool hasInvalidColumnDefault(const IDataType & type)
+{
+    if (const auto * enum8_type = typeid_cast<const DataTypeEnum8 *>(&type))
+        return !enum8_type->hasValue(0);
+    if (const auto * enum16_type = typeid_cast<const DataTypeEnum16 *>(&type))
+        return !enum16_type->hasValue(0);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return hasInvalidColumnDefault(*nullable_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple_type->getElements(), [](const auto & element) { return hasInvalidColumnDefault(*element); });
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+        return std::ranges::any_of(object_type->getTypedPaths(), [](const auto & path) { return hasInvalidColumnDefault(*path.second); });
+    return false;
+}
+
+template <typename EnumType>
+static void fillUnusedEnumRows(IColumn & column, const EnumType & type, const PaddedPODArray<UInt8> & mask)
+{
+    auto & data = assert_cast<typename EnumType::ColumnType &>(column).getData();
+    if (data.size() != mask.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size {} does not match the column size {}", mask.size(), data.size());
+
+    const auto valid_value = type.getValues().front().second;
+    for (size_t i = 0; i < data.size(); ++i)
+        data[i] = mask[i] ? data[i] : valid_value;
+}
+
+/// Replace the values in the rows outside of `mask` in the subcolumns of `column` where the default value
+/// of the column is not a valid value of the type (see `hasInvalidColumnDefault`) with a valid value.
+/// The unused rows are still converted together with the used rows, e.g. when `if` converts its branches
+/// to the common type, so they must be valid values of the type. In `Nullable`, the rows can stay `NULL`,
+/// but the nested column is fixed too, because the conversion of `Nullable` converts the nested column entirely.
+static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & type, const PaddedPODArray<UInt8> & mask)
+{
+    if (!hasInvalidColumnDefault(type))
+        return;
+
+    /// A constant column has the same value in all rows, including the unused ones. The value is a result
+    /// of the execution of the function on the used rows, so it is a valid value of the type.
+    if (isColumnConst(column))
+        return;
+
+    if (const auto * enum8_type = typeid_cast<const DataTypeEnum8 *>(&type))
+    {
+        fillUnusedEnumRows(column, *enum8_type, mask);
+    }
+    else if (const auto * enum16_type = typeid_cast<const DataTypeEnum16 *>(&type))
+    {
+        fillUnusedEnumRows(column, *enum16_type, mask);
+    }
+    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        fillUnusedRowsWithValidValues(assert_cast<ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType(), mask);
+    }
+    else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        auto & tuple_column = assert_cast<ColumnTuple &>(column);
+        const auto & elements = tuple_type->getElements();
+        for (size_t i = 0; i < elements.size(); ++i)
+            fillUnusedRowsWithValidValues(tuple_column.getColumn(i), *elements[i], mask);
+    }
+    else if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+    {
+        auto & typed_paths = assert_cast<ColumnObject &>(column).getTypedPaths();
+        for (const auto & [path, path_type] : object_type->getTypedPaths())
+        {
+            auto it = typed_paths.find(path);
+            if (it != typed_paths.end())
+                fillUnusedRowsWithValidValues(it->second->assumeMutableRef(), *path_type, mask);
+        }
+    }
+}
+
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     ColumnWithTypeAndName result;
-    /// If mask contains only zeros, we can just create
-    /// an empty column with the execution result type.
     if (!mask_info.has_ones)
     {
+        /// If mask contains only zeros, we can just create a column with default values as it will be ignored.
+        /// But it is still converted together with other columns, so the values must be valid values of the type.
         auto result_type = column_function->getResultType();
-        auto empty_column = result_type->createColumn();
-        result = {std::move(empty_column), result_type, ""};
+        auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        if (hasInvalidColumnDefault(*result_type))
+        {
+            auto mut_default_column = IColumn::mutate(std::move(default_column));
+            fillUnusedRowsWithValidValues(*mut_default_column, *result_type, mask);
+            default_column = std::move(mut_default_column);
+        }
+        column = {default_column, result_type, ""};
     }
-    /// Filter column only if mask contains zeros.
     else if (mask_info.has_zeros)
     {
+        /// If it contains both zeros and ones, we need to execute the function only on the mask values
+        /// First we filter the column, which creates a new column, then we apply the column, and finally we expand it
+        /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
+        /// since the values won't be used by `if`. But they are still converted together with the used values,
+        /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
         auto filtered = column_function->filter(mask, -1);
-        result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+        mut_column->expand(mask, false);
+        fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
+        column.column = std::move(mut_column);
     }
     else
-        result = column_function->reduce();
+        column = column_function->reduce();
 
-    column = std::move(result);
+    chassert(column.column->size() == original_size);
+}
+
+template <bool inverted>
+static MaskInfo maskedExecuteAndUpdateMaskImpl(
+    const ColumnWithTypeAndName & column,
+    PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value)
+{
+    if (!mask_info.has_ones)
+        return mask_info;
+
+    const auto * column_function = checkAndGetShortCircuitArgument(column.column);
+    if (!column_function)
+        return extractMaskImpl<inverted>(mask, column.column, null_value, nullptr, nulls);
+
+    if (!mask_info.has_zeros)
+    {
+        auto result = column_function->reduce();
+        return extractMaskImpl<inverted>(mask, result.column, null_value, nullptr, nulls);
+    }
+
+    /// Unlike `if`/`multiIf`, `and`/`or` only need to update the mask. Consume the selected
+    /// result directly instead of expanding it to the full block and reading it again.
+    /// Only this path accepts compact columns; the public `extractMask` functions keep
+    /// requiring full-sized columns.
+    auto filtered = column_function->filter(mask, -1);
+    auto result = assert_cast<const ColumnFunction &>(*filtered).reduce();
+    return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
+}
+
+MaskInfo maskedExecuteAndUpdateMask(
+    const ColumnWithTypeAndName & column,
+    PaddedPODArray<UInt8> & mask,
+    const MaskInfo & mask_info,
+    bool inverted,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value)
+{
+    return inverted ? maskedExecuteAndUpdateMaskImpl<true>(column, mask, mask_info, nulls, null_value)
+                    : maskedExecuteAndUpdateMaskImpl<false>(column, mask, mask_info, nulls, null_value);
 }
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
@@ -307,10 +450,14 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     if (!column_function)
         return;
 
+    size_t original_size = column.column->size();
+
     if (!empty)
         column = column_function->reduce();
     else
-        column.column = column_function->getResultType()->createColumn();
+        column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+
+    chassert(column.column->size() == original_size);
 }
 
 int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)

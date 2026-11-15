@@ -54,10 +54,10 @@ public:
     struct CompiledModule
     {
         /// Size of compiled module code in bytes
-        size_t size;
+        size_t size{};
 
         /// Module identifier. Should not be changed by client
-        uint64_t identifier;
+        uint64_t identifier{};
 
         /// Vector of compiled functions. Should not be changed by client.
         /// It is client responsibility to cast result function to right signature.
@@ -85,11 +85,11 @@ public:
 
     /** Total compiled code size for module that are currently valid.
       */
-    inline size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
+    size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:
 
-    std::unique_ptr<llvm::Module> createModuleForCompilation();
+    std::unique_ptr<llvm::Module> createModuleForCompilation(llvm::LLVMContext & context);
 
     CompiledModule compileModule(std::unique_ptr<llvm::Module> module);
 
@@ -99,7 +99,6 @@ private:
 
     static std::unique_ptr<llvm::TargetMachine> getTargetMachine();
 
-    llvm::LLVMContext context;
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::DataLayout layout;
     std::unique_ptr<JITCompiler> compiler;
@@ -111,6 +110,36 @@ private:
     mutable std::mutex jit_lock;
 
 };
+
+/// Drop the static CHJIT instances used for compiled expressions and compiled aggregate functions.
+/// On the next compile request, fresh instances are constructed (paying the one-time
+/// `TargetMachine`/`Subtarget` initialization cost again, ~few MiB).
+///
+/// Concurrency: each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`,
+/// so the actual instance survives a reset until every user has released its handle. The reset
+/// only swaps the static slot — no in-flight compile is interrupted, no cache entry can
+/// dangle, and the dropped instance's compiled code stays mapped until its last reference goes away.
+/// The intended trigger is `SYSTEM DROP COMPILED EXPRESSION CACHE`, which clears the cache first
+/// (so every holder's `~deleteCompiledModule` runs against its captured instance) and then resets,
+/// at which point any in-flight compile that completes goes into a fresh instance.
+void resetExpressionJITInstance();
+void resetAggregatorJITInstance();
+void resetSortDescriptionJITInstance();
+
+/// Registers the targets of LLVM that the server compiles for, the host's and, with the GPU engine, NVPTX, once: the
+/// registry of LLVM is not synchronized, so a target is registered by no other means, and is looked up after this.
+void initializeLLVMTargets();
+
+}
+
+#else
+
+namespace DB
+{
+
+inline void resetExpressionJITInstance() {}
+inline void resetAggregatorJITInstance() {}
+inline void resetSortDescriptionJITInstance() {}
 
 }
 

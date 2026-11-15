@@ -14,7 +14,7 @@ CREATE TABLE table_from_numbers AS numbers(1000);
 
 SHOW CREATE TABLE table_from_numbers;
 
-ALTER TABLE table_from_numbers ADD COLUMN col UInt8; --{serverError 48}
+ALTER TABLE table_from_numbers ADD COLUMN col UInt8; --{serverError NOT_IMPLEMENTED}
 
 SHOW CREATE TABLE table_from_numbers;
 

@@ -10,7 +10,7 @@ namespace DB
 {
 struct SettingsConstraintsAndProfileIDs;
 
-/// Information about the default settings which are applied to an user on login.
+/// Information about the default settings which are applied to a user on login.
 struct SettingsProfilesInfo
 {
     SettingsChanges settings;
@@ -29,7 +29,11 @@ struct SettingsProfilesInfo
     /// Names of all the profiles in `profiles`.
     std::unordered_map<UUID, String> names_of_profiles;
 
-    explicit SettingsProfilesInfo(const AccessControl & access_control_) : constraints(access_control_), access_control(access_control_) {}
+    explicit SettingsProfilesInfo(const AccessControl & access_control_)
+        : constraints(access_control_), access_control(access_control_)
+    {
+    }
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
         const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & previous = nullptr) const;
 

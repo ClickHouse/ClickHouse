@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class SettingConstraintWritability
+enum class SettingConstraintWritability : uint8_t
 {
     // Default. Setting can be change within specified range only in `readonly=0` or `readonly=2` mode.
     WRITABLE,

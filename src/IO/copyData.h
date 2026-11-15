@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <functional>
+#include <iosfwd>
 
 
 namespace DB
@@ -9,10 +10,9 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class Throttler;
 
-using ThrottlerPtr = std::shared_ptr<Throttler>;
-
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 /// Copies data from ReadBuffer to WriteBuffer, all that is.
 void copyData(ReadBuffer & from, WriteBuffer & to);
@@ -33,5 +33,10 @@ void copyDataMaxBytes(ReadBuffer & from, WriteBuffer & to, size_t max_bytes);
 /// Same as above but also use throttler to limit maximum speed
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler);
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler);
+
+/// Copies everything an `std::istream` has left to a WriteBuffer, and returns the number of bytes
+/// copied. Reads into the memory of the WriteBuffer, so the data is copied exactly once. Only for
+/// the interfaces that hand out an `std::istream` and nothing better - the AWS SDK, for example.
+size_t copyFromIStreamToWriteBuffer(std::istream & from, WriteBuffer & to);
 
 }

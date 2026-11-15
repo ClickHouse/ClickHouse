@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
@@ -18,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
@@ -40,10 +39,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — accepts one or more arrays of any element
+    /// type and returns an array of `UInt32` enumeration ranks.
+    String getSignatureString() const override
+    {
+        return "(Array, ...) -> Array(UInt32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
@@ -76,7 +82,7 @@ private:
 
     struct MethodString
     {
-        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+        using Set = ClearableHashMapWithStackMemory<std::string_view, UInt32, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false, false>;
@@ -84,7 +90,7 @@ private:
 
     struct MethodFixedString
     {
-        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+        using Set = ClearableHashMapWithStackMemory<std::string_view, UInt32, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false, false>;
@@ -119,7 +125,11 @@ private:
     bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -165,7 +175,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
@@ -195,12 +205,12 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, null_map, res_values);
     }
     else
     {
         if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, nullptr, res_values);
     }
 
     return ColumnArray::create(std::move(res_nested), offsets_column);
@@ -330,7 +340,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::executeFixedString(
         const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnString>(&data);
+    const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
         executeMethod<MethodFixedString>(offsets, {nested}, {}, null_map, res_values);
 
@@ -366,9 +376,10 @@ template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
+    const NullMap * null_map,
     ColumnUInt32::Container & res_values) const
 {
-    executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
+    executeMethod<MethodHashed>(offsets, columns, {}, null_map, res_values);
 }
 
 }

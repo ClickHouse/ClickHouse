@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
 import os
-import subprocess
+import random
 import signal
+import subprocess
 import sys
 import time
-import random
 from argparse import ArgumentParser
-
 
 XML_TEMPLATE = """
 <clickhouse>
@@ -27,6 +26,7 @@ XML_TEMPLATE = """
         <server_id>{server_id}</server_id>
         <log_storage_path>{data_dir}/log</log_storage_path>
         <snapshot_storage_path>{data_dir}/snapshots</snapshot_storage_path>
+        <data_storage_path>{data_dir}/data</data_storage_path>
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
@@ -102,7 +102,7 @@ class Keeper:
         if self.with_thread_fuzzer:
             env["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
             env["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
-            env["THREAD_FUZZER_SLEEP_TIME_US"] = "100000"
+            env["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
             env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
             env["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
             env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
@@ -112,10 +112,10 @@ class Keeper:
             env["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
             env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
             env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
-            env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US"] = "10000"
-            env["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US"] = "10000"
-            env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US"] = "10000"
-            env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+            env["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
         self.process = subprocess.Popen(
             [

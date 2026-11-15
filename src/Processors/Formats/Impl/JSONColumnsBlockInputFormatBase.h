@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Core/CaseAwareBlockNameMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Core/BlockMissingValues.h>
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -16,7 +20,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReaderBase(ReadBuffer & in_);
+    explicit JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 
@@ -45,13 +49,13 @@ protected:
 class JSONColumnsBlockInputFormatBase : public IInputFormat
 {
 public:
-    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
+    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
     String getName() const override { return "JSONColumnsBlockInputFormatBase"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -63,7 +67,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    Block::NameMap name_to_index;
+    CaseAwareBlockNameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
@@ -84,7 +88,7 @@ public:
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & ctx) override;
+    void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
     {
@@ -102,7 +106,7 @@ private:
 
     const FormatSettings format_settings;
     String hints_str;
-    std::unordered_map<String, DataTypePtr> hints;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
     String hints_parsing_error;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;

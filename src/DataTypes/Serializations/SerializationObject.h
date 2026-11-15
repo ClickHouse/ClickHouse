@@ -1,34 +1,88 @@
 #pragma once
 
 #include <Columns/ColumnObject.h>
-#include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <Common/ObjectPool.h>
+#include <Core/MergeTreeSerializationEnums.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationObjectSharedData.h>
+#include <DataTypes/Serializations/SerializationObjectTypedSharedData.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/re2.h>
+
+#include <list>
 
 namespace DB
 {
 
-/** Serialization for data type Object.
-  * Supported only text serialization/deserialization.
-  * and binary bulk serialization/deserialization without position independent
-  * encoding, i.e. serialization/deserialization into Native format.
-  */
-template <typename Parser>
+class SerializationObjectDynamicPath;
+class SerializationSubObject;
+class SerializationObjectDistinctPaths;
+
+/// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
 {
 public:
-    /** In Native format ColumnObject can be serialized
-      * in two formats: as Tuple or as String.
-      * The format is the following:
-      *
-      * <serialization_kind> 1 byte -- 0 if Tuple, 1 if String.
-      * [type_name] -- Only for tuple serialization.
-      * ... data of internal column ...
-      *
-      * ClickHouse client serializazes objects as tuples.
-      * String serialization exists for clients, which cannot
-      * do parsing by themselves and they can send raw data as
-      * string. It will be parsed on the server side.
-      */
+    /// Serialization can change in future. Let's introduce serialization version.
+    struct SerializationVersion
+    {
+        enum Value
+        {
+            /// V1 serialization:
+            /// - ObjectStructure stream:
+            ///     <max_dynamic_paths parameter>
+            ///     <actual number of dynamic paths>
+            ///     <sorted list of dynamic paths>
+            ///     <statistics with number of non-null values for dynamic paths> (only in MergeTree serialization)
+            ///     <statistics with number of non-null values for some paths in shared data> (only in MergeTree serialization)
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths
+            ///   - ObjectSharedData stream shared data column.
+            V1 = 0,
+            /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
+            V2 = 2,
+            /// V3 serialization: the same as V2 but with 2 additions:
+            ///   - additional information about shared data serialization version that goes after list of dynamic paths.
+            ///   - additional bool flag before statistics that indicates if there are any statistics serialized.
+            V3 = 4,
+
+            /// Serializations used only in Native format:
+            /// String serialization:
+            ///  - ObjectData stream with single String column containing serialized JSON.
+            STRING = 1,
+            /// FLATTENED serialization:
+            /// - ObjectStructure stream:
+            ///     <list of all paths stored in Object column (except typed paths)>
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths and flattened shared data
+            /// This serialization is used in Native format only for easier support for Object type in clients.
+            FLATTENED = 3,
+        };
+
+        Value value;
+
+        static void checkVersion(UInt64 version);
+        /// Each version is written into one channel only, so reading data of the other channel means the data is corrupted.
+        static void checkVersion(UInt64 version, bool native_format);
+
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeObjectSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
+    };
+
+    SerializationObject(
+        const DataTypeObject::TypedPathsMap & typed_paths_types_,
+        const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+        const std::unordered_set<String> & shared_typed_paths_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_);
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
@@ -41,7 +95,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -51,7 +106,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -62,59 +117,78 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    virtual void deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const = 0;
+
+    static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
+
+    const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
+    const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
+    /// The typed paths declared SHARED, sorted by name, with their types and serializations.
+    const SerializationObjectTypedSharedData::SharedTypedPaths & getSharedTypedPaths() const { return shared_typed_paths; }
+
+    static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
 
 private:
-    enum class BinarySerializationKind : UInt8
+    friend SerializationObjectDynamicPath;
+    friend SerializationSubObject;
+    friend SerializationObjectDistinctPaths;
+
+    /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
+    struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        TUPLE = 0,
-        STRING = 1,
+        SerializationVersion serialization_version;
+        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::unordered_set<std::string_view> dynamic_paths;
+        SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
+        size_t shared_data_buckets = 1;
+        /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
+        ColumnObject::StatisticsPtr statistics;
+
+        /// For flattened serialization only.
+        VectorWithMemoryTracking<String> flattened_paths;
+
+        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
+            : serialization_version(serialization_version_)
+            , shared_data_serialization_version(SerializationObjectSharedData::SerializationVersion::MAP)
+        {
+        }
+
+        DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
+        }
     };
 
-    struct SerializeStateObject;
-    struct DeserializeStateObject;
-
-    void deserializeBinaryBulkFromString(
-        ColumnObject & column_object,
-        size_t limit,
+    static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeStateObject & state,
-        SubstreamsCache * cache) const;
+        SubstreamsDeserializeStatesCache * cache);
 
-    void deserializeBinaryBulkFromTuple(
-        ColumnObject & column_object,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeStateObject & state,
-        SubstreamsCache * cache) const;
+protected:
+    bool shouldSkipPath(const String & path) const;
 
-    template <typename TSettings>
-    void checkSerializationIsSupported(const TSettings & settings) const;
+    DataTypeObject::TypedPathsMap typed_paths_types;
+    std::unordered_map<String, SerializationPtr> typed_paths_serializations;
+    std::unordered_set<String> paths_to_skip;
+    std::vector<String> sorted_paths_to_skip;
+    std::list<re2::RE2> path_regexps_to_skip;
+    DataTypePtr dynamic_type;
+    SerializationPtr dynamic_serialization;
 
-    template <typename Reader>
-    void deserializeTextImpl(IColumn & column, Reader && reader) const;
+private:
+    void checkPathIsNotTyped(const String & path, bool native_format) const;
 
-    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+    /// Inside data parts the shared typed paths are serialized by typed_shared_data_serialization, outside like any typed path.
+    const std::vector<String> & getTypedPathsToSerialize(bool use_typed_shared_data) const
+    {
+        return use_typed_shared_data ? sorted_own_typed_paths : sorted_typed_paths;
+    }
 
-    template <bool pretty_json = false>
-    void serializeTextFromSubcolumn(const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent = 0) const;
-
-    /// Pool of parser objects to make SerializationObject thread safe.
-    mutable SimpleObjectPool<Parser> parsers_pool;
+    std::vector<String> sorted_typed_paths;
+    std::vector<String> sorted_own_typed_paths;
+    SerializationObjectTypedSharedData::SharedTypedPaths shared_typed_paths;
+    SerializationPtr typed_shared_data_serialization;
 };
-
-SerializationPtr getObjectSerialization(const String & schema_format);
 
 }

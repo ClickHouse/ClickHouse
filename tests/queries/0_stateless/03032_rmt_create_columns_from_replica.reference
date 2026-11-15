@@ -1,0 +1,7 @@
+CREATE TABLE default.data_r2
+(
+    `key` Int32
+)
+ENGINE = ReplicatedMergeTree('/tables/default', 'r2')
+ORDER BY tuple()
+SETTINGS index_granularity = 8192

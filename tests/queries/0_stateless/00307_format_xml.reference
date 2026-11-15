@@ -1,3 +1,4 @@
+unnamed columns in tuple
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
 	<meta>
@@ -49,6 +50,46 @@
 &lt;World></field>
 			<time>2001-02-03 04:05:06</time>
 			<arr><array><elem>0</elem><elem>1</elem><elem>2</elem><elem>3</elem><elem>4</elem><elem>5</elem><elem>6</elem><elem>7</elem><elem>8</elem><elem>9</elem></array></arr>
+			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
+		</max>
+	</extremes>
+	<rows>1</rows>
+</result>
+named columns in tuple
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>s</name>
+				<type>String</type>
+			</column>
+			<column>
+				<name>time</name>
+				<type>DateTime</type>
+			</column>
+			<column>
+				<name>tpl</name>
+				<type>Tuple(String, DateTime)</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<s>Hello &amp; world</s>
+			<time>2001-02-03 04:05:06</time>
+			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
+		</row>
+	</data>
+	<extremes>
+		<min>
+			<s>Hello &amp; world</s>
+			<time>2001-02-03 04:05:06</time>
+			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
+		</min>
+		<max>
+			<s>Hello &amp; world</s>
+			<time>2001-02-03 04:05:06</time>
 			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
 		</max>
 	</extremes>

@@ -1,5 +1,7 @@
-SET allow_experimental_analyzer = 1;
 SET optimize_if_transform_strings_to_enum = 1;
+-- This test checks the `optimize_if_transform_strings_to_enum` optimization in isolation,
+-- so pin the unrelated `optimize_if_transform_const_strings_to_lowcardinality` optimization (enabled by default).
+SET optimize_if_transform_const_strings_to_lowcardinality = 0;
 
 SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10;
 EXPLAIN SYNTAX SELECT transform(number, [2, 4, 6], ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10;
@@ -37,9 +39,9 @@ SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FRO
 EXPLAIN SYNTAX SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FROM (SELECT NULL as number FROM system.numbers LIMIT 10);
 EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FROM (SELECT NULL as number FROM system.numbers LIMIT 10);
 
-SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
-EXPLAIN SYNTAX SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
-EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
+SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SET optimize_if_transform_strings_to_enum = 0;
 

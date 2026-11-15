@@ -1,19 +1,21 @@
-#include <base/getFQDNOrHostName.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Interpreters/Context.h>
-#include <Common/TransactionID.h>
-#include <Common/CurrentThread.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <base/getThreadId.h>
+#include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/TransactionID.h>
 
 namespace DB
 {
@@ -34,22 +36,24 @@ ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"type", std::move(type_enum)},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime64>(6)},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The hostname where transaction was executed."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
+        {"type", std::move(type_enum), "The type of the transaction. Possible values: Begin, Commit, Rollback, AddPart, LockPart, UnlockPart."},
+        {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
+        {"event_time", std::make_shared<DataTypeDateTime64>(6), "Time of the entry"},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "The identifier of a thread."}, /// which thread?
 
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"tid", getTransactionIDDataType()},
-        {"tid_hash", std::make_shared<DataTypeUInt64>()},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of a query executed in a scope of transaction."},
+        {"tid", getTransactionIDDataType(), "The identifier of a transaction."},
+        {"tid_hash", std::make_shared<DataTypeUInt64>(), "The hash of the identifier."},
 
-        {"csn", std::make_shared<DataTypeUInt64>()},
+        {"csn", std::make_shared<DataTypeUInt64>(), "The Commit Sequence Number"},
 
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"part", std::make_shared<DataTypeString>()},
+        {"database", std::make_shared<DataTypeString>(), "The name of the database the transaction was executed against."},
+        {"table", std::make_shared<DataTypeString>(), "The name of the table the transaction was executed against."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "The uuid of the table the transaction was executed against."},
+        {"part", std::make_shared<DataTypeString>(), "The name of the part participated in the transaction."}, // ?
     };
 }
 
@@ -69,10 +73,12 @@ void TransactionsInfoLogElement::fillCommonFields(const TransactionInfoContext *
 
 void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 {
-    assert(type != UNKNOWN);
+    chassert(type != UNKNOWN);
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
@@ -80,7 +86,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(query_id);
-    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version});
     columns[i++]->insert(tid.getHash());
 
     columns[i++]->insert(csn);
@@ -101,11 +107,12 @@ try
     if (!system_log)
         return;
 
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.fillCommonFields(&context);
-    system_log->add(std::move(elem));
+    system_log->add([&](TransactionsInfoLogElement & element)
+    {
+        element.type = type;
+        element.tid = tid;
+        element.fillCommonFields(&context);
+    });
 }
 catch (...)
 {

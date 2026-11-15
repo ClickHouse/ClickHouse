@@ -1,6 +1,15 @@
-#include <Storages/System/StorageSystemGraphite.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/System/StorageSystemGraphite.h>
 
 
 namespace DB
@@ -11,7 +20,11 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
     return ColumnsDescription
     {
         {"config_name",     std::make_shared<DataTypeString>(), "graphite_rollup parameter name."},
-        {"rule_type",       std::make_shared<DataTypeString>(), ""},
+        {"rule_type",       std::make_shared<DataTypeString>(),
+            "The rule type. Possible values: RuleTypeAll = 0 - default, with regex, compatible with old scheme; "
+            "RuleTypePlain = 1 - plain metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagged = 2 - tagged metrics, with regex, compatible with old scheme; "
+            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
         {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
         {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
         {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
@@ -29,22 +42,18 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
+            auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table_data)
                 continue;
 
@@ -75,7 +84,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     Configs graphite_configs = getConfigs(context);
 
@@ -140,3 +149,6 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }

@@ -1,8 +1,14 @@
 #pragma once
+#include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
 
 namespace ErrorCodes
 {
@@ -10,7 +16,7 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>
+class FunctionDateOrDateTimeToDateOrDate32 final : public IFunctionDateOrDateTime<Transform>
 {
 private:
     const bool enable_extended_results_for_datetime_functions = false;
@@ -22,29 +28,44 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
+    }
+
+    String getSignatureString() const override
+    {
+        /// `checkArguments(..., is_result_type_date_or_date32=true)` originally disallowed a
+        /// timezone arg when the 1st argument was Date or Date32; only DateTime/DateTime64
+        /// inputs accept the optional 2nd argument. The return type doesn't carry the timezone
+        /// (Date and Date32 have no tz field), so `[const tz String]` is enough.
+        ///
+        /// When extended results are enabled, Date32 and DateTime64 inputs return Date32
+        /// instead of Date.
+        if (enable_extended_results_for_datetime_functions)
+        {
+            return
+                "(Date) -> Date"
+                " OR (DateTime, [const tz String]) -> Date"
+                " OR (Date32) -> Date32"
+                " OR (DateTime64, [const tz String]) -> Date32";
+        }
+        return
+            "(Date | Date32) -> Date"
+            " OR (DateTime | DateTime64, [const tz String]) -> Date";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true);
-
-        const IDataType * from_type = arguments[0].type.get();
-        WhichDataType which(from_type);
-
-        /// If the time zone is specified but empty, throw an exception.
-        /// only validate the time_zone part if the number of arguments is 2.
-        if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
-            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+        /// Preserve the legacy rejection of an explicitly provided empty timezone for the
+        /// DateTime/DateTime64 inputs that accept the optional 2nd argument.
+        /// The check runs after the signature has accepted the arguments, so a 2nd argument of a
+        /// wrong type is reported by the signature, not by the timezone extractor.
+        auto result = IFunction::getReturnTypeImpl(arguments);
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} supports a 2nd argument (optional) that must be a valid time zone",
                 this->getName());
-
-        if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
-            return std::make_shared<DataTypeDate32>();
-        else
-            return std::make_shared<DataTypeDate>();
+        return result;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -54,29 +75,31 @@ public:
 
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (which.isDate32())
+        if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)
-                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
-            else
-                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(
+                    arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         }
-        else if (which.isDateTime())
+        if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (which.isDateTime64())
+        if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
 
             const TransformDateTime64<Transform> transformer(scale);
             if (enable_extended_results_for_datetime_functions)
-                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, transformer);
-            else
-                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::
+                    execute(arguments, result_type, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(
+                arguments, result_type, input_rows_count, transformer);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}",
-                    arguments[0].type->getName(), this->getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(),
+            this->getName());
     }
 
 };

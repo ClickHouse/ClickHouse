@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -27,8 +29,6 @@ struct OptimizeShardingKeyRewriteInMatcher
     {
         /// Expression of sharding_key for the Distributed() table
         const ExpressionActionsPtr & sharding_key_expr;
-        /// Type of sharding_key column.
-        const DataTypePtr & sharding_key_type;
         /// Name of the column for sharding_expr
         const std::string & sharding_key_column_name;
         /// Info for the current shard (to compare shard_num with calculated)
@@ -43,5 +43,10 @@ struct OptimizeShardingKeyRewriteInMatcher
 };
 
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
+
+/// Rewrites only the `IN` over columns of the table expression with the alias `sharded_table_alias` -
+/// the distributed table, replaced by the remote table in the query for the shard.
+void optimizeShardingKeyRewriteIn(
+    QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, const String & sharded_table_alias, ContextPtr context);
 
 }

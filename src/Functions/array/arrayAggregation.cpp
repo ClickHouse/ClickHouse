@@ -1,21 +1,22 @@
 #include <base/defines.h>
 
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsNumber.h>
 
-#include <DataTypes/DataTypeArray.h>
+#include <Core/callOnTypeIndex.h>
+
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
+#include <Common/NaNUtils.h>
+#include <Common/findExtreme.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-enum class AggregateOperation
+enum class AggregateOperation : uint8_t
 {
     min,
     max,
@@ -85,7 +86,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, Decimal128>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal256>, Decimal256,
         std::conditional_t<std::is_same_v<ArrayElement, DateTime64>, Decimal128,
-        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
+        std::conditional_t<is_floating_point<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
             UInt64>>>>>>>>>>>;
 };
@@ -96,12 +97,32 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    /// Authoritative declarative signature — reduces the array (optionally transformed by a
+    /// lambda) with the aggregate operation. `min` / `max` preserve the (possibly lambda-mapped)
+    /// element type for any orderable type; `average` / `product` always widen to `Float64`
+    /// (numeric, `Enum` or `Interval` input, as `getReturnType` and `executeType` support); `sum` widens the running total via the `arraySumResult` type function.
+    static constexpr const char * chooseSignature()
+    {
+        if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
+            return "(Function((Any, ...), R : Any), Array, ...) -> R OR (Array(T : Any)) -> T";
+        else if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
+            return "(Function((Any, ...), Number | Enum | Interval), Array, ...) -> Float64 OR (Array(Number | Enum | Interval)) -> Float64";
+        else
+            return "(Function((Any, ...), T : Number), Array, ...) -> arraySumResult(T) OR (Array(T : Number)) -> arraySumResult(T)";
+    }
+    static constexpr auto signature = chooseSignature();
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
+        if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+        {
+            return expression_return;
+        }
+
         DataTypePtr result;
 
         auto call = [&](const auto & types)
@@ -109,7 +130,7 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (!IsDataTypeDateOrDateTime<DataType>)
+            if constexpr (!IsDataTypeDateOrDateTimeOrTime<DataType>)
             {
                 if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
                 {
@@ -133,31 +154,6 @@ struct ArrayAggregateImpl
                     return true;
                 }
             }
-            else if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
-            {
-                if constexpr (IsDataTypeDate<DataType>)
-                {
-                    result = std::make_shared<DataType>();
-
-                    return true;
-                }
-                else if constexpr (!IsDataTypeDecimal<DataType>)
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    result = std::make_shared<DataTypeDateTime>(timezone);
-
-                    return true;
-                }
-                else
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    UInt32 scale = getDecimalScale(*expression_return);
-                    result = std::make_shared<DataTypeDateTime64>(scale, timezone);
-
-                    return true;
-                }
-            }
-
             return false;
         };
 
@@ -170,9 +166,171 @@ struct ArrayAggregateImpl
         return result;
     }
 
+    /// Reduce each supported fixed-width array slice directly with findExtreme* instead of per-element compareAt.
+    /// Decimal and DateTime64 columns use their native representation and preserve the source scale in the result.
+    template <typename Element>
+    requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
+    static bool executeMinOrMaxFindExtreme(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
+        if (!column)
+            return false;
+
+        const Element * data = column->getData().data();
+
+        typename ColVecType::MutablePtr res_column;
+        if constexpr (is_decimal<Element>)
+            res_column = ColVecType::create(offsets.size(), column->getScale());
+        else
+            res_column = ColVecType::create(offsets.size());
+
+        typename ColVecType::Container & res = res_column->getData();
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t end_of_array = offsets[i];
+
+            /// Array is empty
+            if (pos == end_of_array)
+            {
+                res[i] = Element{};
+                continue;
+            }
+
+            std::optional<Element> result;
+            if constexpr (aggregate_operation == AggregateOperation::min)
+                result = findExtremeMin(data, pos, end_of_array);
+            else
+                result = findExtremeMax(data, pos, end_of_array);
+            chassert(result.has_value());
+
+            if constexpr (is_floating_point<Element>)
+            {
+                /// findExtreme* returns NaN only if all elements are NaN; the generic path returns the first of them.
+                if (isNaN(*result))
+                    result = data[pos];
+                /// A zero result may be either 0.0 or -0.0 depending on reduction order; take the first zero in the array.
+                else if (*result == Element{})
+                {
+                    for (size_t j = pos; j < end_of_array; ++j)
+                    {
+                        if (data[j] == Element{})
+                        {
+                            result = data[j];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            res[i] = *result;
+            pos = end_of_array;
+        }
+
+        res_ptr = std::move(res_column);
+        return true;
+    }
+
+    template <AggregateOperation op = aggregate_operation>
+    requires(op == AggregateOperation::min || op == AggregateOperation::max)
+    static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    {
+        const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*mapped);
+        if (const_column)
+        {
+            MutableColumnPtr res_column = const_column->getDataColumn().cloneEmpty();
+            const Field field = const_column->getField();
+            UInt64 pos = 0;
+            size_t first_non_empty = 0;
+            for (size_t i = 0; i < offsets.size(); ++i)
+            {
+                const auto end_of_array = offsets[i];
+                if (pos == end_of_array)
+                {
+                    if (first_non_empty < i)
+                        res_column->insertMany(field, i - first_non_empty);
+                    res_column->insertDefault();
+
+                    first_non_empty = i + 1;
+                }
+
+                pos = end_of_array;
+            }
+
+            if (first_non_empty < offsets.size())
+                res_column->insertMany(field, offsets.size() - first_non_empty);
+
+            res_ptr = std::move(res_column);
+            return;
+        }
+
+        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, res_ptr))
+            return;
+
+        MutableColumnPtr res_column = mapped->cloneEmpty();
+        static constexpr int nan_null_direction_hint = aggregate_operation == AggregateOperation::min ? 1 : -1;
+
+        /// TODO: Introduce row_begin and row_end to getPermutation or an equivalent function to use that instead
+        /// (same use case as SingleValueDataBase::getSmallestIndex)
+        UInt64 start_of_array = 0;
+        for (auto end_of_array : offsets)
+        {
+            /// Array is empty
+            if (start_of_array == end_of_array)
+            {
+                res_column->insertDefault();
+                continue;
+            }
+
+            UInt64 index = start_of_array;
+            for (UInt64 i = index + 1; i < end_of_array; i++)
+            {
+                if constexpr (aggregate_operation == AggregateOperation::min)
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) < 0))
+                        index = i;
+                }
+                else
+                {
+                    if ((mapped->compareAt(i, index, *mapped, nan_null_direction_hint) > 0))
+                        index = i;
+                }
+            }
+
+            res_column->insertFrom(*mapped, index);
+            start_of_array = end_of_array;
+        }
+
+        chassert(res_column->size() == offsets.size());
+        res_ptr = std::move(res_column);
+    }
+
     template <typename Element>
     static NO_SANITIZE_UNDEFINED bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
+        /// Min and Max are implemented in a different function
+        static_assert(aggregate_operation != AggregateOperation::min && aggregate_operation != AggregateOperation::max);
         using ResultType = ArrayAggregateResult<Element, aggregate_operation>;
         using ColVecType = ColumnVectorOrDecimal<Element>;
         using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
@@ -195,7 +353,7 @@ struct ArrayAggregateImpl
             if (!column_const)
                 return false;
 
-            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
+            const AggregationType x = static_cast<AggregationType>(column_const->template getValue<Element>()); // NOLINT
             const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
 
             typename ColVecResultType::MutablePtr res_column;
@@ -209,16 +367,18 @@ struct ArrayAggregateImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
+                const size_t array_size = offsets[i] - pos;
+
+                if (array_size == 0)
+                {
+                    res[i] = {};
+                    continue;
+                }
+
                 if constexpr (aggregate_operation == AggregateOperation::sum)
                 {
-                    size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
                     res[i] = x * static_cast<ResultType>(array_size);
-                }
-                else if constexpr (aggregate_operation == AggregateOperation::min ||
-                                aggregate_operation == AggregateOperation::max)
-                {
-                    res[i] = x;
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::average)
                 {
@@ -228,12 +388,11 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        res[i] = x;
+                        res[i] = static_cast<ResultType>(x);
                     }
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
-                    size_t array_size = offsets[i] - pos;
                     AggregationType product = x;
 
                     if constexpr (is_decimal<Element>)
@@ -261,7 +420,7 @@ struct ArrayAggregateImpl
                         for (size_t array_index = 1; array_index < array_size; ++array_index)
                             product = product * x;
 
-                        res[i] = product;
+                        res[i] = static_cast<ResultType>(product);
                     }
                 }
 
@@ -293,12 +452,12 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
-                    res[i] = aggregate_value;
+                    res[i] = static_cast<ResultType>(aggregate_value);
                 continue;
             }
 
             size_t count = 1;
-            aggregate_value = data[pos]; // NOLINT
+            aggregate_value = static_cast<AggregationType>(data[pos]); // NOLINT
             ++pos;
 
             for (; pos < offsets[i]; ++pos)
@@ -308,21 +467,7 @@ struct ArrayAggregateImpl
                 if constexpr (aggregate_operation == AggregateOperation::sum ||
                             aggregate_operation == AggregateOperation::average)
                 {
-                    aggregate_value += element;
-                }
-                else if constexpr (aggregate_operation == AggregateOperation::min)
-                {
-                    if (element < aggregate_value)
-                    {
-                        aggregate_value = element;
-                    }
-                }
-                else if constexpr (aggregate_operation == AggregateOperation::max)
-                {
-                    if (element > aggregate_value)
-                    {
-                        aggregate_value = element;
-                    }
+                    aggregate_value += static_cast<AggregationType>(element);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
@@ -337,7 +482,7 @@ struct ArrayAggregateImpl
                     }
                     else
                     {
-                        aggregate_value *= element;
+                        aggregate_value *= static_cast<AggregationType>(element);
                     }
                 }
 
@@ -353,7 +498,7 @@ struct ArrayAggregateImpl
                 }
                 else
                 {
-                    res[i] = static_cast<ResultType>(aggregate_value) / count;
+                    res[i] = static_cast<ResultType>(aggregate_value) / static_cast<ResultType>(count);
                 }
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
@@ -368,7 +513,7 @@ struct ArrayAggregateImpl
             }
             else
             {
-                res[i] = aggregate_value;
+                res[i] = static_cast<ResultType>(aggregate_value);
             }
         }
 
@@ -381,30 +526,39 @@ struct ArrayAggregateImpl
         const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
-        if (executeType<UInt8>(mapped, offsets, res) ||
-            executeType<UInt16>(mapped, offsets, res) ||
-            executeType<UInt32>(mapped, offsets, res) ||
-            executeType<UInt64>(mapped, offsets, res) ||
-            executeType<UInt128>(mapped, offsets, res) ||
-            executeType<UInt256>(mapped, offsets, res) ||
-            executeType<Int8>(mapped, offsets, res) ||
-            executeType<Int16>(mapped, offsets, res) ||
-            executeType<Int32>(mapped, offsets, res) ||
-            executeType<Int64>(mapped, offsets, res) ||
-            executeType<Int128>(mapped, offsets, res) ||
-            executeType<Int256>(mapped, offsets, res) ||
-            executeType<Float32>(mapped, offsets, res) ||
-            executeType<Float64>(mapped, offsets, res) ||
-            executeType<Decimal32>(mapped, offsets, res) ||
-            executeType<Decimal64>(mapped, offsets, res) ||
-            executeType<Decimal128>(mapped, offsets, res) ||
-            executeType<Decimal256>(mapped, offsets, res) ||
-            executeType<DateTime64>(mapped, offsets, res))
+        if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
         {
+            executeMinOrMax(mapped, offsets, res);
             return res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
+        {
+            if (executeType<UInt8>(mapped, offsets, res) ||
+                executeType<UInt16>(mapped, offsets, res) ||
+                executeType<UInt32>(mapped, offsets, res) ||
+                executeType<UInt64>(mapped, offsets, res) ||
+                executeType<UInt128>(mapped, offsets, res) ||
+                executeType<UInt256>(mapped, offsets, res) ||
+                executeType<Int8>(mapped, offsets, res) ||
+                executeType<Int16>(mapped, offsets, res) ||
+                executeType<Int32>(mapped, offsets, res) ||
+                executeType<Int64>(mapped, offsets, res) ||
+                executeType<Int128>(mapped, offsets, res) ||
+                executeType<Int256>(mapped, offsets, res) ||
+                executeType<BFloat16>(mapped, offsets, res) ||
+                executeType<Float32>(mapped, offsets, res) ||
+                executeType<Float64>(mapped, offsets, res) ||
+                executeType<Decimal32>(mapped, offsets, res) ||
+                executeType<Decimal64>(mapped, offsets, res) ||
+                executeType<Decimal128>(mapped, offsets, res) ||
+                executeType<Decimal256>(mapped, offsets, res) ||
+                executeType<DateTime64>(mapped, offsets, res))
+            {
+                return res;
+            }
+        }
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
     }
 };
 
@@ -425,11 +579,115 @@ using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOpe
 
 REGISTER_FUNCTION(ArrayAggregation)
 {
-    factory.registerFunction<FunctionArrayMin>();
-    factory.registerFunction<FunctionArrayMax>();
-    factory.registerFunction<FunctionArraySum>();
-    factory.registerFunction<FunctionArrayAverage>();
-    factory.registerFunction<FunctionArrayProduct>();
+    FunctionDocumentation::Description description_min = R"(
+Returns the minimum element in the source array.
+
+If a lambda function `func` is specified, returns the minimum element of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_min = "arrayMin([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_min = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_min = {"Returns the minimum element in the source array, or the minimum element of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_min = {
+        {"Basic example", "SELECT arrayMin([5, 3, 2, 7]);", "2"},
+        {"Usage with lambda function", "SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "4"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_min = {21, 1};
+    FunctionDocumentation::Category category_min = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, {}, returned_value_min, examples_min, introduced_in_min, category_min};
+
+    factory.registerFunction<FunctionArrayMin>(documentation_min);
+
+    FunctionDocumentation::Description description_max = R"(
+Returns the maximum element in the source array.
+
+If a lambda function `func` is specified, returns the maximum element of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_max = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_max = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_max = {"Returns the maximum element in the source array, or the maximum element of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_max = {
+        {"Basic example", "SELECT arrayMax([5, 3, 2, 7]);", "7"},
+        {"Usage with lambda function", "SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "12"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_max = {21, 1};
+    FunctionDocumentation::Category category_max = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, {}, returned_value_max, examples_max, introduced_in_max, category_max};
+
+    factory.registerFunction<FunctionArrayMax>(documentation_max);
+
+    FunctionDocumentation::Description description_sum = R"(
+Returns the sum of elements in the source array.
+
+If a lambda function `func` is specified, returns the sum of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_sum = "arraySum([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_sum = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {", cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sum = {"Returns the sum of elements in the source array, or the sum of elements of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_sum = {
+        {"Basic example", "SELECT arraySum([1, 2, 3, 4]);", "10"},
+        {"Usage with lambda function", "SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);", "8"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sum = {21, 1};
+    FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, {}, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
+
+    factory.registerFunction<FunctionArraySum>(documentation_sum);
+
+    FunctionDocumentation::Description description_avg = R"(
+Returns the average of elements in the source array.
+
+If a lambda function `func` is specified, returns the average of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_avg = "arrayAvg([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_avg = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the average of elements in the source array, or the average of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::Examples examples_avg = {
+        {"Basic example", "SELECT arrayAvg([1, 2, 3, 4]);", "2.5"},
+        {"Usage with lambda function", "SELECT arrayAvg(x, y -> x*y, [2, 3], [2, 3]) AS res;", "6.5"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_avg = {21, 1};
+    FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, {}, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
+
+    factory.registerFunction<FunctionArrayAverage>(documentation_avg);
+
+    FunctionDocumentation::Description description_prod = R"(
+Returns the product of elements in the source array.
+
+If a lambda function `func` is specified, returns the product of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_prod = "arrayProduct([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_prod = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_prod = {"Returns the product of elements in the source array, or the product of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::Examples examples_prod = {
+        {"Basic example", "SELECT arrayProduct([1, 2, 3, 4]);", "24"},
+        {"Usage with lambda function", "SELECT arrayProduct(x, y -> x+y, [2, 2], [2, 2]) AS res;", "16"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_prod = {21, 1};
+    FunctionDocumentation::Category category_prod = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, {}, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
+
+    factory.registerFunction<FunctionArrayProduct>(documentation_prod);
 }
 
 }

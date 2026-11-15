@@ -1,5 +1,7 @@
-import pytest
 import os
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -13,6 +15,8 @@ node = cluster.add_instance(
         "configs/second.key",
         "configs/ECcert.crt",
         "configs/ECcert.key",
+        "configs/WithChain.crt",
+        "configs/WithChain.key",
         "configs/WithPassPhrase.crt",
         "configs/WithPassPhrase.key",
         "configs/cert.xml",
@@ -158,3 +162,61 @@ def test_cert_with_pass_phrase():
     check_certificate_switch(
         "first", "WithPassPhrase", pass_phrase_second=pass_phrase_for_cert
     )
+
+
+def test_chain_reload():
+    """Check cert chain reload"""
+    check_certificate_switch("first", "WithChain")
+    assert (
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "openssl s_client -showcerts -servername localhost -connect localhost:8443 </dev/null 2>/dev/null | grep 'BEGIN CERTIFICATE' | wc -l",
+            ]
+        )
+        == "2\n"
+    )
+
+
+CONFIG_DIR = "/etc/clickhouse-server/config.d"
+
+
+def curl_ok(cert_name):
+    return (
+        node.exec_in_container(
+            [
+                "curl",
+                "--silent",
+                "--cacert",
+                f"{CONFIG_DIR}/{cert_name}.crt",
+                "https://localhost:8443/",
+            ]
+        )
+        == "Ok.\n"
+    )
+
+
+def run_in_node(command):
+    node.exec_in_container(["bash", "-c", command])
+
+
+def test_mismatched_pair_is_rejected():
+    """Replacing only the key of a cert/key pair must keep serving the previous pair until the cert is replaced too."""
+    run_in_node(f"cp {CONFIG_DIR}/first.crt {CONFIG_DIR}/cur.crt && cp {CONFIG_DIR}/first.key {CONFIG_DIR}/cur.key")
+    change_config_to_key("cur")
+    assert curl_ok("first")
+
+    # Only the key is rotated: the pair is inconsistent.
+    log_anchor = max(1, node.count_log_lines())
+    run_in_node(f"cp {CONFIG_DIR}/second.key {CONFIG_DIR}/cur.key")
+    node.query("SYSTEM RELOAD CONFIG")
+    node.wait_for_log_line("does not match the certificate", look_behind_lines=f"+{log_anchor}")
+    # Leftover errors of the expected end of a certificate file must not leak into the message.
+    assert int(node.count_in_log("does not match the certificate.*no start line")) == 0
+    assert curl_ok("first")
+
+    # The cert follows: the new pair is accepted.
+    run_in_node(f"cp {CONFIG_DIR}/second.crt {CONFIG_DIR}/cur.crt")
+    node.query("SYSTEM RELOAD CONFIG")
+    assert curl_ok("second")

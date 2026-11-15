@@ -22,7 +22,7 @@ const size_t DEFAULT_SCHEMA_CACHE_ELEMENTS = 4096;
 class SchemaCache
 {
 public:
-    SchemaCache(size_t max_elements_);
+    explicit SchemaCache(size_t max_elements_);
 
     struct Key
     {
@@ -51,7 +51,7 @@ public:
     {
         std::optional<ColumnsDescription> columns;
         std::optional<size_t> num_rows;
-        time_t registration_time;
+        time_t registration_time{};
     };
 
     using LastModificationTimeGetter = std::function<std::optional<time_t>()>;

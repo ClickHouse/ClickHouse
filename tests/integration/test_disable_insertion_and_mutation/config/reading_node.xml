@@ -1,0 +1,3 @@
+<clickhouse>
+	<disable_insertion_and_mutation>true</disable_insertion_and_mutation>
+</clickhouse>

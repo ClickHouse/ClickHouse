@@ -3,7 +3,6 @@
 
 #include <Common/HashTable/HashTable.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
@@ -19,6 +18,13 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
+    /// Documentation-only — removes consecutive duplicates (compared by the
+    /// lambda's value, or by the array's values when called without a
+    /// lambda); preserves the element type of the source array.
+    static constexpr auto signature =
+        "(Function((Any, ...), Any), Array(T : Any), ...) -> Array(T)"
+        " OR (Array(T : Any)) -> Array(T)";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -34,7 +40,7 @@ struct ArrayCompactImpl
         using ColVecType = ColumnVectorOrDecimal<T>;
 
         const ColVecType * check_values_column = checkAndGetColumn<ColVecType>(mapped.get());
-        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(array.getData());
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(&array.getData());
 
         if (!src_values_column || !check_values_column)
             return false;
@@ -145,11 +151,11 @@ struct ArrayCompactImpl
             executeType< Int32 >(mapped, array, res) ||
             executeType< Int64 >(mapped, array, res) ||
             executeType<Float32>(mapped, array, res) ||
-            executeType<Float64>(mapped, array, res)) ||
+            executeType<Float64>(mapped, array, res) ||
             executeType<Decimal32>(mapped, array, res) ||
             executeType<Decimal64>(mapped, array, res) ||
             executeType<Decimal128>(mapped, array, res) ||
-            executeType<Decimal256>(mapped, array, res))
+            executeType<Decimal256>(mapped, array, res)))
         {
             executeGeneric(mapped, array, res);
         }
@@ -162,7 +168,18 @@ using FunctionArrayCompact = FunctionArrayMapped<ArrayCompactImpl, NameArrayComp
 
 REGISTER_FUNCTION(ArrayCompact)
 {
-    factory.registerFunction<FunctionArrayCompact>();
+    FunctionDocumentation::Description description = "Removes consecutive duplicate elements from an array, including `null` values. The order of values in the resulting array is determined by the order in the source array.";
+    FunctionDocumentation::Syntax syntax = "arrayCompact(arr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "An array to remove duplicates from.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array without duplicate values", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);", "[1,nan,2,3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayCompact>(documentation);
 }
 
 }

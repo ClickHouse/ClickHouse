@@ -23,6 +23,24 @@ CREATE ROW POLICY 02131_filter_3 ON 02131_rptable USING x=3 AS permissive TO ALL
 SELECT 'R1, R2, R3: (x == 1) OR (x == 2) OR (x == 3)';
 SELECT * FROM 02131_rptable;
 
+SELECT 'R1, R2, R3 + additional_table_filters and PREWHERE: (x == 1) OR (x == 2) OR (x == 3) AND (x < 3) AND (x > 1)';
+SELECT * FROM 02131_rptable
+PREWHERE x >= 2
+SETTINGS additional_table_filters = {'02131_rptable': 'x > 1'}
+;
+
+SELECT 'R1, R2, R3 + additional_result_filter and PREWHERE: (x == 1) OR (x == 2) OR (x == 3) AND (x < 3) AND (x > 1)';
+SELECT * FROM 02131_rptable
+PREWHERE x >= 2
+SETTINGS additional_result_filter = 'x > 1'
+;
+
+SELECT 'R1, R2, R3 + additional_table_filters and WHERE: (x == 1) OR (x == 2) OR (x == 3) AND (x < 3) AND (x > 1)';
+SELECT * FROM 02131_rptable
+WHERE x >= 2
+SETTINGS additional_table_filters = {'02131_rptable': 'x > 1'}
+;
+
 CREATE ROW POLICY 02131_filter_4 ON 02131_rptable USING x<=2 AS restrictive TO ALL;
 SELECT 'R1, R2, R3, R4: ((x == 1) OR (x == 2) OR (x == 3)) AND (x <= 2)';
 SELECT * FROM 02131_rptable;

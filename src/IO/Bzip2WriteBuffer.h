@@ -2,6 +2,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressionLibraryErrors.h>
 #include <IO/WriteBufferDecorator.h>
 
 #include "config.h"
@@ -25,10 +26,10 @@ public:
         WriteBufferT && out_,
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
+        char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
         size_t alignment = 0,
         bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment) /// NOLINT(bugprone-move-forwarding-reference)
     , compress_empty(compress_empty_)
     {
         memset(&stream, 0, sizeof(stream));
@@ -38,8 +39,9 @@ public:
         if (ret != BZ_OK)
             throw Exception(
                 ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
-                "bzip2 stream encoder init failed: error code: {}",
-                ret);
+                "bzip2 stream encoder init failed for compression level {}: {}",
+                compression_level,
+                bzip2ErrorToString(ret));
     }
 
     ~Bzip2WriteBuffer() override;
@@ -47,9 +49,9 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finalFlushBefore() override;
 
-    bz_stream stream;
+    bz_stream stream{};
     bool compress_empty = true;
     UInt64 total_in = 0;
 };

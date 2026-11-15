@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --multiquery --mutations_sync=1 << EOF
+${CLICKHOUSE_CLIENT} --mutations_sync=1 << EOF
 DROP TABLE IF EXISTS mutations;
 DROP TABLE IF EXISTS for_subquery;
 

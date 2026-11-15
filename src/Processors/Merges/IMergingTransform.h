@@ -1,8 +1,14 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -14,24 +20,25 @@ class IMergingTransformBase : public IProcessor
 public:
     IMergingTransformBase(
         size_t num_inputs,
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader & input_header,
+        SharedHeader & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
     IMergingTransformBase(
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
-    OutputPort & getOutputPort() { return outputs.front(); }
+    OutputPort & getOutputPort();
 
-    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
-    void addInput();
-    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
+    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
+    /// from the output header when the algorithm changes the column layout.
+    void addInput(const Block & input_header);
+    /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
 
     Status prepare() override;
@@ -51,6 +58,10 @@ protected:
         bool no_data = false;
         size_t next_input_to_read = 0;
 
+        /// Inputs to ask for data without waiting for it (read-ahead for sources
+        /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
+        VectorWithMemoryTracking<size_t> inputs_to_prefetch;
+
         IMergingAlgorithm::Inputs init_chunks;
     };
 
@@ -65,7 +76,7 @@ private:
         bool is_initialized = false;
     };
 
-    std::vector<InputState> input_states;
+    VectorWithMemoryTracking<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
@@ -82,8 +93,8 @@ public:
     template <typename ... Args>
     IMergingTransform(
         size_t num_inputs,
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader input_header,
+        SharedHeader output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -95,8 +106,8 @@ public:
 
     template <typename ... Args>
     IMergingTransform(
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders input_headers,
+        SharedHeader output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -110,6 +121,8 @@ public:
 
     void work() override
     {
+        Stopwatch watch{CLOCK_MONOTONIC_COARSE};
+
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
 
@@ -120,19 +133,29 @@ public:
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
         }
-        else if (state.no_data && empty_chunk_on_finish)
+        else if (state.no_data)
         {
-            IMergingAlgorithm::Input current_input;
-            algorithm.consume(current_input, state.next_input_to_read);
+            if (empty_chunk_on_finish)
+            {
+                IMergingAlgorithm::Input current_input;
+                algorithm.consume(current_input, state.next_input_to_read);
+            }
+            else
+            {
+                /// The required source finished without data. Let the algorithm release any
+                /// per-source bookkeeping (e.g. a read-ahead slot held for a deferred source).
+                algorithm.onSourceExhausted(state.next_input_to_read);
+            }
             state.no_data = false;
         }
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
-        if ((status.chunk && status.chunk.hasRows()) || status.chunk.hasChunkInfo())
+        if ((status.chunk && status.chunk.hasRows()) || !status.chunk.getChunkInfos().empty())
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
+            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -142,21 +165,56 @@ public:
             state.need_data = true;
         }
 
+        if (!status.sources_to_prefetch.empty())
+            state.inputs_to_prefetch.insert(
+                state.inputs_to_prefetch.end(), status.sources_to_prefetch.begin(), status.sources_to_prefetch.end());
+
         if (status.is_finished)
         {
             // std::cerr << "Finished" << std::endl;
             state.is_finished = true;
         }
+
+        merging_elapsed_ns += watch.elapsedNanoseconds();
     }
 
 protected:
+    /// Is called for every chunk the merge produces, before it is pushed to the output.
+    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
+
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 
     Algorithm algorithm;
 
     /// Profile info.
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+    UInt64 merging_elapsed_ns = 0;
+
+    void logMergedStats(ProfileEvents::Event elapsed_ms_event, std::string_view transform_message, LoggerPtr log) const
+    {
+        auto stats = algorithm.getMergedStats();
+
+        UInt64 elapsed_ms = merging_elapsed_ns / 1000000LL;
+        ProfileEvents::increment(elapsed_ms_event, elapsed_ms);
+
+        /// Don't print info for small parts (< 1M rows)
+        if (stats.rows < 1000000)
+            return;
+
+        double seconds = static_cast<double>(merging_elapsed_ns) / 1000000000ULL;
+
+        if (seconds == 0.0)
+        {
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in 0 sec.",
+                transform_message, stats.blocks, stats.rows, stats.bytes);
+        }
+        else
+        {
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
+                transform_message, stats.blocks, stats.rows, stats.bytes,
+                seconds, static_cast<double>(stats.rows) / seconds, ReadableSize(static_cast<double>(stats.bytes) / seconds));
+        }
+    }
 
 private:
     using IMergingTransformBase::state;

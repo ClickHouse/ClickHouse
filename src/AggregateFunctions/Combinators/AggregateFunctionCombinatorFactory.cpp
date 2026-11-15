@@ -1,6 +1,6 @@
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -10,11 +10,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void AggregateFunctionCombinatorFactory::registerCombinator(const AggregateFunctionCombinatorPtr & value)
+void AggregateFunctionCombinatorFactory::registerCombinator(const AggregateFunctionCombinatorPtr & value, Documentation documentation)
 {
     CombinatorPair pair{
         .name = value->getName(),
         .combinator_ptr = value,
+        .documentation = std::move(documentation),
     };
 
     /// lower_bound() cannot be used since sort order of the dict is by length of the combinator

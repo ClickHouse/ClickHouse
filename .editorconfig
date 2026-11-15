@@ -19,3 +19,7 @@ charset = utf-8
 indent_style = space
 indent_size = 4
 trim_trailing_whitespace = true
+
+# Some SQL results have trailing whitespace which is removed by IDEs
+[tests/queries/**.reference]
+trim_trailing_whitespace = false

@@ -1,7 +1,7 @@
 SELECT '-- Negative tests';
-SELECT arrayFold(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT arrayFold(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT arrayFold(1, toUInt64(0)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT arrayFold(); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+SELECT arrayFold(1); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+SELECT arrayFold(1, toUInt64(0)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 SELECT arrayFold(1, emptyArrayUInt64(), toUInt64(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayFold( acc,x -> x,  emptyArrayString(), toInt8(0)); -- { serverError TYPE_MISMATCH }
 SELECT arrayFold( acc,x -> x,  'not an array', toUInt8(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

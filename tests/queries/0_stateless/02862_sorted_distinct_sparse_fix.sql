@@ -1,3 +1,5 @@
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 DROP TABLE IF EXISTS t_sparse_distinct;
 
 CREATE TABLE t_sparse_distinct (id UInt32, v String)
@@ -19,7 +21,7 @@ ORDER BY name;
 set optimize_distinct_in_order=1;
 set max_threads=1;
 
-select trimLeft(explain) from (explain pipeline SELECT DISTINCT id, v FROM t_sparse_distinct) where explain ilike '%DistinctSortedChunkTransform%';
+select splitByString(' ', trimLeft(explain))[1] from (explain pipeline SELECT DISTINCT id, v FROM t_sparse_distinct) where explain ilike '%DistinctSortedStreamTransform%';
 SELECT DISTINCT id, v FROM t_sparse_distinct format Null;
 
 DROP TABLE t_sparse_distinct;

@@ -1,39 +1,85 @@
-#include <Common/TraceSender.h>
-
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
-#include <Common/StackTrace.h>
+#include <Common/CPUID.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StackTrace.h>
+#include <Common/TraceSender.h>
+#include <Common/setThreadName.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
 
-namespace
-{
-    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    ///
-    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
-    /// The performance test query ids can be surprisingly long like
-    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
-    /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 100;
-    static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
-}
+#include <limits>
+#include <string_view>
 
 namespace DB
 {
 
-LazyPipeFDs TraceSender::pipe;
+static_assert(TraceSender::QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
 
-void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
+LazyPipeFDs TraceSender::pipe;
+std::atomic<bool> TraceSender::shutdown{false};
+std::atomic<int> TraceSender::in_flight{0};
+std::mutex TraceSender::flush_mutex;
+std::condition_variable TraceSender::flush_cv;
+UInt64 TraceSender::flush_requested = 0;
+UInt64 TraceSender::flush_completed = 0;
+
+static thread_local bool inside_send = false;
+
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
 {
+    Origin origin;
+    if (CurrentThread::isInitialized())
+    {
+        origin.query_id = CurrentThread::getQueryId();
+        origin.thread_id = CurrentThread::get().thread_id;
+    }
+    else if (const auto * main_thread = MainThreadStatus::get())
+    {
+        origin.thread_id = main_thread->thread_id;
+    }
+    origin.thread_name = getThreadName();
+    send(trace_type, stack_trace, extras, origin);
+}
+
+void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras, Origin origin) noexcept
+{
+    /** The method shouldn't be called recursively or throw exceptions.
+      * There are several reasons:
+      * - avoid infinite recursion when some of subsequent functions invoke tracing;
+      * - avoid inconsistent writes if the method was interrupted by a signal handler in the middle of writing,
+      *   and then another tracing is invoked (e.g., from query profiler).
+      */
+    if (unlikely(inside_send))
+        return;
+    inside_send = true;
+    SCOPE_EXIT({ inside_send = false; });
+    DENY_ALLOCATIONS_IN_SCOPE;
+
+    /// Drain bookkeeping for `~TraceCollector`: bump the in-flight counter
+    /// before checking `shutdown`, so the closer either sees us in-flight
+    /// (and waits) or we observe `shutdown` and bail out.
+    in_flight.fetch_add(1);
+    SCOPE_EXIT(in_flight.fetch_sub(1));
+    if (shutdown.load())
+        return;
+
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
         + QUERY_ID_MAX_LEN                   /// Maximum query_id length
         + sizeof(UInt8)                      /// Number of stack frames
-        + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
+        + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
+        + sizeof(UInt64)                     /// cpu_id
         + sizeof(UInt64)                     /// thread_id
+        + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
+        + sizeof(UInt8)                      /// memory_context
+        + sizeof(UInt8)                      /// memory_blocked_context
         + sizeof(ProfileEvents::Event)       /// event
         + sizeof(ProfileEvents::Count);      /// increment
 
@@ -45,21 +91,10 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    std::string_view query_id;
-    UInt64 thread_id;
-
-    if (CurrentThread::isInitialized())
-    {
-        query_id = CurrentThread::getQueryId();
-        if (query_id.size() > QUERY_ID_MAX_LEN)
-            query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
-
-        thread_id = CurrentThread::get().thread_id;
-    }
-    else
-    {
-        thread_id = MainThreadStatus::get()->thread_id;
-    }
+    std::string_view query_id = origin.query_id;
+    if (query_id.size() > QUERY_ID_MAX_LEN)
+        query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
+    UInt64 cpu_id = CPU::get_cpuid();
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
@@ -73,13 +108,28 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
-    writePODBinary(thread_id, out);
+    writePODBinary(cpu_id, out);
+    writePODBinary(origin.thread_id, out);
+    writePODBinary(UInt8(origin.thread_name), out);
+
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);
+    if (extras.memory_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
+    if (extras.memory_blocked_context.has_value())
+        writePODBinary(static_cast<Int8>(extras.memory_blocked_context.value()), out);
+    else
+        writePODBinary(static_cast<Int8>(MEMORY_CONTEXT_UNKNOWN), out);
     writePODBinary(extras.event, out);
     writePODBinary(extras.increment, out);
 
     out.next();
+    out.finalize();
+
+    /// Multiple threads are calling this function concurrently, so writes to pipe should be atomic (single flush).
+    chassert(out.getFlushCount() == 1);
 }
 
 }

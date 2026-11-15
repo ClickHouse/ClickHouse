@@ -1,10 +1,10 @@
-#include "getMappedArea.h"
+#include <Common/getMappedArea.h>
 #include <Common/Exception.h>
 
 #if defined(OS_LINUX)
 
-#include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
+#include <Common/StringUtils.h>
+#include <Common/Hex.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 

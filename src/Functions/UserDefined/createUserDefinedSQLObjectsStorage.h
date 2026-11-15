@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 class IUserDefinedSQLObjectsStorage;
 
 std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorage(const ContextMutablePtr & global_context);

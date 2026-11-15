@@ -23,7 +23,7 @@ struct ExternalLoadableLifetime
     UInt64 max_sec = 0;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-    ExternalLoadableLifetime() {}
+    ExternalLoadableLifetime() = default;
 };
 
 /// Get delay before trying to load again after error.
@@ -43,7 +43,7 @@ public:
     /// If lifetime exceeded and isModified(), ExternalLoader replace current object with the result of clone().
     virtual bool isModified() const = 0;
     /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
-    virtual std::shared_ptr<const IExternalLoadable> clone() const = 0;
+    virtual std::shared_ptr<IExternalLoadable> clone() const = 0;
 };
 
 }

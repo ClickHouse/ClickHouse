@@ -1,0 +1,260 @@
+#include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/SymbolsHelper.h>
+#include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ErrorLog.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+
+#include <mutex>
+#include <optional>
+#include <vector>
+
+namespace DB
+{
+
+ColumnsDescription ErrorLogElement::getColumnsDescription()
+{
+    ParserCodec codec_parser;
+    DataTypePtr symbolized_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    return ColumnsDescription {
+        {
+                "hostname",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Hostname of the server executing the query."
+            },
+        {
+                "clickhouse_version",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Version of the ClickHouse server that produced the row."
+            },
+        {
+                "system_processor",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "CPU architecture of the ClickHouse server that produced the row."
+            },
+        {
+                "event_date",
+                std::make_shared<DataTypeDate>(),
+                parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event date."
+            },
+        {
+                "event_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Event time."
+            },
+        {
+                "code",
+                std::make_shared<DataTypeInt32>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error code."
+            },
+        {
+                "error",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Error name."
+            },
+        {
+                "value",
+                std::make_shared<DataTypeUInt64>(),
+                parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Number of errors happened in time interval."
+            },
+        {
+                "remote",
+                std::make_shared<DataTypeUInt8>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Remote exception (i.e. received during one of the distributed queries)."
+            },
+        {
+                "last_error_time",
+                std::make_shared<DataTypeDateTime>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "The time when the last error happened."
+            },
+        {
+                "last_error_message",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Message for the last error."
+            },
+            {
+                "last_error_query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Id of a query that caused the last error (if available)."
+            },
+        {
+                "last_error_trace",
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "A stack trace of the last error. Except on FreeBSD, addresses inside the main ClickHouse binary "
+                "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."
+            },
+        {
+                "last_error_symbols",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Demangled symbol names corresponding to last_error_trace."
+            },
+        {
+                "last_error_lines",
+                symbolized_type,
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "File names with line numbers corresponding to last_error_trace."
+            }
+    };
+}
+
+void ErrorLogElement::appendToBlock(MutableColumns & columns) const
+{
+    size_t column_idx = 0;
+
+    columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
+    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(event_time);
+    columns[column_idx++]->insert(code);
+    columns[column_idx++]->insert(ErrorCodes::getName(code));
+    columns[column_idx++]->insert(value);
+    columns[column_idx++]->insert(remote);
+    columns[column_idx++]->insert(last_error_time);
+    columns[column_idx++]->insert(last_error_message);
+    columns[column_idx++]->insert(last_error_query_id);
+
+    Array trace_array;
+    trace_array.reserve(last_error_trace.size());
+    for (UInt64 addr : last_error_trace)
+        trace_array.emplace_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(addr)));
+    columns[column_idx++]->insert(std::move(trace_array));
+
+    IColumn & symbols_column = *columns[column_idx++];
+    IColumn & lines_column = *columns[column_idx++];
+
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (!last_error_trace.empty())
+    {
+        std::vector<const void *> frame_pointers;
+        frame_pointers.reserve(last_error_trace.size());
+        for (UInt64 addr : last_error_trace)
+            frame_pointers.push_back(reinterpret_cast<const void *>(addr));
+
+        /// `system.error_log` is filled by a background flush that builds the whole batch inside
+        /// `SystemLog::flushImpl`: a single exception here (`CANNOT_PARSE_DWARF` while reading debug info, a missing or
+        /// truncated `.dSYM`, ...) aborts the flush and drops every pending row of the batch.
+        /// These two columns are diagnostic sugar, so symbolization is best-effort for this table:
+        /// the failure is reported to the server log and the columns are left empty.
+        std::optional<std::pair<std::vector<String>, std::vector<String>>> symbolized;
+        try
+        {
+            symbolized = symbolizeTrace(frame_pointers.data(), frame_pointers.size(), /* need_symbols= */ true, /* need_lines= */ true);
+        }
+        catch (...)
+        {
+            /// Symbolization fails for the whole binary rather than for a single address, so it would
+            /// fail for every row of every flush - report it only once instead of flooding the log.
+            static std::once_flag reported;
+            std::call_once(reported, []
+            {
+                tryLogCurrentException(
+                    getLogger("ErrorLog"),
+                    "Cannot symbolize the stack trace for system.error_log, "
+                    "last_error_symbols and/or last_error_lines will be empty");
+            });
+        }
+
+        /// Insert outside of the `try`: `ColumnArray::insert` appends nested elements before the offset,
+        /// so an exception (e.g. `MEMORY_LIMIT_EXCEEDED`) thrown here must propagate, not leave a partial row.
+        if (symbolized)
+        {
+            symbols_column.insert(Array(symbolized->first.begin(), symbolized->first.end()));
+            lines_column.insert(Array(symbolized->second.begin(), symbolized->second.end()));
+            return;
+        }
+    }
+#endif
+    symbols_column.insertDefault();
+    lines_column.insertDefault();
+}
+
+struct ValuePair
+{
+    UInt64 local = 0;
+    UInt64 remote = 0;
+};
+
+void ErrorLog::stepFunction(TimePoint current_time)
+{
+    std::lock_guard lock(previous_values_mutex);
+
+    auto event_time = std::chrono::system_clock::to_time_t(current_time);
+
+    auto to_addrs = [](const auto & trace)
+    {
+        std::vector<UInt64> addrs;
+        addrs.reserve(trace.size());
+        for (auto * ptr : trace)
+            addrs.push_back(reinterpret_cast<UInt64>(ptr));
+        return addrs;
+    };
+
+    for (const auto code : ErrorCodes::getCodes())
+    {
+        const auto & error = ErrorCodes::values[code].get();
+        auto & previous = previous_values[code];
+        if (error.local.count != previous.local)
+        {
+            this->add([&](ErrorLogElement & element)
+            {
+                element = ErrorLogElement {
+                    .event_time=event_time,
+                    .code=code,
+                    .value=error.local.count - previous.local,
+                    .remote=false,
+                    .last_error_time=(error.local.error_time_ms / 1000),
+                    .last_error_message=error.local.message,
+                    .last_error_query_id=error.local.query_id,
+                    .last_error_trace=to_addrs(error.local.trace)
+                };
+            });
+            previous.local = error.local.count;
+        }
+        if (error.remote.count != previous.remote)
+        {
+            add([&](ErrorLogElement & element)
+            {
+                element = ErrorLogElement {
+                    .event_time=event_time,
+                    .code=code,
+                    .value=error.remote.count - previous.remote,
+                    .remote=true,
+                    .last_error_time=(error.remote.error_time_ms / 1000),
+                    .last_error_message=error.remote.message,
+                    .last_error_query_id=error.remote.query_id,
+                    .last_error_trace=to_addrs(error.remote.trace)
+                };
+            });
+            previous.remote = error.remote.count;
+        }
+    }
+}
+
+}

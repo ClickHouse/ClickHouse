@@ -18,7 +18,9 @@
 #define Net_HTTPResponse_INCLUDED
 
 
+#include <map>
 #include <vector>
+
 #include "Poco/Net/HTTPCookie.h"
 #include "Poco/Net/HTTPMessage.h"
 #include "Poco/Net/Net.h"
@@ -43,7 +45,7 @@ namespace Net
     /// status code and a reason phrase.
     {
     public:
-        enum HTTPStatus
+        enum HTTPStatus : int
         {
             HTTP_CONTINUE = 100,
             HTTP_SWITCHING_PROTOCOLS = 101,
@@ -179,6 +181,8 @@ namespace Net
         ///
         /// May throw an exception in case of a malformed
         /// Set-Cookie header.
+
+        void getHeaders(std::map<std::string, std::string> & headers) const;
 
         void write(std::ostream & ostr) const;
         /// Writes the HTTP response to the given

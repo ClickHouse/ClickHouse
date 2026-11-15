@@ -5,7 +5,7 @@
 namespace DB
 {
 /// Algorithm of Merge.
-enum class MergeAlgorithm
+enum class MergeAlgorithm : uint8_t
 {
     Undecided, /// Not running yet
     Horizontal, /// per-row merge of all columns

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database
+# Tags: long, no-replicated-database, no-ordinary-database, zookeeper, no-msan
+# no-msan: hundreds of transactional clients take over the 600 s timeout under MSan with `meta in keeper`
+# and `s3 storage`. The test checks the isolation of transactions, MSan does not help to find violations.
 
 # shellcheck disable=SC2015
 
@@ -14,12 +16,19 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS dst";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE src (n UInt64, type UInt8) ENGINE=MergeTree ORDER BY type SETTINGS old_parts_lifetime=0";
 $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (n UInt64, type UInt8) ENGINE=MergeTree ORDER BY type SETTINGS old_parts_lifetime=0";
 
+# Stop the infinite background loops via this flag instead of kill -TERM: a killed
+# subshell orphans its in-flight clickhouse-client, which then runs after teardown
+# and leaks "table/database does not exist" to stderr. The flag lets each loop exit
+# between queries, after its current client has finished.
+STOP_FILE="${CLICKHOUSE_TMP}/01169_old_stop_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -f "$STOP_FILE"
+
 function thread_insert()
 {
     set -e
     val=1
-    while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+    while [ ! -f "$STOP_FILE" ]; do
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
         INSERT INTO src VALUES /* ($val, 2) */ ($val, 2);
@@ -40,7 +49,7 @@ function thread_partition_src_to_dst()
     sum=0
     for i in {1..20}; do
         out=$(
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($i, 3) */ ($i, 3);
         INSERT INTO dst SELECT * FROM src;
@@ -49,7 +58,7 @@ function thread_partition_src_to_dst()
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
-        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
+        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --query "
                                                                                    begin transaction;
                                                                                    set transaction snapshot 3;
                                                                                    select $i, 'src', type, n, _part from src order by type, n;
@@ -68,7 +77,7 @@ function thread_partition_dst_to_src()
         if (( i % 2 )); then
             action="COMMIT"
         fi
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         SYSTEM STOP MERGES dst;
         ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
         SYSTEM SYNC TRANSACTION LOG;
@@ -86,8 +95,8 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -e
-    while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+    while [ ! -f "$STOP_FILE" ]; do
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         -- no duplicates
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM src GROUP BY type FORMAT Null;
@@ -106,12 +115,31 @@ thread_select & PID_2=$!
 
 thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
-wait $PID_3 && wait $PID_4
 
-kill -TERM $PID_1
-kill -TERM $PID_2
-wait
-wait_for_queries_to_finish
+# The stop flag must be raised even if a worker fails, otherwise errexit leaves the
+# loops running past teardown. Waiting for every worker here also keeps their
+# in-flight clients from outliving the test.
+function stop_threads()
+{
+    touch "$STOP_FILE"
+    wait "$PID_1" 2>/dev/null ||:
+    wait "$PID_2" 2>/dev/null ||:
+    wait "$PID_3" 2>/dev/null ||:
+    wait "$PID_4" 2>/dev/null ||:
+    rm -f "$STOP_FILE"
+}
+trap stop_threads EXIT
+
+# One wait per worker, so the first failure becomes the exit status.
+wait $PID_3
+wait $PID_4
+
+# Ask the loops to stop and let their in-flight queries finish (no orphaned clients).
+touch "$STOP_FILE"
+wait $PID_1
+wait $PID_2
+rm -f "$STOP_FILE"
+wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --implicit_transaction=1 --throw_on_unsupported_query_inside_transaction=0 -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT --implicit_transaction=1 --throw_on_unsupported_query_inside_transaction=0 -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"

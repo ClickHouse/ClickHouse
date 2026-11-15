@@ -30,6 +30,8 @@ SELECT '1' IN (SELECT 1);
 
 SELECT 1 IN (SELECT 1) SETTINGS transform_null_in = 1;
 SELECT 1 IN (SELECT 'a') SETTINGS transform_null_in = 1;
-SELECT 'a' IN (SELECT 1) SETTINGS transform_null_in = 1; -- { serverError 6 }
+-- A value the set's key type cannot represent is simply not a member, which is what the same
+-- query at the default `transform_null_in = 0` has always answered (#113854).
+SELECT 'a' IN (SELECT 1) SETTINGS transform_null_in = 1;
 SELECT 1 IN (SELECT -1) SETTINGS transform_null_in = 1;
-SELECT -1 IN (SELECT 1) SETTINGS transform_null_in = 1; -- { serverError 70 }
+SELECT -1 IN (SELECT 1) SETTINGS transform_null_in = 1;

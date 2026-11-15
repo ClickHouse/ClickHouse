@@ -281,15 +281,15 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 /// #include <sys/ioctl.h>
 #if defined(sun) || defined(__sun)
 #include <sys/sockio.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <net/if_arp.h>
 #endif
 /// #include <sys/socket.h>
 /// #include <sys/types.h>
 /// #include <netinet/in.h>
 /// #include <net/if.h>
 /// #include <arpa/inet.h>
-/// #include <netdb.h>
-/// #include <net/if.h>
-/// #include <net/if_arp.h>
 /// #include <unistd.h>
 
 
@@ -299,6 +299,10 @@ namespace Poco {
 void EnvironmentImpl::nodeIdImpl(NodeId& id)
 {
 	std::memset(&id, 0, sizeof(id));
+#if defined(__EMSCRIPTEN__)
+	// No networking and no ARP in a WebAssembly sandbox; leave the node id zeroed.
+	return;
+#else
 	char name[MAXHOSTNAMELEN];
 	if (gethostname(name, sizeof(name)))
 		return;
@@ -318,6 +322,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 	close(s);
 	if (rc < 0) return;
 	std::memcpy(&id, ar.arp_ha.sa_data, sizeof(id));
+#endif
 }
 
 

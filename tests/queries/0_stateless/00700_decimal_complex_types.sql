@@ -158,16 +158,16 @@ SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 5) FROM syste
 SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
 SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
 
-SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
 
-SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
 
-SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
-SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE IF EXISTS decimal;

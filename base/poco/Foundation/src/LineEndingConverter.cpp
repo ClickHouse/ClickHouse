@@ -24,9 +24,9 @@ const std::string LineEnding::NEWLINE_CRLF("\r\n");
 const std::string LineEnding::NEWLINE_LF("\n");
 
 
-LineEndingConverterStreamBuf::LineEndingConverterStreamBuf(std::istream& istr): 
-	_pIstr(&istr), 
-	_pOstr(0), 
+LineEndingConverterStreamBuf::LineEndingConverterStreamBuf(std::istream& istr):
+	_pIstr(&istr),
+	_pOstr(0),
 	_newLine(LineEnding::NEWLINE_DEFAULT),
 	_lastChar(0)
 {
@@ -34,9 +34,9 @@ LineEndingConverterStreamBuf::LineEndingConverterStreamBuf(std::istream& istr):
 }
 
 
-LineEndingConverterStreamBuf::LineEndingConverterStreamBuf(std::ostream& ostr): 
-	_pIstr(0), 
-	_pOstr(&ostr), 
+LineEndingConverterStreamBuf::LineEndingConverterStreamBuf(std::ostream& ostr):
+	_pIstr(0),
+	_pOstr(&ostr),
 	_newLine(LineEnding::NEWLINE_DEFAULT),
 	_lastChar(0)
 {
@@ -132,15 +132,16 @@ LineEndingConverterStreamBuf* LineEndingConverterIOS::rdbuf()
 }
 
 
-InputLineEndingConverter::InputLineEndingConverter(std::istream& istr): 
-	LineEndingConverterIOS(istr), 
+InputLineEndingConverter::InputLineEndingConverter(std::istream& istr):
+	LineEndingConverterIOS(istr),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
-InputLineEndingConverter::InputLineEndingConverter(std::istream& istr, const std::string& newLineCharacters): 
-	LineEndingConverterIOS(istr), 
+InputLineEndingConverter::InputLineEndingConverter(std::istream& istr, const std::string& newLineCharacters):
+	LineEndingConverterIOS(istr),
 	std::istream(&_buf)
 {
 	setNewLine(newLineCharacters);
@@ -152,15 +153,16 @@ InputLineEndingConverter::~InputLineEndingConverter()
 }
 
 
-OutputLineEndingConverter::OutputLineEndingConverter(std::ostream& ostr): 
-	LineEndingConverterIOS(ostr), 
+OutputLineEndingConverter::OutputLineEndingConverter(std::ostream& ostr):
+	LineEndingConverterIOS(ostr),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
-OutputLineEndingConverter::OutputLineEndingConverter(std::ostream& ostr, const std::string& newLineCharacters): 
-	LineEndingConverterIOS(ostr), 
+OutputLineEndingConverter::OutputLineEndingConverter(std::ostream& ostr, const std::string& newLineCharacters):
+	LineEndingConverterIOS(ostr),
 	std::ostream(&_buf)
 {
 	setNewLine(newLineCharacters);

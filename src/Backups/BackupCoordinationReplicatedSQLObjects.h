@@ -7,7 +7,7 @@
 
 namespace DB
 {
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 
 /// This class is used by hosts to coordinate the user-defined SQL objects they're going to write to a backup.
 /// It's designed to make all hosts save the same objects to the backup even in case some objects change while

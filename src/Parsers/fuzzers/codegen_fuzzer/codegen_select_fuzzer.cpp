@@ -5,11 +5,15 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/SecretArguments.h>
 
 #include <libfuzzer/libfuzzer_macro.h>
 
 #include "out.pb.h"
+
+/// No engine is registered, so the secrets of their arguments are shown.
+[[maybe_unused]] static const bool secret_arguments_finder_installed
+    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
 
 void GenerateSentence(const Sentence&, std::string &, int);
 
@@ -27,13 +31,13 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
         DB::ParserQueryWithOutput parser(input.data() + input.size());
         try
         {
-            DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+            DB::ASTPtr ast
+                = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, DB::DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-            DB::WriteBufferFromOStream out(std::cerr, 4096);
-            DB::formatAST(*ast, out);
+            std::cerr << ast->formatWithSecretsOneLine();
             std::cerr << std::endl;
         }
-        catch (...) {}
+        catch (...) { /* Ok */ }
 
         input.clear();
     }

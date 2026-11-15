@@ -2,8 +2,8 @@
 
 #include <memory>
 #include <string>
-#include <vector>
-#include "Entries.h"
+#include <Common/VectorWithMemoryTracking.h>
+#include <Dictionaries/Embedded/GeodataProviders/Entries.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ class IRegionsHierarchyReader
 public:
     virtual bool readNext(RegionEntry & entry) = 0;
 
-    virtual ~IRegionsHierarchyReader() {}
+    virtual ~IRegionsHierarchyReader() = default;
 };
 
 using IRegionsHierarchyReaderPtr = std::unique_ptr<IRegionsHierarchyReader>;
@@ -39,7 +39,7 @@ using IRegionsHierarchyDataSourcePtr = std::shared_ptr<IRegionsHierarchyDataSour
 class IRegionsHierarchiesDataProvider
 {
 public:
-    virtual std::vector<std::string> listCustomHierarchies() const = 0;
+    virtual VectorWithMemoryTracking<std::string> listCustomHierarchies() const = 0;
 
     virtual IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const = 0;
     virtual IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const = 0;

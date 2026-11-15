@@ -3,35 +3,52 @@
 #include <atomic>
 #include <mutex>
 #include <uv.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
 {
 
-class NATSConsumer;
-using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
+class INATSConsumer;
+using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
 
-class StorageNATS final : public IStorage, WithContext
+class INATSProducer;
+using INATSProducerPtr = std::unique_ptr<INATSProducer>;
+
+struct NATSSettings;
+
+class StorageNATS final : public IStreamingStorage, WithContext
 {
 public:
     StorageNATS(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
+        const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_);
+        LoadingStrictnessLevel mode,
+        bool authentication_determined_by_table_,
+        bool fresh_definition_);
 
-    std::string getName() const override { return "NATS"; }
+    ~StorageNATS() override;
 
-    bool noPushingToViews() const override { return true; }
+    std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
+
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -56,19 +73,19 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(NATSConsumerPtr consumer);
-    NATSConsumerPtr popConsumer();
-    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(INATSConsumerPtr consumer);
+    INATSConsumerPtr popConsumer();
+    INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+
+    /// Makes the streaming task subscribe the consumers again before its next cycle.
+    void markConsumersNotReady() { consumers_ready.store(false); }
 
     const String & getFormatName() const { return format_name; }
-    NamesAndTypesList getVirtuals() const override;
-
-    void incrementReader();
-    void decrementReader();
-
-    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
 
 private:
+    String getStreamName() const;
+    String getConsumerName() const;
+
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
@@ -80,69 +97,77 @@ private:
 
     LoggerPtr log;
 
-    NATSConnectionManagerPtr connection; /// Connection for all consumers
+    NATSHandler event_handler;
+    std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
+
+    mutable std::mutex consumers_connection_mutex;
+    NATSConnectionPtr consumers_connection TSA_GUARDED_BY(consumers_connection_mutex); /// Connection for all consumers
+    /// Serializes `createConsumersConnection` and `createConsumers`, which both background tasks call.
+    std::mutex consumers_setup_mutex;
     NATSConfiguration configuration;
 
-    size_t num_created_consumers = 0;
+    std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
-    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
+    std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder initialize_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
-    std::atomic<bool> mv_attached = false;
 
-    /// In select query we start event loop, but do not stop it
-    /// after that select is finished. Then in a thread, which
-    /// checks for MV we also check if we have select readers.
-    /// If not - we turn off the loop. The checks are done under
-    /// mutex to avoid having a turned off loop when select was
-    /// started.
-    std::mutex loop_mutex;
+    /// One-shot request from STOP/PAUSE: unsubscribe and drop buffered messages.
+    std::atomic<bool> subscription_stale{false};
+
+    /// Shared by `initializeConsumersFunc` and `threadFunc`, which can run concurrently, so it is atomic
+    /// and claimed via the CAS overload of `StreamingBackgroundControl::claimCycle`.
+    std::atomic<UInt64> last_seen_refresh_epoch = 0;
 
     mutable bool drop_table = false;
-    bool is_attach;
+    bool throw_on_startup_failure;
+    bool fresh_definition;
 
-    NATSConsumerPtr createConsumer();
+    void scheduleStreamingTasksImpl() override;
+
+    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection) TSA_REQUIRES(consumers_setup_mutex);
+    INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
 
-
     /// Functions working in the background
-    void streamingToViewsFunc();
-    void loopingFunc();
-    void connectionFunc();
+    void initializeConsumersFunc();
+    void threadFunc();
 
-    bool initBuffers();
+    NATSConnectionPtr getConsumersConnection() const;
+    void setConsumersConnection(NATSConnectionPtr connection) TSA_REQUIRES(consumers_setup_mutex);
+    void createConsumersConnection();
+    void createConsumers();
+    void dropConsumers() TSA_REQUIRES(consumers_setup_mutex);
 
-    void startLoop();
-    void stopLoop();
-    void stopLoopIfNoReaders();
+    bool subscribeConsumers();
+    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
+    void resubscribeStaleConsumers();
+    void unsubscribeConsumers();
+    /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
+    void unsubscribeHandedBackConsumers();
+
+    void stopEventLoop();
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
-    bool streamToViews();
+    bool streamToViews(UInt64 cycle_epoch);
     bool checkDependencies(const StorageID & table_id);
 };
 

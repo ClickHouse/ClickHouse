@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/MemorySanitizer.h>
+
 #include <cstring>
 #include <sys/types.h> /// ssize_t
 
@@ -38,6 +40,7 @@ namespace detail
 {
     inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
     {
+        __msan_unpoison_overflow_15(src, n);
         while (n > 0)
         {
             _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
@@ -46,6 +49,9 @@ namespace detail
             dst += 16;
             src += 16;
             n -= 16;
+
+            /// Avoid clang loop-idiom optimization, which transforms _mm_storeu_si128 to built-in memcpy
+            __asm__ __volatile__("" : : : "memory");
         }
     }
 }
@@ -64,6 +70,7 @@ namespace detail
 {
 inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
 {
+    __msan_unpoison_overflow_15(src, n);
     while (n > 0)
     {
         vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));
@@ -71,6 +78,9 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
         dst += 16;
         src += 16;
         n -= 16;
+
+        /// Avoid clang loop-idiom optimization, which transforms vst1q_s8 to built-in memcpy
+        __asm__ __volatile__("" : : : "memory");
     }
 }
 }
@@ -92,3 +102,40 @@ inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const voi
 }
 
 #endif
+
+/** Copy a small region, touching only the bytes inside it, so unlike the variant above neither side
+  * has to be padded. Inlined, which is what matters for the short regions it is meant for, where the
+  * `memcpy` call itself costs more than the copy.
+  */
+inline void memcpySmall(void * __restrict dst, const void * __restrict src, size_t n)
+{
+    auto * to = reinterpret_cast<char *>(dst);
+    const auto * from = reinterpret_cast<const char *>(src);
+
+    /// Each step copies the region as two overlapping halves, so no byte outside it is touched.
+    if (n >= 8)
+    {
+        for (size_t offset = 0; offset + 8 < n; offset += 8)
+        {
+            __builtin_memcpy(to + offset, from + offset, 8);
+
+            /// Avoid clang loop-idiom optimization, which transforms the loop back into memcpy
+            __asm__ __volatile__("" : : : "memory");
+        }
+        __builtin_memcpy(to + n - 8, from + n - 8, 8);
+    }
+    else if (n >= 4)
+    {
+        __builtin_memcpy(to, from, 4);
+        __builtin_memcpy(to + n - 4, from + n - 4, 4);
+    }
+    else if (n >= 2)
+    {
+        __builtin_memcpy(to, from, 2);
+        __builtin_memcpy(to + n - 2, from + n - 2, 2);
+    }
+    else if (n == 1)
+    {
+        to[0] = from[0];
+    }
+}

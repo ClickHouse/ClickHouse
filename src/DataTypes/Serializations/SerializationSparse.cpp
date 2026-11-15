@@ -1,20 +1,44 @@
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+
+UInt128 SerializationSparse::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Sparse");
+    hash.update(nested_->getHash());
+    return hash.get128();
+}
+
+UInt128 SerializationSparseNullMap::getHash()
+{
+    SipHash hash;
+    hash.update("SparseNullMap");
+    return hash.get128();
 }
 
 namespace
@@ -36,6 +60,13 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         num_trailing_defaults = 0;
         has_value_after_defaults = false;
     }
+
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    {
+        auto new_state = std::make_shared<DeserializeStateSparse>(*this);
+        new_state->nested = nested ? nested->clone(context) : nullptr;
+        return new_state;
+    }
 };
 
 void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)
@@ -56,78 +87,152 @@ void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size
 
 /// Returns number of read rows.
 /// @start is the size of column before reading offsets.
-size_t deserializeOffsets(IColumn::Offsets & offsets,
-    ReadBuffer & istr, size_t start, size_t limit, DeserializeStateSparse & state)
+size_t deserializeOffsets(
+    IColumn::Offsets & offsets,
+    ReadBuffer & istr,
+    size_t start,
+    size_t limit,
+    DeserializeStateSparse & state)
 {
-    if (limit && state.num_trailing_defaults >= limit)
+    if (limit == 0)
+        return 0;
+
+    /// Hoist state into locals so the inner loop avoids two redundant memory writes
+    /// per iteration in the common case where both fields stay 0/false.
+    size_t num_trailing_defaults = state.num_trailing_defaults;
+    bool has_value_after_defaults = state.has_value_after_defaults;
+
+    if (num_trailing_defaults >= limit)
     {
-        state.num_trailing_defaults -= limit;
+        state.num_trailing_defaults = num_trailing_defaults - limit;
         return limit;
     }
 
     /// Just try to guess number of offsets.
     offsets.reserve(offsets.size()
-        + static_cast<size_t>(limit * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
+        + static_cast<size_t>(static_cast<double>(limit) * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
-    bool first = true;
-    size_t total_rows = state.num_trailing_defaults;
-    if (state.has_value_after_defaults)
+    /// The row of the next value: the column's current size before the first value of this read
+    /// (it can have some defaults after its last offset), otherwise the row after the previous value.
+    size_t start_of_group = start;
+    size_t total_rows = num_trailing_defaults;
+    if (has_value_after_defaults)
     {
-        offsets.push_back(start + state.num_trailing_defaults);
-        first = false;
+        offsets.push_back(start + num_trailing_defaults);
+        start_of_group = start + num_trailing_defaults + 1;
 
-        state.has_value_after_defaults = false;
-        state.num_trailing_defaults = 0;
+        has_value_after_defaults = false;
+        num_trailing_defaults = 0;
         ++total_rows;
     }
 
-    size_t group_size;
-    while (!istr.eof())
+    /// A group is the defaults before a value, or the defaults at the end of a granule. Returns true when the read is done.
+    auto add_group = [&](size_t group_size) ALWAYS_INLINE
     {
-        readVarUInt(group_size, istr);
-
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
         group_size &= ~END_OF_GRANULE_FLAG;
 
         size_t next_total_rows = total_rows + group_size;
-        group_size += state.num_trailing_defaults;
+        group_size += num_trailing_defaults;
 
-        if (limit && next_total_rows >= limit)
+        if (unlikely(next_total_rows >= limit))
         {
             /// If it was not last group in granule,
             /// we have to add current non-default value at further reads.
             state.num_trailing_defaults = next_total_rows - limit;
             state.has_value_after_defaults = !end_of_granule;
-            return limit;
+            return true;
         }
 
-        if (end_of_granule)
+        if (unlikely(end_of_granule))
         {
-            state.has_value_after_defaults = false;
-            state.num_trailing_defaults = group_size;
+            has_value_after_defaults = false;
+            num_trailing_defaults = group_size;
         }
         else
         {
-            /// If we add value to column for first time in current read,
-            /// start from column's current size, because it can have some defaults after last offset,
-            /// otherwise just start from previous offset.
-            size_t start_of_group = start;
-            if (!first && !offsets.empty())
-                start_of_group = offsets.back() + 1;
-            if (first)
-                first = false;
-
             offsets.push_back(start_of_group + group_size);
+            start_of_group += group_size + 1;
 
-            state.num_trailing_defaults = 0;
-            state.has_value_after_defaults = false;
+            num_trailing_defaults = 0;
             ++next_total_rows;
         }
 
         total_rows = next_total_rows;
+        return false;
+    };
+
+    while (!istr.eof())
+    {
+        /// Fast path: decode from a local pointer while a whole VarUInt is in the buffer.
+        const char * pos = istr.position();
+        const char * const buffer_end = istr.buffer().end();
+        while (buffer_end - pos >= static_cast<ssize_t>(VAR_UINT_MAX_SIZE))
+        {
+            UInt64 group_size = 0;
+            pos = readVarUInt(group_size, pos, VAR_UINT_MAX_SIZE);
+            if (add_group(group_size))
+            {
+                istr.position() = const_cast<char *>(pos);
+                return limit;
+            }
+        }
+        istr.position() = const_cast<char *>(pos);
+
+        /// The last bytes of the buffer: a VarUInt here can continue in the next buffer.
+        if (istr.eof())
+            break;
+
+        UInt64 group_size = 0;
+        readVarUInt(group_size, istr);
+        if (add_group(group_size))
+            return limit;
     }
 
+    state.num_trailing_defaults = num_trailing_defaults;
+    state.has_value_after_defaults = has_value_after_defaults;
     return total_rows;
+}
+
+size_t readOrGetCachedSparseOffsets(
+    IColumn & offsets_column,
+    ISerialization::DeserializeBinaryBulkSettings & settings,
+    ISerialization::SubstreamsCache * cache,
+    DeserializeStateSparse & state_sparse,
+    size_t prev_size,
+    size_t limit,
+    size_t & read_rows)
+{
+    settings.path.push_back(ISerialization::Substream::SparseOffsets);
+    const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
+
+    size_t num_read_offsets = 0;
+    if (cached_element)
+    {
+        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
+        num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
+        read_rows = cached_offsets_element.read_rows;
+        ISerialization::insertDataFromCachedColumn(offsets_column, cached_offsets_element.offsets, num_read_offsets);
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
+        if (!settings.continuous_reading)
+            state_sparse.reset();
+
+        auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column).getData();
+        size_t old_size = offsets_data.size();
+        read_rows = deserializeOffsets(offsets_data, *stream, prev_size, limit, state_sparse);
+
+        ISerialization::addElementToSubstreamsCache(
+            cache,
+            settings.path,
+            std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column.getPtr(), old_size, read_rows));
+
+        num_read_offsets = offsets_column.size() - old_size;
+    }
+
+    settings.path.pop_back();
+    return num_read_offsets;
 }
 
 }
@@ -135,11 +240,28 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
 SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
     : nested(nested_)
 {
+    if (const auto * nested_nullable = typeid_cast<const SerializationNullable *>(nested.get()))
+    {
+        nested = SerializationNullable::create(nested_nullable->getNested(), true /* use_default_null_map */);
+        sparse_null_map = SerializationSparseNullMap::create();
+    }
 }
 
-SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
+ISerialization::KindStack SerializationSparse::getKindStack() const
 {
-    return std::make_shared<SerializationSparse>(prev);
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::SPARSE);
+    return kind_stack;
+}
+
+MutableColumnPtr SerializationSparse::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    return ColumnSparse::create(nested->wrapColumnForDeserialization(std::move(column)));
+}
+
+SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+{
+    return SerializationSparse::create(prev);
 }
 
 ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -147,40 +269,59 @@ ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) 
     return ColumnSparse::create(prev, offsets, size);
 }
 
-void SerializationSparse::enumerateStreams(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
+ColumnPtr SerializationSparse::NullMapSubcolumnCreator::create(const ColumnPtr & /* prev */) const
 {
-    const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
+    auto null_map_col = ColumnUInt8::create();
+    auto & null_map_data = null_map_col->getData();
+    null_map_data.resize_fill(size, static_cast<UInt8>(1));
+    const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets).getData();
+    for (UInt64 offset : offsets_data)
+        null_map_data[offset] = 0;
+    return null_map_col;
+}
+
+void SerializationSparse::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+{
+    const auto * column_sparse = data.column ? typeid_cast<const ColumnSparse *>(data.column.get()) : nullptr;
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
-    auto offsets_data = SubstreamData(std::make_shared<SerializationNumber<UInt64>>())
-        .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
-        .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+    auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
+                            .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
+                            .withSerializationInfo(data.serialization_info);
 
     settings.path.back().data = offsets_data;
     callback(settings.path);
+
+    if (sparse_null_map)
+    {
+        const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
+        settings.path.back() = Substream::SparseNullMap;
+        settings.path.back().creator = std::make_shared<NullMapSubcolumnCreator>(offsets_data.column, column_size);
+        auto null_map_data = SubstreamData(sparse_null_map)
+                                 .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
+                                 .withColumn(nullptr) /// subcolumn will be created in NullMapSubcolumnCreator based on offsets
+                                 .withSerializationInfo(data.serialization_info);
+        settings.path.back().data = null_map_data;
+        callback(settings.path);
+    }
 
     settings.path.back() = Substream::SparseElements;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets_data.column, column_size);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
-        .withType(data.type)
-        .withColumn(column_sparse ? column_sparse->getValuesPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+                         .withType(data.type)
+                         .withColumn(column_sparse ? column_sparse->getValuesPtr() : data.column)
+                         .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();
 }
 
 void SerializationSparse::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
@@ -192,11 +333,7 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
 }
 
 void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
-    const IColumn & column,
-    size_t offset,
-    size_t limit,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     size_t size = column.size();
 
@@ -205,15 +342,17 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
-    if (auto * stream = settings.getter(settings.path))
+    auto * stream = settings.getter(settings.path);
+    /// An empty range writes nothing, not even the end of granule marker: it only completes a granule.
+    if (stream && offset < size)
     {
         size_t end = limit && offset + limit < size ? offset + limit : size;
         serializeOffsets(offsets_data, *stream, offset, end);
     }
 
+    settings.path.back() = Substream::SparseElements;
     if (!offsets_data.empty())
     {
-        settings.path.back() = Substream::SparseElements;
         if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
         {
             const auto & values = column_sparse->getValuesColumn();
@@ -227,13 +366,16 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
             nested->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
         }
     }
+    else
+    {
+        auto empty_column = column.cloneEmpty()->convertToFullColumnIfSparse();
+        nested->serializeBinaryBulkWithMultipleStreams(*empty_column, 0, 0, settings, state);
+    }
 
     settings.path.pop_back();
 }
 
-void SerializationSparse::serializeBinaryBulkStateSuffix(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+void SerializationSparse::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::SparseElements);
     nested->serializeBinaryBulkStateSuffix(settings, state);
@@ -241,20 +383,28 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
 }
 
 void SerializationSparse::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    auto state_sparse = std::make_shared<DeserializeStateSparse>();
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
+    /// because this state is also shared by the SparseNullMap substream.
+    settings.path.push_back(Substream::SparseOffsets);
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = cached_state;
+    }
+    else
+    {
+        state = std::make_shared<DeserializeStateSparse>();
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+    }
 
-    settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    settings.path.back() = Substream::SparseElements;
+    nested->deserializeBinaryBulkStatePrefix(settings, checkAndGetState<DeserializeStateSparse>(state)->nested, cache);
     settings.path.pop_back();
-
-    state = std::move(state_sparse);
 }
 
 void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -262,42 +412,33 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 {
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
-    {
-        column = cached_column;
-        return;
-    }
-
-    if (!settings.continuous_reading)
-        state_sparse->reset();
-
-    auto mutable_column = column->assumeMutable();
-    auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-    auto & offsets_data = column_sparse.getOffsetsData();
-
-    size_t old_size = offsets_data.size();
-
+    /// Reading SparseOffsets first.
+    auto & column_sparse = assert_cast<ColumnSparse &>(column);
+    auto & offsets_column = column_sparse.getOffsetsColumn();
+    size_t prev_size = column_sparse.size();
     size_t read_rows = 0;
-    settings.path.push_back(Substream::SparseOffsets);
-    if (auto * stream = settings.getter(settings.path))
-        read_rows = deserializeOffsets(offsets_data, *stream, column_sparse.size(), limit, *state_sparse);
+    size_t num_read_offsets
+        = readOrGetCachedSparseOffsets(offsets_column, settings, cache, *state_sparse, prev_size, limit, read_rows);
 
+    /// Reading SparseValues and constructing ColumnSparse.
     auto & values_column = column_sparse.getValuesPtr();
-    size_t values_limit = offsets_data.size() - old_size;
 
-    settings.path.back() = Substream::SparseElements;
-    /// Do not use substream cache while reading values column, because ColumnSparse can be cached only in a whole.
-    nested->deserializeBinaryBulkWithMultipleStreams(values_column, values_limit, settings, state_sparse->nested, nullptr);
+    settings.path.push_back(Substream::SparseElements);
+    nested->deserializeBinaryBulkWithMultipleStreams(
+        column_sparse.getValuesColumn(), num_read_offsets, settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
-    if (offsets_data.size() + 1 != values_column->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of values and offsets in SerializationSparse."
-        " Offsets size: {}, values size: {}", offsets_data.size(), values_column->size());
+    if (offsets_column.size() + 1 != values_column->size())
+    {
+        throw Exception(
+            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
+            offsets_column.size(),
+            values_column->size());
+    }
 
     /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
-    column = std::move(mutable_column);
-    addToSubstreamsCache(cache, settings.path, column);
 }
 
 /// All methods below just wrap nested serialization.
@@ -312,15 +453,35 @@ void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, co
     nested->deserializeBinary(field, istr, settings);
 }
 
+template <typename Reader>
+void SerializationSparse::deserialize(IColumn & column, Reader && reader) const
+{
+    auto & column_sparse = assert_cast<ColumnSparse &>(column);
+    auto & values = column_sparse.getValuesColumn();
+    size_t old_size = column_sparse.size();
+
+    /// It just increments the size of column.
+    column_sparse.insertDefault();
+    reader(column_sparse.getValuesColumn());
+
+    if (values.isDefaultAt(values.size() - 1))
+        values.popBack(1);
+    else
+        column_sparse.getOffsetsData().push_back(old_size);
+}
+
 void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
     nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeBinary' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeBinary(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -329,9 +490,12 @@ void SerializationSparse::serializeTextEscaped(const IColumn & column, size_t ro
     nested->serializeTextEscaped(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeTextEscaped(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextEscaped' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextEscaped(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -340,9 +504,12 @@ void SerializationSparse::serializeTextQuoted(const IColumn & column, size_t row
     nested->serializeTextQuoted(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeTextQuoted(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextQuoted' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextQuoted(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -351,9 +518,12 @@ void SerializationSparse::serializeTextCSV(const IColumn & column, size_t row_nu
     nested->serializeTextCSV(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeTextCSV(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextCSV' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextCSV(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -362,9 +532,12 @@ void SerializationSparse::serializeText(const IColumn & column, size_t row_num, 
     nested->serializeText(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeWholeText' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeWholeText(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -373,15 +546,143 @@ void SerializationSparse::serializeTextJSON(const IColumn & column, size_t row_n
     nested->serializeTextJSON(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::deserializeTextJSON(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeTextJSON' is not implemented for SerializationSparse");
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextJSON(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+
+void SerializationSparse::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextRaw(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextRaw(nested_column, istr, settings);
+    });
+}
+
+void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings)
+{
+    if (settings.position_independent_encoding)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SerializationSparseNullMap does not support serialization with position independent encoding");
+    }
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkStatePrefix(
+    const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkStatePrefix(column, settings, state);
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkStateSuffix(
+    SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkStateSuffix(settings, state);
+}
+
+void SerializationSparseNullMap::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettings(settings);
+    Base::serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+}
+
+void SerializationSparseNullMap::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+{
+    settings.path.push_back(Substream::SparseNullMap);
+    settings.path.back().data = data;
+    callback(settings.path);
+    settings.path.pop_back();
+}
+
+void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
+{
+    /// Use Substream::SparseOffsets as the cache key for SparseState,
+    /// because this state is also shared by the Sparse stream.
+    settings.path.push_back(Substream::SparseOffsets);
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    {
+        state = cached_state;
+    }
+    else
+    {
+        state = std::make_shared<DeserializeStateSparse>();
+        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+    }
+}
+
+void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
+
+    /// Reading SparseOffsets first.
+    auto column_offsets = ColumnUInt64::create();
+
+    size_t prev_size = column.size();
+    size_t read_rows = 0;
+    size_t num_read_offsets
+        = readOrGetCachedSparseOffsets(*column_offsets, settings, cache, *state_sparse, prev_size, limit, read_rows);
+
+    /// Converting SparseOffsets to NullMap.
+
+    if (read_rows)
+    {
+        auto & null_map_data = assert_cast<ColumnUInt8 &>(column).getData();
+        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*column_offsets).getData();
+
+        /// Restore null map from offsets.
+        null_map_data.resize_fill(null_map_data.size() + read_rows, static_cast<UInt8>(1));
+        size_t total_offsets = offsets_data.size();
+        for (size_t i = total_offsets - num_read_offsets; i < total_offsets; ++i)
+            null_map_data[offsets_data[i]] = 0;
+    }
+}
+
+size_t SerializationSparse::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
+SerializationPtr SerializationSparse::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationSparse(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationSparse(nested_); });
+}
+
+size_t SerializationSparseNullMap::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
+SerializationPtr SerializationSparseNullMap::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationSparseNullMap(); });
 }
 
 }

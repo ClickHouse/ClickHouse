@@ -1,10 +1,12 @@
 #pragma once
 
+#include <span>
 #include <Core/NamesAndTypes.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -34,7 +36,7 @@ public:
     virtual bool hasStrictOrderOfColumns() const { return true; }
 
     virtual bool needContext() const { return false; }
-    virtual void setContext(ContextPtr &) {}
+    virtual void setContext(const ContextPtr &) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
@@ -56,7 +58,7 @@ public:
     IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & context) override;
+    void setContext(const ContextPtr & context) override;
 
 protected:
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
@@ -74,7 +76,7 @@ protected:
     DataTypePtr default_type;
     String hints_str;
     FormatSettings format_settings;
-    std::unordered_map<String, DataTypePtr> hints;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
     String hints_parsing_error;
 };
 
@@ -101,18 +103,18 @@ protected:
     /// Return std::nullopt if can't read more data.
     virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
-    void setColumnNames(const std::vector<String> & names) { column_names = names; }
+    void setColumnNames(std::span<const String> names) { column_names.assign(names.begin(), names.end()); }
 
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
-    size_t field_index;
+    size_t field_index{};
 
 private:
     DataTypePtr getDefaultType(size_t column) const;
     void initColumnNames(const String & column_names_str);
 
     DataTypes default_types;
-    std::vector<String> column_names;
+    Names column_names;
 };
 
 /// Base class for schema inference for formats that read data row by row and each
@@ -189,16 +191,15 @@ void chooseResultColumnType(
                 column_name,
                 row,
                 type->getName());
-        else
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                new_type->getName(),
-                column_name,
-                row,
-                type->getName(),
-                hints_parsing_error);
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+            "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+            new_type->getName(),
+            column_name,
+            row,
+            type->getName(),
+            hints_parsing_error);
     }
 }
 
@@ -208,7 +209,7 @@ void chooseResultColumnTypes(
     DataTypes & types,
     DataTypes & new_types,
     const DataTypePtr & default_type,
-    const std::vector<String> & column_names,
+    std::span<const String> column_names,
     size_t row)
 {
     if (types.size() != new_types.size())

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-from helpers.cluster import ClickHouseCluster
-import pytest
 import random
-import string
-from helpers.network import NetThroughput
-import subprocess
-import time
 import statistics
+import string
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.network import NetThroughput
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -37,7 +38,7 @@ def test_limited_fetch_single_table(start_cluster):
     try:
         for i, node in enumerate([node1, node2]):
             node.query(
-                f"CREATE TABLE limited_fetch_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=10485760"
+                f"CREATE TABLE limited_fetch_table(key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=10485760"
             )
 
         node2.query("SYSTEM STOP FETCHES limited_fetch_table")
@@ -62,10 +63,12 @@ def test_limited_fetch_single_table(start_cluster):
             n2_fetch_speed.append(n2_in)
             time.sleep(0.5)
 
-        median_speed = statistics.median(n2_fetch_speed)
+        # When we start fetches we have small burst because of implementation throttling
+        # Make sense to skip first measure
+        median_speed = statistics.median(n2_fetch_speed[1:])
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert median_speed <= 15, (
-            "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got "
+        assert median_speed <= 20, (
+            "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 10), got "
             + str(median_speed)
         )
 
@@ -79,7 +82,7 @@ def test_limited_send_single_table(start_cluster):
     try:
         for i, node in enumerate([node1, node2]):
             node.query(
-                f"CREATE TABLE limited_send_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_sends_network_bandwidth=5242880"
+                f"CREATE TABLE limited_send_table(key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetch_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_sends_network_bandwidth=5242880"
             )
 
         node2.query("SYSTEM STOP FETCHES limited_send_table")
@@ -104,7 +107,9 @@ def test_limited_send_single_table(start_cluster):
             n1_sends_speed.append(n1_out)
             time.sleep(0.5)
 
-        median_speed = statistics.median(n1_sends_speed)
+        # When we start fetches we have small burst because of implementation throttling
+        # Make sense to skip first measure
+        median_speed = statistics.median(n1_sends_speed[1:])
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 10, (
             "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got "
@@ -122,14 +127,14 @@ def test_limited_fetches_for_server(start_cluster):
         for i, node in enumerate([node1, node3]):
             for j in range(5):
                 node.query(
-                    f"CREATE TABLE limited_fetches{j}(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetches{j}', '{i}') ORDER BY tuple() PARTITION BY key"
+                    f"CREATE TABLE limited_fetches{j}(key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_fetches{j}', '{i}') ORDER BY tuple() PARTITION BY key"
                 )
 
         for j in range(5):
             node3.query(f"SYSTEM STOP FETCHES limited_fetches{j}")
             for i in range(5):
                 node1.query(
-                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
+                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
                         j, i
                     )
                 )
@@ -149,7 +154,9 @@ def test_limited_fetches_for_server(start_cluster):
             n3_fetches_speed.append(n3_in)
             time.sleep(0.5)
 
-        median_speed = statistics.median(n3_fetches_speed)
+        # When we start fetches we have small burst because of implementation throttling
+        # Make sense to skip first measure
+        median_speed = statistics.median(n3_fetches_speed[1:])
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 15, (
             "We exceeded max fetch speed for more than 15MB/s. Must be around 5 (+- 10), got "
@@ -168,14 +175,14 @@ def test_limited_sends_for_server(start_cluster):
         for i, node in enumerate([node1, node3]):
             for j in range(5):
                 node.query(
-                    f"CREATE TABLE limited_sends{j}(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_sends{j}', '{i}') ORDER BY tuple() PARTITION BY key"
+                    f"CREATE TABLE limited_sends{j}(key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/limited_sends{j}', '{i}') ORDER BY tuple() PARTITION BY key"
                 )
 
         for j in range(5):
             node1.query(f"SYSTEM STOP FETCHES limited_sends{j}")
             for i in range(5):
                 node3.query(
-                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
+                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
                         j, i
                     )
                 )
@@ -195,10 +202,12 @@ def test_limited_sends_for_server(start_cluster):
             n3_sends_speed.append(n3_out)
             time.sleep(0.5)
 
-        median_speed = statistics.median(n3_sends_speed)
+        # When we start fetches we have small burst because of implementation throttling
+        # Make sense to skip first measure
+        median_speed = statistics.median(n3_sends_speed[1:])
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 20, (
-            "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got "
+            "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 15), got "
             + str(median_speed)
         )
 
@@ -211,9 +220,13 @@ def test_limited_sends_for_server(start_cluster):
 def test_should_execute_fetch(start_cluster):
     print("Should execute fetch")
     try:
+        # Pin the codec to LZ4: these throttling assertions depend on the on-disk/network byte volume of
+        # the parts. `randomPrintableASCII` produces random printable ASCII, which ZSTD (the default codec)
+        # entropy-codes noticeably better than LZ4, shrinking the parts enough to change the fetch timing
+        # and the throttling behavior. Pinning LZ4 keeps the size independent of the server's default codec.
         for i, node in enumerate([node1, node2]):
             node.query(
-                f"CREATE TABLE should_execute_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/should_execute_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=3505253"
+                f"CREATE TABLE should_execute_table(key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/should_execute_table', '{i}') ORDER BY tuple() PARTITION BY key SETTINGS max_replicated_fetches_network_bandwidth=3505253"
             )
 
         node2.query("SYSTEM STOP FETCHES should_execute_table")

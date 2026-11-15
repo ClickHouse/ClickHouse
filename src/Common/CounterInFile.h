@@ -11,10 +11,9 @@
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -37,7 +36,7 @@ namespace fs = std::filesystem;
 class CounterInFile
 {
 private:
-    static inline constexpr size_t SMALL_READ_WRITE_BUFFER_SIZE = 16;
+    static constexpr size_t SMALL_READ_WRITE_BUFFER_SIZE = 16;
 
 public:
     /// path - the name of the file, including the path
@@ -89,8 +88,7 @@ public:
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
                         throw DB::Exception(e.code(), "File {} is empty. You must fill it manually with appropriate value.", path);
-                    else
-                        throw;
+                    throw;
                 }
             }
             else
@@ -105,6 +103,7 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
 
@@ -112,12 +111,12 @@ public:
         }
         catch (...)
         {
-            int err = close(fd);
+            [[maybe_unused]] int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
         return res;
     }
@@ -156,9 +155,9 @@ public:
                 DB::ReadBufferFromFileDescriptor rb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
                 try
                 {
-                    UInt64 current_value;
+                    UInt64 current_value = 0;
                     DB::readIntText(current_value, rb);
-                    char c;
+                    char c = 0;
                     DB::readChar(c, rb);
                     if (rb.count() > 0 && c == '\n' && rb.eof())
                         broken = false;
@@ -177,17 +176,18 @@ public:
                 wb.truncate(0);
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
+                wb.finalize();
                 wb.sync();
             }
         }
         catch (...)
         {
-            int err = close(fd);
+            [[maybe_unused]] int err = close(fd);
             chassert(!err || errno == EINTR);
             throw;
         }
 
-        int err = close(fd);
+        [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
     }
 

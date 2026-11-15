@@ -5,7 +5,7 @@
 namespace DB
 {
 
-enum class ExternalCommandStderrReaction
+enum class ExternalCommandStderrReaction : uint8_t
 {
     NONE, /// Do nothing.
     LOG, /// Try to log all outputs of stderr from the external command immediately.

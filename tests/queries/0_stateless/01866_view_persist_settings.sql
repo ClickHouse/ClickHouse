@@ -34,7 +34,7 @@ SET join_use_nulls = 1;
 SELECT 'join_use_nulls = 1';
 
 SELECT '-';
-SELECT * FROM view_no_nulls; -- { serverError 80 }
+SELECT * FROM view_no_nulls; -- { serverError INCORRECT_QUERY }
 SELECT '-';
 SELECT * FROM view_no_nulls_set;
 SELECT '-';
@@ -70,7 +70,7 @@ SET join_use_nulls = 1;
 SELECT 'join_use_nulls = 1';
 
 SELECT '-';
-SELECT * FROM view_no_nulls; -- { serverError 80 }
+SELECT * FROM view_no_nulls; -- { serverError INCORRECT_QUERY }
 SELECT '-';
 SELECT * FROM view_no_nulls_set;
 SELECT '-';

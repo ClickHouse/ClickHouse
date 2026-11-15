@@ -27,7 +27,7 @@ Header: avgWeighted(x, y) Nullable(Float64)
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
                   Header: __table3.dummy UInt8
-                    ReadFromStorage (SystemOne)
+                    ReadFromSystemOne
                     Header: dummy UInt8
             Expression (Conversion before UNION)
             Header: x Nullable(UInt8)
@@ -36,11 +36,11 @@ Header: avgWeighted(x, y) Nullable(Float64)
               Header: x Nullable(Nothing)
                       y UInt8
                 Expression (Projection)
-                Header: NULL_Nullable(Nothing) Nullable(Nothing)
+                Header: _CAST(NULL_Nullable(Nothing), \'Nullable(Nothing)\'_String) Nullable(Nothing)
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
                   Header: __table5.dummy UInt8
-                    ReadFromStorage (SystemOne)
+                    ReadFromSystemOne
                     Header: dummy UInt8
 SELECT avgWeighted(x, y) FROM (SELECT NULL, 255 AS x, 1 AS y UNION ALL SELECT y, NULL AS x, 1 AS y);
 255

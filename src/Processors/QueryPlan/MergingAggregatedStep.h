@@ -14,16 +14,15 @@ class MergingAggregatedStep : public ITransformingStep
 {
 public:
     MergingAggregatedStep(
-        const DataStream & input_stream_,
+        const SharedHeader & input_header_,
         Aggregator::Params params_,
+        GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         bool memory_efficient_aggregation_,
-        size_t max_threads_,
         size_t memory_efficient_merge_threads_,
         bool should_produce_results_in_order_of_bucket_number_,
         size_t max_block_size_,
         size_t memory_bound_merging_max_block_bytes_,
-        SortDescription group_by_sort_description_,
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
@@ -34,25 +33,42 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void applyOrder(SortDescription input_sort_description, DataStream::SortScope sort_scope);
+    void applyOrder(SortDescription input_sort_description);
+    const SortDescription & getSortDescription() const override;
+    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     bool memoryBoundMergingWillBeUsed() const;
+    bool isMemoryEfficient() const { return memory_efficient_aggregation; }
+
+    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    bool isFinal() const { return final; }
+    bool shouldProduceResultsInBucketOrder() const { return should_produce_results_in_order_of_bucket_number; }
+    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
+    /// A copy that merges all input at once instead of bucket by bucket. The memory-efficient mode
+    /// needs each input stream in ascending bucket order, which an input split by a shuffle does not keep.
+    QueryPlanStepPtr cloneWithoutMemoryEfficientAggregation() const;
 
 private:
-    void updateOutputStream() override;
+    std::unique_ptr<MergingAggregatedStep> cloneImpl(bool memory_efficient_aggregation_) const;
 
+    void updateOutputHeader() override;
 
     Aggregator::Params params;
+    GroupingSetsParamsList grouping_sets_params;
     bool final;
-    bool memory_efficient_aggregation;
+    const bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
     const size_t max_block_size;
     const size_t memory_bound_merging_max_block_bytes;
     SortDescription group_by_sort_description;
-
-    bool is_order_overwritten = false;
-    DataStream::SortScope overwritten_sort_scope = DataStream::SortScope::None;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;

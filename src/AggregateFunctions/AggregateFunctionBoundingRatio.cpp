@@ -34,8 +34,8 @@ struct AggregateFunctionBoundingRatioData
     };
 
     bool empty = true;
-    Point left;
-    Point right;
+    Point left{};
+    Point right{};
 
     void add(Float64 x, Float64 y)
     {
@@ -62,6 +62,11 @@ struct AggregateFunctionBoundingRatioData
         if (empty)
         {
             *this = other;
+        }
+        else if (other.empty)
+        {
+            // if other.empty = true, other.x/other.y may be uninitialized values,
+            // so don't use them to update this->state
         }
         else
         {
@@ -158,7 +163,7 @@ public:
         data(place).add(x, y);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -195,9 +200,60 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
 
 }
 
+void registerAggregateFunctionRate(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRate(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("boundingRatio", createAggregateFunctionRate);
+    FunctionDocumentation::Description description = R"(
+Calculates the slope between the leftmost and rightmost points across a group of values.
+    )";
+    FunctionDocumentation::Syntax syntax = "boundingRatio(x, y)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "X-coordinate values.", {"(U)Int*", "Float*", "Decimal"}},
+        {"y", "Y-coordinate values.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the slope of the line between the leftmost and rightmost points, otherwise returns `NaN` if the data is empty.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Sample data",
+        R"(
+SELECT
+    number,
+    number * 1.5
+FROM numbers(10)
+        )",
+        R"(
+┌─number─┬─multiply(number, 1.5)─┐
+│      0 │                     0 │
+│      1 │                   1.5 │
+│      2 │                     3 │
+│      3 │                   4.5 │
+│      4 │                     6 │
+│      5 │                   7.5 │
+│      6 │                     9 │
+│      7 │                  10.5 │
+│      8 │                    12 │
+│      9 │                  13.5 │
+└────────┴───────────────────────┘
+        )"
+    },
+    {
+        "Usage example",
+        R"(
+SELECT boundingRatio(number, number * 1.5)
+FROM numbers(10)
+        )",
+        R"(
+┌─boundingRatio(number, multiply(number, 1.5))─┐
+│                                          1.5 │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+    factory.registerFunction("boundingRatio", {createAggregateFunctionRate, documentation});
 }
 
 }

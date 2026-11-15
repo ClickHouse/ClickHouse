@@ -1,9 +1,20 @@
--- Tags: long, no-s3-storage
+-- Tags: long, no-object-storage, no-msan
+-- Random settings limits: use_columns_cache=(0, 0)
+SET explain_query_plan_default = 'legacy';
+
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
+-- Aggregating each partition independently skips the merge phase where the global
+-- `max_rows_to_group_by` limit is enforced, so the optimization falls back to normal aggregation
+-- whenever that limit is set. The stateless test profile (tests/config/users.d/limits.yaml) sets a
+-- high `max_rows_to_group_by` as a safety net, which would disable the optimization and break this
+-- test. Clear it so the test keeps exercising the partition-independent pipeline it verifies.
+set max_rows_to_group_by = 0;
 set optimize_use_projections = 0;
+set optimize_trivial_insert_select = 1;
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
@@ -15,7 +26,9 @@ system stop merges t1;
 insert into t1 select number from numbers_mt(1e6);
 insert into t1 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t1 group by a;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t1 group by a);
 
@@ -28,7 +41,9 @@ system stop merges t2;
 insert into t2 select number from numbers_mt(1e6);
 insert into t2 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t2 group by a;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t2 group by a);
 
@@ -41,14 +56,16 @@ system stop merges t3;
 insert into t3 select number from numbers_mt(1e6);
 insert into t3 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t3 group by a;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t3 group by a);
 
 select throwIf(count() != 4) from remote('127.0.0.{1,2}', currentDatabase(), t3) group by a format Null;
 
 -- if we happened to switch to external aggregation at some point, merging will happen as usual
-select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki';
+select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki', max_bytes_ratio_before_external_group_by = 0;
 
 drop table t3;
 
@@ -63,7 +80,9 @@ system stop merges t4;
 insert into t4 select number from numbers_mt(1e6);
 insert into t4 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t4 group by a);
 
@@ -76,7 +95,9 @@ system stop merges t5;
 insert into t5 select number from numbers_mt(1e6);
 insert into t5 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t5 group by a);
 
@@ -89,7 +110,9 @@ system stop merges t6;
 insert into t6 select number from numbers_mt(1e6);
 insert into t6 select number from numbers_mt(1e6);
 
+-- { echoOn }
 explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12;
+-- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t6 group by a);
 

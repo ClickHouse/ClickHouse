@@ -11,7 +11,7 @@ SELECT CAST('123456789123.1' AS Decimal(10, 5));
 SELECT CAST('1234567891234.1' AS Decimal(10, 5));
 SELECT CAST('1234567891234.12345111' AS Decimal(10, 5));
 -- But it's just Decimal64, so there is the limit.
-SELECT CAST('12345678912345.1' AS Decimal(10, 5)); -- { serverError 69 }
+SELECT CAST('12345678912345.1' AS Decimal(10, 5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- The rounding may work in unexpected way: this is just integer rounding.
 -- We can improve it but here is the current behaviour:

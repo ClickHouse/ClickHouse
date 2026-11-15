@@ -16,7 +16,7 @@ class ASTCreateIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWi
 public:
     ASTPtr index_name;
 
-    /// Stores the IndexDeclaration here.
+    /// Stores the ASTIndexDeclaration here.
     ASTPtr index_decl;
 
     bool if_not_exists{false};
@@ -25,6 +25,9 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
@@ -37,7 +40,7 @@ public:
     ASTPtr convertToASTAlterCommand() const;
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

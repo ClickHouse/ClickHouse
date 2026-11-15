@@ -26,12 +26,12 @@ SELECT * FROM x_dist ORDER by number;
 SELECT * FROM y_dist ORDER by number;
 
 -- no sharding key
-INSERT INTO x_dist SELECT * FROM numbers(10); -- { serverError 55 }
-INSERT INTO y_dist SELECT * FROM numbers(10); -- { serverError 55 }
+INSERT INTO x_dist SELECT * FROM numbers(10); -- { serverError STORAGE_REQUIRES_PARAMETER }
+INSERT INTO y_dist SELECT * FROM numbers(10); -- { serverError STORAGE_REQUIRES_PARAMETER }
 
 -- invalid shard id
-INSERT INTO x_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 577 }
-INSERT INTO y_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 577 }
+INSERT INTO x_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError INVALID_SHARD_ID }
+INSERT INTO y_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError INVALID_SHARD_ID }
 
 DROP TABLE x;
 DROP TABLE x_dist;

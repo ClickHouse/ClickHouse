@@ -5,12 +5,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/ColumnsHashing.h>
-#include <Interpreters/AggregationCommon.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -19,14 +18,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Counts the number of different elements in the array, or the number of different tuples from the elements at the corresponding positions in several arrays.
 /// NOTE The implementation partially matches arrayEnumerateUniq.
-class FunctionArrayUniq : public IFunction
+class FunctionArrayUniq final : public IFunction
 {
 public:
     static constexpr auto name = "arrayUniq";
@@ -41,22 +38,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override { return "(Array, ...) -> UInt32"; }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                getName(), arguments.size());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "All arguments for function {} must be arrays but argument {} has type {}.",
-                                getName(), i + 1, arguments[i]->getName());
-        }
-
         return std::make_shared<DataTypeUInt32>();
     }
 
@@ -77,7 +62,7 @@ private:
 
     struct MethodString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
@@ -85,7 +70,7 @@ private:
 
     struct MethodFixedString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;
@@ -120,7 +105,11 @@ private:
     bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -128,7 +117,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 {
     const ColumnArray::Offsets * offsets = nullptr;
     const size_t num_arguments = arguments.size();
-    assert(num_arguments > 0);
+    chassert(num_arguments > 0);
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;
@@ -162,7 +151,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
@@ -188,14 +177,17 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             || executeNumber<Int64>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float32>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal32>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal128>(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, null_map, res_values);
     }
     else
     {
         if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, nullptr, res_values);
     }
 
     return res;
@@ -256,7 +248,8 @@ void FunctionArrayUniq::executeMethod(
 template <typename T>
 bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnVector<T>>(&data);
+    using ColVecType = ColumnVectorOrDecimal<T>;
+    const auto * nested = checkAndGetColumn<ColVecType>(&data);
     if (!nested)
         return false;
 
@@ -309,15 +302,55 @@ bool FunctionArrayUniq::execute128bit(
 void FunctionArrayUniq::executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
+        const NullMap * null_map,
         ColumnUInt32::Container & res_values) const
 {
-    executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
+    executeMethod<MethodHashed>(offsets, columns, {}, null_map, res_values);
 }
-
 
 REGISTER_FUNCTION(ArrayUniq)
 {
-    factory.registerFunction<FunctionArrayUniq>();
-}
+    FunctionDocumentation::Description description = R"(
+For a single argument passed, counts the number of different elements in the array.
+For multiple arguments passed, it counts the number of different **tuples** made of elements at matching positions across multiple arrays.
 
+For example `SELECT arrayUniq([1,2], [3,4], [5,6])` will form the following tuples:
+* Position 1: (1,3,5)
+* Position 2: (2,4,6)
+
+It will then count the number of unique tuples. In this case `2`.
+
+All arrays passed must have the same length.
+
+<Tip>
+If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
+</Tip>
+)";
+    FunctionDocumentation::Syntax syntax = "arrayUniq(arr1[, arr2, ..., arrN])";
+    FunctionDocumentation::Arguments arguments = {
+        {
+            "arr1",
+            "Array for which to count the number of unique elements.",
+            {"Array(T)"}
+        },
+        {
+            "[, arr2, ..., arrN]",
+            "Optional. Additional arrays used to count the number of unique tuples of elements at corresponding positions in multiple arrays.",
+            {"Array(T)"}
+        }
+    };
+    FunctionDocumentation::Examples examples =
+{{"Single argument", "SELECT arrayUniq([1, 1, 2, 2])", "2"},
+{"Multiple argument", "SELECT arrayUniq([1, 2, 3, 1], [4, 5, 6, 4])", "3"}};
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
+For a single argument returns the number of unique
+elements. For multiple arguments returns the number of unique tuples made from
+elements at corresponding positions across the arrays.
+)", {"UInt32"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayUniq>(documentation);
+}
 }

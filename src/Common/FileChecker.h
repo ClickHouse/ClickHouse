@@ -14,20 +14,31 @@ namespace DB
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
+class WriteBuffer;
 
 /// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
 {
 public:
-    FileChecker(const String & file_info_path_);
+    explicit FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
     String getPath() const;
 
     void update(const String & full_file_path);
+    void update(const String & filename, size_t size);
     void setEmpty(const String & full_file_path);
+
+    /// Record the current sizes of several files and persist them as a single unit.
+    /// The stored sizes stay unchanged unless all of them are persisted, because repair()
+    /// truncates every file to the size stored here.
+    void updateAndSave(const std::vector<String> & full_file_paths);
+
     void save() const;
+    void save(WriteBuffer & buffer) const;
+    /// Serializes the given file sizes in the same format without binding them to a path: no file is opened.
+    static void save(WriteBuffer & buffer, const std::map<String, size_t> & file_sizes);
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
@@ -50,7 +61,7 @@ public:
 
     struct DataValidationTasks
     {
-        DataValidationTasks(const std::map<String, size_t> & map_)
+        explicit DataValidationTasks(const std::map<String, size_t> & map_)
             : map(map_), it(map.begin())
         {}
 
@@ -79,7 +90,11 @@ public:
     };
 
 private:
+    using Map = std::map<String, size_t>;
+
     void load();
+
+    void save(const Map & map_to_save) const;
 
     bool fileReallyExists(const String & path_) const;
     size_t getRealFileSize(const String & path_) const;
@@ -88,7 +103,7 @@ private:
     const LoggerPtr log;
 
     String files_info_path;
-    std::map<String, size_t> map;
+    Map map;
 };
 
 }

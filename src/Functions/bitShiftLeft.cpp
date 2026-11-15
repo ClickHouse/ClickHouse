@@ -5,6 +5,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
@@ -18,16 +19,31 @@ struct BitShiftLeftImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = true;
+    /// Documentation-only: the legacy validator stays authoritative, including
+    /// the `IPv4`/`IPv6` casts the DSL can't express yet; see `bitAnd.cpp`.
+    static constexpr auto signature_documentation =
+        /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
+        /// see the matching comment in `bitAnd.cpp`.
+        /// The String / FixedString shift path only supports native-width shift counts
+        /// (`IsIntegral`); big integers (`UInt128`/`Int256`/...) reach `executeImpl` but are
+        /// rejected there, so spell the count as `NativeInteger` (cf. `bitTest`).
+        "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)"
+        " OR (String, NativeInteger) -> String"
+        " OR (F : FixedString, NativeInteger) -> F";
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
+        else if (b < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
+        else if (static_cast<UInt256>(b) >= 8 * sizeof(A))
+            return static_cast<Result>(0);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) << static_cast<UInt32>(b);
         else
-            return static_cast<Result>(a) << static_cast<Result>(b);
+            return static_cast<Result>(static_cast<Result>(a) << static_cast<Result>(b));
     }
 
     /// For String
@@ -37,13 +53,16 @@ struct BitShiftLeftImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else
         {
-            UInt8 word_size = 8;
-            /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(end - pos) * word_size) || b < 0)
+            const UInt8 word_size = 8 * sizeof(*pos);
+            size_t n = end - pos;
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
+            if (b < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
+
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 
@@ -53,27 +72,26 @@ struct BitShiftLeftImpl
             const UInt8 * begin = pos;
 
             const size_t old_size = out_vec.size();
-            size_t length;
+            size_t length = 0;
             if (shift_left_bits)
                 length = end + shift_left_bytes - begin + 1; /// Moving to the left here will make a redundant byte to store the overflowing bits in the front
             else
                 length = end + shift_left_bytes - begin;
 
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             UInt8 * op_pointer = const_cast<UInt8 *>(begin);
             UInt8 * out = out_vec.data() + old_size;
 
-            UInt8 previous = 0;
+            UInt8 previous = static_cast<UInt8>(0);
             while (op_pointer < end)
             {
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
-                    *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
-                    previous = *op_pointer << shift_left_bits;
+                    *out = static_cast<UInt8>(static_cast<UInt8>(*op_pointer >> (8 - shift_left_bits)) | previous);
+                    previous = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 }
                 else
                 {
@@ -84,7 +102,7 @@ struct BitShiftLeftImpl
             }
             if (shift_left_bits)
             {
-                *out = *(op_pointer - 1) << shift_left_bits;
+                *out = static_cast<UInt8>(*(op_pointer - 1) << shift_left_bits);
                 out++;
             }
 
@@ -102,10 +120,13 @@ struct BitShiftLeftImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftLeft is not implemented for big integers as second argument");
         else
         {
-            UInt8 word_size = 8;
+            const UInt8 word_size = 8;
             size_t n = end - pos;
-            /// To prevent overflow
-            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size) || b < 0)
+            const UInt128 bit_limit = static_cast<UInt128>(word_size) * n;
+            if (b < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
+
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
@@ -127,7 +148,7 @@ struct BitShiftLeftImpl
 
             while (op_pointer < end)
             {
-                *out = *op_pointer << shift_left_bits;
+                *out = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 if (op_pointer + 1 < end)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
@@ -143,13 +164,22 @@ struct BitShiftLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// `apply` above refuses a big-integer shift amount and a negative one. The compiled body cannot
+    /// throw, so it must not answer for those at all: otherwise the same query raises an exception
+    /// until the expression gets compiled and then silently returns a value.
+    static constexpr bool compilable = !is_big_int_v<B> && is_unsigned_v<B>;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftLeftImpl expected an integral type");
-        return b.CreateShl(left, right);
+
+        /// A shift by the width of the left operand or more answers zero above, while `shl` by such an
+        /// amount is poison. The width is that of the operand as declared: `compileImpl` has already
+        /// widened both values to the result type, while the interpreted path clamps at `8 * sizeof(A)`.
+        auto * width = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
+        return b.CreateSelect(
+            b.CreateICmpULT(right, width), b.CreateShl(left, right), llvm::ConstantInt::get(left->getType(), 0));
     }
 #endif
 };
@@ -161,7 +191,52 @@ using FunctionBitShiftLeft = BinaryArithmeticOverloadResolver<BitShiftLeftImpl, 
 
 REGISTER_FUNCTION(BitShiftLeft)
 {
-    factory.registerFunction<FunctionBitShiftLeft>();
+    FunctionDocumentation::Description description = R"(
+Shifts the binary representation of a value to the left by a specified number of bit positions.
+
+A `FixedString` or a `String` is treated as a single multibyte value.
+
+Bits of a `FixedString` value are lost as they are shifted out.
+On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
+)";
+    FunctionDocumentation::Syntax syntax = "bitShiftLeft(a, N)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
+        {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`."};
+    FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
+        R"(
+SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
+        )",
+        R"(
+┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 99 │ 01100011 │       140 │ 10001100       │
+└────┴──────────┴───────────┴────────────────┘
+        )"},
+        {"Usage example with hexadecimal encoding", R"(
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+        )",
+        R"(
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 06162630  │
+└─────┴────────┴───────────┘
+        )"},
+{"Usage example with Fixed String encoding", R"(
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
+        )",
+R"(
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 162630    │
+└─────┴────────┴───────────┘
+        )"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitShiftLeft>(documentation);
 }
 
 }

@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -20,17 +22,22 @@ public:
         WITH,
         SELECT,
         TABLES,
+        ALIASES,
+        CTE_ALIASES,
         PREWHERE,
         WHERE,
         GROUP_BY,
         HAVING,
         WINDOW,
+        QUALIFY,
         ORDER_BY,
         LIMIT_BY_OFFSET,
         LIMIT_BY_LENGTH,
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
+        LIMIT_AFTER,
+        LIMIT_UNTIL,
         SETTINGS,
         INTERPOLATE
     };
@@ -45,6 +52,10 @@ public:
                 return "SELECT";
             case Expression::TABLES:
                 return "TABLES";
+            case Expression::ALIASES:
+                return "ALIASES";
+            case Expression::CTE_ALIASES:
+                return "CTE_ALIASES";
             case Expression::PREWHERE:
                 return "PREWHERE";
             case Expression::WHERE:
@@ -55,6 +66,8 @@ public:
                 return "HAVING";
             case Expression::WINDOW:
                 return "WINDOW";
+            case Expression::QUALIFY:
+                return "QUALIFY";
             case Expression::ORDER_BY:
                 return "ORDER BY";
             case Expression::LIMIT_BY_OFFSET:
@@ -67,6 +80,10 @@ public:
                 return "LIMIT OFFSET";
             case Expression::LIMIT_LENGTH:
                 return "LIMIT LENGTH";
+            case Expression::LIMIT_AFTER:
+                return "LIMIT AFTER";
+            case Expression::LIMIT_UNTIL:
+                return "LIMIT UNTIL";
             case Expression::SETTINGS:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
@@ -80,6 +97,7 @@ public:
 
     ASTPtr clone() const override;
 
+    bool recursive_with = false;
     bool distinct = false;
     bool group_by_all = false;
     bool group_by_with_totals = false;
@@ -89,31 +107,45 @@ public:
     bool group_by_with_grouping_sets = false;
     bool order_by_all = false;
     bool limit_with_ties = false;
+    bool limit_by_all = false;
+    bool limit_after_all = false;
+    /// `SHUFFLE` is used in place of `ORDER BY`: the result rows are returned in a uniformly random order.
+    bool shuffle = false;
+    /// Not formatted or hashed: keeps `Context::isViewInnerQuery` of a query tree node converted to AST and built again.
+    bool is_view_inner_query = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
+    ASTPtr & refAliases()   { return getExpression(Expression::ALIASES); }
+    ASTPtr & refCteAliases()   { return getExpression(Expression::CTE_ALIASES); }
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
     ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
+    ASTPtr & refQualify()    { return getExpression(Expression::QUALIFY); }
 
     ASTPtr with()           const { return getExpression(Expression::WITH); }
     ASTPtr select()         const { return getExpression(Expression::SELECT); }
     ASTPtr tables()         const { return getExpression(Expression::TABLES); }
+    ASTPtr aliases()        const { return getExpression(Expression::ALIASES); }
+    ASTPtr cteAliases()        const { return getExpression(Expression::CTE_ALIASES); }
     ASTPtr prewhere()       const { return getExpression(Expression::PREWHERE); }
     ASTPtr where()          const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
+    ASTPtr qualify()         const { return getExpression(Expression::QUALIFY); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
+    ASTPtr limitAfter()     const { return getExpression(Expression::LIMIT_AFTER); }
+    ASTPtr limitUntil()     const { return getExpression(Expression::LIMIT_UNTIL); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
-    bool hasFiltration() const { return where() || prewhere() || having(); }
+    bool hasFiltration() const { return where() || prewhere() || having() || qualify(); }
 
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
@@ -137,16 +169,35 @@ public:
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void replaceDatabaseAndTable(const StorageID & table_id);
-    void addTableFunction(ASTPtr & table_function_ptr);
+    void addTableFunction(const ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void setFinal();
 
+    /// Reorder children to match the canonical order used by ParserSelectQuery.
+    /// A parser that fills the expressions in a different order would otherwise
+    /// produce a tree hash that does not match the same query reparsed from SQL.
+    void normalizeChildrenOrder();
+
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    NameToNameMap getQueryParameters() const;
+
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+    bool isLimitByAll() const
+    {
+        return limit_by_all;
+    }
+
+    /// Set query node LIMIT BY ALL modifier value
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        limit_by_all = is_limit_by_all_value;
+    }
 
 private:
     std::unordered_map<Expression, size_t> positions;

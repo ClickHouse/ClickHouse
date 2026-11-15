@@ -1,26 +1,64 @@
 #pragma once
-#include <Core/Defines.h>
-#include <Core/BaseSettings.h>
 
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/SettingsFields.h>
+
+#include <limits>
+
+
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
 namespace DB
 {
-
+class ASTSetQuery;
 class ASTStorage;
+struct DatabaseReplicatedSettingsImpl;
 
-#define LIST_OF_DATABASE_REPLICATED_SETTINGS(M, ALIAS) \
-    M(Float,  max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
-    M(UInt64, max_replication_lag_to_enqueue, 50, "Replica will throw exception on attempt to execute query if its replication lag greater", 0) \
-    M(UInt64, wait_entry_commited_timeout_sec, 3600, "Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet", 0) \
-    M(String, collection_name, "", "A name of a collection defined in server's config where all info for cluster authentication is defined", 0) \
-    M(Bool, check_consistency, true, "Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency", 0) \
+/// List of available types supported in ReplicatedSettings object
+#define DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, Float) \
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
+    M(CLASS_NAME, NonZeroUInt32)
 
+DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_TRAIT)
 
-DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
-
-
-struct DatabaseReplicatedSettings : public BaseSettings<DatabaseReplicatedSettingsTraits>
+struct DatabaseReplicatedSettings
 {
-    void loadFromQuery(ASTStorage & storage_def);
+    DatabaseReplicatedSettings();
+    DatabaseReplicatedSettings(const DatabaseReplicatedSettings & settings);
+    DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept;
+    ~DatabaseReplicatedSettings();
+
+    DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
+
+    void loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata);
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+    /// Validates `logs_to_keep` in the `SETTINGS` clause of a `Replicated` database definition against
+    /// the 32-bit DDL log counter. An out-of-range value is rejected with `BAD_ARGUMENTS`, or, with
+    /// `clamp_on_overflow`, replaced in place by the maximum with a warning in the logs.
+    static void checkOrClampLogsToKeep(ASTSetQuery & settings, bool clamp_on_overflow);
+
+    String toString() const;
+
+    static bool hasBuiltin(std::string_view name);
+
+    /// Older replicas evaluate `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic,
+    /// so using `UInt32::max` would make `entry_number + logs_to_keep` overflow and the replica would
+    /// delete the whole DDL log and declare itself lost.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/122377 for details.
+    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<Int32>::max();
+
+private:
+    std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
 };
 
 }

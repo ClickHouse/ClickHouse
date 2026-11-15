@@ -1,0 +1,44 @@
+---
+description: 'تُعد دوال `median*` أسماءً مستعارة لدوال `quantile*` المقابلة. وهي تحسب الوسيط لعينة رقمية من البيانات.'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+تُعد دوال `median*` أسماءً مستعارة لدوال `quantile*` المقابلة. وهي تحسب الوسيط لعينة رقمية من البيانات.
+
+الدوال:
+
+* `median` — اسم مستعار لـ [quantile](/ar/reference/functions/aggregate-functions/quantile).
+* `medianDeterministic` — اسم مستعار لـ [quantileDeterministic](/ar/reference/functions/aggregate-functions/quantileDeterministic).
+* `medianExact` — اسم مستعار لـ [quantileExact](/ar/reference/functions/aggregate-functions/quantileExact).
+* `medianExactWeighted` — اسم مستعار لـ [quantileExactWeighted](/ar/reference/functions/aggregate-functions/quantileExactWeighted).
+* `medianTiming` — اسم مستعار لـ [quantileTiming](/ar/reference/functions/aggregate-functions/quantileTiming).
+* `medianTimingWeighted` — اسم مستعار لـ [quantileTimingWeighted](/ar/reference/functions/aggregate-functions/quantileTimingWeighted).
+* `medianTDigest` — اسم مستعار لـ [quantileTDigest](/ar/reference/functions/aggregate-functions/quantileTDigest).
+* `medianTDigestWeighted` — اسم مستعار لـ [quantileTDigestWeighted](/ar/reference/functions/aggregate-functions/quantileTDigestWeighted).
+* `medianBFloat16` — اسم مستعار لـ [quantileBFloat16](/ar/reference/functions/aggregate-functions/quantileBFloat16).
+* `medianDD` — اسم مستعار لـ [quantileDD](/ar/reference/functions/aggregate-functions/quantileddsketch).
+
+**مثال**
+
+جدول الإدخال:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

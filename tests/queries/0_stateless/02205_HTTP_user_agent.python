@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+import os
 import socket
 import sys
 import threading
-import os
 import traceback
 import urllib.request
-import subprocess
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from socketserver import ThreadingMixIn
 
 
 def is_ipv6(host):
@@ -50,10 +50,8 @@ EXPECTED_ANSWER = """{\\n\\t"login": "ClickHouse",\\n\\t"id": 54801242,\\n\\t"na
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from the outside world. Get the first one
-HTTP_SERVER_HOST = (
-    subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
-)
+# Resolve CLICKHOUSE_HOST to a numeric IP (is_ipv6 needs one); getaddrinfo keeps IPv4 and IPv6 working.
+HTTP_SERVER_HOST = socket.getaddrinfo(os.environ.get("CLICKHOUSE_HOST", "127.0.0.1"), None)[0][4][0]
 IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
@@ -116,11 +114,19 @@ class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
+
+class ThreadedHTTPServerV6(ThreadingMixIn, HTTPServerV6):
+    pass
+
+
 def start_server(requests_amount):
     if IS_IPV6:
-        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
     else:
-        httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
 
     def real_func():
         for i in range(requests_amount):

@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/FunctionDocumentation.h>
 
 
 namespace DB
@@ -23,9 +24,10 @@ struct BitBoolMaskOrImpl
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    static constexpr auto signature = "(UInt8, UInt8) -> UInt8";
 
     template <typename Result = ResultType>
-    static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
+    static Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
     {
         if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
@@ -49,7 +51,7 @@ using FunctionBitBoolMaskOr = BinaryArithmeticOverloadResolver<BitBoolMaskOrImpl
 
 REGISTER_FUNCTION(BitBoolMaskOr)
 {
-    factory.registerFunction<FunctionBitBoolMaskOr>();
+    factory.registerFunction<FunctionBitBoolMaskOr>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

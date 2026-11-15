@@ -1,4 +1,4 @@
--- Tags: no-s3-storage
+-- Tags: no-object-storage
 -- Output slightly different plan
 drop table if exists t;
 

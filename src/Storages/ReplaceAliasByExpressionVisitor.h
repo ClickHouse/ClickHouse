@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Core/Names.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
@@ -27,14 +28,21 @@ class ASTIdentifier;
 class ReplaceAliasByExpressionMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
     struct Data
     {
         const ColumnsDescription & columns;
+        /// Names bound by an enclosing lambda parameter; not expanded as ALIASes.
+        NameSet private_aliases;
+        /// Reject an ALIAS whose expression would be captured by an enclosing lambda parameter
+        bool reject_lambda_capture = false;
     };
 
     static void visit(ASTPtr & ast, Data &);
+    static void visit(const ASTFunction &, ASTPtr & ast, Data &);
     static void visit(const ASTIdentifier &, ASTPtr & ast, Data &);
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 };
 
 }

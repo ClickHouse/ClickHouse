@@ -21,7 +21,7 @@ void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
 
-    tryLogCurrentException(log, "Cannot load dictionary! You must resolve this manually.");
+    tryLogCurrentException(log, "Cannot load dictionary. You must resolve this manually.");
 
     if (throw_on_error)
         std::rethrow_exception(exception_ptr);
@@ -72,17 +72,17 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 
     bool was_exception = false;
 
-    DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=, this] (const Poco::Util::AbstractConfiguration & config)
+    DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=] (const Poco::Util::AbstractConfiguration & config)
     {
-        return geo_dictionaries_loader->reloadRegionsHierarchies(config);
+        return DB::GeoDictionariesLoader::reloadRegionsHierarchies(config);
     };
 
     if (!reloadDictionary<RegionsHierarchies>(regions_hierarchies, std::move(reload_regions_hierarchies), throw_on_error, force_reload))
         was_exception = true;
 
-    DictionaryReloader<RegionsNames> reload_regions_names = [=, this] (const Poco::Util::AbstractConfiguration & config)
+    DictionaryReloader<RegionsNames> reload_regions_names = [=] (const Poco::Util::AbstractConfiguration & config)
     {
-        return geo_dictionaries_loader->reloadRegionsNames(config);
+        return DB::GeoDictionariesLoader::reloadRegionsNames(config);
     };
 
     if (!reloadDictionary<RegionsNames>(regions_names, std::move(reload_regions_names), throw_on_error, force_reload))
@@ -97,7 +97,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 
 void EmbeddedDictionaries::reloadPeriodically()
 {
-    setThreadName("DictReload");
+    DB::setThreadName(ThreadName::DICT_RELOAD);
 
     while (true)
     {

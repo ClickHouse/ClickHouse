@@ -1,4 +1,4 @@
-┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_projections─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┬─supports_parallel_insert─┐
-│ MergeTree                     │                 1 │                         1 │                    1 │                   1 │            1 │                    0 │                      0 │                        1 │
-│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                    1 │                   1 │            1 │                    1 │                      1 │                        1 │
-└───────────────────────────────┴───────────────────┴───────────────────────────┴──────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┴──────────────────────────┘
+   ┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_projections─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┬─supports_parallel_insert─┐
+1. │ MergeTree                     │                 1 │                         1 │                    1 │                   1 │            1 │                    0 │                      0 │                        1 │
+2. │ ReplicatedCollapsingMergeTree │                 1 │                         1 │                    1 │                   1 │            1 │                    1 │                      1 │                        1 │
+   └───────────────────────────────┴───────────────────┴───────────────────────────┴──────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┴──────────────────────────┘

@@ -1,15 +1,23 @@
-#include "StoragePolicy.h"
-#include "DiskFactory.h"
-#include "DiskLocal.h"
-#include "createVolume.h"
+#include <Disks/StoragePolicy.h>
+#include <base/sort.h>
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/DiskSelector.h>
+#include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <exception>
+#include <filesystem>
+#include <map>
+#include <ranges>
 #include <set>
 
 
@@ -28,10 +36,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int READONLY;
 }
 
 
@@ -56,6 +66,8 @@ StoragePolicy::StoragePolicy(
         config.keys(volumes_prefix, keys);
     }
 
+    std::set<UInt64> volume_priorities;
+
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
@@ -63,6 +75,27 @@ StoragePolicy::StoragePolicy(
                             "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
                             backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
+
+        UInt64 last_priority = volumes.back()->volume_priority;
+        if (last_priority != std::numeric_limits<UInt64>::max() && !volume_priorities.insert(last_priority).second)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "volume_priority values must be unique across the policy");
+        }
+    }
+
+    if (!volume_priorities.empty())
+    {
+        /// Check that priority values cover the range from 1 to N (lowest explicit priority)
+        if (*volume_priorities.begin() != 1 || *volume_priorities.rbegin() != volume_priorities.size())
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps");
+
+        ::stableSort(
+            volumes.begin(), volumes.end(),
+            [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
@@ -85,10 +118,39 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
+
+    backup_metadata_only = config.getBool(config_prefix + ".backup_metadata_only", false);
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
+}
+
+
+bool StoragePolicy::isBackupMetadataOnly() const
+{
+    /// Rechecked on every call, because a disk can become writable while the policy is live: `DiskLocal` clears its
+    /// read-only flag itself once its periodic check writes to the root directory again, and a reload of the
+    /// configuration that makes a disk writable keeps this policy, since the policy built from the new configuration
+    /// fails the check in the constructor and is discarded. So the check cannot be left to where a policy is built.
+    if (backup_metadata_only)
+        checkVolumesAreReadOnly();
+    return backup_metadata_only;
+}
+
+void StoragePolicy::checkVolumesAreReadOnly() const
+{
+    /// The data of a table on such a policy is not backed up, so it must come from the storage, not from writes to it.
+    for (const auto & volume : volumes)
+    {
+        if (!volume->isReadOnly())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Storage policy {} is marked backup_metadata_only, but its volume {} is not read-only, "
+                            "so BACKUP would leave out the data written to it",
+                            backQuote(name), backQuote(volume->getName()));
+    }
 }
 
 
@@ -104,7 +166,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -202,9 +264,20 @@ DiskPtr StoragePolicy::getAnyDisk() const
 DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
+    {
         for (auto && disk : volume->getDisks())
+        {
             if (disk->getName() == disk_name)
                 return disk;
+
+            /// If the requested name matches a wrapped (underlying) disk of a cache layer,
+            /// resolve to the cache disk. This provides backward compatibility for TTL TO DISK
+            /// and MOVE PARTITION TO DISK referencing base disk names (e.g. 's3' instead of 's3_cache').
+            if (disk->supportsCache() && disk->getCacheLayersNames().contains(disk_name))
+                return disk;
+        }
+    }
+
     return {};
 }
 
@@ -225,22 +298,30 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
+    bool all_volumes_read_only = true;
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
+        if (volume->isReadOnly())
+            continue;
+        all_volumes_read_only = false;
         auto reservation = volume->reserve(bytes);
         if (reservation)
             return reservation;
     }
-    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
 
-    return {};
+    if (all_volumes_read_only)
+        return std::unexpected(
+            ReservationError(ErrorCodes::READONLY, "Could not reserve {} because all disk volumes are readonly", ReadableSize(bytes)));
+
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+    return std::unexpected(ReservationError(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes)));
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
+ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes) const
 {
     return reserve(bytes, 0);
 }
@@ -248,9 +329,11 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 
 ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
 {
-    if (auto res = reserve(bytes, 0))
-        return res;
-    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Cannot reserve {}, not enough space", ReadableSize(bytes));
+    auto res = reserve(bytes, 0);
+    if (res)
+        return std::move(res.value());
+
+    throw Exception(res.error().message, res.error().code);
 }
 
 
@@ -303,8 +386,7 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 {
     if (index < volume_index_by_volume_name.size())
         return volumes[index];
-    else
-        throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
+    throw Exception(ErrorCodes::UNKNOWN_VOLUME, "No volume with index {} in storage policy {}", std::to_string(index), backQuote(name));
 }
 
 
@@ -319,24 +401,45 @@ VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 
 void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const
 {
-    std::unordered_set<String> new_volume_names;
-    for (const auto & volume : new_storage_policy->getVolumes())
-        new_volume_names.insert(volume->getName());
+    /// Do not check volumes for temporary policy because their names are automatically generated
+    bool skip_volume_check = this->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
+        || new_storage_policy->getName().starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX);
 
-    for (const auto & volume : getVolumes())
+    if (!skip_volume_check)
     {
-        if (!new_volume_names.contains(volume->getName()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "New storage policy {} shall contain volumes of the old storage policy {}",
-                backQuote(new_storage_policy->getName()),
-                backQuote(name));
+        std::unordered_set<String> new_volume_names;
+        for (const auto & volume : new_storage_policy->getVolumes())
+            new_volume_names.insert(volume->getName());
 
+        for (const auto & volume : getVolumes())
+        {
+            if (!new_volume_names.contains(volume->getName()))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "New storage policy {} shall contain volumes of the old storage policy {}",
+                    backQuote(new_storage_policy->getName()),
+                    backQuote(name));
+
+            std::unordered_set<String> new_disk_names;
+            for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
+                new_disk_names.insert(disk->getName());
+
+            for (const auto & disk : volume->getDisks())
+                if (!new_disk_names.contains(disk->getName()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "New storage policy {} shall contain disks of the old storage policy {}",
+                        backQuote(new_storage_policy->getName()),
+                        backQuote(name));
+        }
+    }
+    else
+    {
         std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
+        for (const auto & disk : new_storage_policy->getDisks())
             new_disk_names.insert(disk->getName());
 
-        for (const auto & disk : volume->getDisks())
+        for (const auto & disk : this->getDisks())
             if (!new_disk_names.contains(disk->getName()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -346,6 +449,22 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     }
 }
 
+bool StoragePolicy::isCompatibleForPartitionOps(const StoragePolicyPtr & other) const
+{
+    if (getName() == other->getName())
+        return true;
+
+    constexpr auto is_compatible = [](const auto & disk) -> bool
+    {
+        if (disk->isPlain())
+            return true;
+        if (auto delegate = disk->getDelegateDiskIfExists())
+            return delegate->isPlain();
+        return false;
+    };
+
+    return std::ranges::all_of(getDisks(), is_compatible) && std::ranges::all_of(other->getDisks(), is_compatible);
+}
 
 std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
@@ -358,11 +477,14 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
+    /// `cache` and `encrypted` disks share the files of the disk they wrap, so two disks of a policy must not resolve to the same directory.
+    std::map<std::pair<const IMetadataStorage *, String>, String> policy_disk_by_directory;
+
     for (size_t index = 0; index < volumes.size(); ++index)
     {
         const VolumePtr & volume = volumes[index];
 
-        if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+        if (volume_index_by_volume_name.contains(volume->getName()))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                             "Volume names must be unique in storage policy {} ({} "
                             "is duplicated)" , backQuote(name), backQuote(volume->getName()));
@@ -373,10 +495,21 @@ void StoragePolicy::buildVolumeIndices()
         {
             const String & disk_name = disk->getName();
 
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+            if (volume_index_by_disk_name.contains(disk_name))
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
+
+            if (auto metadata_storage = unwrapEncryptedAndCacheLayers(disk))
+            {
+                String directory = std::filesystem::path(disk->getPath()).lexically_normal().string();
+                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), directory}, disk_name);
+                if (!inserted)
+                    throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                    "Disks {} and {} in storage policy {} store data in the same directory {}, "
+                                    "so a table would load each of its parts twice",
+                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(directory));
+            }
 
             volume_index_by_disk_name[disk_name] = index;
         }
@@ -422,7 +555,7 @@ StoragePolicySelector::StoragePolicySelector(
     }
 
     /// Add default policy if it isn't explicitly specified.
-    if (policies.find(DEFAULT_STORAGE_POLICY_NAME) == policies.end())
+    if (!policies.contains(DEFAULT_STORAGE_POLICY_NAME))
     {
         auto default_policy = std::make_shared<StoragePolicy>(DEFAULT_STORAGE_POLICY_NAME, config, config_prefix + "." + DEFAULT_STORAGE_POLICY_NAME, disks);
         policies.emplace(DEFAULT_STORAGE_POLICY_NAME, std::move(default_policy));
@@ -438,15 +571,18 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
-            continue;
+        if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+        {
+            if (!result->policies.contains(name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
-        if (!result->policies.contains(name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
+            policy->checkCompatibleWith(result->policies[name]);
+        }
 
-        policy->checkCompatibleWith(result->policies[name]);
         for (const auto & disk : policy->getDisks())
+        {
             disks_before_reload.insert(disk->getName());
+        }
     }
 
     /// Second pass, load.

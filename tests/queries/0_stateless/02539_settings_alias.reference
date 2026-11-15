@@ -18,7 +18,7 @@ Using HTTP with query params
 Using client options
 0
 2
-CREATE VIEW default.`02539_settings_alias_view`\n(\n    `1` UInt8\n) AS\nSELECT 1\nSETTINGS replication_alter_partitions_sync = 2
+CREATE VIEW default.`02539_settings_alias_view`\n(\n    `1` UInt8\n)\nAS SELECT 1\nSETTINGS replication_alter_partitions_sync = 2
 replication_alter_partitions_sync	0	1	alter_sync
 replication_alter_partitions_sync	2	1	alter_sync
 alter_sync	0	1	

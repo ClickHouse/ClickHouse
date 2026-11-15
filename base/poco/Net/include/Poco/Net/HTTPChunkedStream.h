@@ -45,6 +45,8 @@ namespace Net
         ~HTTPChunkedStreamBuf();
         void close();
 
+        bool isComplete(bool read_from_device_to_check_eof = false) noexcept;
+
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
         int writeToDevice(const char * buffer, std::streamsize length);
@@ -79,6 +81,8 @@ namespace Net
     public:
         HTTPChunkedInputStream(HTTPSession & session);
         ~HTTPChunkedInputStream();
+
+        bool isComplete() { return _buf.isComplete(/*read_from_device_to_check_eof*/ true); }
     };
 
 
@@ -88,6 +92,8 @@ namespace Net
     public:
         HTTPChunkedOutputStream(HTTPSession & session);
         ~HTTPChunkedOutputStream();
+
+        bool isComplete() { return _buf.isComplete(); }
     };
 
 

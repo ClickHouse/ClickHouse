@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types=1;
 drop table if exists lc_left_aj;
 CREATE TABLE lc_left_aj
 (

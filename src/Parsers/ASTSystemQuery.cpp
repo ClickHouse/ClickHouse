@@ -1,14 +1,28 @@
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Poco/String.h>
 #include <Common/quoteString.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <magic_enum.hpp>
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace
 {
@@ -57,62 +71,67 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (database)
-    {
-        std::erase(children, database);
-        database.reset();
-    }
-
+    reset(database);
     if (!name.empty())
-    {
-        database = std::make_shared<ASTIdentifier>(name);
-        children.push_back(database);
-    }
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (table)
-    {
-        std::erase(children, table);
-        table.reset();
-    }
-
+    reset(table);
     if (!name.empty())
-    {
-        table = std::make_shared<ASTIdentifier>(name);
-        children.push_back(table);
-    }
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
-void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
-        return settings.ostr;
+        ostr << backQuoteIfNeed(identifier)
+                     ;
+        return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
-        return settings.ostr;
+        ostr << keyword;
+        return ostr;
     };
 
-    auto print_database_table = [&]() -> WriteBuffer &
+    auto print_database_table = [&](bool force_quote = false) -> WriteBuffer &
     {
+        FormatSettings quoted_settings = settings;
+        quoted_settings.identifier_quoting_rule = IdentifierQuotingRule::Always;
+        const FormatSettings & id_settings = force_quote ? quoted_settings : settings;
+
         if (database)
         {
-            print_identifier(getDatabase()) << ".";
+            database->format(ostr, id_settings, state, frame);
+            ostr << '.';
         }
-        print_identifier(getTable());
-        return settings.ostr;
+
+        chassert(table);
+        table->format(ostr, id_settings, state, frame);
+
+        if (if_exists)
+            print_keyword(" IF EXISTS");
+
+        return ostr;
+    };
+
+    auto print_restore_database_replica = [&]() -> WriteBuffer &
+    {
+        chassert(database);
+
+        ostr << " ";
+        print_identifier(getDatabase());
+
+        return ostr;
     };
 
     auto print_drop_replica = [&]
     {
-        settings.ostr << " " << quoteString(replica);
+        ostr << " " << quoteString(replica);
         if (!shard.empty())
             print_keyword(" FROM SHARD ") << quoteString(shard);
 
@@ -121,14 +140,17 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!replica_zk_path.empty())
+        else if (!full_replica_zk_path.empty())
         {
-            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
         else if (database)
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
+
+            if (with_tables)
+                print_keyword(" WITH TABLES");
         }
     };
 
@@ -141,189 +163,1003 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
 
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
-    if (!cluster.empty())
-        formatOnCluster(settings);
 
-    if (   type == Type::STOP_MERGES
-        || type == Type::START_MERGES
-        || type == Type::STOP_TTL_MERGES
-        || type == Type::START_TTL_MERGES
-        || type == Type::STOP_MOVES
-        || type == Type::START_MOVES
-        || type == Type::STOP_FETCHES
-        || type == Type::START_FETCHES
-        || type == Type::STOP_REPLICATED_SENDS
-        || type == Type::START_REPLICATED_SENDS
-        || type == Type::STOP_REPLICATION_QUEUES
-        || type == Type::START_REPLICATION_QUEUES
-        || type == Type::STOP_DISTRIBUTED_SENDS
-        || type == Type::START_DISTRIBUTED_SENDS
-        || type == Type::STOP_PULLING_REPLICATION_LOG
-        || type == Type::START_PULLING_REPLICATION_LOG
-        || type == Type::STOP_CLEANUP
-        || type == Type::START_CLEANUP)
+    std::unordered_set<Type> queries_with_on_cluster_at_end = {
+        Type::CLEAR_FILESYSTEM_CACHE,
+        Type::CLEAR_DISTRIBUTED_CACHE,
+        Type::SYNC_FILESYSTEM_CACHE,
+        Type::CLEAR_QUERY_CACHE,
+    };
+
+    if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
+
+    switch (type)
     {
-        if (table)
+        case Type::STOP_MERGES:
+        case Type::START_MERGES:
+        case Type::STOP_TTL_MERGES:
+        case Type::START_TTL_MERGES:
+        case Type::STOP_MOVES:
+        case Type::START_MOVES:
+        case Type::STOP_FETCHES:
+        case Type::START_FETCHES:
+        case Type::STOP_REPLICATED_SENDS:
+        case Type::START_REPLICATED_SENDS:
+        case Type::STOP_REPLICATION_QUEUES:
+        case Type::START_REPLICATION_QUEUES:
+        case Type::STOP_DISTRIBUTED_SENDS:
+        case Type::START_DISTRIBUTED_SENDS:
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
+        case Type::LOAD_PRIMARY_KEY:
+        case Type::UNLOAD_PRIMARY_KEY:
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
         {
-            settings.ostr << ' ';
-            print_database_table();
-        }
-        else if (!volume.empty())
-            print_on_volume();
-    }
-    else if (  type == Type::RESTART_REPLICA
-            || type == Type::RESTORE_REPLICA
-            || type == Type::SYNC_REPLICA
-            || type == Type::WAIT_LOADING_PARTS
-            || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY
-            || type == Type::RELOAD_MODEL
-            || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK
-            || type == Type::DROP_DISK_METADATA_CACHE)
-    {
-        if (table)
-        {
-            settings.ostr << ' ';
-            print_database_table();
-        }
-        else if (!target_model.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(target_model);
-        }
-        else if (!target_function.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(target_function);
-        }
-        else if (!disk.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(disk);
-        }
-
-        if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-        {
-            settings.ostr << ' ';
-            print_keyword(magic_enum::enum_name(sync_replica_mode));
-
-            // If the mode is LIGHTWEIGHT and specific source replicas are specified
-            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+            if (table)
             {
-                settings.ostr << ' ';
-                print_keyword("FROM");
-                settings.ostr << ' ';
+                ostr << ' ';
+                print_database_table();
+            }
+            else if (!volume.empty())
+            {
+                print_on_volume();
+            }
+            break;
+        }
+        case Type::SCHEDULE_MERGE:
+        {
+            chassert(table);
+            ostr << ' ';
+            print_database_table();
+            print_keyword(" PARTS ");
+            chassert(scheduled_merge_parts);
+            scheduled_merge_parts->format(ostr, settings, state, frame);
+            break;
+        }
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        {
+            ostr << ' ';
+            print_database_table();
+            ostr << " PATH " << quoteString(queue_path);
+            break;
+        }
+        case Type::RESET_FILELOG:
+        {
+            ostr << ' ';
+            print_database_table();
+            if (filelog_file)
+            {
+                ostr << " FILE " << quoteString(*filelog_file);
+                if (filelog_offset)
+                    ostr << " OFFSET " << *filelog_offset;
+                else if (filelog_to_end)
+                    ostr << " TO END";
+            }
+            break;
+        }
+        case Type::RESTART_REPLICA:
+        case Type::RESTORE_REPLICA:
+        case Type::SYNC_REPLICA:
+        case Type::WAIT_LOADING_PARTS:
+        case Type::WAIT_QUERY_RUNNER:
+        case Type::FLUSH_DISTRIBUTED:
+        case Type::PREWARM_MARK_CACHE:
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_database_table();
+            }
 
-                for (auto it = src_replicas.begin(); it != src_replicas.end(); ++it)
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+                // If the mode is LIGHTWEIGHT and specific source replicas are specified
+                if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
                 {
-                    print_identifier(*it);
+                    ostr << ' ';
+                    print_keyword("FROM");
+                    ostr << ' ';
 
-                    // Add a comma and space after each identifier, except the last one
-                    if (std::next(it) != src_replicas.end())
-                        settings.ostr << ", ";
+                    bool first = true;
+                    for (const auto & src : src_replicas)
+                    {
+                        if (!first)
+                            ostr << ", ";
+                        first = false;
+                        ostr << quoteString(src);
+                    }
                 }
             }
-        }
-    }
-    else if (type == Type::SYNC_DATABASE_REPLICA)
-    {
-        settings.ostr << ' ';
-        print_identifier(database->as<ASTIdentifier>()->name());
-    }
-    else if (type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA)
-    {
-        print_drop_replica();
-    }
-    else if (type == Type::SUSPEND)
-    {
-        print_keyword(" FOR ") << seconds;
-        print_keyword(" SECOND");
-    }
-    else if (type == Type::DROP_FORMAT_SCHEMA_CACHE)
-    {
-        if (!schema_cache_format.empty())
-        {
-            print_keyword(" FOR ");
-            print_identifier(schema_cache_format);
-        }
-    }
-    else if (type == Type::DROP_FILESYSTEM_CACHE)
-    {
-        if (!filesystem_cache_name.empty())
-        {
-            settings.ostr << ' ';
-            print_identifier(filesystem_cache_name);
-            if (!key_to_drop.empty())
+
+            if (query_settings)
             {
-                print_keyword(" KEY ");
-                print_identifier(key_to_drop);
-                if (offset_to_drop.has_value())
+                ostr << settings.nl_or_ws << "SETTINGS ";
+                query_settings->format(ostr, settings, state, frame);
+            }
+
+            break;
+        }
+        case Type::RELOAD_DICTIONARY:
+        case Type::UNLOAD_DICTIONARY:
+        case Type::RELOAD_FUNCTION:
+        case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
+        case Type::CLEAR_DISK_METADATA_CACHE:
+        {
+            if (table)
+            {
+                ostr << ' ';
+                print_database_table();
+            }
+            else if (!target_function.empty())
+            {
+                ostr << ' ';
+                print_identifier(target_function);
+            }
+            else if (!disk.empty())
+            {
+                ostr << ' ';
+                print_identifier(disk);
+            }
+
+            break;
+        }
+        case Type::SYNC_DATABASE_REPLICA:
+        {
+            ostr << ' ';
+            database->format(ostr, settings, state, frame);
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
+            break;
+        }
+        case Type::DROP_REPLICA:
+        case Type::DROP_DATABASE_REPLICA:
+        case Type::DROP_CATALOG_REPLICA:
+        {
+            print_drop_replica();
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            if (database)
+            {
+                print_restore_database_replica();
+            }
+            break;
+        }
+        case Type::SUSPEND:
+        {
+            print_keyword(" FOR ") << seconds;
+            print_keyword(" SECOND");
+            break;
+        }
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        {
+            if (!schema_cache_format.empty())
+            {
+                print_keyword(" FOR ");
+                print_identifier(schema_cache_format);
+            }
+            break;
+        }
+        case Type::CLEAR_FILESYSTEM_CACHE:
+        {
+            if (!filesystem_cache_name.empty())
+            {
+                ostr << ' ' << quoteString(filesystem_cache_name);
+                if (!key_to_drop.empty())
                 {
-                    print_keyword(" OFFSET ");
-                    settings.ostr << offset_to_drop.value();
+                    print_keyword(" KEY ");
+                    print_identifier(key_to_drop);
+                    if (offset_to_drop.has_value())
+                    {
+                        print_keyword(" OFFSET ");
+                        ostr << offset_to_drop.value();
+                    }
                 }
             }
+            break;
         }
-    }
-    else if (type == Type::DROP_SCHEMA_CACHE)
-    {
-        if (!schema_cache_storage.empty())
+        case Type::CLEAR_SCHEMA_CACHE:
         {
-            print_keyword(" FOR ");
-            print_identifier(schema_cache_storage);
-        }
-    }
-    else if (type == Type::UNFREEZE)
-    {
-        print_keyword(" WITH NAME ");
-        settings.ostr << quoteString(backup_name);
-    }
-    else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
-    {
-        settings.ostr << ' ';
-        print_keyword(ServerType::serverTypeToString(server_type.type));
-
-        if (server_type.type == ServerType::Type::CUSTOM)
-            settings.ostr << ' ' << quoteString(server_type.custom_name);
-
-        bool comma = false;
-
-        if (!server_type.exclude_types.empty())
-        {
-            print_keyword(" EXCEPT");
-
-            for (auto cur_type : server_type.exclude_types)
+            if (!schema_cache_storage.empty())
             {
-                if (cur_type == ServerType::Type::CUSTOM)
-                    continue;
-
-                if (comma)
-                    settings.ostr << ',';
-                else
-                    comma = true;
-
-                settings.ostr << ' ';
-                print_keyword(ServerType::serverTypeToString(cur_type));
+                print_keyword(" FOR ");
+                print_identifier(schema_cache_storage);
             }
-
-            if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
+            break;
+        }
+        case Type::CLEAR_DISTRIBUTED_CACHE:
+        {
+            if (distributed_cache_drop_connections)
+                print_keyword(" CONNECTIONS");
+            else if (!distributed_cache_server_id.empty())
+                ostr << " " << quoteString(distributed_cache_server_id);
+            break;
+        }
+        case Type::CLEAR_QUERY_CACHE:
+        {
+            if (query_result_cache_tag.has_value())
             {
-                for (const auto & cur_name : server_type.exclude_custom_names)
+                print_keyword(" TAG ");
+                ostr << quoteString(*query_result_cache_tag);
+            }
+            break;
+        }
+        case Type::UNFREEZE:
+        {
+            print_keyword(" WITH NAME ");
+            ostr << quoteString(backup_name);
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+            ostr << " " << quoteString(backup_name);
+            if (backup_source)
+            {
+                print_keyword(" FROM ");
+                backup_source->format(ostr, settings);
+            }
+            break;
+        }
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            ostr << ' ';
+            print_keyword(ServerType::serverTypeToString(server_type.type));
+
+            if (server_type.type == ServerType::Type::CUSTOM)
+                ostr << ' ' << quoteString(server_type.custom_name);
+
+            bool comma = false;
+
+            if (!server_type.exclude_types.empty())
+            {
+                print_keyword(" EXCEPT");
+
+                for (auto cur_type : server_type.exclude_types)
                 {
+                    if (cur_type == ServerType::Type::CUSTOM)
+                        continue;
+
                     if (comma)
-                        settings.ostr << ',';
+                        ostr << ',';
                     else
                         comma = true;
 
-                    settings.ostr << ' ';
-                    print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
-                    settings.ostr << " " << quoteString(cur_name);
+                    ostr << ' ';
+                    print_keyword(ServerType::serverTypeToString(cur_type));
+                }
+
+                if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
+                {
+                    for (const auto & cur_name : server_type.exclude_custom_names)
+                    {
+                        if (comma)
+                            ostr << ',';
+                        else
+                            comma = true;
+
+                        ostr << ' ';
+                        print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
+                        ostr << " " << quoteString(cur_name);
+                    }
                 }
             }
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
+            break;
+        }
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+        {
+            ostr << ' ';
+            print_identifier(fail_point_name);
+            break;
+        }
+        case Type::WAIT_FAILPOINT:
+        {
+            ostr << ' ';
+            print_identifier(fail_point_name);
+            if (fail_point_action == FailPointAction::PAUSE)
+            {
+                ostr << ' ';
+                print_keyword("PAUSE");
+            }
+            else if (fail_point_action == FailPointAction::RESUME)
+            {
+                ostr << ' ';
+                print_keyword("RESUME");
+            }
+            break;
+        }
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
+        case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
+        {
+            ostr << ' ';
+            print_database_table();
+            break;
+        }
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        {
+            ostr << ' ';
+            print_database_table(/*force_quote=*/true);
+            break;
+        }
+        case Type::TEST_VIEW:
+        {
+            ostr << ' ';
+            print_database_table();
+
+            if (!fake_time_for_view)
+            {
+                ostr << ' ';
+                print_keyword("UNSET FAKE TIME");
+            }
+            else
+            {
+                ostr << ' ';
+                print_keyword("SET FAKE TIME");
+                ostr << " " << quoteString(*fake_time_for_view);
+            }
+            break;
+        }
+        case Type::RELOAD_DELTA_KERNEL_TRACING:
+        {
+            ostr << ' ';
+            print_identifier(delta_kernel_tracing_level);
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        case Type::FLUSH_LOGS:
+        {
+            bool comma = false;
+            for (const auto & cur_log : tables)
+            {
+                if (comma)
+                    ostr << ',';
+                else
+                    comma = true;
+                ostr << ' ';
+
+                if (!cur_log.first.empty())
+                    print_identifier(cur_log.first) << ".";
+                print_identifier(cur_log.second);
+            }
+            break;
         }
 
+        case Type::ALLOCATE_MEMORY:
+        {
+            ostr << ' ' << untracked_memory_size;
+            break;
+        }
+
+        case Type::DROP_AMBER_NODE:
+        {
+            if (if_exists)
+                print_keyword(" IF EXISTS");
+            ostr << ' ' << quoteString(amber_params->node_name);
+            break;
+        }
+
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            ostr << ' ';
+            print_keyword("IN CLUSTER");
+            ostr << ' ' << amber_params->cluster_id;
+            break;
+        }
+
+        case Type::CREATE_AMBER_VOLUME:
+        {
+            ostr << ' ' << amber_params->volume_id << ' ';
+            print_keyword("IN CLUSTER");
+            ostr << ' ' << amber_params->cluster_id << ' ';
+            print_keyword("SHARDS");
+            ostr << ' ' << amber_params->shard_count << ' ';
+            print_keyword("SEGMENTS");
+            ostr << ' ' << amber_params->segment_count;
+            break;
+        }
+
+        case Type::DROP_AMBER_VOLUME:
+        {
+            ostr << ' ' << amber_params->volume_id << ' ';
+            print_keyword("FROM CLUSTER");
+            ostr << ' ' << amber_params->cluster_id;
+            break;
+        }
+
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            if (!instrumentation_function_name.empty())
+                ostr << ' ' << quoteString(instrumentation_function_name);
+
+            if (!instrumentation_handler_name.empty())
+            {
+                ostr << ' ';
+                print_identifier(Poco::toUpper(instrumentation_handler_name));
+            }
+
+            switch (instrumentation_entry_type)
+            {
+                case Instrumentation::EntryType::ENTRY:
+                    ostr << " ENTRY"; break;
+                case Instrumentation::EntryType::EXIT:
+                    ostr << " EXIT"; break;
+                case Instrumentation::EntryType::ENTRY_AND_EXIT:
+                    break;
+            }
+
+            for (const auto & arg : instrumentation_arguments)
+            {
+                std::visit([&](const auto & value)
+                {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, String>)
+                        ostr << ' ' << quoteString(value);
+                    else
+                        ostr << ' ' << value;
+                }, arg);
+            }
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            if (!instrumentation_subquery.empty())
+                ostr << " (" << instrumentation_subquery << ')';
+            else if (instrumentation_point)
+            {
+                if (std::holds_alternative<Instrumentation::All>(instrumentation_point.value()))
+                    ostr << " ALL";
+                else if (std::holds_alternative<String>(instrumentation_point.value()))
+                    ostr << ' ' << quoteString(std::get<String>(instrumentation_point.value()));
+                else
+                    ostr << ' ' << std::get<UInt64>(instrumentation_point.value());
+            }
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+#endif
+
+        case Type::KILL:
+        case Type::SHUTDOWN:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_STATISTICS_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_COLUMNS_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
+        case Type::RESET_COVERAGE:
+        case Type::RESTART_REPLICAS:
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::SYNC_TRANSACTION_LOG:
+        case Type::SYNC_FILE_CACHE:
+        case Type::REPLICA_READY:   /// Obsolete
+        case Type::REPLICA_UNREADY: /// Obsolete
+        case Type::RELOAD_DICTIONARIES:
+        case Type::UNLOAD_DICTIONARIES:
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+        case Type::RELOAD_FUNCTIONS:
+        case Type::RELOAD_CONFIG:
+        case Type::RELOAD_USERS:
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::START_THREAD_FUZZER:
+        case Type::STOP_THREAD_FUZZER:
+        case Type::START_VIEWS:
+        case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
+        case Type::CLEAR_PAGE_CACHE:
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+        case Type::START_REPLICATED_DDL_QUERIES:
+        case Type::RECONNECT_ZOOKEEPER:
+        case Type::FREE_MEMORY:
+        case Type::RESET_DDL_WORKER:
+        case Type::DISABLE_ALL_FAILPOINTS:
+            break;
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            if (!filesystem_cache_name.empty())
+                ostr << ' ' << quoteString(filesystem_cache_name);
+            break;
+        }
+        case Type::UNKNOWN:
+        case Type::END:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
     }
+
+    if (queries_with_on_cluster_at_end.contains(type) && !cluster.empty())
+        formatOnCluster(ostr, settings);
+}
+
+void ASTSystemQuery::writeJSON(WriteBuffer & out) const
+{
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
+    JSONObjectWriter w(out, "SystemQuery");
+    w.writeString("query_type", magic_enum::enum_name(type));
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+    if (if_exists)
+        w.writeBool("if_exists", true);
+    w.writeChild("query_settings", query_settings);
+    if (!target_function.empty())
+        w.writeString("target_function", target_function);
+    if (!replica.empty())
+        w.writeString("replica", replica);
+    if (!shard.empty())
+        w.writeString("shard", shard);
+    if (!zk_name.empty())
+        w.writeString("zk_name", zk_name);
+    if (!full_replica_zk_path.empty())
+        w.writeString("full_replica_zk_path", full_replica_zk_path);
+    if (!replica_zk_path.empty())
+        w.writeString("replica_zk_path", replica_zk_path);
+    if (is_drop_whole_replica)
+        w.writeBool("is_drop_whole_replica", true);
+    if (with_tables)
+        w.writeBool("with_tables", true);
+    if (!storage_policy.empty())
+        w.writeString("storage_policy", storage_policy);
+    if (!volume.empty())
+        w.writeString("volume", volume);
+    if (!disk.empty())
+        w.writeString("disk", disk);
+    if (seconds != 0)
+        w.writeUInt("seconds", seconds);
+    if (untracked_memory_size != 0)
+        w.writeUInt("untracked_memory_size", untracked_memory_size);
+    if (amber_params)
+    {
+        if (!amber_params->node_name.empty())
+            w.writeString("amber_node_name", amber_params->node_name);
+        if (amber_params->cluster_id != 0)
+            w.writeUInt("amber_cluster_id", amber_params->cluster_id);
+        if (amber_params->volume_id != 0)
+            w.writeUInt("amber_volume_id", amber_params->volume_id);
+        if (amber_params->shard_count != 0)
+            w.writeUInt("amber_shard_count", amber_params->shard_count);
+        if (amber_params->segment_count != 0)
+            w.writeUInt("amber_segment_count", amber_params->segment_count);
+    }
+    if (query_result_cache_tag.has_value())
+        w.writeString("query_result_cache_tag", *query_result_cache_tag);
+    if (!filesystem_cache_name.empty())
+        w.writeString("filesystem_cache_name", filesystem_cache_name);
+    if (!distributed_cache_server_id.empty())
+        w.writeString("distributed_cache_server_id", distributed_cache_server_id);
+    if (distributed_cache_drop_connections)
+        w.writeBool("distributed_cache_drop_connections", true);
+    if (!key_to_drop.empty())
+        w.writeString("key_to_drop", key_to_drop);
+    if (offset_to_drop.has_value())
+        w.writeUInt("offset_to_drop", *offset_to_drop);
+    if (!backup_name.empty())
+        w.writeString("backup_name", backup_name);
+    w.writeChild("backup_source", backup_source);
+    w.writeChild("scheduled_merge_parts", scheduled_merge_parts);
+    if (!schema_cache_storage.empty())
+        w.writeString("schema_cache_storage", schema_cache_storage);
+    if (!schema_cache_format.empty())
+        w.writeString("schema_cache_format", schema_cache_format);
+    if (!queue_path.empty())
+        w.writeString("queue_path", queue_path);
+    if (filelog_file)
+        w.writeString("filelog_file", *filelog_file);
+    if (filelog_offset)
+        w.writeUInt("filelog_offset", *filelog_offset);
+    if (filelog_to_end)
+        w.writeBool("filelog_to_end", true);
+    if (!fail_point_name.empty())
+        w.writeString("fail_point_name", fail_point_name);
+    if (fail_point_action != FailPointAction::UNSPECIFIED)
+        w.writeString("fail_point_action", magic_enum::enum_name(fail_point_action));
+    if (!delta_kernel_tracing_level.empty())
+        w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
+    if (!coverage_test_name.empty())
+        w.writeString("coverage_test_name", coverage_test_name);
+    if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+        w.writeString("sync_replica_mode", magic_enum::enum_name(sync_replica_mode));
+    if (!src_replicas.empty())
+    {
+        w.writeKey("src_replicas");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < src_replicas.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            writeJSONString(src_replicas[i], buf, w.getFormatSettings());
+        }
+        buf << ']';
+    }
+    if (fake_time_for_view.has_value())
+        w.writeString("fake_time_for_view", *fake_time_for_view);
+    if (!tables.empty())
+    {
+        w.writeKey("tables");
+        auto & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            buf << "{\"database\":";
+            writeJSONString(tables[i].first, buf, w.getFormatSettings());
+            buf << ",\"table\":";
+            writeJSONString(tables[i].second, buf, w.getFormatSettings());
+            buf << '}';
+        }
+        buf << ']';
+    }
+    if (type == Type::STOP_LISTEN || type == Type::START_LISTEN)
+    {
+        w.writeKey("server_type");
+        auto & buf = w.getOut();
+        buf << "{\"type\":";
+        writeJSONString(magic_enum::enum_name(server_type.type), buf, w.getFormatSettings());
+        if (!server_type.custom_name.empty())
+        {
+            buf << ",\"custom_name\":";
+            writeJSONString(server_type.custom_name, buf, w.getFormatSettings());
+        }
+        if (!server_type.exclude_types.empty())
+        {
+            buf << ",\"exclude_types\":[";
+            bool first_excl = true;
+            for (auto t : server_type.exclude_types)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                writeJSONString(magic_enum::enum_name(t), buf, w.getFormatSettings());
+            }
+            buf << ']';
+        }
+        if (!server_type.exclude_custom_names.empty())
+        {
+            buf << ",\"exclude_custom_names\":[";
+            bool first_excl = true;
+            for (const auto & n : server_type.exclude_custom_names)
+            {
+                if (!first_excl) buf << ',';
+                first_excl = false;
+                writeJSONString(n, buf, w.getFormatSettings());
+            }
+            buf << ']';
+        }
+        buf << '}';
+    }
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    w.writeChildren(children);
+}
+
+void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("query_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
+    String query_type_str = r.getString("query_type");
+    auto query_type_opt = magic_enum::enum_cast<Type>(query_type_str);
+    /// `UNKNOWN` and `END` bound the enumeration instead of naming a SYSTEM command; no parse produces them.
+    if (!query_type_opt || *query_type_opt == Type::UNKNOWN || *query_type_opt == Type::END)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
+    type = *query_type_opt;
+#if USE_XRAY
+    if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
+#endif
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto`, so reject other node types here.
+    database = r.readIdentifierChild("database");
+    if (database)
+        children.push_back(database);
+    table = r.readIdentifierChild("table");
+    if (table)
+        children.push_back(table);
+    if_exists = r.getBool("if_exists");
+    /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
+    /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.
+    query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
+    if (query_settings)
+        children.push_back(query_settings);
+    target_function = r.getString("target_function");
+    replica = r.getString("replica");
+    shard = r.getString("shard");
+    zk_name = r.getString("zk_name");
+    full_replica_zk_path = r.getString("full_replica_zk_path");
+    replica_zk_path = r.getString("replica_zk_path");
+    /// For `SYSTEM DROP REPLICA ... FROM ZKPATH` the parser derives `zk_name` and `replica_zk_path`
+    /// from `full_replica_zk_path`; they are a single invariant, not three independent inputs.
+    /// `formatImpl` prints `full_replica_zk_path`, while `InterpreterSystemQuery::dropReplica` /
+    /// `dropDatabaseReplica` operate on `replica_zk_path`/`zk_name`. Restoring them independently
+    /// would let `clickhouse_json` display one ZooKeeper path and execute against another, so
+    /// reject payloads where the derived fields disagree with (or appear without)
+    /// `full_replica_zk_path`.
+    if (!full_replica_zk_path.empty())
+    {
+        if (zk_name != zkutil::extractZooKeeperName(full_replica_zk_path)
+            || replica_zk_path != zkutil::extractZooKeeperPath(full_replica_zk_path, /*check_starts_with_slash*/ false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Inconsistent ZooKeeper path fields in `SystemQuery` during AST JSON deserialization: "
+                "'zk_name' and 'replica_zk_path' must be derived from 'full_replica_zk_path'");
+    }
+    else if (!zk_name.empty() || !replica_zk_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SystemQuery` carries 'zk_name'/'replica_zk_path' without 'full_replica_zk_path' during AST JSON deserialization");
+    is_drop_whole_replica = r.getBool("is_drop_whole_replica");
+    /// The parser sets `is_drop_whole_replica` only for `SYSTEM DROP [DATABASE] REPLICA 'r'` with no
+    /// `FROM DATABASE`/`FROM TABLE`/`FROM ZKPATH` target (the replica name itself and `FROM SHARD`
+    /// are still allowed). `InterpreterSystemQuery::dropReplica`/`dropDatabaseReplica` check
+    /// `is_drop_whole_replica` before the scoped ZooKeeper-path branch, so a `clickhouse_json`
+    /// payload combining it with a target would execute the whole-replica drop while `formatImpl`
+    /// prints the scoped form. Reject the parser-impossible combination.
+    if (is_drop_whole_replica
+        && (database || table || !full_replica_zk_path.empty() || !replica_zk_path.empty() || !zk_name.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'is_drop_whole_replica' cannot be combined with a database, table, or ZooKeeper-path target "
+            "during AST JSON deserialization");
+    with_tables = r.getBool("with_tables");
+    storage_policy = r.getString("storage_policy");
+    volume = r.getString("volume");
+    disk = r.getString("disk");
+    seconds = r.getUInt("seconds");
+    untracked_memory_size = r.getUInt("untracked_memory_size");
+    if (type == Type::DROP_AMBER_NODE || type == Type::ALLOCATE_AMBER_VOLUME || type == Type::CREATE_AMBER_VOLUME
+        || type == Type::DROP_AMBER_VOLUME)
+    {
+        AmberParams params;
+        params.node_name = r.getString("amber_node_name");
+        params.cluster_id = r.getUInt("amber_cluster_id");
+        params.volume_id = r.getUInt("amber_volume_id");
+        params.shard_count = r.getUInt("amber_shard_count");
+        params.segment_count = r.getUInt("amber_segment_count");
+        amber_params = std::make_shared<const AmberParams>(std::move(params));
+    }
+    if (r.has("query_result_cache_tag"))
+        query_result_cache_tag = r.getString("query_result_cache_tag");
+    filesystem_cache_name = r.getString("filesystem_cache_name");
+    distributed_cache_server_id = r.getString("distributed_cache_server_id");
+    distributed_cache_drop_connections = r.getBool("distributed_cache_drop_connections");
+    key_to_drop = r.getString("key_to_drop");
+    if (r.has("offset_to_drop"))
+        offset_to_drop = r.getUInt("offset_to_drop");
+    backup_name = r.getString("backup_name");
+    backup_source = r.readChild("backup_source");
+    if (backup_source)
+        children.push_back(backup_source);
+    /// `scheduled_merge_parts` is a non-empty `ASTExpressionList` of string `ASTLiteral`s
+    /// (`SYSTEM SCHEDULE MERGE ... PARTS 'p1', ...`); `scheduleMerge` iterates its children and does
+    /// `child->as<ASTLiteral &>().value.safeGet<String>()`, so validate the node type, every child's
+    /// value category, and (for `SCHEDULE_MERGE`) that the list is present and non-empty.
+    scheduled_merge_parts = r.readChildOfType<ASTExpressionList>("scheduled_merge_parts");
+    if (scheduled_merge_parts)
+    {
+        for (const auto & part : scheduled_merge_parts->children)
+        {
+            const auto * literal = part ? part->as<ASTLiteral>() : nullptr;
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`SystemQuery` 'scheduled_merge_parts' must contain only string literals during AST JSON deserialization");
+        }
+        children.push_back(scheduled_merge_parts);
+    }
+    if (type == Type::SCHEDULE_MERGE && (!scheduled_merge_parts || scheduled_merge_parts->children.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SYSTEM SCHEDULE MERGE` requires a non-empty 'scheduled_merge_parts' list during AST JSON deserialization");
+    schema_cache_storage = r.getString("schema_cache_storage");
+    schema_cache_format = r.getString("schema_cache_format");
+    queue_path = r.getString("queue_path");
+    if (r.has("filelog_file"))
+        filelog_file = r.getString("filelog_file");
+    if (r.has("filelog_offset"))
+        filelog_offset = r.getUInt("filelog_offset");
+    filelog_to_end = r.getBool("filelog_to_end");
+    fail_point_name = r.getString("fail_point_name");
+    if (r.has("fail_point_action"))
+    {
+        String action_str = r.getString("fail_point_action");
+        auto action_opt = magic_enum::enum_cast<FailPointAction>(action_str);
+        if (!action_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM fail_point_action: '{}'", action_str);
+        fail_point_action = *action_opt;
+    }
+    delta_kernel_tracing_level = r.getString("delta_kernel_tracing_level");
+    coverage_test_name = r.getString("coverage_test_name");
+    if (r.has("sync_replica_mode"))
+    {
+        String mode_str = r.getString("sync_replica_mode");
+        auto mode_opt = magic_enum::enum_cast<SyncReplicaMode>(mode_str);
+        if (!mode_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM sync_replica_mode: '{}'", mode_str);
+        sync_replica_mode = *mode_opt;
+    }
+    src_replicas = r.readStringArray("src_replicas");
+    if (r.has("fake_time_for_view"))
+        fake_time_for_view = r.getString("fake_time_for_view");
+    if (r.has("tables"))
+    {
+        auto arr = r.getArray("tables");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tables' is not a JSON array");
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            /// `tables` is a non-AST array; count each entry against `max_ast_elements`.
+            countJSONDeserializationElement();
+            auto t_obj = arr->getObject(i);
+            if (!t_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'tables' array during AST JSON deserialization", i);
+            /// Read both scalars strictly so a non-string database/table is rejected rather than coerced.
+            JSONObjectReader t_reader(*t_obj);
+            tables.emplace_back(
+                t_reader.getString("database"),
+                t_reader.getString("table"));
+        }
+    }
+    /// Validate per-`type` required fields so the deserialized AST cannot reach
+    /// a null-dereference path in `formatImpl`.
+    switch (type)
+    {
+        case Type::SCHEDULE_MERGE:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'table' during AST JSON deserialization");
+            if (!scheduled_merge_parts)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
+            break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::RESET_FILELOG:
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
+        case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
+        case Type::TEST_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        case Type::CLEAR_TIME_SERIES_CACHES:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
+            break;
+        case Type::SYNC_DATABASE_REPLICA:
+            if (!database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SYNC_DATABASE_REPLICA` requires 'database' during AST JSON deserialization");
+            break;
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+            /// `formatImpl` unconditionally reads `server_type.type` for these queries.
+            /// Without a 'server_type' field the AST would carry a default-constructed
+            /// `ServerType` and silently format as an unrelated server type, so require it.
+            if (!r.has("server_type"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'server_type' during AST JSON deserialization", typeToString(type));
+            break;
+        default:
+            break;
+    }
+
+    if (r.has("server_type"))
+    {
+        auto srv_obj = r.getNestedObject("server_type");
+        if (!srv_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is not a JSON object");
+        /// Read the scalar fields strictly so wrong JSON scalar types are rejected with `BAD_ARGUMENTS`
+        /// instead of being coerced (e.g. a string parsed into the type enum, or a number into a name).
+        JSONObjectReader srv_reader(*srv_obj);
+        if (!srv_obj->has("type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
+        String srv_type_str = srv_reader.getString("type");
+        auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(srv_type_str);
+        /// `ServerType::Type::END` bounds the enumeration instead of naming a port; no parse produces it.
+        if (!srv_type_opt || *srv_type_opt == ServerType::Type::END)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: '{}'", srv_type_str);
+        server_type.type = *srv_type_opt;
+        server_type.custom_name = srv_reader.getString("custom_name");
+        if (srv_obj->has("exclude_types"))
+        {
+            auto arr = srv_obj->getArray("exclude_types");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_types' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
+                /// Require a JSON string so a coerced value (e.g. a number or a boolean) is not accepted
+                /// as an enum name.
+                const auto elem = arr->get(i);
+                if (!elem.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_types[{}]' must be a string during AST JSON deserialization", i);
+                String v = arr->getElement<std::string>(i);
+                auto opt = magic_enum::enum_cast<ServerType::Type>(v);
+                if (!opt || *opt == ServerType::Type::END)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: '{}'", i, v);
+                server_type.exclude_types.insert(*opt);
+            }
+        }
+        if (srv_obj->has("exclude_custom_names"))
+        {
+            auto arr = srv_obj->getArray("exclude_custom_names");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type.exclude_custom_names' is not a JSON array");
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Non-AST array: count each entry against `max_ast_elements`.
+                countJSONDeserializationElement();
+                /// Require a JSON string so a coerced number (e.g. `123`) is not accepted as a name.
+                const auto elem = arr->get(i);
+                if (!elem.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'server_type.exclude_custom_names[{}]' must be a string during AST JSON deserialization", i);
+                server_type.exclude_custom_names.insert(elem.extract<String>());
+            }
+        }
+    }
+    cluster = r.getString("cluster");
 }
 
 

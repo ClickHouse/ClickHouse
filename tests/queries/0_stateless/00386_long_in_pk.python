@@ -50,8 +50,9 @@ def gen_queries():
             yield "select tuple(f) in (select tuple(tuple((a, b))) from tab_00386) from tab_00386"
 
 
-import requests
 import os
+
+import requests
 
 
 def main():

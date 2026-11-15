@@ -32,7 +32,7 @@ public:
 class Unfreezer
 {
 public:
-    Unfreezer(ContextPtr context);
+    explicit Unfreezer(ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory);
     BlockIO systemUnfreeze(const String & backup_name);
 private:
@@ -40,7 +40,7 @@ private:
     zkutil::ZooKeeperPtr zookeeper;
     LoggerPtr log = getLogger("Unfreezer");
     static constexpr std::string_view backup_directory_prefix = "shadow";
-    static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper);
+    static bool removeFrozenPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper);
 };
 
 }

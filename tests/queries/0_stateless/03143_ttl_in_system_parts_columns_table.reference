@@ -1,0 +1,4 @@
+all_1_1_0	timestamp	DateTime	\N	\N
+all_1_1_0	x	UInt32	2100-02-01 00:00:00	2100-02-01 00:00:00
+all_1_1_0	y	String	2100-01-02 00:00:00	2100-01-02 00:00:00
+all_1_1_0	z	String	\N	\N

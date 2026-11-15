@@ -1,0 +1,20 @@
+MergeTree compact + horizontal merge
+100000	String
+100000	UInt64
+50000	String
+50000	UInt64
+MergeTree wide + horizontal merge
+100000	String
+100000	UInt64
+50000	String
+50000	UInt64
+MergeTree compact + vertical merge
+100000	String
+100000	UInt64
+50000	String
+50000	UInt64
+MergeTree wide + vertical merge
+100000	String
+100000	UInt64
+50000	String
+50000	UInt64

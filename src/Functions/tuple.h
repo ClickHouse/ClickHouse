@@ -2,29 +2,29 @@
 
 #include <Functions/IFunction.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/isUnquotedIdentifier.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-/** tuple(x, y, ...) is a function that allows you to group several columns
+/** tuple(x, y, ...) is a function that allows you to group several columns.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
-class FunctionTuple : public IFunction
+class FunctionTuple final : public IFunction
 {
+    bool enable_named_columns;
+
 public:
     static constexpr auto name = "tuple";
 
-    /// maybe_unused: false-positive
-    [[ maybe_unused ]] static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTuple>(); }
+    static FunctionPtr create(ContextPtr context);
+
+    explicit FunctionTuple(bool enable_named_columns_ = false) : enable_named_columns(enable_named_columns_) { }
 
     String getName() const override { return name; }
 
@@ -43,24 +43,62 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Documentation-only — collects N argument types into a `Tuple` (or an
+    /// empty `Tuple()` for zero args). With `enable_named_columns_in_function_tuple`
+    /// and all-unique unquoted-identifier argument names, the result is a
+    /// named tuple — that's not expressible in the DSL, so the legacy
+    /// `getReturnTypeImpl` stays authoritative.
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        return std::make_shared<DataTypeTuple>(arguments);
+        return "(A1 : Any, ...) -> Tuple(A1, ...)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    /// The signature is documentation-only: in particular, it cannot express
+    /// the zero-argument case or tuple element names. Keep both return-type
+    /// entry points on the authoritative implementation below.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.empty())
+            return std::make_shared<DataTypeTuple>(DataTypes{});
+
+        DataTypes types;
+        Names names;
+        NameSet name_set;
+        for (const auto & argument : arguments)
+        {
+            types.emplace_back(argument.type);
+            names.emplace_back(argument.name);
+            name_set.emplace(argument.name);
+        }
+
+        if (enable_named_columns && name_set.size() == names.size()
+            && std::all_of(names.cbegin(), names.cend(), [](const auto & n) { return isUnquotedIdentifier(n); }))
+            return std::make_shared<DataTypeTuple>(types, names);
+        return std::make_shared<DataTypeTuple>(types);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        if (arguments.empty())
+            return DataTypeTuple({}).createColumnConstWithDefaultValue(input_rows_count);
+
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
             /** If tuple is mixed of constant and not constant columns,
-                *  convert all to non-constant columns,
-                *  because many places in code expect all non-constant columns in non-constant tuple.
-                */
+              *  convert all to non-constant columns,
+              *  because many places in code expect all non-constant columns in non-constant tuple.
+              */
             tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
         }
         return ColumnTuple::create(tuple_columns);

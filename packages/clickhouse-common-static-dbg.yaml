@@ -30,10 +30,6 @@ conflicts:
 contents:
 - src: root/usr/lib/debug/usr/bin/clickhouse.debug
   dst: /usr/lib/debug/usr/bin/clickhouse.debug
-- src: root/usr/lib/debug/usr/bin/clickhouse-odbc-bridge.debug
-  dst: /usr/lib/debug/usr/bin/clickhouse-odbc-bridge.debug
-- src: root/usr/lib/debug/usr/bin/clickhouse-library-bridge.debug
-  dst: /usr/lib/debug/usr/bin/clickhouse-library-bridge.debug
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-common-static-dbg/AUTHORS

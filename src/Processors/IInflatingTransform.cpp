@@ -1,4 +1,5 @@
 #include <Processors/IInflatingTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -7,7 +8,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IInflatingTransform::IInflatingTransform(Block input_header, Block output_header)
+IInflatingTransform::IInflatingTransform(SharedHeader input_header, SharedHeader output_header)
     : IProcessor({std::move(input_header)}, {std::move(output_header)})
     , input(inputs.front()), output(outputs.front())
 {
@@ -45,8 +46,13 @@ IInflatingTransform::Status IInflatingTransform::prepare()
     {
         if (input.isFinished())
         {
-            output.finish();
-            return Status::Finished;
+            if (is_finished)
+            {
+                output.finish();
+                return Status::Finished;
+            }
+            is_finished = true;
+            return Status::Ready;
         }
 
         input.setNeeded();
@@ -72,6 +78,14 @@ void IInflatingTransform::work()
         current_chunk = generate();
         generated = true;
         can_generate = canGenerate();
+    }
+    else if (is_finished)
+    {
+        if (can_generate || generated || has_input)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot finish work because it has generated data or has input data");
+
+        current_chunk = getRemaining();
+        generated = !current_chunk.empty();
     }
     else
     {

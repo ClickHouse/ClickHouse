@@ -1,6 +1,8 @@
-#include "EnvironmentProxyConfigurationResolver.h"
+#include <Common/EnvironmentProxyConfigurationResolver.h>
 
 #include <Common/logger_useful.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <Poco/Exception.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -12,6 +14,7 @@ namespace DB
  * */
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
+static constexpr auto NO_PROXY_ENVIRONMENT_VARIABLE = "no_proxy";
 
 EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(
     Protocol request_protocol_, bool disable_tunneling_for_https_requests_over_http_proxy_)
@@ -34,31 +37,94 @@ namespace
                 return std::getenv(PROXY_HTTPS_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
         }
     }
+
+    const char * getNoProxyHosts()
+    {
+        return std::getenv(NO_PROXY_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    /// Credentials in the proxy URI are expected to be percent-encoded, but a password
+    /// containing a literal '%' is a common mistake and makes `Poco::URI::decode` throw.
+    /// Fall back to the raw value instead of failing: before credentials were supported the
+    /// userinfo was ignored entirely, so throwing here would break a previously working setup.
+    std::string decodeOrKeepVerbatim(const std::string & value, const char * what)
+    {
+        if (value.empty())
+        {
+            return value;
+        }
+
+        try
+        {
+            std::string decoded;
+            Poco::URI::decode(value, decoded);
+            return decoded;
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            LOG_WARNING(
+                getLogger("EnvironmentProxyConfigurationResolver"),
+                "Proxy {} is not valid percent-encoding, using it verbatim",
+                what);
+            return value;
+        }
+    }
+
+    ProxyConfiguration buildProxyConfiguration(
+        ProxyConfiguration::Protocol request_protocol,
+        const Poco::URI & uri,
+        const std::string & no_proxy_hosts_string,
+        bool disable_tunneling_for_https_requests_over_http_proxy)
+    {
+        if (uri.empty())
+        {
+            return {};
+        }
+
+        const auto & host = uri.getHost();
+        const auto & scheme = uri.getScheme();
+        const auto port = uri.getPort();
+        /// Split on the raw userinfo first, then percent-decode each half.
+        /// Decoding first would make an encoded "%3A" indistinguishable from the real separator.
+        const auto [encoded_username, encoded_password] = ProxyConfiguration::parseUserInfo(uri.getUserInfo());
+        const auto username = decodeOrKeepVerbatim(encoded_username, "username");
+        const auto password = decodeOrKeepVerbatim(encoded_password, "password");
+
+        const bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
+            request_protocol,
+            ProxyConfiguration::protocolFromString(scheme),
+            disable_tunneling_for_https_requests_over_http_proxy);
+
+        LOG_TRACE(getLogger("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
+
+        return ProxyConfiguration {
+            host,
+            ProxyConfiguration::protocolFromString(scheme),
+            port,
+            use_tunneling_for_https_requests_over_http_proxy,
+            request_protocol,
+            no_proxy_hosts_string,
+            username,
+            password
+        };
+    }
 }
 
 ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 {
-    const auto * proxy_host = getProxyHost(request_protocol);
+    static const auto * http_proxy_host = getProxyHost(Protocol::HTTP);
+    static const auto * https_proxy_host = getProxyHost(Protocol::HTTPS);
+    static const auto * no_proxy = getNoProxyHosts();
+    static const auto poco_no_proxy_hosts = no_proxy ? buildPocoNonProxyHosts(no_proxy) : "";
 
-    if (!proxy_host)
-    {
-        return {};
-    }
+    static const Poco::URI http_proxy_uri(http_proxy_host ? http_proxy_host : "");
+    static const Poco::URI https_proxy_uri(https_proxy_host ? https_proxy_host : "");
 
-    auto uri = Poco::URI(proxy_host);
-    auto host = uri.getHost();
-    auto scheme = uri.getScheme();
-    auto port = uri.getPort();
-
-    LOG_TRACE(getLogger("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
-
-    return ProxyConfiguration {
-        host,
-        ProxyConfiguration::protocolFromString(scheme),
-        port,
-        useTunneling(request_protocol, ProxyConfiguration::protocolFromString(scheme), disable_tunneling_for_https_requests_over_http_proxy),
-        request_protocol
-    };
+    return buildProxyConfiguration(
+        request_protocol,
+        request_protocol == Protocol::HTTP ? http_proxy_uri : https_proxy_uri,
+        poco_no_proxy_hosts,
+        disable_tunneling_for_https_requests_over_http_proxy);
 }
 
 }

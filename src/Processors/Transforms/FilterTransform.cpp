@@ -1,12 +1,40 @@
-#include <algorithm>
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Interpreters/ExpressionActions.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
+#include <Processors/Chunk.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
+#include <Common/assert_cast.h>
+#include <Common/StackWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+namespace ProfileEvents
+{
+    extern const Event FilterTransformPassedRows;
+    extern const Event FilterTransformPassedBytes;
+}
 
 namespace DB
 {
@@ -14,223 +42,441 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
-static void replaceFilterToConstant(Block & block, const String & filter_column_name)
+namespace Setting
 {
-    ConstantFilterDescription constant_filter_description;
-
-    auto filter_column = block.getPositionByName(filter_column_name);
-    auto & column_elem = block.safeGetByPosition(filter_column);
-
-    /// Isn't the filter already constant?
-    if (column_elem.column)
-        constant_filter_description = ConstantFilterDescription(*column_elem.column);
-
-    if (!constant_filter_description.always_false
-        && !constant_filter_description.always_true)
-    {
-        /// Replace the filter column to a constant with value 1.
-        FilterDescription filter_description_check(*column_elem.column);
-        column_elem.column = column_elem.type->createColumnConst(block.rows(), 1u);
-    }
+    extern const SettingsBool optimize_constant_columns_after_filter;
 }
 
-static std::shared_ptr<const ChunkSelectFinalIndices> getSelectByFinalIndices(Chunk & chunk)
+namespace
 {
-    if (auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo()))
-    {
-        const auto & index_column = select_final_indices_info->select_final_indices;
-        chunk.setChunkInfo(nullptr);
-        if (index_column && index_column->size() != chunk.getNumRows())
-            return select_final_indices_info;
-    }
-    return nullptr;
-}
 
-static void
-executeSelectByIndices(Columns & columns, std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info, size_t & num_rows)
+using ConstantColumnPosition = size_t;
+
+const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
 {
-    if (select_final_indices_info)
-    {
-        const auto & index_column = select_final_indices_info->select_final_indices;
-
-        for (auto & column : columns)
-            column = column->index(*index_column, 0);
-
-        num_rows = index_column->size();
-    }
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return node;
 }
 
-static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
-    std::unique_ptr<FilterDescription> description,
-    std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info,
-    size_t num_rows)
+bool hasConstantColumn(const ActionsDAG::Node * node)
 {
-    if (select_final_indices_info)
-    {
-        const auto * index_column = select_final_indices_info->select_final_indices;
-
-        if (description->hasOne())
-        {
-            const auto & selected_by_indices = index_column->getData();
-            const auto * selected_by_filter = description->data->data();
-            /// We will recompute new has_one
-            description->has_one = 0;
-            /// At this point we know that the filter is not constant, just create a new filter
-            auto mutable_holder = ColumnUInt8::create(num_rows, 0);
-            auto & data = mutable_holder->getData();
-            for (auto idx : selected_by_indices)
-                data[idx] = 1;
-
-            /// AND two filters
-            auto * begin = data.data();
-            const auto * end = begin + num_rows;
-#if defined(__AVX2__)
-            while (end - begin >= 32)
-            {
-                _mm256_storeu_si256(
-                    reinterpret_cast<__m256i *>(begin),
-                    _mm256_and_si256(
-                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(begin)),
-                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(selected_by_filter))));
-                description->has_one |= !memoryIsZero(begin, 0, 32);
-                begin += 32;
-                selected_by_filter += 32;
-            }
-#elif defined(__SSE2__)
-            while (end - begin >= 16)
-            {
-                _mm_storeu_si128(
-                    reinterpret_cast<__m128i *>(begin),
-                    _mm_and_si128(
-                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(begin)),
-                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(selected_by_filter))));
-                description->has_one |= !memoryIsZero(begin, 0, 16);
-                begin += 16;
-                selected_by_filter += 16;
-            }
-#endif
-
-            while (end - begin >= 8)
-            {
-                *reinterpret_cast<UInt64 *>(begin) &= *reinterpret_cast<const UInt64 *>(selected_by_filter);
-                description->has_one |= *reinterpret_cast<UInt64 *>(begin);
-                begin += 8;
-                selected_by_filter += 8;
-            }
-
-            while (end - begin > 0)
-            {
-                *begin &= *selected_by_filter;
-                description->has_one |= *begin;
-                begin++;
-                selected_by_filter++;
-            }
-
-            description->data_holder = std::move(mutable_holder);
-            description->data = &data;
-        }
-    }
-    return std::move(description);
+    node = unwrapAlias(node);
+    /// Do not extract a `Field` here: some values (for example, large arrays) are kept in column form.
+    return node->column != nullptr && isColumnConst(*node->column);
 }
 
-static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
-    std::unique_ptr<SparseFilterDescription> description,
-    std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info,
-    size_t num_rows)
+bool containsType(const IDataType & type, const std::function<bool(const IDataType &)> & predicate)
 {
-    /// Iterator interface to decorate data from output of std::set_intersection
-    struct Iterator
-    {
-        UInt8 * data;
-        Int64 & pop_cnt;
-        explicit Iterator(UInt8 * data_, Int64 & pop_cnt_) : data(data_), pop_cnt(pop_cnt_) {}
-        Iterator & operator = (UInt64 index) { data[index] = 1; ++pop_cnt; return *this; }
-        Iterator & operator ++ () { return *this; }
-        Iterator & operator * () { return *this; }
-    };
-
-    if (select_final_indices_info)
-    {
-        const auto * index_column = select_final_indices_info->select_final_indices;
-
-        if (description->hasOne())
-        {
-            std::unique_ptr<FilterDescription> res;
-            res->has_one = 0;
-            const auto & selected_by_indices = index_column->getData();
-            const auto & selected_by_filter = description->filter_indices->getData();
-            auto mutable_holder = ColumnUInt8::create(num_rows, 0);
-            auto & data = mutable_holder->getData();
-            Iterator decorator(data.data(), res->has_one);
-            std::set_intersection(selected_by_indices.begin(), selected_by_indices.end(), selected_by_filter.begin(), selected_by_filter.end(), decorator);
-            res->data_holder = std::move(mutable_holder);
-            res->data = &data;
-            return res;
-        }
-    }
-    return std::move(description);
+    return anyInTypeTree(type, predicate);
 }
 
-Block FilterTransform::transformHeader(
-    Block header,
-    const ActionsDAG * expression,
+bool containsFloat(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isFloat();
+    });
+}
+
+bool containsDynamic(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isDynamic();
+    });
+}
+
+bool containsColumnedAsDecimal(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return isColumnedAsDecimal(nested_type);
+    });
+}
+
+bool containsString(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isString();
+    });
+}
+
+bool containsFixedString(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isFixedString();
+    });
+}
+
+bool containsEnum(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isEnum();
+    });
+}
+
+bool containsTuple(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isTuple();
+    });
+}
+
+bool containsVariant(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isVariant();
+    });
+}
+
+bool containsObject(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isObject();
+    });
+}
+
+bool containsInterval(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isInterval();
+    });
+}
+
+bool containsDateOrTime(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+    });
+}
+
+/// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
+/// have the same stored representation.
+/// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
+/// `Decimal` vs `Float`, `Decimal` of different scales, mixed-unit `Interval`, `String` vs `FixedString` / `Enum` / `Tuple`,
+/// `Object` / `JSON`, mixed date/time-family types,
+/// or runtime-dispatched `Dynamic` / `Variant` comparisons.
+bool canReplaceColumnWithConstantAfterFilter(
+    const DataTypePtr & result_type,
+    const DataTypePtr & constant_type)
+{
+    if (containsDynamic(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
+        return false;
+
+    /// A constant of a runtime-dispatched type hides its actual type, so none of the checks below can be applied to it.
+    /// E.g. a `UInt64` column compared with `CAST(toDecimal64('0', 18), 'Dynamic')` is scaled by an unchecked
+    /// multiplication with `decimal_check_overflow = 0`, so distinct stored values can compare equal.
+    if (containsDynamic(constant_type) || containsVariant(constant_type) || containsObject(constant_type))
+        return false;
+
+    if (containsColumnedAsDecimal(result_type) && containsFloat(constant_type))
+        return false;
+
+    if (containsString(result_type)
+        && (containsFixedString(constant_type) || containsEnum(constant_type) || containsTuple(constant_type)))
+        return false;
+
+    if (containsFixedString(result_type) && !result_type->equals(*constant_type))
+        return false;
+
+    if (containsDateOrTime(result_type) && containsDateOrTime(constant_type) && !result_type->equals(*constant_type))
+        return false;
+
+    /// A `Decimal` constant of a different type makes the comparison scale or narrow the column values.
+    /// With `decimal_check_overflow = 0` this conversion can wrap, so distinct stored values can compare equal,
+    /// e.g. `Decimal64(0)` scaled to `Decimal64(18)`, or `UInt128` narrowed to `Decimal64`.
+    /// A `Decimal` column compared with an integer constant is fine: only the constant is scaled.
+    if (containsColumnedAsDecimal(constant_type) && !result_type->equals(*constant_type))
+        return false;
+
+    /// Mixed-unit `Interval` comparisons convert both sides to a common unit by an unchecked multiplication,
+    /// so different counts can compare equal after overflow, e.g. `IntervalYear` vs `IntervalMonth`.
+    if ((containsInterval(result_type) || containsInterval(constant_type)) && !result_type->equals(*constant_type))
+        return false;
+
+    /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
+    /// This optimization preserves the post-filter column layout for nullable columns.
+    if (isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    return true;
+}
+
+VectorWithMemoryTracking<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
+    const ActionsDAG::Node * column_node,
+    const ActionsDAG::Node * constant_node,
+    const ActionsDAG & dag,
+    const Block & transformed_header)
+{
+    const auto * unwrapped_column_node = unwrapAlias(column_node);
+    if (unwrapped_column_node->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    if (!hasConstantColumn(constant_node))
+        return {};
+
+    VectorWithMemoryTracking<ConstantColumnPosition> positions;
+    const auto & outputs = dag.getOutputs();
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+    {
+        if (unwrapAlias(outputs[output_position]) != unwrapped_column_node)
+            continue;
+
+        /// `ActionsDAG::updateHeader` puts `getOutputs()` at the beginning of the header in
+        /// exactly this order. Do not find the position by name: different outputs can have
+        /// identical names while representing different expressions.
+        const auto & result_column = transformed_header.getByPosition(output_position);
+        if (canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
+            positions.push_back(output_position);
+    }
+
+    return positions;
+}
+
+VectorWithMemoryTracking<ConstantColumnPosition> collectConstantColumnsAfterFilter(
+    const ActionsDAG & dag,
     const String & filter_column_name,
-    bool remove_filter_column)
+    const Block & transformed_header)
 {
-    if (expression)
-        header = expression->updateHeader(std::move(header));
+    VectorWithMemoryTracking<ConstantColumnPosition> result;
+    UnorderedSetWithMemoryTracking<size_t> added_positions;
 
-    auto filter_type = header.getByName(filter_column_name).type;
-    if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
+    const auto * filter = &dag.findInOutputs(filter_column_name);
+    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
+    nodes.push(filter);
+
+    while (!nodes.empty())
+    {
+        const auto * node = unwrapAlias(nodes.top());
+        nodes.pop();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        const auto & function_name = node->function_base->getName();
+        if (function_name == "and")
+        {
+            for (const auto * child : node->children)
+                nodes.push(child);
+            continue;
+        }
+
+        if (function_name != "equals" || node->children.size() != 2)
+            continue;
+
+        VectorWithMemoryTracking<ConstantColumnPosition> constant_columns;
+        if (hasConstantColumn(node->children[1]))
+            constant_columns = getConstantColumnPositionsAfterFilter(node->children[0], node->children[1], dag, transformed_header);
+        if (constant_columns.empty() && hasConstantColumn(node->children[0]))
+            constant_columns = getConstantColumnPositionsAfterFilter(node->children[1], node->children[0], dag, transformed_header);
+
+        for (const auto constant_column : constant_columns)
+        {
+            if (added_positions.insert(constant_column).second)
+                result.push_back(constant_column);
+        }
+    }
+
+    return result;
+}
+
+}
+
+bool FilterTransform::canUseType(const DataTypePtr & filter_type)
+{
+    return filter_type->canBeUsedInBooleanContext();
+}
+
+auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
+{
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows);
+
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+    {
+        if (column)
+            num_bytes += column->byteSize();
+    }
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
+};
+
+/// The part of transformHeader after the expression: validate the filter column type
+/// and remove the filter column if requested.
+static Block checkAndRemoveFilterColumn(Block result, const String & filter_column_name, bool remove_filter_column)
+{
+    auto filter_type = result.getByName(filter_column_name).type;
+    if (!FilterTransform::canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+            "Illegal type {} of column {} for filter. Must be native integer or float type",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
-        header.erase(filter_column_name);
-    else
-        replaceFilterToConstant(header, filter_column_name);
+        result.erase(filter_column_name);
 
-    return header;
+    return result;
+}
+
+/// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
+static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+
+    if (function_name == "and")
+        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+
+    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+
+    const IColumn * set_column = node->children[1]->column.get();
+    if (!set_column)
+        return false;
+
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(set_column))
+        set_column = &const_column->getDataColumn();
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(set_column);
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return false;
+
+    auto set = future_set->get();
+    return set && set->getTotalRowCount() == 0;
+}
+
+Block FilterTransform::transformHeader(
+    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+{
+    /// updateHeader (dry-run evaluation) correctly handles constant propagation,
+    /// unlike expression->execute() which would fail with not-ready sets.
+    return checkAndRemoveFilterColumn(
+        expression ? expression->updateHeader(header) : header, filter_column_name, remove_filter_column);
 }
 
 FilterTransform::FilterTransform(
-    const Block & header_,
+    SharedHeader header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool update_row_numbers_info_,
+    std::optional<bool> optimize_constant_columns_after_filter_)
+    : FilterTransform(
+            header_,
+            std::make_shared<const Block>(expression_ ? expression_->getActionsDAG().updateHeader(*header_) : *header_),
+            expression_, /// Deliberately a copy, not a move: the previous argument reads expression_,
+                         /// and the evaluation order of arguments is unspecified.
+            std::move(filter_column_name_),
+            remove_filter_column_,
+            on_totals_,
+            std::move(rows_filtered_),
+            std::move(condition_),
+            update_row_numbers_info_,
+            optimize_constant_columns_after_filter_)
+{
+}
+
+FilterTransform::FilterTransform(
+    SharedHeader header_,
+    SharedHeader transformed_header_,
+    ExpressionActionsPtr expression_,
+    String filter_column_name_,
+    bool remove_filter_column_,
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    std::optional<std::pair<UInt64, String>> condition_,
+    bool update_row_numbers_info_,
+    std::optional<bool> optimize_constant_columns_after_filter_)
     : ISimpleTransform(
             header_,
-            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
+            std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
+    , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
+    , condition(condition_)
+    , transformed_header(*transformed_header_)
+    , optimize_constant_columns_after_filter(optimize_constant_columns_after_filter_)
 {
-    transformed_header = getInputPort().getHeader();
     if (expression)
-        expression->execute(transformed_header);
+    {
+        if (optimize_constant_columns_after_filter.value_or(true))
+            constant_columns_after_filter
+                = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
+
+        set_spillables.add(expression->getActionsDAG());
+        /// Special check to stop queries like "WHERE ignore(...)"
+        const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children[0];
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
+            always_false = true;
+    }
+
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
-        constant_filter_description = ConstantFilterDescription(*column);
+        always_false = always_false || ConstantFilterDescription(*column).always_false;
+
+    if (condition.has_value())
+        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (!on_totals
-        && (constant_filter_description.always_false
-            /// Optimization for `WHERE column in (empty set)`.
-            /// The result will not change after set was created, so we can skip this check.
-            /// It is implemented in prepare() stop pipeline before reading from input port.
-            || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
+    /// Re-evaluate the filter on the header to enable constant-fold early exit
+    /// for expressions like `WHERE 1 IN (subquery)` or `WHERE x IN (empty set)`
+    /// where the result becomes known only after the set is built.
+    /// Use updateHeader (dry-run) because sets may not be ready yet even when
+    /// output.isNeeded() is true (e.g. delayed set creation in mutations).
+    if (!are_prepared_sets_initialized && output.isNeeded())
+    {
+        are_prepared_sets_initialized = true;
+
+        if (!always_false && expression && !on_totals)
+        {
+            const auto & actions_dag = expression->getActionsDAG();
+            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+
+            if (!always_false)
+            {
+                auto header = actions_dag.updateHeader(getInputPort().getHeader());
+                auto & column = header.getByPosition(filter_column_position).column;
+                if (column)
+                    always_false = ConstantFilterDescription(*column).always_false;
+            }
+        }
+    }
+
+    if (always_false && !on_totals)
     {
         input.close();
         output.finish();
@@ -239,18 +485,62 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
-    if (status != IProcessor::Status::PortFull)
-        are_prepared_sets_initialized = true;
+    if (status == IProcessor::Status::Finished && !isCancelled())
+        writeIntoQueryConditionCache({});
 
     return status;
 }
 
 
-void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
+void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
-    if (chunk && remove_filter_column)
-        chunk.erase(filter_column_position);
+    if (remove_filter_column)
+        columns.erase(columns.begin() + filter_column_position);
+}
+
+void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const
+{
+    if (constant_columns_after_filter.empty() || num_rows == 0)
+        return;
+
+    if (!optimize_constant_columns_after_filter.has_value())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+        {
+            if (!query_context->getSettingsRef()[Setting::optimize_constant_columns_after_filter])
+                return;
+        }
+    }
+
+    for (const auto position : constant_columns_after_filter)
+    {
+        if (position == filter_column_position && remove_filter_column)
+            continue;
+
+        /// Use the value that actually passed `equals` instead of parsing the comparison constant again.
+        /// Copy it in column form because some values cannot be materialized as a `Field`.
+        auto value = columns[position]->cloneEmpty();
+        value->insertFrom(*columns[position], 0);
+
+        /// The value must be unwrapped: a `ColumnSparse` (or any other wrapper) nested inside a `ColumnConst`
+        /// is invisible to `IColumn::isSparse`, so `IExecutableFunction::executeWithoutSparseColumns` and
+        /// `Aggregator` do not materialize it and then read the raw data of a column that is not there.
+        columns[position] = ColumnConst::create(ColumnPtr(std::move(value))->convertToFullIfWrapped(), num_rows);
+    }
+}
+
+void FilterTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        const auto & nodes = expression->getNodes();
+        for (const auto & node : nodes)
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -261,76 +551,162 @@ void FilterTransform::transform(Chunk & chunk)
         *rows_filtered += chunk_rows_before - chunk.getNumRows();
 }
 
+namespace
+{
+
+/// Compose `filter` (a dense mask over this chunk's pre-filter rows) into the chunk's
+/// `ChunkInfoRowNumbers.applied_filter`, mirroring `DeletionVectorTransform`, so physical row
+/// numbers survive filtering. No-op when the chunk carries no such info.
+void updateRowNumbersInfo(const Chunk & chunk, const IColumn::Filter & filter)
+{
+    auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    if (!row_numbers_info)
+        return;
+
+    auto & applied_filter = row_numbers_info->applied_filter;
+    if (applied_filter.has_value())
+    {
+        /// The mask must have one element per set bit of the existing one. A mismatch means an
+        /// upstream row-changing transform already left the info stale, so it cannot be repaired
+        /// here; the callers that opt in are exactly those whose upstream transforms maintain it.
+        if (countBytesInFilter(*applied_filter) != filter.size())
+            return;
+
+        /// Walk the set bits of the existing mask and clear the ones this filter drops.
+        size_t idx_in_chunk = 0;
+        for (auto & passed : applied_filter.value())
+        {
+            if (passed)
+            {
+                if (!filter[idx_in_chunk])
+                    passed = 0;
+                ++idx_in_chunk;
+            }
+        }
+    }
+    else
+    {
+        /// First filtering on this chunk: the mask directly becomes the applied filter.
+        /// `IColumnFilter` (PaddedPODArray) is noncopyable, so copy explicitly via `assign`.
+        applied_filter.emplace();
+        applied_filter->assign(filter);
+    }
+}
+
+/// After this filter removes some rows, the rows of the chunk are no longer at the positions given by
+/// `MarkRangesInfo::rows_per_mark`, e.g. for the next filter of a split `AND` chain (`FilterStep`).
+void markRangesInfoPartiallyFiltered(Chunk & chunk)
+{
+    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_ranges_info || !mark_ranges_info->rows_per_mark)
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
+    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    updated_info->rows_per_mark = 0;
+    chunk.getChunkInfos().extract<MarkRangesInfo>();
+    chunk.getChunkInfos().add(std::move(updated_info));
+}
+
+}
+
 void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    auto select_final_indices_info = getSelectByFinalIndices(chunk);
+    DataTypes types;
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
+
         if (expression)
-            expression->execute(block, num_rows_before_filtration);
+            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
 
         columns = block.getColumns();
-    }
-
-    if (constant_filter_description.always_true || on_totals)
-    {
-        executeSelectByIndices(columns, select_final_indices_info, num_rows_before_filtration);
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
-        return;
+        types = block.getDataTypes();
     }
 
     size_t num_columns = columns.size();
     ColumnPtr filter_column = columns[filter_column_position];
+    ConstantFilterDescription constant_filter_description(*filter_column);
 
-    /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
-        *  and now - are calculated. That is, not all cases are covered by the code above.
-        * This happens if the function returns a constant for a non-constant argument.
-        * For example, `ignore` function.
-        */
-    constant_filter_description = ConstantFilterDescription(*filter_column);
+    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
+    {
+        incrementProfileEvents(num_rows_before_filtration, columns);
+        if (constant_filter_description.always_true && !on_totals && !isVirtualRow(chunk))
+            applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
+        removeFilterIfNeed(columns);
+        chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        return;
+    }
 
     if (constant_filter_description.always_false)
-        return; /// Will finish at next prepare call
-
-    if (constant_filter_description.always_true)
     {
-        executeSelectByIndices(columns, select_final_indices_info, num_rows_before_filtration);
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
+        incrementProfileEvents(0, {});
         return;
     }
 
     std::unique_ptr<IFilterDescription> filter_description;
+
+    if (isColumnConst(*filter_column))
+        filter_column = filter_column->convertToFullColumnIfConst();
+
     if (filter_column->isSparse())
-        filter_description = combineFilterAndIndices(
-            std::make_unique<SparseFilterDescription>(*filter_column), select_final_indices_info, num_rows_before_filtration);
+    {
+        /// SparseFilterDescription only supports Sparse(UInt8) and Sparse(Nullable(UInt8)).
+        /// For other types (e.g. Float64 when WHERE uses sin(col)), fall back to the
+        /// regular FilterDescription which converts any numeric type to a boolean filter.
+        const auto * column_sparse = typeid_cast<const ColumnSparse *>(filter_column.get());
+        const auto & values_column = column_sparse->getValuesColumn();
+        if (typeid_cast<const ColumnUInt8 *>(&values_column)
+            || (typeid_cast<const ColumnNullable *>(&values_column)
+                && typeid_cast<const ColumnUInt8 *>(&assert_cast<const ColumnNullable &>(values_column).getNestedColumn())))
+        {
+            filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+        }
+        else
+        {
+            filter_column = filter_column->convertToFullColumnIfSparse();
+            filter_description = std::make_unique<FilterDescription>(*filter_column);
+        }
+    }
     else
-        filter_description = combineFilterAndIndices(
-            std::make_unique<FilterDescription>(*filter_column), select_final_indices_info, num_rows_before_filtration);
-
-
-    if (!filter_description->has_one)
-        return;
+        filter_description = std::make_unique<FilterDescription>(*filter_column);
 
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
       *  or calculate number of set bytes in the filter.
       */
     size_t first_non_constant_column = num_columns;
+    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (i != filter_column_position && !isColumnConst(*columns[i]))
+        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
+        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
         {
-            first_non_constant_column = i;
-            break;
+            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
+            if (size_in_memory < min_size_in_memory)
+            {
+                min_size_in_memory = size_in_memory;
+                first_non_constant_column = i;
+            }
         }
     }
+    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)
@@ -341,43 +717,50 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         num_filtered_rows = filter_description->countBytesInFilter();
 
+    incrementProfileEvents(num_filtered_rows, columns);
+
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
+    {
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         /// SimpleTransform will skip it.
         return;
+    }
+
+    if (num_filtered_rows != num_rows_before_filtration)
+    {
+        writeMarksWithoutMatchesIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>(), *filter_description);
+        markRangesInfoPartiallyFiltered(chunk);
+    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
-        if (!remove_filter_column)
-        {
-            /// Replace the column with the filter by a constant.
-            auto & type = transformed_header.getByPosition(filter_column_position).type;
-            columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
-        }
-
         /// No need to touch the rest of the columns.
+        applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
+        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        removeFilterIfNeed(chunk);
         return;
+    }
+
+    /// Rows are actually being dropped here. When enabled and the chunk carries `ChunkInfoRowNumbers`,
+    /// record the mask so downstream `_row_number` / positional-delete consumers keep the correct
+    /// physical row numbers. Opt-in (see `update_row_numbers_info`) and only worth building the dense
+    /// mask when the info is present, so guard on both.
+    if (update_row_numbers_info && chunk.getChunkInfos().get<ChunkInfoRowNumbers>())
+    {
+        auto mask_column = FilterDescription::preprocessFilterColumn(filter_column);
+        const IColumn::Filter & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+        updateRowNumbersInfo(chunk, mask);
     }
 
     /// Filter the rest of the columns.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & current_type = transformed_header.safeGetByPosition(i).type;
         auto & current_column = columns[i];
 
-        if (i == filter_column_position)
-        {
-            /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
-            /// NOTE User could pass column with something different than 0 and 1 for filter.
-            /// Example:
-            ///  SELECT materialize(100) AS x WHERE x
-            /// will work incorrectly.
-            current_column = current_type->createColumnConst(num_filtered_rows, 1u);
+        if (i == filter_column_position && remove_filter_column)
             continue;
-        }
 
         if (i == first_non_constant_column)
             continue;
@@ -388,9 +771,123 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
+    applyConstantColumnsAfterFilter(columns, num_filtered_rows);
+    removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
-    removeFilterIfNeed(chunk);
 }
 
+void FilterTransform::writeMarksWithoutMatchesIntoQueryConditionCache(
+    const MarkRangesInfoPtr & mark_ranges_info, const IFilterDescription & filter_description)
+{
+    if (!query_condition_cache || !mark_ranges_info || !mark_ranges_info->rows_per_mark || mark_ranges_info->has_dropped_rows)
+        return;
+
+    const auto * description = typeid_cast<const FilterDescription *>(&filter_description);
+    if (!description || !description->data)
+        return;
+
+    const auto & filter = *description->data;
+    const size_t rows_per_mark = mark_ranges_info->rows_per_mark;
+
+    /// Only the last mark can have fewer rows.
+    size_t num_marks = 0;
+    for (const auto & range : mark_ranges_info->mark_ranges)
+        num_marks += range.end - range.begin;
+    if (num_marks == 0 || filter.size() <= (num_marks - 1) * rows_per_mark || filter.size() > num_marks * rows_per_mark)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The chunk with {} rows does not consist of {} marks of {} rows for the query condition cache",
+            filter.size(), num_marks, rows_per_mark);
+
+    MarkRanges marks_without_matches;
+    size_t row = 0;
+    for (const auto & range : mark_ranges_info->mark_ranges)
+    {
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+        {
+            const size_t end = std::min(row + rows_per_mark, filter.size());
+            if (memoryIsZero(filter.data(), row, end))
+            {
+                if (!marks_without_matches.empty() && marks_without_matches.back().end == mark)
+                    ++marks_without_matches.back().end;
+                else
+                    marks_without_matches.emplace_back(mark, mark + 1);
+            }
+            row = end;
+        }
+    }
+
+    if (!marks_without_matches.empty())
+        query_condition_cache->write(
+            mark_ranges_info->table_uuid,
+            mark_ranges_info->part_name,
+            condition->first,
+            condition->second,
+            marks_without_matches,
+            mark_ranges_info->marks_count,
+            /*has_final_mark=*/ false);
+}
+
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
+{
+    if (!query_condition_cache || isCancelled())
+        return;
+
+    /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`
+    /// when the read is split into layers for FINAL or for join-by-PK-ranges) already dropped
+    /// rows from the chunk. "No rows matched" then holds only for the surviving rows, not for
+    /// every row of the chunk's mark ranges: rows of the same granules in another layer may
+    /// still match. Writing such ranges would poison the cache for later queries.
+    if (mark_ranges_info && mark_ranges_info->has_dropped_rows)
+        return;
+
+    if (!mark_ranges_info)
+    {
+        /// FilterTransform has finished, we need to flush to the query result cache.
+
+        if (!buffered_mark_ranges_info)
+            return;
+
+        query_condition_cache->write(
+            buffered_mark_ranges_info->table_uuid,
+            buffered_mark_ranges_info->part_name,
+            condition->first,
+            condition->second,
+            buffered_mark_ranges_info->mark_ranges,
+            buffered_mark_ranges_info->marks_count,
+            buffered_mark_ranges_info->has_final_mark);
+
+        buffered_mark_ranges_info = nullptr;
+
+        return;
+    }
+
+    if (!buffered_mark_ranges_info)
+    {
+        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    }
+    else
+    {
+        /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
+        /// Otherwise write to the query condition cache and reset the buffer.
+
+        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
+        {
+            query_condition_cache->write(
+                buffered_mark_ranges_info->table_uuid,
+                buffered_mark_ranges_info->part_name,
+                condition->first,
+                condition->second,
+                buffered_mark_ranges_info->mark_ranges,
+                buffered_mark_ranges_info->marks_count,
+                buffered_mark_ranges_info->has_final_mark);
+
+            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+        }
+        else
+        {
+            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
+        }
+    }
+}
 
 }

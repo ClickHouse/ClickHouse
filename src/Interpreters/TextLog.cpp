@@ -1,7 +1,9 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -15,6 +17,12 @@
 
 namespace DB
 {
+
+std::shared_ptr<TextLog::Queue> TextLog::getLogQueue(const SystemLogQueueSettings & settings)
+{
+    static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
+    return queue;
+}
 
 ColumnsDescription TextLogElement::getColumnsDescription()
 {
@@ -35,6 +43,8 @@ ColumnsDescription TextLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
@@ -42,9 +52,9 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread from which the logging was done."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "OS thread ID."},
 
-        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
+        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace', 9 or 'Test'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (i.e. DDLWorker)."},
+        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
@@ -53,6 +63,16 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"source_line", std::make_shared<DataTypeUInt64>(), "Source line from which the logging was done."},
 
         {"message_format_string", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "A format string that was used to format the message."},
+        {"value1", std::make_shared<DataTypeString>(), "Argument 1 that was used to format the message."},
+        {"value2", std::make_shared<DataTypeString>(), "Argument 2 that was used to format the message."},
+        {"value3", std::make_shared<DataTypeString>(), "Argument 3 that was used to format the message."},
+        {"value4", std::make_shared<DataTypeString>(), "Argument 4 that was used to format the message."},
+        {"value5", std::make_shared<DataTypeString>(), "Argument 5 that was used to format the message."},
+        {"value6", std::make_shared<DataTypeString>(), "Argument 6 that was used to format the message."},
+        {"value7", std::make_shared<DataTypeString>(), "Argument 7 that was used to format the message."},
+        {"value8", std::make_shared<DataTypeString>(), "Argument 8 that was used to format the message."},
+        {"value9", std::make_shared<DataTypeString>(), "Argument 9 that was used to format the message."},
+        {"value10", std::make_shared<DataTypeString>(), "Argument 10 that was used to format the message."},
     };
 }
 
@@ -61,11 +81,14 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    columns[i++]->insertData(thread_name.data(), thread_name.size());
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(level);
@@ -79,12 +102,27 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_line);
 
     columns[i++]->insert(message_format_string);
+    columns[i++]->insert(value1);
+    columns[i++]->insert(value2);
+    columns[i++]->insert(value3);
+    columns[i++]->insert(value4);
+    columns[i++]->insert(value5);
+    columns[i++]->insert(value6);
+    columns[i++]->insert(value7);
+    columns[i++]->insert(value8);
+    columns[i++]->insert(value9);
+    columns[i++]->insert(value10);
 }
 
 TextLog::TextLog(ContextPtr context_,
                  const SystemLogSettings & settings)
     : SystemLog<TextLogElement>(context_, settings, getLogQueue(settings.queue_settings))
 {
+    /// The queue is process-wide (the logging channel has to reach it without a `Context`), so it outlives the
+    /// `TextLog` that consumes it. `shutdown` marks it as shut down, so in a process that creates the global
+    /// context more than once, every later `TextLog` would see a dead queue: its saving thread would exit at once,
+    /// new messages would be dropped, and `SYSTEM FLUSH LOGS` would fail. This instance is a new consumer.
+    queue->restart();
 }
 
 }

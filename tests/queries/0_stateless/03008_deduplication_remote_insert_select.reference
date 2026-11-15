@@ -1,0 +1,36 @@
+-- { echoOn }
+SELECT count() FROM src;
+100
+SELECT a, sum(b), uniq(b), FROM src GROUP BY a ORDER BY a;
+0	450	10
+1	460	10
+2	470	10
+3	480	10
+4	490	10
+5	500	10
+6	510	10
+7	520	10
+8	530	10
+9	540	10
+SELECT count() FROM remote('127.0.0.{1..2}', currentDatabase(), src);
+200
+-- { echoOn }
+INSERT INTO dst_null
+    SELECT a, b FROM src;
+SELECT
+    a,
+    sumMerge(sum_b) AS sum_b,
+    uniqMerge(uniq_b) AS uniq_b
+FROM mv_dst
+GROUP BY a
+ORDER BY a;
+0	450	10
+1	460	10
+2	470	10
+3	480	10
+4	490	10
+5	500	10
+6	510	10
+7	520	10
+8	530	10
+9	540	10

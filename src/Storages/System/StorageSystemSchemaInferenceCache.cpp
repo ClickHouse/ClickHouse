@@ -1,16 +1,20 @@
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/HDFS/StorageHDFS.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
+#include <Common/maskURIPassword.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 
 namespace DB
 {
@@ -56,7 +60,12 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
     for (const auto & [key, schema_info] : s3_schema_cache_data)
     {
         res_columns[0]->insert(storage_name);
-        res_columns[1]->insert(key.source);
+        String source = key.source;
+        /// Only a URL can carry a credential. A `File` key is a local path, where the presigned
+        /// parameter scan would rewrite a '?' in a file name and swallow everything after it.
+        if (findURIAuthority(source) != String::npos)
+            maskURICredentials(source);
+        res_columns[1]->insert(source);
         res_columns[2]->insert(key.format);
         res_columns[3]->insert(key.additional_format_info);
         res_columns[4]->insert(schema_info.registration_time);
@@ -72,19 +81,22 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
     }
 }
 
-void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
 #if USE_AWS_S3
-    fillDataImpl(res_columns, StorageS3::getSchemaCache(context), "S3");
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageS3Configuration::type_name), "S3");
 #endif
 #if USE_HDFS
-    fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageHDFSConfiguration::type_name), "HDFS");
 #endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 #if USE_AZURE_BLOB_STORAGE
-    fillDataImpl(res_columns, StorageAzureBlob::getSchemaCache(context), "Azure");
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageAzureConfiguration::type_name), "Azure");
 #endif
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSchemaInferenceCache) }

@@ -8,3 +8,4 @@ SELECT dateDiff('minutes', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-
 SELECT dateDiff('seconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
 SELECT dateDiff('milliseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
 SELECT dateDiff('microseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('nanoseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));

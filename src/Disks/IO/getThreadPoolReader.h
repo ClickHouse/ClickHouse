@@ -1,13 +1,14 @@
 #pragma once
 
-namespace Poco::Util { class AbstractConfiguration; }
+#include <memory>
 
 namespace DB
 {
 
 class IAsynchronousReader;
+struct ServerSettings;
 
-enum class FilesystemReaderType
+enum class FilesystemReaderType : uint8_t
 {
     SYNCHRONOUS_LOCAL_FS_READER,
     ASYNCHRONOUS_LOCAL_FS_READER,
@@ -16,8 +17,6 @@ enum class FilesystemReaderType
 
 IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type);
 
-std::unique_ptr<IAsynchronousReader> createThreadPoolReader(
-    FilesystemReaderType type,
-    const Poco::Util::AbstractConfiguration & config);
+std::unique_ptr<IAsynchronousReader> createThreadPoolReader(FilesystemReaderType type, const ServerSettings & server_settings);
 
 }

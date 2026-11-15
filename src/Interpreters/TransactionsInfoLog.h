@@ -27,7 +27,7 @@ struct TransactionsInfoLogElement
 
     Type type = UNKNOWN;
     Decimal64 event_time = 0;
-    UInt64 thread_id;
+    UInt64 thread_id{};
 
     String query_id;
     TransactionID tid = Tx::EmptyTID;
@@ -43,7 +43,6 @@ struct TransactionsInfoLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     void fillCommonFields(const TransactionInfoContext * context = nullptr);
 };

@@ -1,6 +1,8 @@
 set (CLICKHOUSE_DISKS_SOURCES
     DisksApp.cpp
+    DisksClient.cpp
     ICommand.cpp
+    CommandChangeDirectory.cpp
     CommandCopy.cpp
     CommandLink.cpp
     CommandList.cpp
@@ -8,8 +10,19 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandMkDir.cpp
     CommandMove.cpp
     CommandRead.cpp
+    CommandReadBitmap.cpp
+    CommandReadChecksums.cpp
     CommandRemove.cpp
-    CommandWrite.cpp)
+    CommandSwitchDisk.cpp
+    CommandWrite.cpp
+    CommandSed.cpp
+    CommandHelp.cpp
+    CommandTouch.cpp
+    CommandGetCurrentDiskAndPath.cpp
+    CommandPackedIO.cpp
+    CommandDiskUsage.cpp
+    CommandWordCount.cpp
+    Utils.cpp)
 
 set (CLICKHOUSE_DISKS_LINK
     PRIVATE

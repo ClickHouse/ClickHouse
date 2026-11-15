@@ -10,7 +10,7 @@
              <verificationMode>none</verificationMode>
              <loadDefaultCAFile>true</loadDefaultCAFile>
              <cacheSessions>true</cacheSessions>
-             <disableProtocols>sslv2,sslv3</disableProtocols>
+             <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
              <preferServerCiphers>true</preferServerCiphers>
          </server>
      </openSSL>

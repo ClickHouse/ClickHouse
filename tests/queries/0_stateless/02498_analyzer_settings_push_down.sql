@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 1;
 SET optimize_functions_to_subcolumns = 0;
 
 DROP TABLE IF EXISTS test_table;

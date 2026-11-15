@@ -20,17 +20,20 @@ private:
 
 public:
     static constexpr auto name = "URLPathHierarchy";
+    static constexpr auto signature = "(String) -> Array(String)";
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;
@@ -58,18 +61,19 @@ public:
             /// Let's parse everything that goes before the path
 
             /// Assume that the protocol has already been changed to lowercase.
-            while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+            while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= '0' && *pos <= '9')))
                 ++pos;
 
             /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
              * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there.
              * For the rest, just return an empty array.
              */
-            if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+            if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
             {
                 pos = end;
                 return false;
             }
+            pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -106,7 +110,20 @@ using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
 
 REGISTER_FUNCTION(URLPathHierarchy)
 {
-    factory.registerFunction<FunctionURLPathHierarchy>();
+    FunctionDocumentation::Description description = R"(
+Returns an array containing the path component of the URL, truncated at the end by the symbols `/`, `?` and `#`. Unlike `URLHierarchy`, the result does not include the protocol and host — it starts from the path. Consecutive separator characters are counted as one.
+    )";
+    FunctionDocumentation::Syntax syntax = "URLPathHierarchy(url)";
+    FunctionDocumentation::Arguments arguments = {
+        {"url", "The URL to process.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of progressively longer URL path components forming a hierarchy.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT URLPathHierarchy('https://example.com/a/b?c=1')", "['/a/','/a/b?','/a/b?c=1']"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1,1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionURLPathHierarchy>(documentation);
 }
 
 }

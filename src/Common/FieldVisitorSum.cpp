@@ -19,7 +19,7 @@ bool FieldVisitorSum::operator() (UInt64 & x) const
     return x != 0;
 }
 
-bool FieldVisitorSum::operator() (Float64 & x) const { x += rhs.get<Float64>(); return x != 0; }
+bool FieldVisitorSum::operator() (Float64 & x) const { x += rhs.safeGet<Float64>(); return x != 0; }
 
 bool FieldVisitorSum::operator() (Null &) const
 {
@@ -36,6 +36,7 @@ bool FieldVisitorSum::operator() (UUID &) const { throw Exception(ErrorCodes::LO
 bool FieldVisitorSum::operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv4s"); }
 bool FieldVisitorSum::operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv6s"); }
 bool FieldVisitorSum::operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum custom type {}", x.getTypeName()); }
+bool FieldVisitorSum::operator() (NumberLiteral &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum NumberLiterals"); }
 
 bool FieldVisitorSum::operator() (AggregateFunctionStateData &) const
 {

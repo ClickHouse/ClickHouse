@@ -40,7 +40,7 @@ drop table if exists non_const_needle;
 -- rudimentary tests of "multiSearchFirstIndex()", "multiSearchAnyPosition()" and "multiSearchFirstIndex()" functions
 
 select 'MULTISEARCHANY';
-select multiSearchAny(materialize('Hello World'), materialize([])); -- { serverError 43 }
+select multiSearchAny(materialize('Hello World'), materialize([])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select 0 = multiSearchAny('Hello World', CAST([], 'Array(String)'));
 select 1 = multiSearchAny(materialize('Hello World'), materialize(['orld']));
 select 0 = multiSearchAny(materialize('Hello World'), materialize(['Hallo', 'Welt']));
@@ -50,7 +50,7 @@ select 1 = multiSearchAnyUTF8(materialize('Hello World £'), materialize(['WORLD
 select 1 = multiSearchAnyCaseInsensitiveUTF8(materialize('Hello World £'), materialize(['WORLD']));
 
 select 'MULTISEARCHFIRSTINDEX';
-select multiSearchFirstIndex(materialize('Hello World'), materialize([])); -- { serverError 43 }
+select multiSearchFirstIndex(materialize('Hello World'), materialize([])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select 0 = multiSearchFirstIndex('Hello World', CAST([], 'Array(String)'));
 select 1 = multiSearchFirstIndex(materialize('Hello World'), materialize(['orld']));
 select 0 = multiSearchFirstIndex(materialize('Hello World'), materialize(['Hallo', 'Welt']));
@@ -60,7 +60,7 @@ select 2 = multiSearchFirstIndexUTF8(materialize('Hello World £'), materialize(
 select 1 = multiSearchFirstIndexCaseInsensitiveUTF8(materialize('Hello World £'), materialize(['WORLD']));
 
 select 'MULTISEARCHFIRSTPOSITION';
-select multiSearchFirstPosition(materialize('Hello World'), materialize([])); -- { serverError 43 }
+select multiSearchFirstPosition(materialize('Hello World'), materialize([])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select 0 = multiSearchFirstPosition('Hello World', CAST([], 'Array(String)'));
 select 8 = multiSearchFirstPosition(materialize('Hello World'), materialize(['orld']));
 select 0 = multiSearchFirstPosition(materialize('Hello World'), materialize(['Hallo', 'Welt']));

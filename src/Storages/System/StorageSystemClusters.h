@@ -1,21 +1,17 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-
 
 namespace DB
 {
 
 class Context;
-class Cluster;
 
 /** Implements system table 'clusters'
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters final : public IStorageSystemOneBlock<StorageSystemClusters>
+class StorageSystemClusters final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemClusters"; }
@@ -24,10 +20,14 @@ public:
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
-    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster, const std::vector<UInt8> & is_active);
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const override;
+    Block getFilterSampleBlock() const override;
+    bool supportsColumnsMask() const override { return true; }
+
+private:
+    /// Whether any of the columns filled from the replica state in Keeper is requested.
+    bool needsReplicasInfo(const std::vector<UInt8> & columns_mask, const ContextPtr & context) const;
 };
 
 }

@@ -8,6 +8,9 @@
           <max_tries>3</max_tries>
           <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
           <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+          <forward_headers>
+            <name>Custom-Header</name>
+          </forward_headers>
         </basic_server>
     </http_authentication_servers>
     <custom_settings_prefixes>auth_</custom_settings_prefixes>

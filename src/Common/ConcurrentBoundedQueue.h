@@ -1,14 +1,13 @@
 #pragma once
 
 #include <deque>
-#include <type_traits>
-#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
 
 #include <base/MoveOrCopyIfThrow.h>
-
+#include <base/defines.h>
+#include <Common/saturatedDuration.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
@@ -39,7 +38,7 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = push_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = push_condition.wait_for(queue_lock, DB::saturatedMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -72,7 +71,7 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = pop_condition.wait_for(queue_lock, DB::saturatedMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -105,7 +104,9 @@ public:
 
     explicit ConcurrentBoundedQueue(size_t max_fill_)
         : max_fill(max_fill_)
-    {}
+    {
+    }
+
 
     /// Returns false if queue is finished
     [[nodiscard]] bool pushFront(const T & x)
@@ -179,11 +180,28 @@ public:
         return true;
     }
 
+    [[nodiscard]] Container drainAll()
+    {
+        Container swap_container;
+        {
+            std::lock_guard queue_lock(queue_mutex);
+            std::swap(swap_container, queue);
+        }
+        push_condition.notify_all();
+        return swap_container;
+    }
+
     /// Returns size of queue
     size_t size() const
     {
         std::lock_guard lock(queue_mutex);
         return queue.size();
+    }
+
+    /// Returns the capacity the queue was constructed with. Fixed for the queue's lifetime, so no lock.
+    size_t maxFill() const
+    {
+        return max_fill;
     }
 
     /// Returns if queue is empty
@@ -200,22 +218,18 @@ public:
       */
     bool finish()
     {
-        bool was_finished_before = false;
-
         {
             std::lock_guard lock(queue_mutex);
 
             if (is_finished)
                 return true;
 
-            was_finished_before = is_finished;
             is_finished = true;
         }
 
         pop_condition.notify_all();
         push_condition.notify_all();
-
-        return was_finished_before;
+        return false;
     }
 
     /// Returns if queue is finished
@@ -249,7 +263,7 @@ public:
     }
 
     /// Clear and finish queue
-    void clearAndFinish()
+    void clearAndFinish() noexcept
     {
         {
             std::lock_guard lock(queue_mutex);

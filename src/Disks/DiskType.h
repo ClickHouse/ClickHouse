@@ -6,79 +6,62 @@
 namespace DB
 {
 
-enum class DataSourceType
+enum class DataSourceType : uint8_t
 {
     Local,
     RAM,
     ObjectStorage,
 };
 
-enum class ObjectStorageType
+enum class ObjectStorageType : uint8_t
 {
-    None,
-    S3,
-    S3_Plain,
-    Azure,
-    HDFS,
-    Web,
-    Local,
+    None = 0,
+    S3 = 1,
+    Azure = 2,
+    HDFS = 3,
+    Web = 4,
+    Local = 5,
+
+    Max = 6,
 };
 
-enum class MetadataStorageType
+enum class MetadataStorageType : uint8_t
 {
     None,
     Local,
+    Keeper,
     Plain,
+    PlainRewritable,
     StaticWeb,
+    WebIndex,
     Memory,
 };
 
-String toString(DataSourceType data_source_type);
+MetadataStorageType metadataTypeFromString(const String & type);
 
 struct DataSourceDescription
 {
-    DataSourceType type;
+    DataSourceType type{};
     ObjectStorageType object_storage_type = ObjectStorageType::None;
     MetadataStorageType metadata_type = MetadataStorageType::None;
 
-    std::string description;
+    String description;
 
     bool is_encrypted = false;
     bool is_cached = false;
 
+    String zookeeper_name;
+
     bool operator==(const DataSourceDescription & other) const;
     bool sameKind(const DataSourceDescription & other) const;
 
-    std::string toString() const
-    {
-        switch (type)
-        {
-            case DataSourceType::Local:
-                return "local";
-            case DataSourceType::RAM:
-                return "memory";
-            case DataSourceType::ObjectStorage:
-            {
-                switch (object_storage_type)
-                {
-                    case ObjectStorageType::S3:
-                        return "s3";
-                    case ObjectStorageType::S3_Plain:
-                        return "s3_plain";
-                    case ObjectStorageType::HDFS:
-                        return "hdfs";
-                    case ObjectStorageType::Azure:
-                        return "azure_blob_storage";
-                    case ObjectStorageType::Local:
-                        return "local_blob_storage";
-                    case ObjectStorageType::Web:
-                        return "web";
-                    case ObjectStorageType::None:
-                        return "none";
-                }
-            }
-        }
-    }
+    String name() const;
+
+    /// Returns a string with the name and all the fields of the DataSourceDescription
+    String toString() const;
 };
+
+class IDisk;
+bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
 
 }

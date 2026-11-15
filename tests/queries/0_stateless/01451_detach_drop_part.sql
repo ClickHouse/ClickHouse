@@ -9,7 +9,7 @@ INSERT INTO mt_01451 VALUES (2);
 
 SELECT v FROM mt_01451 ORDER BY v;
 
-ALTER TABLE mt_01451 DETACH PART 'all_100_100_0'; -- { serverError 232 }
+ALTER TABLE mt_01451 DETACH PART 'all_100_100_0'; -- { serverError NO_SUCH_DATA_PART }
 
 ALTER TABLE mt_01451 DETACH PART 'all_2_2_0';
 
@@ -27,7 +27,7 @@ SELECT '-- drop part --';
 
 ALTER TABLE mt_01451 DROP PART 'all_4_4_0';
 
-ALTER TABLE mt_01451 ATTACH PART 'all_4_4_0'; -- { serverError 233 }
+ALTER TABLE mt_01451 ATTACH PART 'all_4_4_0'; -- { serverError BAD_DATA_PART_NAME }
 
 SELECT v FROM mt_01451 ORDER BY v;
 

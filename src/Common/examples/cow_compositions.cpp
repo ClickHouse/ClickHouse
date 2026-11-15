@@ -1,6 +1,10 @@
 #include <Common/COW.h>
 #include <iostream>
+#include <base/defines.h>
+#include <Examples/clickhouse_examples.h>
 
+namespace
+{
 
 class IColumn : public COW<IColumn>
 {
@@ -8,6 +12,7 @@ private:
     friend class COW<IColumn>;
 
     virtual MutablePtr clone() const = 0;
+    virtual size_t sizeOfObject() const = 0;
     virtual MutablePtr deepMutate() const { return shallowMutate(); }
 
 public:
@@ -61,47 +66,59 @@ public:
     void set(int value) override { wrapped->set(value); }
 };
 
+template <typename ColPtr>
+void print(const ColumnPtr & x, const ColPtr & y)
+{
+    std::cerr << "values:    " << x->get()        << ", " << y->get()       << "\n";
+    std::cerr << "refcounts: " << x->use_count()  << ", " << y->use_count() << "\n";
+}
 
-int main(int, char **)
+}
+
+int mainEntryExampleCowCompositions(int, char **)
 {
     ColumnPtr x = ColumnComposition::create(1);
     ColumnPtr y = x;
-
-    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
+    print(x, y);
+    chassert(x->get() == 1 && y->get() == 1);
+    chassert(x->use_count() == 2 && y->use_count() == 2);
+    chassert(x.get() == y.get());
 
     {
         MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(2);
+        print(x, mut);
+        chassert(x->get() == 1 && mut->get() == 2);
+        chassert(x->use_count() == 1 && mut->use_count() == 1);
+        chassert(x.get() != mut.get());
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
-
-    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
+    print(x, y);
+    chassert(x->get() == 1 && y->get() == 2);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
+    chassert(x.get() != y.get());
 
     x = ColumnComposition::create(0);
-
-    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
+    print(x, y);
+    chassert(x->get() == 0 && y->get() == 2);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
+    chassert(x.get() != y.get());
 
     {
         MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(3);
+        print(x, mut);
+        chassert(x->get() == 0 && mut->get() == 3);
+        chassert(x->use_count() == 1 && mut->use_count() == 1);
+        chassert(x.get() != mut.get());
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
-
-    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
-    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
+    print(x, y);
+    chassert(x->get() == 0 && y->get() == 3);
+    chassert(x->use_count() == 1 && y->use_count() == 1);
+    chassert(x.get() != y.get());
 
     return 0;
 }
-

@@ -1,4 +1,6 @@
-#include "StorageLogSettings.h"
+#include <Storages/StorageLogSettings.h>
+#include <Core/BaseSettings.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -27,8 +29,17 @@ String getDiskName(ASTStorage & storage_def, ContextPtr context)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE, "Could not specify `disk` and `storage_policy` at the same time for storage Log Family");
 
+        /// Both are Strings, and there is no settings schema for the Log family to reject the value-less
+        /// form `SETTINGS disk` on its own, so `safeGet` would report a `Bool` where a `String` was wanted.
+        for (const auto change : {disk_change, storage_policy_change})
+            if (change != changes.end() && change->shorthand)
+                BaseSettingsHelpers::throwValuelessSettingIsNotBool(change->name);
+
         if (disk_change != changes.end())
+        {
+            DiskFromAST::ensureDiskIsNotInline(disk_change->value);
             return disk_change->value.safeGet<String>();
+        }
 
         if (storage_policy_change != changes.end())
         {
@@ -40,4 +51,8 @@ String getDiskName(ASTStorage & storage_def, ContextPtr context)
     return "default";
 }
 
+bool StorageLogSettings::hasBuiltin(std::string_view name)
+{
+    return name == "disk" || name == "storage_policy";
+}
 }
