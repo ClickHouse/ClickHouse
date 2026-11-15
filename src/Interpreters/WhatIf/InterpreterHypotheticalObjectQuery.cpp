@@ -228,10 +228,12 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    /// `tryResolveStorageID` does not throw for an unknown database, so it does not leak before the check below
-    auto table_id = context->tryResolveStorageID(StorageID(query.getDatabase(), query.getTable()));
-    if (!table_id)
-        table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    /// Only a temporary table is looked up before the check below. Looking up an ordinary table waits for its
+    /// startup, and an unknown database or a failed startup would answer before the access is checked.
+    auto table_id = context->tryResolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveExternal);
+    const bool is_temporary = static_cast<bool>(table_id);
+    if (!is_temporary)
+        table_id = StorageID(context->resolveDatabase(query.getDatabase()), query.getTable());
 
     /// same privilege as the real ADD PROJECTION, before the table is looked up so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
@@ -248,6 +250,8 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
     }
 
+    if (!is_temporary)
+        table_id = context->resolveStorageID(table_id);
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     auto & store = context->getHypotheticalObjectStore();
 
