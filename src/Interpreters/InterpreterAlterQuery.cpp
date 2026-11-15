@@ -743,7 +743,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
     /// that table, and it may not be visible by name yet, so keep the storage resolved above.
     if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        table = database->tryGetTable(table_id.table_name, getContext());
+    {
+        auto table_by_name = database->tryGetTable(table_id.table_name, getContext());
+        if (!skip_access_check)
+        {
+            const auto resolved_table = resolveStorageProxyLoading(table_by_name);
+            if (resolved_table && resolved_table != table)
+                getContext()->checkAccess(getRequiredAccess(resolved_table));
+        }
+        table = table_by_name;
+    }
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);

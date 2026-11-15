@@ -263,14 +263,14 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
 
     if (after_processing != from_zk.after_processing)
     {
-        LOG_WARNING(log, "Using the stored `after_processing` of the queue: {} (local: {})",
+        LOG_WARNING(log, "Using `after_processing` {} of the queue instead of {} of this table",
             actionToString(from_zk.after_processing.load()), actionToString(after_processing.load()));
         after_processing = from_zk.after_processing.load();
     }
 
     if (!from_zk.source.empty() && source != from_zk.source)
     {
-        LOG_WARNING(log, "The stored source of the queue differs: {} (local: {}), the table still reads its own",
+        LOG_WARNING(log, "The source of the queue is {}, while this table reads {}",
             sourceToString(from_zk.source), sourceToString(source));
         source = from_zk.source;
     }

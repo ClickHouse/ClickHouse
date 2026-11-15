@@ -53,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -618,6 +619,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
             {
                 table_metadata.adjustFromKeeper(metadata_from_zk.value(), strict);
                 table_metadata.checkEquals(metadata_from_zk.value());
+                if (metadata_from_zk->source.empty() && strict)
+                    throw Exception(
+                        ErrorCodes::METADATA_MISMATCH,
+                        "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
+                        "Attach a table of this queue on an upgraded server, or use another `keeper_path`");
                 if (metadata_from_zk->source.empty() && !table_metadata.source.empty())
                 {
                     metadata_from_zk->source = table_metadata.source;

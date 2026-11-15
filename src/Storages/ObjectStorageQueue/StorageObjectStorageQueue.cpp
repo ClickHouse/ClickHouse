@@ -337,7 +337,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
     ObjectStorageQueueTableMetadata::Source source,
-    bool strict_metadata_check,
+    bool strict_metadata_check_,
     bool keep_data_in_keeper_)
     : IStreamingStorage(table_id_)
     , WithContext(context_)
@@ -377,6 +377,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
+    , strict_metadata_check(strict_metadata_check_)
     , use_hive_partitioning((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
@@ -555,6 +556,7 @@ void StorageObjectStorageQueue::startup()
         zk_path,
         std::move(temp_metadata),
         getStorageID(),
+        strict_metadata_check,
         created_new_metadata);
     {
         std::lock_guard lock(mutex);
