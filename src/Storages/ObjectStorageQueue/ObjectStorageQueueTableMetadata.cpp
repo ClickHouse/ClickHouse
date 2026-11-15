@@ -61,7 +61,7 @@ namespace
     {
         if (source.empty())
             return "none";
-        return fmt::format("{} {} {}", source.endpoint, source.bucket, source.path_pattern);
+        return fmt::format("{} {} {} {}", source.type, source.endpoint, source.bucket, source.path_pattern);
     }
 }
 
@@ -130,6 +130,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("partitioning_mode", partitioning_mode);
     json.set("partition_regex", partition_regex);
     json.set("partition_component", partition_component);
+    json.set("source_type", source.type);
     json.set("source_endpoint", source.endpoint);
     json.set("source_bucket", source.bucket);
     json.set("source_path_pattern", source.path_pattern);
@@ -225,6 +226,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
     , source{
+          getOrDefault<String>(json, "source_type", "", ""),
           getOrDefault<String>(json, "source_endpoint", "", ""),
           getOrDefault<String>(json, "source_bucket", "", ""),
           getOrDefault<String>(json, "source_path_pattern", "", "")}

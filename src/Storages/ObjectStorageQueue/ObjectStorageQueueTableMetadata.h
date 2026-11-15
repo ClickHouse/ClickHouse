@@ -23,6 +23,7 @@ struct ObjectStorageQueueTableMetadata
     /// source, because processed files are tracked only by their path.
     struct Source
     {
+        String type;
         String endpoint;
         String bucket;
         String path_pattern;

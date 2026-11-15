@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, zookeeper
--- no-fasttest: the `S3Queue` engine is not built in the fast test.
+-- no-fasttest: the `S3Queue` and `AzureQueue` engines are not built in the fast test.
 -- zookeeper: the immutable part of the queue metadata lives under `keeper_path` in keeper.
 
 -- A queue table stores the settings listed in `ObjectStorageQueueTableMetadata::isStoredInKeeper`
@@ -96,13 +96,28 @@ CREATE TABLE tq_x3 (x String) ENGINE = S3Queue('http://localhost:11111/other/053
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq_x%';
 DROP TABLE tq_x2; DROP TABLE tq_x1;
 
+-- An `AzureQueue` and an `S3Queue` with the same endpoint, bucket and path read different storages.
+CREATE TABLE tq_type_azure (x String) ENGINE = AzureQueue('http://localhost:11111', 'test', '05366_type/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type';
+CREATE TABLE tq_type_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_type/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type'; -- { serverError METADATA_MISMATCH }
+DROP TABLE tq_type_azure;
+
+-- A URL with user info is refused, because the user info would be saved in keeper as a part of the source.
+CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info'; -- { serverError BAD_ARGUMENTS }
+
+-- Azure forms that have a source: a scheme in upper case, and an `abfss` URL with a separate SAS.
+CREATE TABLE tq_az_upper (x String) ENGINE = AzureQueue('HTTP://localhost:11111', 'test', '05366_upper/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_upper';
+CREATE TABLE tq_az_sas (x String) ENGINE = AzureQueue('abfss://cont@acc.dfs.core.windows.net/05366_sas/*.csv', 'sv=1&sig=2') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sas';
+SELECT JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket') FROM system.zookeeper WHERE path IN ('/clickhouse/' || currentDatabase() || '/05366_upper', '/clickhouse/' || currentDatabase() || '/05366_sas') AND name = 'metadata' ORDER BY path;
+DROP TABLE tq_az_upper;
+DROP TABLE tq_az_sas;
+
 -- A table attached from its saved definition must not fail when it differs from keeper: it uses `after_processing`
 -- from keeper and the server logs a warning. `send_logs_level` keeps these warnings out of the test output.
 SET send_logs_level = 'error';
 
 CREATE TABLE tq_a (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
 CREATE TABLE tq_b (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
-SELECT JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+SELECT JSONExtractString(value, 'source_type'), JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
 -- After the `ALTER` of `tq_a`, `tq_b` still has `keep` in its definition, but is attached with `delete` from keeper.
 ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
@@ -124,14 +139,9 @@ DETACH TABLE tq_b; ATTACH TABLE tq_b;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tq_b';
 
 -- Remove `source` from keeper, as in metadata of an older version: the first attached table writes it back.
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_[a-z_]+":"[^"]*"', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceRegexpAll(value, ',"source_[a-z_]+":("[^"]*"|[0-9]+)', '') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 DETACH TABLE tq_a; DETACH TABLE tq_b; ATTACH TABLE tq_b; ATTACH TABLE tq_a;
 SELECT JSONExtractString(value, 'source_endpoint') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
 DROP TABLE tq_b;
 DROP TABLE tq_a;
-
--- A URL with user info gets no `source` in keeper, because a part of the user info can end up in the bucket name.
-CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info';
-SELECT JSONExtractString(value, 'source_endpoint') = '' FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_user_info' AND name = 'metadata';
-DROP TABLE tq_u;

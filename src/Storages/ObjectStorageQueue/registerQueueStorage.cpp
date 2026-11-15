@@ -63,7 +63,8 @@ ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configurat
     /// `S3::URI` can put a part of the user info into the bucket name, so a URL with user info gets no source.
     if (!configuration.url.uri.getUserInfo().empty())
         return {};
-    ObjectStorageQueueTableMetadata::Source source{configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
+    ObjectStorageQueueTableMetadata::Source source{
+        configuration.getTypeName(), configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
     maskPresignedURLParameters(source.bucket);
     maskPresignedURLParameters(source.path_pattern);
     return source;
@@ -74,9 +75,10 @@ ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configurat
 ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration)
 {
     String endpoint = configuration.getConnectionURLWithoutQuery();
-    if ((!endpoint.starts_with("http://") && !endpoint.starts_with("https://")) || !Poco::URI(endpoint).getUserInfo().empty())
+    const Poco::URI uri(endpoint);
+    if ((uri.getScheme() != "http" && uri.getScheme() != "https") || !uri.getUserInfo().empty())
         return {};
-    return {std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
+    return {configuration.getTypeName(), std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
 }
 #endif
 
@@ -207,6 +209,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         source.path_pattern.clear();
     const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
         || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+    if (strict_metadata_check && source.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot identify the source of the queue: the URL has a user name or password, or the Azure endpoint is not an "
+            "`http://` or `https://` URL. Remove the user name and password from the URL, or check the `AzureQueue` arguments");
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
