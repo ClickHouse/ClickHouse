@@ -28,7 +28,6 @@ RUN apt-get update \
         binutils-dev \
         build-essential \
         zlib1g-dev \
-        libjemalloc-dev \
         python3-boto3 \
         pigz \
         yasm \
