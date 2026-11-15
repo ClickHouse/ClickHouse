@@ -31,8 +31,7 @@ extern "C" void __llvm_profile_dump();  // NOLINT
 #include <vector>
 
 
-/// Same definitions as compiler-rt's `InstrProfiling.h`, expanded from the bundled `InstrProfData.inc`
-/// that our profile runtime is built from, so the record layout always matches the runtime we link.
+/// Same definitions as compiler-rt's `InstrProfiling.h`, so the record layout matches the bundled profile runtime.
 enum ValueKind  // NOLINT
 {
 #define VALUE_PROF_KIND(Enumerator, Value, Descr) Enumerator = Value,
