@@ -900,13 +900,26 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter, const DataTypePtr & default_type)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
-    if (inverse_filter)
+    if (default_type && !default_type->isDefaultInsertTrivial())
+    {
+        /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
+        auto default_row = default_type->createColumn();
+        default_type->insertDefaultInto(*default_row);
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (static_cast<bool>(filter[row]) != inverse_filter)
+                mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertFrom(*default_row, 0);
+        }
+    }
+    else if (inverse_filter)
     {
         for (size_t row = 0; row < filter.size(); ++row)
         {

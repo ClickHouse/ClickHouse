@@ -27,9 +27,6 @@ extern const char aggregate_function_state_transfer_throw[];
 template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
-    template <typename OtherKey>
-    friend class AggregateFunctionResample;
-
 private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     static constexpr size_t max_elements = 1048576;
@@ -98,55 +95,6 @@ public:
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
                     getName());
-
-        /// Nested -Resample combinators multiply the number of nested states, and every `create`,
-        /// `destroy`, `merge`, ... loops over all of them. `sizeOfData` / `max_state_size` already bound
-        /// the total state size (and therefore the number of iterations) whenever a single nested state
-        /// occupies at least one byte, so a legitimate nested chain like `countResampleIfResample(
-        /// 0, 2048, 1, 0, 2048, 1)` (4M buckets of 8-byte count state = ~32 MiB) stays allowed.
-        ///
-        /// The pathological case is a zero-byte nested -Resample state: its `sizeOfData` is zero no
-        /// matter how many buckets, so the state-size cap passes vacuously, but every loop still
-        /// iterates over `total` no-op calls and nested -Resample combinators multiply those loops.
-        /// A wrapper such as -Distinct can add its own state bytes without eliminating those calls,
-        /// so inspect the full nested chain instead of only the immediate nested state. For example
-        /// `nothingResampleIfResample(0, 1048576, 1, 0, 1048576, 1)` has a zero-sized state yet spins
-        /// through 2^40 nested calls; before `(begin, begin, step)` was rejected up front, an empty
-        /// innermost range made the entire nested state zero bytes and triggered the same explosion in
-        /// `countResampleIfResampleIfResampleIfResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1, 0, 1048576, 1)`.
-        /// Bound the number of nested states directly in that case; chains without a zero-sized
-        /// -Resample state remain bounded by `sizeOfData` / `max_state_size` alone.
-        const auto check_nested_resamples = [&](const auto & self, const AggregateFunctionPtr & nested,
-                                                size_t parent_elements, bool parent_elements_overflow,
-                                                bool has_zero_sized_resample) -> void
-        {
-            size_t nested_elements = parent_elements;
-            bool nested_elements_overflow = parent_elements_overflow;
-
-            if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
-            {
-                has_zero_sized_resample |= resample->size_of_data == 0;
-                nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
-            }
-            else if (const auto * signed_resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
-            {
-                has_zero_sized_resample |= signed_resample->size_of_data == 0;
-                nested_elements_overflow |= common::mulOverflow(nested_elements, signed_resample->total, nested_elements);
-            }
-
-            if (has_zero_sized_resample && (nested_elements_overflow || nested_elements > max_elements))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The nested -Resample combinators of function {} would iterate over too many "
-                    "zero-sized nested states", getName());
-
-            nested->forEachNestedFunction(
-                [&](const AggregateFunctionPtr & child)
-                {
-                    self(self, child, nested_elements, nested_elements_overflow, has_zero_sized_resample);
-                });
-        };
-
-        check_nested_resamples(check_nested_resamples, nested_function, total, false, size_of_data == 0);
     }
 
     String getName() const override
@@ -231,19 +179,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        for (size_t i = 0; i < total; ++i)
-        {
-            try
-            {
-                nested_function->create(place + i * size_of_data);
-            }
-            catch (...)
-            {
-                for (size_t j = 0; j < i; ++j)
-                    nested_function->destroy(place + j * size_of_data);
-                throw;
-            }
-        }
+        nested_function->createNestedStates(place, total, size_of_data);
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override

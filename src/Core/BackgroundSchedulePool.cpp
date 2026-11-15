@@ -586,10 +586,12 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
     {
         std::lock_guard lock(delayed_tasks_mutex);
 
+        /// Insert before erasing the old entry: if the insertion throws, the task keeps its old entry and `task.iterator` stays valid.
+        auto it = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
 
-        task.iterator = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
+        task.iterator = it;
         task.delayed = true;
     }
 

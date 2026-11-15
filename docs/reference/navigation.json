@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-reference.svg",
   "item": "Reference",
   "pages": [
     "reference/home",
@@ -26,6 +25,7 @@
                 "reference/statements/alter/comment",
                 "reference/statements/alter/constraint",
                 "reference/statements/alter/database-comment",
+                "reference/statements/alter/database-setting",
                 "reference/statements/alter/delete",
                 "reference/statements/alter/named-collection",
                 "reference/statements/alter/order-by",

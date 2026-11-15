@@ -121,7 +121,7 @@ ManifestListPruner::ManifestListPruner(
         if (!fields || fields->size() == 0)
             continue;
 
-        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context);
+        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context, /* keep_nullable */ true);
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
@@ -134,8 +134,11 @@ ManifestListPruner::ManifestListPruner(
             /* single_point_ */ false,
             /* skip_analysis_ */ false,
             require_ready_sets);
+        auto int32_truncate_wraparounds
+            = getInt32TruncateWraparounds(partition_key.partition_specification, schema_processor_, partition_schema_id_);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
+            spec->getValue<Int32>(f_spec_id),
+            SpecCondition{*partition_key.key_description, std::move(condition), std::move(int32_truncate_wraparounds)});
     }
 }
 
@@ -166,6 +169,20 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
             hyperrectangle.emplace_back(bounds->first, true, POSITIVE_INFINITY, true);
         else
             hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
+    }
+
+    /// A summary that covers a wrapped value may hold it for rows whose key is the unwrapped one.
+    for (const auto & wraparound : condition_it->second.int32_truncate_wraparounds)
+    {
+        if (wraparound.tuple_index >= hyperrectangle.size())
+            continue;
+        auto & range = hyperrectangle[wraparound.tuple_index];
+        /// The upper bound is `+inf` when the summary also contains NULL.
+        if (range.left.getType() == Field::Types::Int64 && range.left.safeGet<Int64>() <= wraparound.stored
+            && (range.right.isPositiveInfinity()
+                || (range.right.getType() == Field::Types::Int64 && wraparound.stored <= range.right.safeGet<Int64>()))
+            && wraparound.value < range.left.safeGet<Int64>())
+            range.left = Field(wraparound.value);
     }
 
     return !condition_it->second.condition.checkInHyperrectangle(hyperrectangle, partition_key.data_types).can_be_true;

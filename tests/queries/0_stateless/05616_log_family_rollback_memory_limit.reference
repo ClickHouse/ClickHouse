@@ -1,0 +1,27 @@
+--- Log
+failed insert was rejected: 1
+1
+rows of the failed insert: 0
+rows: 140	365730
+arrays readable: 10
+1
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- TinyLog
+failed insert was rejected: 1
+1
+rows of the failed insert: 0
+rows: 140	365730
+arrays readable: 10
+1
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- StripeLog
+failed insert was rejected: 1
+1
+rows of the failed insert: 0
+rows: 140	365730
+arrays readable: 10
+1
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
