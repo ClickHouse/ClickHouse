@@ -11488,7 +11488,7 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
     DECLARE(Bool, allow_experimental_maxminddb_table_engine, false, R"(
 Allow creating tables with the experimental `MaxMindDB` engine.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting for the experimental `MaxMindDB` table engine."}) \
+        {"26.11", false, false, "New setting for the experimental `MaxMindDB` table engine."}) \
     \
     DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
 Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
