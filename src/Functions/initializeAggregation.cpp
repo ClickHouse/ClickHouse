@@ -42,7 +42,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// The default implementation would execute a non-deterministic aggregate on one row and replicate the result.
+    bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
@@ -50,6 +51,10 @@ public:
     {
         return aggregate_function->getResultType();
     }
+
+    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
+    bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
