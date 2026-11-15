@@ -4,28 +4,13 @@
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
 #include <WindowFunctions/WindowFunction.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
-
-WindowFrame wholePartitionRangeFrame()
-{
-    WindowFrame frame;
-    frame.type = WindowFrame::FrameType::RANGE;
-    frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-    frame.end_type = WindowFrame::BoundaryType::Unbounded;
-    return frame;
-}
 
 class WindowFunctionPercentRank final : public IGeneralWindowFunction
 {
@@ -38,17 +23,6 @@ public:
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.peers_start = true, .partition_end = true};
-    }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        return wholePartitionRangeFrame();
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame != wholePartitionRangeFrame())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be '{}', '{}' given", getName(), wholePartitionRangeFrame().toString(), window.frame.toString());
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
@@ -83,12 +57,12 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 

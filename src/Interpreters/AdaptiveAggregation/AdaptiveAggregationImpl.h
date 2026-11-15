@@ -230,10 +230,8 @@ struct AdaptiveAggregationSession
     size_t frozen_producers = 0;
     size_t thawed_producers = 0;
 
-    /// The cells of the producers' tables, and the single-level tables whose cells they could not index (see
-    /// `AggregatedDataVariants::indexCells`), published under the same mutex.
+    /// The cells of the producers' tables, published under the same mutex.
     size_t table_cells = 0;
-    size_t unindexed_tables = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the

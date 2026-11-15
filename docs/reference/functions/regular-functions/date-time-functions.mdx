@@ -5485,6 +5485,7 @@ int32samoa: 1546300800
 Introduced in: v23.8.0
 
 Converts a date or date with time value from one time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+A local time that happens twice or does not exist because of a daylight saving time change is converted as `toDateTime` does.
     
 
 **Syntax**
