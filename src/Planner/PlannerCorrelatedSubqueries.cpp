@@ -200,9 +200,10 @@ bool isEvaluableOverEmptyGroup(const QueryTreeNodePtr & node, QueryTreeNodes & i
 }
 
 /// The value of the scalar subquery over an empty correlated group, when the restore can substitute it for the
-/// join's NULL: no GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET, `empty_result_for_aggregation_by_empty_set` off,
-/// and a non-Nullable projection over counting aggregates and constants. Such a projection is never NULL over a
-/// non-empty group, so a post-join NULL is exactly an empty group.
+/// join's NULL: no GROUP BY / HAVING / DISTINCT / LIMIT / OFFSET and no `arrayJoin` in the projection or ORDER BY,
+/// so a non-empty group yields exactly one row; `empty_result_for_aggregation_by_empty_set` off; and a non-Nullable
+/// projection over counting aggregates and constants. Such a projection is never NULL over a non-empty group, so a
+/// post-join NULL is exactly an empty group.
 std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr & query_tree)
 {
     const auto * query_node = query_tree->as<QueryNode>();
@@ -210,7 +211,8 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         return {};
 
     if (query_node->hasGroupBy() || query_node->hasHaving() || query_node->isDistinct()
-        || query_node->hasLimit() || query_node->hasOffset())
+        || query_node->hasLimit() || query_node->hasOffset()
+        || hasFunctionNode(query_node->getProjectionNode(), "arrayJoin") || hasFunctionNode(query_node->getOrderByNode(), "arrayJoin"))
         return {};
 
     /// The subquery node's own context, not the outer query's: a per-subquery
@@ -268,9 +270,6 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         Block block(std::move(aggregate_values));
         size_t num_rows = 1;
         actions.execute(block, num_rows);
-        /// `arrayJoin` can change the row count: without exactly one row there is no scalar value, so NULL stays.
-        if (num_rows != 1)
-            return {};
         return (*block.getByName(value_name).column)[0];
     }
     catch (const Exception & e)

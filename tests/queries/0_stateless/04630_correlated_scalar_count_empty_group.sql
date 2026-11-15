@@ -226,19 +226,21 @@ FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k
 SETTINGS correlated_subqueries_default_join_kind = 'left';
 
-
--- arrayJoin can leave the empty-group evaluation without a row (no scalar value, so NULL) or with exactly one.
+-- arrayJoin after the aggregation can drop the row of a non-empty group (b, d at k=2), which the join also
+-- reports as NULL, so a projection or ORDER BY with arrayJoin is never restored, with both decorrelation join kinds.
 SELECT o.k,
     (SELECT arrayJoin(arrayFilter(x -> x != 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
-    (SELECT arrayJoin(range(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
-    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+    (SELECT arrayJoin(arrayFilter(x -> x = 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
+    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c,
+    (SELECT count() FROM values('k UInt8', (2)) AS i WHERE i.k = o.k ORDER BY arrayJoin(arrayFilter(x -> x = 0, [count()]))) AS d
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k;
 
 SELECT o.k,
     (SELECT arrayJoin(arrayFilter(x -> x != 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
-    (SELECT arrayJoin(range(count())) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
-    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+    (SELECT arrayJoin(arrayFilter(x -> x = 0, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
+    (SELECT arrayJoin([count() + 100]) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c,
+    (SELECT count() FROM values('k UInt8', (2)) AS i WHERE i.k = o.k ORDER BY arrayJoin(arrayFilter(x -> x = 0, [count()]))) AS d
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k
 SETTINGS correlated_subqueries_default_join_kind = 'left';
