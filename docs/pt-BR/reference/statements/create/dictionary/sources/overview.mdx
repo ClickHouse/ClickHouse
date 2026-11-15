@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/pt-BR/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## Sintaxe
-</div>
+## Sintaxe {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ A fonte é configurada na seção `source` do arquivo de configuração e pela c
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## Fontes de dicionário suportadas
-</div>
+## Fontes de dicionário suportadas {#supported-dictionary-sources}
 
 Os seguintes tipos de fonte (`SOURCE_TYPE`/`source_type`) estão disponíveis:
 
@@ -96,3 +92,41 @@ há configurações opcionais disponíveis:
     ```
   </Tab>
 </Tabs>
+
+## Ordem das colunas de uma consulta personalizada {#custom-query-column-order}
+
+As fontes [ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse),
+[MySQL](/pt-BR/reference/statements/create/dictionary/sources/mysql),
+[PostgreSQL](/pt-BR/reference/statements/create/dictionary/sources/postgresql) e
+[ODBC](/pt-BR/reference/statements/create/dictionary/sources/odbc) aceitam um campo `query` que
+substitui a consulta que o ClickHouse, de outra forma, montaria a partir de `table` e `where`.
+
+Um dicionário espera as colunas desse resultado em uma ordem fixa, que não é a ordem em que os
+atributos aparecem na instrução `CREATE DICTIONARY`:
+
+1. a(s) coluna(s)-chave, na ordem da `PRIMARY KEY`;
+2. para um dicionário [`range_hashed`](/pt-BR/reference/statements/create/dictionary/layouts/range-hashed) ou
+   `complex_key_range_hashed`, a coluna `range_min` e, em seguida, a coluna `range_max`;
+3. os demais atributos, na ordem em que foram declarados.
+
+A fonte ClickHouse faz a correspondência do resultado com essa ordem pelo nome da coluna; assim, com ela, a ordem da
+`query` não importa, desde que cada coluna tenha o mesmo nome do atributo que preenche. Já as fontes
+MySQL, PostgreSQL e ODBC leem as colunas por posição; com elas, uma `query` cujas
+colunas estejam em qualquer outra ordem carrega valores nos atributos errados. Dependendo dos tipos
+envolvidos, o dicionário não consegue ser carregado por causa de um erro de conversão ou armazena valores incorretos.
+Por isso, escreva a `query` na ordem acima:
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

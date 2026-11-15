@@ -38,7 +38,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <Formats/FormatSettings.h>
+#include <Formats/FormatSettingsEnums.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/DivisionUtils.h>
 #include <Functions/FunctionFactory.h>
@@ -82,7 +82,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
+FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context);
 
 namespace traits_
 {
@@ -499,6 +499,9 @@ private:
         ///    ^^^^^^^^^^^^^^^^
 
         /// PaddedPODArray allows overflow for 15 bytes.
+        /// The unroll factor is pinned: clang 22 unrolled this loop four times on its own, clang 23 leaves it rolled,
+        /// which makes the wrap-around bookkeeping below dominate the two SIMD instructions of the body.
+#pragma clang loop unroll_count(4)
         for (size_t i = 0; i < size; i += 16)
         {
             /// This loop is formed in a way to be vectorized into two SIMD mov.
@@ -921,7 +924,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     /// Date/Time overflow behavior, captured from the query context at construction time so that
     /// executeImpl does not have to consult the context (which may have been destroyed by the time a
     /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior{};
+    FormatSettingsEnums::DateTimeOverflowBehavior date_time_overflow_behavior{};
 
     /// Builders for the interval/tuple special cases, resolved from the argument types at construction
     /// time while the context is alive (see the constructor). At most one is non-null for a given
@@ -1493,7 +1496,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1507,7 +1510,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -1866,7 +1869,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             if (wide_result >= result_min && wide_result <= result_max) [[likely]]
                 return static_cast<Int64>(wide_result);
 
-            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
             {
                 if (result_is_datetime64)
                     throw Exception(
@@ -1879,7 +1882,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                         "Value {} is out of bounds of type DateTime",
                         static_cast<Int64>(wide_result));
             }
-            else if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            else if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
             {
                 return static_cast<Int64>(std::clamp<Int128>(wide_result, result_min, result_max));
             }
@@ -2425,7 +2428,7 @@ public:
     }
 
 protected:
-    /// `DataTypesWithConstInfo` does not carry the value of a constant divisor, so `intDiv` and `modulo` are
+    /// The value of a constant divisor is not used here, so `intDiv` and `modulo` are
     /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
     /// and, for a signed dividend, it does not become negative after the cast to a signed type.
     bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
@@ -3861,6 +3864,14 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 #endif
 
     bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
+
+    /// The String operand of a date and interval operation is parsed for every row, and its default value is not a valid date.
+    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return canBeExecutedOnDefaultArguments()
+            && !(prepared_interval_function
+                 && std::ranges::any_of(arguments, [](const auto & argument) { return isString(removeLowCardinalityAndNullable(argument.type)); }));
+    }
 };
 
 

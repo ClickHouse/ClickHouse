@@ -1,0 +1,3 @@
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"7afc4b76-09fb-4b06-836d-f9972b9c1f91","format":{"provider":"parquet","options":{}},"partitionColumns":[],"configuration":{},"createdTime":1603723990637,"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}"}}
+{"add":{"path":"/some/unqualified/absolute/path","partitionValues":{},"size":100,"modificationTime":10,"dataChange":true}}

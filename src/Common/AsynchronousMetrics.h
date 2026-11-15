@@ -194,9 +194,13 @@ private:
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::shared_ptr<ICgroupsReader> cgroupmem_reader;
+    std::optional<std::string> cgroupmem_dir TSA_GUARDED_BY(data_mutex);
+    /// Where the last reader open failed: the open is retried on every update, the failure is logged once.
+    std::optional<std::string> cgroupmem_failed_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+    std::optional<std::string> cgroupcpu_max_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 
@@ -309,13 +313,15 @@ private:
     Stopwatch block_devices_rescan_delay TSA_GUARDED_BY(data_mutex);
 
     void openSensors();
+    void openCgroupv2MemoryFiles(const std::optional<std::string> & dir);
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
 
     std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
     void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
-    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+    /// Returns the cgroup directory of the opened file, or nullopt if it was not opened.
+    std::optional<std::string> openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
 
     void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
 

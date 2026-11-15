@@ -12,6 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The stress test fuzzes DDL and ignores some DROPs: a fuzzed `DETACH` or an undropped table could leave two tables
+# on one root, and the server could not load them both after a restart.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0"
+
 disk_path="${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 
 function table_def()
@@ -80,6 +84,9 @@ echo '-- a table detached without SYNC keeps the root while its detached instanc
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on detached "$(plain_disk detached)")"
 ${CLICKHOUSE_CLIENT} ${no_sync} --query "DETACH TABLE detached"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $(table_on after_detached "$(plain_disk detached)")" 2>&1 | grep -o -m1 'It is detached.*(BAD_ARGUMENTS)'
+# In a database shared with other tests their `DETACH` can release the detached instance, then the CREATE above
+# succeeds. A table detached without PERMANENTLY is attached again on restart, so do not leave both on the root.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS after_detached SYNC"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE detached"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE detached SYNC"
 

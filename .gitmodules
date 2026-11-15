@@ -477,3 +477,7 @@
 [submodule "contrib/parquet-testing"]
 	path = contrib/parquet-testing
 	url = https://github.com/apache/parquet-testing
+[submodule "contrib/gdeflate"]
+	path = contrib/gdeflate
+	url = https://github.com/ClickHouse/libdeflate.git
+	branch = gdeflate
