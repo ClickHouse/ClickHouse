@@ -29,6 +29,7 @@
 
 #include <IO/CompressionMethod.h>
 #include <IO/MMapReadBufferFromFile.h>
+#include <IO/WithFileName.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -2035,6 +2036,36 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 namespace
 {
+    /// Creating the input format may also open and read files other than the input file: the file of
+    /// `input_format_record_errors_file_path`, an external template of the `Template` format, a format
+    /// schema. Their errors belong to the configuration of the query, not to the input file, which must
+    /// not be skipped because of them. The input file is already open at this point, so a failure to
+    /// open or to stat a file comes from such another file. A read or seek error is attributed to the
+    /// input file only if it names that file. Errors of other kinds are classified by `isBrokenFileError`.
+    /// Only for the errors thrown while the format is created: the errors thrown while the pipeline is
+    /// executed are copied to `Exception` by the executor, which loses the path of an `ErrnoException`.
+    bool isErrorOfInputFileWhileCreatingFormat(const Exception & e, const ReadBuffer & input)
+    {
+        const int code = e.code();
+        if (code == ErrorCodes::FILE_DOESNT_EXIST
+            || code == ErrorCodes::CANNOT_OPEN_FILE
+            || code == ErrorCodes::CANNOT_STAT
+            || code == ErrorCodes::CANNOT_FSTAT)
+            return false;
+
+        if (code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR || code == ErrorCodes::CANNOT_SEEK_THROUGH_FILE)
+        {
+            const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e);
+            if (!errno_exception)
+                return false;
+            const auto path = errno_exception->getPath();
+            const String input_file_name = getFileNameFromReadBuffer(input);
+            return path && !input_file_name.empty() && *path == input_file_name;
+        }
+
+        return true;
+    }
+
     /// Errors that `engine_file_skip_failed_data_files` may skip: those caused by a file that
     /// cannot be opened or whose contents are broken - open and stat failures, truncated input,
     /// decompression failures, unreadable archives, and format parse errors. Every other error
@@ -2613,7 +2644,8 @@ Chunk StorageFileSource::generate()
             }
 
             /// Format construction may itself read file metadata/content (e.g. a Parquet footer)
-            /// and fail on a broken file, so it is protected by the same skip handling as reading.
+            /// and fail on a broken file, so it is protected by the same skip handling as reading,
+            /// except for the errors of other files it opens - see `isErrorOfInputFileWhileCreatingFormat`.
             try
             {
                 if (object_with_metadata.has_value())
@@ -2683,6 +2715,8 @@ Chunk StorageFileSource::generate()
             }
             catch (const Exception & e)
             {
+                if (!isErrorOfInputFileWhileCreatingFormat(e, *read_buf))
+                    throw;
                 skip_or_rethrow(e.code());
                 continue;
             }
