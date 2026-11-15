@@ -70,6 +70,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int INCORRECT_DATA;
 }
 
 IStorageCluster::IStorageCluster(
@@ -170,6 +171,8 @@ void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & c
     DeserializedSetsRegistry registry;
     auto filter = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
     QueryPlan::deserializeAndMakeSets(registry, in, context, max_type_complexity);
+    if (filter.getOutputs().size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A filter pushed down by the initiator must have one output, got {}", filter.getOutputs().size());
 
     const auto header = query_plan.getCurrentHeader();
     std::unordered_map<String, const ActionsDAG::Node *> inputs;

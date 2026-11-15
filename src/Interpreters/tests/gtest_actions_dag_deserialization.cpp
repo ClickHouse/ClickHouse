@@ -181,6 +181,25 @@ TEST(ActionsDAGDeserialization, RejectsOutputOutOfRange)
     expectRejected(plusStream("a", false, {2}));
 }
 
+TEST(ActionsDAGDeserialization, RejectsColumnWithoutValue)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(1, out);
+    writeNode(out, ActionType::COLUMN, "f", u8, {});
+    writeIds(out, {});
+    writeIds(out, {0});
+    try
+    {
+        deserializeDag(out.str());
+        FAIL() << "deserialization succeeded";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+        EXPECT_NE(e.message().find("has no value"), std::string::npos) << e.message();
+    }
+}
+
 TEST(ActionsDAGDeserialization, NestedLambda)
 {
     auto restored = deserializeDag(lambdaStream(plusStream("x", false, {1})));

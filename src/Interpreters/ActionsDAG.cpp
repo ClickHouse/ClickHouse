@@ -5454,6 +5454,9 @@ ActionsDAG ActionsDAG::deserialize(
             /// Column is already deserialized
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column can't have children");
+            /// `addColumn` never makes a constant without a value, and the code that runs a DAG relies on it.
+            if (!node.column)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized column {} has no value", node.result_name);
         }
         else if (node.type == ActionType::ALIAS)
         {
