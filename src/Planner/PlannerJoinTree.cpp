@@ -153,6 +153,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsUInt64 trivial_group_by_limit;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -2438,8 +2439,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// different, locally-permitted set of keys and the initiator would return more groups
                         /// in total than the limit allows. Matches the precedent set by
                         /// `useDataParallelAggregation`, which disables independent aggregation for the same
-                        /// reason.
-                        const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
+                        /// reason. `trivial_group_by_limit` caps the outer GROUP BY too, so treat it the same way.
+                        const bool outer_group_by_forbids_pushdown
+                            = (inner_settings[Setting::max_rows_to_group_by] != 0 || inner_settings[Setting::trivial_group_by_limit] != 0)
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
                         if (has_row_policy

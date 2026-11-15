@@ -5977,7 +5977,7 @@ Possible values:
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
 Enables or disables the optimization of a trivial query `SELECT ... FROM table GROUP BY key_expr LIMIT n` (with no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses and no `GROUP BY` modifiers) by capping the aggregation at `n + offset` distinct keys.
 
-With no aggregate functions in the projection, the cap applies to every aggregation thread, as with `max_rows_to_group_by = n + offset` and `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries, but not in subqueries). With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
+With no aggregate functions in the projection, the aggregation of the query works as with `max_rows_to_group_by = n + offset` and `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries); the aggregations in the views and subqueries that the query reads are not affected. With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
 
 The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
 
@@ -5989,6 +5989,10 @@ Possible values:
 - 1 — Optimization enabled.
 )", 0, \
         {"26.5", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."}) \
+    DECLARE(UInt64, trivial_group_by_limit, 0, R"(
+This is an internal setting that should not be used directly. The initiator sets it to `n + offset` for a query without aggregate functions that is eligible for [optimize_trivial_group_by_limit_query](#optimize_trivial_group_by_limit_query), so that the shards limit the number of groups of this query too. It does not raise `max_rows_to_group_by`.
+)", 0, \
+        {"26.11", 0, 0, "New internal setting."}) \
     DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`

@@ -9,7 +9,7 @@
 -- test `04840_trivial_group_by_limit_projection_guards`. This test runs them as
 -- subqueries, where the planner applies the kept-keys cutoff.
 
--- The guards live in the planner, and the `QUALIFY` query below
+-- The guards live in the analyzer pass and the planner, and the `QUALIFY` query below
 -- does not even parse into a plan with the old analyzer.
 
 SET optimize_trivial_group_by_limit_query = 1;

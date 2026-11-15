@@ -8,7 +8,7 @@ struct Settings;
 
 /// Adjusts the copy of the initiator's settings that an interserver sender is about to serialize into a
 /// secondary query: `MultiplexedConnections` and `HedgedConnections` for `SELECT`, `RemoteInserter` for
-/// distributed `INSERT`. `Connection::sendQuery` serializes only the settings marked as changed, so both
+/// distributed `INSERT`. `Connection::sendQuery` serializes only the settings marked as changed, so the
 /// adjustments below are about that flag rather than about the values.
 ///
 /// - Values derived from `compatibility` are demoted to unchanged. They still select this side's network
@@ -23,6 +23,8 @@ struct Settings;
 ///   the shard otherwise takes the parser from the effective `dialect` of the authenticated user, which
 ///   its own profile may default to Kusto or PRQL. Sending a value the user already has is a no-op for
 ///   settings constraints, so this does not trip a profile that pins `dialect` as read-only.
+/// - `trivial_group_by_limit` is not sent with an explicit `group_by_overflow_mode` other than `any`, which
+///   forbids the cap: the shard drops a value equal to its own, so it cannot tell that `throw` is explicit.
 ///
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);

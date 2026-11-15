@@ -47,6 +47,7 @@
 #include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
@@ -367,6 +368,8 @@ void addQueryTreePasses(
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
+
+    manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
