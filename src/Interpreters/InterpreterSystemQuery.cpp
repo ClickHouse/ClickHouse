@@ -1483,6 +1483,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             const String keeper_root = getContext()->getServerSettings()[ServerSetting::series_keeper_path];
             const String serial_path = std::filesystem::path(keeper_root) / series_name;
+            auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::serialID");
             auto keeper = getContext()->getZooKeeper();
 
             if (is_drop)
