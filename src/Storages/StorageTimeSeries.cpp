@@ -1073,7 +1073,7 @@ This is equivalent to declaring the `samples` column of the samples table in the
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))),
-                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(3)))
+                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(4)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -1116,11 +1116,11 @@ The _samples_ table must have columns:
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |
 
 The `samples` column the engine creates itself gets time-series compression codecs declared for the elements of its tuples, as codecs for subcolumns:
-`CODEC samples.timestamp (Delta, T64, ZSTD(3))` and `CODEC samples.value (ALP, ZSTD(3))`. Near-monotonic timestamps barely compress under
+`CODEC samples.timestamp (Delta, T64, ZSTD(3))` and `CODEC samples.value (ALP, ZSTD(4))`. Near-monotonic timestamps barely compress under
 generic codecs and can otherwise dominate the on-disk size of the samples table. The `bucket`, `min_time` and `max_time` columns the engine
 creates itself get the codec of the timestamps, `CODEC(Delta, T64, ZSTD(3))`: they dominate the size of the rows with few samples.
 Tables of [version](#schema-versioning) 10 and earlier store one sample per row in the columns `timestamp` and `value`, and the columns the engine
-created itself got the same codecs: `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
+created itself got the codecs `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
 The engine enables the codecs for subcolumns for its inner samples and recent samples tables without requiring the setting
 [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
@@ -1234,7 +1234,7 @@ SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta, T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 262144
 RECENT SAMPLES INNER COLUMNS
@@ -1245,7 +1245,7 @@ RECENT SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta, T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5)) ORDER BY (id, bucket) TTL toDateTime(bucket) + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -1293,7 +1293,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta(8), T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC'))
@@ -1310,7 +1310,7 @@ CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta(8), T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))
@@ -1396,7 +1396,7 @@ The same can be done by declaring the `samples` column of the samples table:
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))),
-                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(3)))
+                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(4)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:
