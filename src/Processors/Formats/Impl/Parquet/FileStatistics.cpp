@@ -39,7 +39,7 @@ template <typename E>
 Int32 thriftEnumValue(const E & e)
 {
     static_assert(sizeof(E) == sizeof(Int32));
-    Int32 value;
+    Int32 value = 0;
     std::memcpy(&value, &e, sizeof(value));
     return value;
 }
