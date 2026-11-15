@@ -53,6 +53,8 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    void setExpressionName(std::string expression_name_) { expression_name = std::move(expression_name_); }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
