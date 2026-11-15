@@ -21,8 +21,6 @@ namespace ErrorCodes
 static constexpr UInt64 SEED_GEN_A = 845897321;
 static constexpr UInt64 SEED_GEN_B = 217728422;
 
-static constexpr UInt64 MAX_BLOOM_FILTER_SIZE = 1 << 30;
-
 namespace
 {
 using BloomDivider = libdivide::divider<size_t, libdivide::BRANCHFREE>;

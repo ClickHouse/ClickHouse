@@ -2,27 +2,31 @@
 title: 接続情報 CLI
 ---
 
-このページでは、既存の ClickHouse Cloud サービスの接続情報 (ホスト名、ポート番号、ユーザー名、パスワード) を、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使ってコマンドラインから確認する方法を説明します。コマンドは非対話型で、`--json` を指定すると `clickhousectl` は JSON を出力します。
+このページでは、既存の ClickHouse Cloud サービスの接続情報 (ホスト名、ポート番号、ユーザー名、パスワード) を、[ClickHouse CLI](/ja/concepts/features/interfaces/cli) (`clickhousectl`) を使ってコマンドラインから確認する方法を説明します。ログインを除き、コマンドは非対話型です。`clickhousectl` は、`--json` を指定すると JSON を出力し、コーディングエージェントから実行された場合は自動的に JSON を出力します。
 
 ## 前提条件 {#prerequisites}
 
-ClickHouse CLI をインストールします。
+ClickHouse CLI をインストールします：
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-また、`jq` も必要です。
+このスクリプトは `~/.local/bin/clickhousectl` と、その別名である `chctl` をインストールします。`~/.local/bin` が `PATH` に含まれていることを確認してください。
 
-以下の書き込み系のステップには [API キー認証](/ja/products/cloud/features/admin-features/api/openapi) が必要です: `cloud service start` (サービスが `stopped` の場合のみ) と `reset-password`。OAuth ログインは読み取り専用であり、読み取り系のステップ (`service list`、`service get`) のみに対応しています:
+`jq` も必要です。
+
+読み取り専用の手順 (`service list`、`service get`) であれば、ブラウザでのログインで十分です。ブラウザが開くため、人が操作してログインを完了する必要があります。
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login
 ```
 
-あるいは、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` を実行し、スコープが `read/write` のエントリが表示されることを確認してください。
+ブラウザでのログインは読み取り専用です。以下の書き込みを伴う手順には [APIキー](/ja/products/cloud/features/admin-features/api/openapi) が必要です: `cloud service start` または `cloud service wake` (サービスが `stopped` または `idle` の場合のみ) 、および `reset-password`。キーでログインするには `clickhousectl cloud auth login --interactive` を実行します。このコマンドはキーとシークレットの入力を求めるため、シークレットがシェル履歴に残りません。あるいは、`--api-key` と `--api-secret` を指定するか、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定する方法もあります。コーディングエージェントやスクリプトから実行する場合は、環境変数を使用してください。
 
-また、接続情報の取得元となる既存の ClickHouse Cloud サービスも必要です。たとえば、[最初の Cloud サービスを作成する](/ja/get-started/quickstarts/create-your-first-service-on-cloud) クイックスタートや、[Cloud クイックスタート](/ja/getting-started/quick-start/cloud) の CLI フローで作成したサービスなどが該当します。
+ログイン時に認証情報が検証され、アイデンティティが表示されます。この情報は `clickhousectl cloud auth whoami` でいつでも確認できます。複数の組織に所属している場合は、このガイドの各 `cloud service` コマンドに `--org-id <org-id>` (または `--org-name <name>`) を追加してください。
+
+また、接続情報の取得元となる既存の ClickHouse Cloud サービスも必要です。たとえば、[Cloud クイックスタート](/ja/get-started/setup/cloud) で作成したサービスを利用できます。
 
 ## サービスを確認する {#find-your-service}
 
@@ -39,10 +43,10 @@ clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @t
 サービス ID を控えておいてください。本ガイドの他のすべてのコマンドは、これを引数として受け取ります。名前から調べるには次のようにします:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+CH_ID=$(clickhousectl cloud service get --name my-first-service --json | jq -r .id)
 ```
 
-後続のステップで接続を確認するために、service が起動している必要があります。state が `stopped` の場合は起動し、`running` になるまでポーリングしてください (アイドルスケーリングにより `idle` になっている service は最初の接続時に自動的に復帰するため、ここでの操作は不要です) :
+後続のステップで接続を確認するために、サービスが起動している必要があります。state が `stopped` の場合は起動し、`running` になるまでポーリングしてください:
 
 ```bash
 clickhousectl cloud service start "$CH_ID"
@@ -50,6 +54,8 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
   sleep 15
 done
 ```
+
+アイドルスケーリングにより `idle` になっている サービスは最初の接続時に自動的に復帰するため、ここでの操作は不要です。事前に復帰させておくには、`clickhousectl cloud service wake "$CH_ID"` を実行し、同様にポーリングしてください。
 
 ## 接続情報を取得する {#get-your-connection-details}
 
@@ -107,7 +113,7 @@ CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r
 ```
 
 <Warning>
-  `reset-password` を実行すると、`default` USER の従来のパスワードは即座に無効化されます。古いパスワードのまま設定されているクライアントは認証できなくなります。対象の service が [warehouse](/ja/products/cloud/features/infrastructure/warehouses) に属している場合、データベースユーザーはその warehouse 内のすべての services で共有されるため、リセットにより同一 warehouse 内の他の service のパスワードも変更されます。初回発行時と同様に、新しいパスワードは一度だけ表示されるため、安全な場所に保管してください。
+  `reset-password` を実行すると、`default` USER のパスワードが置き換えられます。変更の反映には数秒かかります。反映されるまでは新しいパスワードは拒否され、古いパスワードが引き続き有効なため、最初の接続はしばらく再試行してください。反映後は、古いパスワードのまま設定されているクライアントは認証できなくなります。対象の サービスが [warehouse](/ja/products/cloud/features/infrastructure/warehouses) に属している場合、データベースユーザーはその warehouse 内のすべての サービスで共有されるため、リセットにより同一 warehouse 内の他の サービスのパスワードも変更されます。初回発行時と同様に、新しいパスワードは一度だけ表示されるため、安全な場所に保管してください。
 </Warning>
 
 ## 接続情報を保存して再利用する {#save-your-connection-details-for-reuse}
@@ -137,7 +143,7 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-[**clickhouse client**](/ja/concepts/features/interfaces/client) でネイティブプロトコル (ポート 9440) を確認します。ClickHouse CLI が `clickhouse` バイナリを管理してくれるため、未インストールの場合は `clickhousectl local use latest` を実行すればインストールされ、`~/.local/bin/clickhouse` へのシンボリックリンクが作成されます。続いて、次を実行します:
+[**clickhouse client**](/ja/concepts/features/interfaces/client) でネイティブプロトコル (ポート 9440) を確認します。ClickHouse CLI が `clickhouse` バイナリを管理してくれるため、未インストールの場合は `clickhousectl local use latest` を実行すれば ClickHouse の最新バージョンがインストールされ、`~/.local/bin/clickhouse` へのシンボリックリンクが作成されます。続いて、次を実行します:
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \

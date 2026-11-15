@@ -323,6 +323,7 @@ TEST(MemoryTracker, IgnoredLimitFailureKeepsAllocation)
         }
 
         expectUsage(hierarchy, OVER_LIMIT);
+        expectPeaks(hierarchy, OVER_LIMIT);
 
         std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
         expectUsage(hierarchy, 0);

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Formats/FormatSettings.h>
+
+#include <string_view>
 
 
 namespace DB
@@ -55,9 +58,15 @@ class IDataType;
   *       convertFieldToType(Field(0.5), Float32, .., true) -> Field(0.5f)
   *   - Decimal -> Decimal: rejects any lossy conversion by requiring exact equality after conversion.
   *   - Float64 -> Decimal: converts the Decimal back to Float64 and compares with the original.
+  *   - Float64 -> DateTime64 / Time64: the same read-back rule against the ticks at the target scale, so
+  *     `toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') IN (1.25)` is 0 while `IN (1.5)` at scale 1 is 1.
   *
   * Out-of-range values are always rejected (return Null) regardless of `strict`/`convert_inexact_floats`,
   * e.g. convertFieldToType(Field(1e300), Float32, .., false, true) -> Field(Null) (no silent overflow to inf).
+  * The one exception is a numeric constant outside the calendar / clock window of `DateTime64` / `Time64`
+  * under `convert_inexact_floats`: such a caller stores the value rather than comparing against it, so it
+  * gets what `CAST` gives for the same constant under `format_settings.date_time_overflow_behavior` -
+  * an exception for `throw`, the nearest representable tick for `saturate` and the default `ignore`.
   *
   * The strictness checks apply recursively inside composite types (Tuple, Array, Map), so e.g. a
   * Tuple(Decimal64(2)) element inside an Array is also checked for precision loss, and a Float32 element
@@ -97,5 +106,22 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
 /// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
 /// those skip the round trip. Returns Null when the value is not representable.
 Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
+
+/// For a string `src` that `convertFieldToType` rejects because an integer element does not fit an `Array`, `Tuple`
+/// or `Map` type: converts it with the integer elements widened to 256 bits and replaces `type` with the wider type.
+/// Returns Null otherwise, and when the integers fit neither `Int256` nor `UInt256` elements.
+Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings);
+
+/// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
+/// a non-integer type, a non-decimal literal, and `-0` against an unsigned type.
+enum class IntegerLiteralRange : uint8_t
+{
+    NotApplicable,
+    BelowMin,
+    InRange,
+    AboveMax,
+};
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type);
 
 }

@@ -1,3 +1,4 @@
+-- No ORDER BY: the functions must see all rows of each query in a single block.
 -- { echoOn }
 
 SELECT arrayMinIndex(a), arrayMaxIndex(a)
@@ -7,4 +8,24 @@ FROM values(
     ([]),
     ([42]),
     ([2, 8, 1])
+);
+
+SELECT arrayMinIndex(a), arrayMaxIndex(a)
+FROM values(
+    'a Array(Int128)',
+    ([5, 3, 3, 7]),
+    ([]),
+    ([42]),
+    ([2, 8, 1]),
+    ([-9, 4, -9, 4])
+);
+
+SELECT arrayMinIndex(a), arrayMaxIndex(a)
+FROM values(
+    'a Array(Decimal256(2))',
+    ([5, 3, 3, 7]),
+    ([]),
+    ([42]),
+    ([2, 8, 1]),
+    ([-9, 4, -9, 4])
 );
