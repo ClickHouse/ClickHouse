@@ -3,8 +3,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -40,6 +42,7 @@
 #include <Parsers/NullsAction.h>
 #include <Parsers/SelectUnionMode.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -154,42 +157,46 @@ bool aggregateCountsZeroOverEmptyInput(const FunctionNode & function_node)
     return false;
 }
 
-/// Adds `node` to `dag` with every aggregate replaced by an input holding its empty-input value 0, appended to
-/// `aggregate_values`. Null if `node` holds anything but counting aggregates, constants and ordinary functions of them.
-const ActionsDAG::Node * addEmptyGroupValue(ActionsDAG & dag, const QueryTreeNodePtr & node, ColumnsWithTypeAndName & aggregate_values)
+/// Checks the part of `node` outside aggregates: counting aggregates, constants, lambdas with their arguments,
+/// ordinary functions, and `IN` with a constant set (appended to `in_nodes`). Any other column (correlated, or from a
+/// derived table) or subquery is rejected: its value over an empty group is not known at planning time.
+bool isEvaluableOverEmptyGroup(const QueryTreeNodePtr & node, QueryTreeNodes & in_nodes)
 {
-    if (const auto * constant_node = node->as<ConstantNode>())
-        return &dag.addColumn(constant_node->getColumn(), constant_node->getResultType(), constant_node->getValueStringRepresentation());
+    if (node->as<ConstantNode>())
+        return true;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        return column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+    }
+
+    if (const auto * lambda_node = node->as<LambdaNode>())
+        return isEvaluableOverEmptyGroup(lambda_node->getExpression(), in_nodes);
 
     const auto * function_node = node->as<FunctionNode>();
     if (!function_node)
-        return nullptr;
+        return false;
 
     if (function_node->isAggregateFunction())
-    {
-        if (!aggregateCountsZeroOverEmptyInput(*function_node))
-            return nullptr;
+        return aggregateCountsZeroOverEmptyInput(*function_node);
 
-        auto result_type = function_node->getResultType();
-        auto name = "__empty_group_aggregate_" + std::to_string(aggregate_values.size());
-        aggregate_values.emplace_back(result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), result_type, name);
-        return &dag.addInput(std::move(name), std::move(result_type));
+    if (!function_node->isOrdinaryFunction())
+        return false;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (isNameOfInFunction(function_node->getFunctionName()))
+    {
+        if (arguments.size() != 2 || !arguments[1]->as<ConstantNode>())
+            return false;
+        in_nodes.push_back(node);
+        return isEvaluableOverEmptyGroup(arguments[0], in_nodes);
     }
 
-    /// `IN` needs a prepared set.
-    if (!function_node->isOrdinaryFunction() || isNameOfInFunction(function_node->getFunctionName()))
-        return nullptr;
-
-    ActionsDAG::NodeRawConstPtrs children;
-    for (const auto & argument : function_node->getArguments().getNodes())
-    {
-        const auto * child = addEmptyGroupValue(dag, argument, aggregate_values);
-        if (!child)
-            return nullptr;
-        children.push_back(child);
-    }
-
-    return &dag.addFunction(*function_node, std::move(children), {});
+    for (const auto & argument : arguments)
+        if (!isEvaluableOverEmptyGroup(argument, in_nodes))
+            return false;
+    return true;
 }
 
 /// The value of the scalar subquery over an empty correlated group, when the restore can substitute it for the
@@ -221,18 +228,43 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
     /// Evaluated once over one row, so short-circuit functions skip the branches the empty group does not take.
     /// A projection sensitive to the evaluation count (`rand`, `sleep`) or that throws over an empty group
     /// (`intDiv(1, count())`) keeps the NULL: a query without empty groups must not fail.
+    QueryTreeNodes in_nodes;
+    const auto & projection = projection_nodes.front();
+    if (!isEvaluableOverEmptyGroup(projection, in_nodes))
+        return {};
+
+    /// The projection is built by the planner's own visitor (lambdas, constant sets), with every aggregate
+    /// as an input holding its empty-input value 0. A separate planner context keeps the sets of this
+    /// evaluation out of the query's.
+    auto evaluation_context = Context::createCopy(query_node->getContext());
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(evaluation_context, global_planner_context, SelectQueryOptions{});
+    for (const auto & in_node : in_nodes)
+        collectSets(in_node, *planner_context);
+
+    ColumnsWithTypeAndName aggregate_values;
+    std::unordered_set<String> aggregate_names;
+    for (const auto & aggregate : collectAggregateFunctionNodes(projection))
+    {
+        auto name = calculateActionNodeName(aggregate, *planner_context, /*use_column_identifier_as_action_node_name=*/ false);
+        if (!aggregate_names.insert(name).second)
+            continue;
+        auto result_type = aggregate->getResultType();
+        aggregate_values.emplace_back(result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), result_type, std::move(name));
+    }
+
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    auto [dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        projection, aggregate_values, planner_context, empty_correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ false);
+    correlated_subtrees.assertEmpty("in the empty-group value of a correlated scalar subquery");
+    if (dag.getOutputs().size() != 1 || QueryPlanOptimizations::isSensitiveToEvaluationCount(dag))
+        return {};
+
+    auto value_name = dag.getOutputs().front()->result_name;
+    ExpressionActions actions(std::move(dag), ExpressionActionsSettings(query_node->getContext()));
+
     try
     {
-        ActionsDAG dag;
-        ColumnsWithTypeAndName aggregate_values;
-        const auto * value = addEmptyGroupValue(dag, projection_nodes.front(), aggregate_values);
-        if (!value || QueryPlanOptimizations::isSensitiveToEvaluationCount(dag))
-            return {};
-
-        auto value_name = value->result_name;
-        dag.getOutputs() = {value};
-        ExpressionActions actions(std::move(dag), ExpressionActionsSettings(query_node->getContext()));
-
         Block block(std::move(aggregate_values));
         size_t num_rows = 1;
         actions.execute(block, num_rows);
@@ -241,7 +273,8 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
     catch (const Exception & e)
     {
         /// A resource limit or a cancellation must fail the query, not change its result.
-        if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+        /// A logical error is a bug and must not be hidden.
+        if (e.code() == ErrorCodes::LOGICAL_ERROR || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
             || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
             throw;
         return {};

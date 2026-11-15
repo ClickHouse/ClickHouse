@@ -208,3 +208,21 @@ WHERE explain ILIKE '%ifNull(%countOrNull%';
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT o.k, (SELECT quantilesExactTuple(0.5)(i.t) FROM (SELECT 2 AS k, (5, 6)::Tuple(UInt64, UInt64) AS t) AS i WHERE i.k = o.k) FROM values('k UInt8', (1), (2)) AS o)
 WHERE explain ILIKE '%ifNull(%quantilesExactTuple%';
+
+-- Lambdas and constant IN sets in the projection are built by the planner's own actions visitor, so their
+-- empty-group value is restored too, with both decorrelation join kinds.
+SELECT o.k,
+    (SELECT arraySum(arrayMap(x -> x + 100, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
+    (SELECT arraySum(arrayMap(x -> x + count(), [100])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS b,
+    (SELECT count() IN (0, 1) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c,
+    (SELECT count() NOT IN (0, 5) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS d
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k;
+
+SELECT o.k,
+    (SELECT arraySum(arrayMap(x -> x + 100, [count()])) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS a,
+    (SELECT count() IN (0, 1) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS correlated_subqueries_default_join_kind = 'left';
+
