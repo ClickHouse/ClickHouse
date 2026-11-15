@@ -52,6 +52,25 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 每次查询中，AI 函数可发起的 HTTP 请求最大数量。0 (默认值) 表示不启用此限制。每台服务器和每个查询片段都会独立执行此限制：在单个执行上下文中，这是其中所有 AI 函数、块和线程共享的严格上限；但分布式查询 (跨 сегмент 或并行副本片段) 在每个 сегмент/片段中最多可发起这么多请求。必须在顶层查询中设置——子查询中的 `SETTINGS` 覆盖会被忽略。
 
+## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8"},{"label": "新增设置"}]}]} />
+
+单个查询线程可同时处于处理中状态的提供商请求的最大数量。设置为 `1` 时，请求将逐个发出。
+
+如果查询在多个线程 (最多 `max_threads` 个) 上运行，则每个线程最多可同时有该数量的请求处于处理中状态。可使用[设置配置文件约束](/zh/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) 为其设定一个查询无法调高的上限。该上限仍按线程计算。
+
+当该值大于 `1` 时，以下两项保证会有所放宽：
+
+* 请求的标记用量只有在收到响应后才能得知，因此标记配额 (`ai_function_max_input_tokens_per_query`、`ai_function_max_output_tokens_per_query`) 可能被超出：每个处理中的请求最多会造成一个请求用量的超额，也就是说，总超额最多可达该数量个请求的用量，而不只是一个请求的用量。
+* 整批请求会在发现其中任何错误之前就全部分派出去，因此即使查询在第一行就失败，也可能已经发出了最多该数量的请求，并为此产生费用。
+
+`ai_function_max_api_calls_per_query` 不受影响，仍是一个精确的上限，因为每个请求在分派之前都会先预留一个槽位。
+
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -80,9 +99,9 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "默认对暂时性 API 错误重试一次，因此提供商返回单个 429 或 5xx 不会导致查询失败。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "默认对暂时性 API 错误重试一次，因此提供商返回单个 429 或 5xx 不会导致查询失败。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "3"},{"label": "默认对暂时性 API 错误最多重试三次，以便在并发请求下减轻已过载且受速率限制的提供商的负载。"}]}]} />
 
 单个 API 请求在出现瞬时错误时的最大重试次数。每次重试都会采用指数退避，初始延迟由 `ai_function_retry_initial_delay_ms` 指定。
 

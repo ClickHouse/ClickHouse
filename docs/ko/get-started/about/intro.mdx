@@ -7,8 +7,6 @@ keywords: ['ClickHouse', '컬럼형 데이터베이스', 'OLAP 데이터베이�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse®는 온라인 분석 처리(OLAP)를 위한 고성능 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. [오픈소스 소프트웨어](https://github.com/ClickHouse/ClickHouse)와 [Cloud 서비스](https://clickhouse.com/cloud) 형태로 제공됩니다.
 
 <div id="what-are-analytics">
@@ -51,7 +49,15 @@ LIMIT 8;
 
 [ClickHouse SQL Playground에서 이 쿼리를 실행](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)하여 기존 [100개가 넘는 컬럼 중 일부만](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) 선택하고 필터링한 다음, 결과를 밀리초 단위로 받아볼 수 있습니다:
 
-<Image img="/images/column-oriented-example-query.webp" alt="컬럼 지향 데이터베이스의 예시 쿼리" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![컬럼 지향 데이터베이스의 예시 쿼리](/images/column-oriented-example-query.webp)
+
+</Frame>
+
+</div>
 
 위 그림의 통계 섹션에서 볼 수 있듯이, 이 쿼리는 1억 행을 92밀리초 만에 처리했으며, 처리량은 초당 약 10억 행 이상, 또는 초당 7 GB에 약간 못 미치는 데이터 전송량에 해당합니다.
 
@@ -59,14 +65,30 @@ LIMIT 8;
 
 행 지향 데이터베이스에서는 위 쿼리가 기존 컬럼 중 일부만 처리하더라도, 시스템은 여전히 다른 컬럼의 데이터도 디스크에서 메모리로 로드해야 합니다. 이는 데이터가 디스크에 [블록](https://en.wikipedia.org/wiki/Block_\(data_storage\))이라고 하는 청크 단위로 저장되기 때문입니다(보통 4 KB 또는 8 KB 같은 고정 크기). 블록은 디스크에서 메모리로 읽어 오는 데이터의 가장 작은 단위입니다. 애플리케이션이나 데이터베이스가 데이터를 요청하면 운영 체제의 디스크 I/O 하위 시스템이 디스크에서 필요한 블록을 읽습니다. 블록의 일부만 필요하더라도 전체 블록이 메모리로 읽혀집니다(이는 디스크 및 파일 시스템 설계에 따른 것입니다):
 
-<Image img="/images/row-oriented.webp" alt="행 지향 데이터베이스 구조" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![행 지향 데이터베이스 구조](/images/row-oriented.webp)
+
+</Frame>
+
+</div>
 
 **컬럼 지향 DBMS**
 
 각 컬럼의 값이 디스크에 순차적으로 저장되므로, 위 쿼리를 실행할 때 불필요한 데이터는 로드되지 않습니다.
 디스크에서 메모리로의 block 단위 저장 및 전송이 분석 쿼리의 데이터 접근 패턴과 일치하므로, 쿼리에 필요한 컬럼만 디스크에서 읽어 사용되지 않는 데이터에 대한 불필요한 I/O를 피할 수 있습니다. 이는 전체 행(관련 없는 컬럼 포함)을 읽는 행 기반 저장 방식과 비교하면 [훨씬 더 빠릅니다](https://benchmark.clickhouse.com/):
 
-<Image img="/images/column-oriented.webp" alt="컬럼 지향 데이터베이스 구조" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![컬럼 지향 데이터베이스 구조](/images/column-oriented.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## 데이터 복제 및 무결성

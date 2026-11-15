@@ -70,18 +70,16 @@ def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
 
 
 # Executes a query in both prometheus services - results should be the same.
-# `eps` allows tiny float differences: the "reader" service aggregates series in the order
-# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
-# the "receiver" service uses.
-def execute_query_in_prometheus(query, timestamp, expect_error=False, eps=0):
-    r1 = execute_query_in_prometheus_reader(query, timestamp, expect_error=expect_error)
-    r2 = execute_query_in_prometheus_receiver(
-        query, timestamp, expect_error=expect_error
-    )
+# `eps` allows tiny float differences and `ordered=False` allows any order of the series of an instant vector:
+# the "reader" service gets series in the order they come from ClickHouse via the RemoteRead protocol,
+# which can differ from the TSDB order the "receiver" service uses. So the "receiver" result is returned.
+def execute_query_in_prometheus(query, timestamp, eps=0):
+    r1 = execute_query_in_prometheus_reader(query, timestamp)
+    r2 = execute_query_in_prometheus_receiver(query, timestamp)
     assert http_api_response_close_to(
-        r1, r2, eps=eps
+        r1, r2, eps=eps, ordered=False
     ), f"reader result: {r1}, receiver result: {r2}"
-    return r1
+    return r2
 
 
 # Executes a prometheus query in ClickHouse via HTTP API
@@ -926,6 +924,18 @@ def test_range_selectors():
             [
                 "[('__name__','test')]",
                 "[('1970-01-01 00:02:20.000',4)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "test[30s] offset 20s",
+        160,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [130, "3"], [140, "4"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',3),('1970-01-01 00:02:20.000',4)]",
             ]
         ],
     )
@@ -3128,6 +3138,7 @@ def test_math_functions():
                 "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',-inf),('1970-01-01 00:05:00.000',-0.5493061443340548),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0.5493061443340548),('1970-01-01 00:10:00.000',inf),('1970-01-01 00:11:40.000',nan)]",
             ]
         ],
+        eps=1e-15,  # atanh differs by 1 ULP between libm implementations (e.g. musl vs glibc)
     )
 
 

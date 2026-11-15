@@ -22,6 +22,7 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include "config.h"
 #include <Common/re2.h>
 #include <span>
 #include <string_view>
@@ -108,6 +109,35 @@ TEST(ParserCopyQuery, FormattingPreservesTableCopy)
         EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
         EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
     }
+}
+
+/// The inner query of `COPY (query) TO STDOUT` is the only child of the node, also after `clone`.
+TEST(ParserCopyQuery, SubqueryIsTheOnlyChild)
+{
+    const String query = "COPY (SELECT a, b FROM db.t WHERE x = 1) TO STDOUT WITH (FORMAT csv)";
+    const String formatted = "COPY (SELECT a, b FROM db.t WHERE x = 1) TO STDOUT WITH (FORMAT CSV)";
+
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast);
+
+    const auto * copy_query = ast->as<ASTCopyQuery>();
+    ASSERT_NE(nullptr, copy_query);
+    EXPECT_EQ("SELECT a, b FROM db.t WHERE x = 1", copy_query->subquery);
+    ASSERT_NE(nullptr, copy_query->subquery_ast.get());
+    ASSERT_EQ(1u, copy_query->children.size());
+    EXPECT_EQ(copy_query->subquery_ast.get(), copy_query->children[0].get());
+    EXPECT_EQ(formatted, ast->formatWithSecretsOneLine());
+
+    ASTPtr cloned = ast->clone();
+    const auto * cloned_copy_query = cloned->as<ASTCopyQuery>();
+    ASSERT_NE(nullptr, cloned_copy_query);
+    ASSERT_EQ(1u, cloned_copy_query->children.size());
+    EXPECT_EQ(cloned_copy_query->subquery_ast.get(), cloned_copy_query->children[0].get());
+    EXPECT_NE(copy_query->subquery_ast.get(), cloned_copy_query->subquery_ast.get());
+    EXPECT_EQ(copy_query->subquery, cloned_copy_query->subquery);
+    EXPECT_EQ(formatted, cloned->formatWithSecretsOneLine());
+    EXPECT_EQ(ast->getTreeHash(/*ignore_aliases=*/ false), cloned->getTreeHash(/*ignore_aliases=*/ false));
 }
 
 /// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
@@ -897,6 +927,7 @@ TEST(ParserRenameQueryDeathTest, FormatNullToDatabaseAborts)
 }
 #endif
 
+#if USE_PRQL
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
 static constexpr size_t kDummyMaxParserBacktracks = 1000000;
@@ -916,6 +947,7 @@ INSTANTIATE_TEST_SUITE_P(
                 "WITH\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
+#endif
 
 namespace
 {

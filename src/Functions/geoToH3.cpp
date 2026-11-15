@@ -53,22 +53,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
-            ? FunctionArgumentDescriptors{
-                {"longitude", &isFloat, nullptr, "Float64"},
-                {"latitude", &isFloat, nullptr, "Float64"},
-                {"resolution", &isUInt8, nullptr, "UInt8"}}
-            : FunctionArgumentDescriptors{
-                {"latitude", &isFloat, nullptr, "Float64"},
-                {"longitude", &isFloat, nullptr, "Float64"},
-                {"resolution", &isUInt8, nullptr, "UInt8"}};
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(Float, Float, UInt8) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -147,6 +137,13 @@ public:
                     static_cast<uint8_t>(res),
                     getName(),
                     MAX_H3_RES);
+
+            if (lat < -90.0 || lat > 90.0)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'latitude' ({}) of function {} is out of bounds because the latitude must be in the range [-90, 90]",
+                    lat,
+                    getName());
 
             LatLng coord;
             coord.lng = degsToRads(lon);

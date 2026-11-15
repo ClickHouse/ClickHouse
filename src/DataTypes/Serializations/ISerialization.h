@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/Serializations/SerializationSubstream.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Types.h>
 #include <Core/Types_fwd.h>
@@ -67,6 +68,51 @@ class StringValueFilter;
   */
 char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level);
 
+/// Nested types of ISerialization defined at namespace scope; see SerializationSubstream.h.
+struct ISerializationSubcolumnCreator
+{
+    using ISubcolumnCreator = ISerializationSubcolumnCreator;
+
+    virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
+    virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
+    virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+
+    /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
+    /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
+    /// Returns the creator to use instead of this one, or `nullptr` to keep this one.
+    virtual std::shared_ptr<const ISerializationSubcolumnCreator> specializeForSelectedSubcolumn(const SerializationSubstream &) const
+    {
+        return nullptr;
+    }
+
+    virtual ~ISerializationSubcolumnCreator() = default;
+};
+
+/// Maps original states to their clones, so that a state shared by several readers stays shared among the clones.
+struct SerializationDeserializeBinaryBulkStateCloneContext
+{
+    std::unordered_map<const SerializationDeserializeBinaryBulkState *, SerializationDeserializeBinaryBulkStatePtr> cloned;
+};
+
+struct SerializationDeserializeBinaryBulkState
+{
+    using DeserializeBinaryBulkState = SerializationDeserializeBinaryBulkState;
+    using DeserializeBinaryBulkStatePtr = SerializationDeserializeBinaryBulkStatePtr;
+    using DeserializeBinaryBulkStateCloneContext = SerializationDeserializeBinaryBulkStateCloneContext;
+
+    SerializationDeserializeBinaryBulkState() = default;
+    SerializationDeserializeBinaryBulkState(const SerializationDeserializeBinaryBulkState &) = default;
+
+    virtual ~SerializationDeserializeBinaryBulkState() = default;
+
+    /// Returns the clone made earlier in the same context if there is one.
+    DeserializeBinaryBulkStatePtr clone(DeserializeBinaryBulkStateCloneContext & context) const;
+
+protected:
+    /// Nested states must be cloned through clone with the same context.
+    virtual DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const { return std::make_shared<SerializationDeserializeBinaryBulkState>(); }
+};
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -82,20 +128,8 @@ protected:
 public:
     virtual ~ISerialization() = default;
 
-    enum class Kind : UInt8
-    {
-        DEFAULT = 0,
-        SPARSE = 1,
-        DETACHED = 2,
-        REPLICATED = 3,
-    };
-
-    /// We can have multiple serialization kinds created over each other.
-    /// For example:
-    ///  - Detached over Sparse over Default
-    ///  - Detached over Replicated over Default
-    ///  - etc
-    using KindStack = std::vector<Kind>;
+    using Kind = SerializationKind;
+    using KindStack = SerializationKindStack;
 
     /// The kind of a column in the Native format is chosen by the peer that sends the data, so a
     /// reader declares with such a set which kinds the peer is allowed to select.
@@ -160,25 +194,11 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct Substream;
+    using Substream = SerializationSubstream;
+    using SubstreamData = SerializationSubstreamData;
+    using SubstreamPath = SerializationSubstreamPath;
 
-    struct ISubcolumnCreator
-    {
-        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
-        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
-
-        /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
-        /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
-        /// Returns the creator to use instead of this one, or `nullptr` to keep this one.
-        virtual std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream &) const
-        {
-            return nullptr;
-        }
-
-        virtual ~ISubcolumnCreator() = default;
-    };
-
+    using ISubcolumnCreator = ISerializationSubcolumnCreator;
     using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
 
     struct SerializeBinaryBulkState
@@ -186,186 +206,10 @@ public:
         virtual ~SerializeBinaryBulkState() = default;
     };
 
-    struct DeserializeBinaryBulkState
-    {
-        DeserializeBinaryBulkState() = default;
-        DeserializeBinaryBulkState(const DeserializeBinaryBulkState &) = default;
-
-        virtual ~DeserializeBinaryBulkState() = default;
-
-        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-    };
-
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkState = SerializationDeserializeBinaryBulkState;
     using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
-
-    struct SubstreamData
-    {
-        SubstreamData() = default;
-        explicit SubstreamData(SerializationPtr serialization_)
-            : serialization(std::move(serialization_))
-        {
-        }
-
-        SubstreamData & withType(DataTypePtr type_)
-        {
-            type = std::move(type_);
-            return *this;
-        }
-
-        SubstreamData & withColumn(ColumnPtr column_)
-        {
-            column = std::move(column_);
-            return *this;
-        }
-
-        SubstreamData & withSerializationInfo(SerializationInfoPtr serialization_info_)
-        {
-            serialization_info = std::move(serialization_info_);
-            return *this;
-        }
-
-        SubstreamData & withDeserializeState(DeserializeBinaryBulkStatePtr deserialize_state_)
-        {
-            deserialize_state = std::move(deserialize_state_);
-            return *this;
-        }
-
-        SubstreamData & withLazyColumnCreator(std::function<ColumnPtr()> lazy_column_creator_)
-        {
-            lazy_column_creator = std::move(lazy_column_creator_);
-            return *this;
-        }
-
-        SerializationPtr serialization;
-        DataTypePtr type;
-        ColumnPtr column;
-        SerializationInfoPtr serialization_info;
-
-        /// For types with dynamic subcolumns deserialize state contains information
-        /// about current dynamic structure. And this information can be useful
-        /// when we call enumerateStreams after deserializeBinaryBulkStatePrefix
-        /// to enumerate dynamic streams.
-        DeserializeBinaryBulkStatePtr deserialize_state;
-
-        /// When column is null, this optional creator can materialize it on demand.
-        /// Used for derived subcolumns (e.g. String `.size`) whose data can be
-        /// computed from a parent column without being stored separately.
-        std::function<ColumnPtr()> lazy_column_creator;
-    };
-
-    struct Substream
-    {
-        enum Type
-        {
-            ArrayElements,
-            ArraySizes,
-
-            StringSizes,
-            InlinedStringSizes,
-
-            NullableElements,
-            NullMap,
-            NullMapHidden,
-            SparseNullMap,
-
-            TupleElement,
-            NamedOffsets,
-            NamedNullMap,
-
-            DictionaryKeys,
-            DictionaryKeysPrefix,
-            DictionaryIndexes,
-
-            SparseElements,
-            SparseOffsets,
-
-            ReplicatedElements,
-            ReplicatedIndexes,
-
-            DeprecatedObjectStructure,
-            DeprecatedObjectData,
-
-            VariantDiscriminators,
-            VariantDiscriminatorsPrefix,
-            NamedVariantDiscriminators,
-            VariantOffsets,
-            VariantElements,
-            VariantElement,
-            VariantElementNullMap,
-
-            DynamicData,
-            DynamicStructure,
-
-            ObjectData,
-            ObjectTypedPath,
-            ObjectDynamicPath,
-            ObjectSharedData,
-            ObjectSharedDataStructure,
-            ObjectSharedDataStructurePrefix,
-            ObjectSharedDataStructureSuffix,
-            ObjectSharedDataData,
-            ObjectSharedDataSubstreams,
-            ObjectSharedDataPathsMarks,
-            ObjectSharedDataSubstreamsMarks,
-            ObjectSharedDataPathsSubstreamsMetadata,
-            ObjectSharedDataPathsInfos,
-            ObjectSharedDataCopy,
-            ObjectSharedDataCopySizes,
-            ObjectSharedDataCopyPathsIndexes,
-            ObjectSharedDataCopyValues,
-            ObjectStructure,
-
-            MapKeyValue,
-            ObjectDistinctPaths,
-            ObjectSubObject,
-            ObjectCombinedPath,
-
-            Bucket,
-            MapBucketsInfo,
-            MapBucketIndexes,
-
-            QuantizedCodes,
-            ProductQuantizationCodebook,
-
-            Regular,
-        };
-
-        /// Types of substreams that can have arbitrary name.
-        static const std::set<Type> named_types;
-
-        Type type = Type::Regular;
-
-        /// The name of a variant element type.
-        String variant_element_name;
-
-        /// Name of substream for type from 'named_types'.
-        String name_of_substream;
-
-        /// Path name for Object type elements.
-        String object_path_name;
-
-        /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
-        size_t bucket = 0;
-
-        /// Data for current substream.
-        SubstreamData data;
-
-        /// Creator of subcolumn for current substream.
-        SubcolumnCreatorPtr creator = nullptr;
-
-        /// Flag, that may help to traverse substream paths.
-        mutable bool visited = false;
-
-        Substream() = default;
-        Substream(Type type_) : type(type_) {} /// NOLINT
-        String toString() const;
-    };
-
-    struct SubstreamPath : public std::vector<Substream>
-    {
-        String toString() const;
-    };
+    using DeserializeBinaryBulkStateCloneContext = SerializationDeserializeBinaryBulkStateCloneContext;
 
     /// Cache for common substreams of one type, but possible different its subcolumns.
     /// E.g. sizes of arrays of Nested data type.
@@ -374,21 +218,13 @@ public:
         virtual ~ISubstreamsCacheElement() = default;
     };
 
-    /// Keys of the substreams caches are hashes of the substream paths, see `getSubstreamsCacheKeyForStream`.
-    struct SubstreamsCacheKeyHash
-    {
-        size_t operator()(const UInt128 & key) const { return static_cast<size_t>(key.items[0]); }
-    };
-
-    using SubstreamsCache = std::unordered_map<UInt128, std::unique_ptr<ISubstreamsCacheElement>, SubstreamsCacheKeyHash>;
+    using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
-        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
-        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -520,6 +356,13 @@ public:
         /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
         size_t min_compress_block_size = 0;
 
+        /// False if the granule being written continues in the next call. Used only in MergeTree.
+        bool granule_is_complete = true;
+
+        /// Serialization version of the typed shared data of Object. 0 is reserved, so the field is not value-initialized.
+        MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+            = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
+
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -624,7 +467,7 @@ public:
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
-    using SubstreamsDeserializeStatesCache = std::unordered_map<UInt128, DeserializeBinaryBulkStatePtr, SubstreamsCacheKeyHash>;
+    using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
@@ -777,7 +620,7 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
 
     /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
-    static UInt128 getSubstreamsCacheKeyForStream(const SubstreamPath & path);
+    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
@@ -874,7 +717,6 @@ protected:
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
-using SubstreamType = ISerialization::Substream::Type;
 
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const

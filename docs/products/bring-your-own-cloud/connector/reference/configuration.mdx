@@ -210,7 +210,7 @@ On Kubernetes the connector is configured through the `clicklink-connector` char
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `image.repository` | pre-set in the published chart | Connector image repository. The published chart points at the public registry image (multi-arch, cosign-signed); set it only to override, for example an in-boundary mirror. Inspect the published value with `helm show values`. |
-| `image.tag` | `""` (tracks the chart's `appVersion`; `init` pins the CLI version) | Image tag. |
+| `image.tag` | `""` (tracks the chart's `appVersion`) | Image tag. |
 | `image.pullPolicy` | `IfNotPresent` | Kubernetes image pull policy. |
 
 ### api {#helm-api}

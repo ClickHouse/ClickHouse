@@ -30,7 +30,8 @@ Usar o cache do cabeçalho do índice de texto pode reduzir significativamente a
 
 Habilita a avaliação de consultas LIKE/ILIKE por varredura do dicionário do índice de texto invertido.
 
-Os padrões acelerados são `%value%`, `value%` e `%value`, bem como as chamadas `startsWith` e `endsWith` que `optimize_rewrite_like_perfect_affix` reescreve como `value%` e `%value`.
+Os patterns acelerados são `%value%`, `value%` e `%value`, bem como as chamadas `startsWith` e `endsWith` que `optimize_rewrite_like_perfect_affix` reescreve como `value%` e `%value`.
+Uma chamada a `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` ou `multiSearchAnyCaseInsensitiveUTF8` com uma única needle é tratada como uma busca por `%value%`.
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

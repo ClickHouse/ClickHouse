@@ -54,7 +54,8 @@ SETTINGS
 
 -- Same predicate but reachable via the trivial-count / aggregate-projection optimizer path
 -- (`optimizeUseAggregateProjections`), which is the path the AST fuzzer used to surface the bug.
-SELECT trimBoth(explain) FROM (
+-- Check only that the combined skip index step is present: the `EXPLAIN` layout differs, e.g. with parallel replicas.
+SELECT count() > 0 FROM (
     SELECT * FROM viewExplain('EXPLAIN', 'indexes = 1',
         (SELECT count() FROM t_stid_3760 WHERE coalesce(a, b, c, coalesce(a, b, c, d), d) = 42))
 ) WHERE explain ILIKE '%<Combined skip indexes>%'

@@ -43,10 +43,13 @@ struct TaskLogsPayload
 
 struct DistributedQueryTaskStatus
 {
+    /// `Running`, `Failing`, `Finished`, `Cancelled`, `Failed` or `Unknown task`. A `Failing` task has
+    /// failed and still frees its resources. An older coordinator takes it as `Failed` and forgets the
+    /// task, which then ends on its own.
     String status;
     String error_message;
     Progress progress;
-    /// Error code of a failed task, 0 otherwise. Sent since task serialization version 3.
+    /// Error code of a failed or failing task, 0 otherwise. Sent since task serialization version 3.
     Int32 error_code = 0;
 
     /// Set when the reply carried the logs payload, i.e. the coordinator asked for logs and the

@@ -1,0 +1,29 @@
+one / processed	0
+one / bucket 0	1	one.csv
+one / bucket 1	1	one.csv
+zero / processed	1	zero.csv
+zero / buckets	0
+zero / processed after	0
+zero / bucket 0 after	1	zero.csv
+zero / bucket 1 after	1	zero.csv
+empty / buckets	2
+reset / processed	0
+reset / bucket 0	1	two.csv
+reset / bucket 1	1	two.csv
+legacy / processed	0
+legacy / bucket 0	1	legacy.csv
+legacy / bucket 1	1	legacy.csv
+dual root / processed	0
+dual root / bucket 0	1	d.csv
+dual root / bucket 1	1	d.csv
+dual bucket / processed	0
+dual bucket / bucket 0	1	b.csv
+dual bucket / bucket 1	1	b.csv
+interrupted / processed	0
+interrupted / bucket 0	1	legacy.csv
+interrupted / bucket 1	1	legacy.csv
+peer / processed	0
+peer / bucket 0	1	live.csv
+peer / bucket 1	0	
+part / bucket 1 after refusal	0
+part / bucket 0 after refusal	1	c.csv

@@ -11,6 +11,11 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
+
+#include <sstream>
 
 namespace DB
 {
@@ -18,12 +23,40 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int INCORRECT_DATA;
 extern const int INVALID_STATE;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 namespace FailPoints
 {
 extern const char paimon_incremental_read_pause_before_is_active_remove[];
+}
+
+String PaimonSnapshotIdentity::toJSON() const
+{
+    Poco::JSON::Object object;
+    object.set("timeMillis", time_millis);
+    object.set("baseManifestList", base_manifest_list);
+    object.set("deltaManifestList", delta_manifest_list);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(object, oss);
+    return oss.str();
+}
+
+PaimonSnapshotIdentity PaimonSnapshotIdentity::fromJSON(const String & json)
+{
+    Poco::JSON::Parser parser;
+    const auto object = parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+    const auto time_millis = object->get("timeMillis");
+    const auto base_manifest_list = object->get("baseManifestList");
+    const auto delta_manifest_list = object->get("deltaManifestList");
+    if (object->size() != 3 || !time_millis.isInteger() || time_millis.isBoolean() || !base_manifest_list.isString()
+        || !delta_manifest_list.isString())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Expected an object with exactly the fields timeMillis, baseManifestList and deltaManifestList");
+
+    return {time_millis.convert<Int64>(), base_manifest_list.extract<String>(), delta_manifest_list.extract<String>()};
 }
 
 PaimonProcessingLock::PaimonProcessingLock(
@@ -139,13 +172,40 @@ PaimonCommittedSnapshot PaimonStreamState::readCommittedSnapshot(const PaimonPro
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::readCommittedSnapshot");
 
-    PaimonCommittedSnapshot result;
-    Coordination::Stat stat;
-    String value;
-    if (processing_lock.getKeeper().tryGet(fs_keeper_path / COMMITTED_SNAPSHOT_NODE, value, &stat))
+    const String committed_path = fs_keeper_path / COMMITTED_SNAPSHOT_NODE;
+    const String identity_path = fs_keeper_path / COMMITTED_SNAPSHOT_IDENTITY_NODE;
+    auto responses = processing_lock.getKeeper().tryGet(std::vector<std::string>{committed_path, identity_path});
+    auto node_exists = [&](size_t index, const String & path)
     {
-        result.snapshot_id = parse<Int64>(value);
-        result.version = stat.version;
+        const auto error = responses[index].error;
+        if (error != Coordination::Error::ZOK && error != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(error, path);
+        return error == Coordination::Error::ZOK;
+    };
+
+    PaimonCommittedSnapshot result;
+    result.identity_node_exists = node_exists(1, identity_path);
+    if (!node_exists(0, committed_path))
+        return result;
+
+    const auto & committed = responses[0];
+    result.snapshot_id = parse<Int64>(committed.data);
+    result.version = committed.stat.version;
+
+    if (result.identity_node_exists && responses[1].stat.mzxid == committed.stat.mzxid)
+    {
+        try
+        {
+            result.snapshot_identity = PaimonSnapshotIdentity::fromJSON(responses[1].data);
+        }
+        catch (...)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Cannot parse the Paimon incremental read state at {}: {}. No data was read and the cursor was not "
+                "modified. Setting {} to its current value makes the next read ignore this node.",
+                identity_path, getCurrentExceptionMessage(/*with_stacktrace=*/false), committed_path);
+        }
     }
     return result;
 }
@@ -310,7 +370,10 @@ void PaimonStreamState::deactivate()
 }
 
 void PaimonStreamState::setCommittedSnapshot(
-    const PaimonProcessingLock & processing_lock, const PaimonCommittedSnapshot & observed, Int64 snapshot_id)
+    const PaimonProcessingLock & processing_lock,
+    const PaimonCommittedSnapshot & observed,
+    Int64 snapshot_id,
+    const std::optional<PaimonSnapshotIdentity> & snapshot_identity)
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::setCommittedSnapshot");
     std::lock_guard lock(mutex);
@@ -342,6 +405,15 @@ void PaimonStreamState::setCommittedSnapshot(
         ops.emplace_back(zkutil::makeSetRequest(committed_path, toString(snapshot_id), observed.version));
     else
         ops.emplace_back(zkutil::makeCreateRequest(committed_path, toString(snapshot_id), zkutil::CreateMode::Persistent));
+
+    if (snapshot_identity)
+    {
+        const auto identity_path = fs_keeper_path / COMMITTED_SNAPSHOT_IDENTITY_NODE;
+        if (observed.identity_node_exists)
+            ops.emplace_back(zkutil::makeSetRequest(identity_path, snapshot_identity->toJSON(), -1));
+        else
+            ops.emplace_back(zkutil::makeCreateRequest(identity_path, snapshot_identity->toJSON(), zkutil::CreateMode::Persistent));
+    }
 
     Coordination::Responses responses;
     auto code = lock_keeper.tryMulti(ops, responses, /*check_session_valid=*/true);
