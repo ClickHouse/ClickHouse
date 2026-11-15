@@ -11,17 +11,17 @@ SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 600, recent_samples_ttl_seconds = 0;
 
--- The bucket 600 holds the samples 700 and 1199.999, the bucket 1200 the sample 1250.
+-- The bucket 600 holds the samples 600 and 1199.999, the bucket 1200 the sample 1250.
 INSERT INTO ts (metric_name, tags, samples) VALUES
-    ('m', map('env', 'prod'), [(toDateTime64(700, 3), 1.), (toDateTime64(1199.999, 3), 2.), (toDateTime64(1250, 3), 3.)]);
+    ('m', map('env', 'prod'), [(toDateTime64(600, 3), 1.), (toDateTime64(1199.999, 3), 2.), (toDateTime64(1250, 3), 3.)]);
 
--- 599.997 seconds between the two samples of the bucket 600: its row matches by min_time and max_time and is filtered out.
-SELECT count() FROM timeSeriesSelector(ts, 'm', toDateTime64(700.001, 3), toDateTime64(1199.998, 3), 'samples');
+-- 599.997 seconds, inside the bucket 600 between its two samples: its row matches by min_time and max_time and is filtered out.
+SELECT count() FROM timeSeriesSelector(ts, 'm', toDateTime64(600.001, 3), toDateTime64(1199.998, 3), 'samples');
 -- 600 seconds: both rows have samples in the range.
 SELECT count(), countIf(empty(samples)) FROM timeSeriesSelector(ts, 'm', toDateTime64(800, 3), toDateTime64(1400, 3), 'samples');
 
 -- The filter is generated for the shorter range only.
-SELECT countIf(explain ILIKE '%empty(%') > 0 FROM (EXPLAIN actions = 1 SELECT * FROM timeSeriesSelector(ts, 'm', toDateTime64(700.001, 3), toDateTime64(1199.998, 3), 'samples'));
+SELECT countIf(explain ILIKE '%empty(%') > 0 FROM (EXPLAIN actions = 1 SELECT * FROM timeSeriesSelector(ts, 'm', toDateTime64(600.001, 3), toDateTime64(1199.998, 3), 'samples'));
 SELECT countIf(explain ILIKE '%empty(%') > 0 FROM (EXPLAIN actions = 1 SELECT * FROM timeSeriesSelector(ts, 'm', toDateTime64(800, 3), toDateTime64(1400, 3), 'samples'));
 
 DROP TABLE ts;
