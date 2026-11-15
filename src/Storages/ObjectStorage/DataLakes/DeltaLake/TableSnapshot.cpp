@@ -142,6 +142,7 @@ public:
         , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
         , read_schema(read_schema_)
+        , table_schema(table_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , callback(callback_)
@@ -219,7 +220,7 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
+            auto predicate = getEnginePredicate(filter.value(), table_schema, engine_predicate_exception, getContext());
             scan = KernelUtils::unwrapResult(
                 ffi::scan(
                     kernel_snapshot_state->snapshot.get(),
@@ -673,6 +674,7 @@ private:
 
     KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
+    DB::NamesAndTypesList table_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::IDataLakeMetadata::FileProgressCallback callback;

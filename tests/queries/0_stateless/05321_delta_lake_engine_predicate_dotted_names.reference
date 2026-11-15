@@ -1,0 +1,44 @@
+`a.b` = 100
+1
+files: 2
+`a.b` >= 100
+1
+2
+3
+4
+files: 2
+`x.y` = 12
+3
+files: 2
+d.`x.y` = 21
+2
+files: 2
+NOT `f.g`
+3
+4
+files: 2
+s.x.null = 0
+1
+2
+3
+4
+files: 2
+s.x = 32
+3
+files: 1
+s.x = 32 AND `a.b` = 300
+3
+files: 1
+`p.q`.r = 42
+3
+files: 2
+cdf: `x.y` = 11
+2
+cdf: s.x.null = 0
+1
+2
+3
+4
+cdf: s.x <= 30
+1
+2

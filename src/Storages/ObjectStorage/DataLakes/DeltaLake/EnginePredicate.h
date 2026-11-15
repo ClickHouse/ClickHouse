@@ -13,6 +13,7 @@ namespace DB
 {
 class ActionsDAG;
 class Context;
+class NamesAndTypesList;
 using ContextPtr = std::shared_ptr<const Context>;
 }
 
@@ -28,9 +29,11 @@ class EnginePredicate : public ffi::EnginePredicate
 public:
     explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         const DB::ActionsDAG & filter_,
+        const DB::NamesAndTypesList & schema_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_)
         : filter(filter_)
+        , schema(schema_)
         , exception(exception_)
         , context(context_)
         , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
@@ -49,6 +52,7 @@ public:
     }
 
     const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    const DB::NamesAndTypesList & getSchema() const { return schema; }
     DB::ContextPtr getContext() const { return context; }
     const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -57,6 +61,8 @@ private:
 
     /// Predicate expression.
     const DB::ActionsDAG & filter;
+    /// Delta table schema, to resolve the column names of the predicate.
+    const DB::NamesAndTypesList & schema;
     /// Exception which will be set during EnginePredicate execution.
     /// Exceptions cannot be rethrown as it will cause
     /// panic from rust and server terminate.
@@ -69,7 +75,7 @@ private:
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context);
+    const DB::ActionsDAG & filter, const DB::NamesAndTypesList & schema, std::exception_ptr & exception, DB::ContextPtr context);
 }
 
 #endif
