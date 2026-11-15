@@ -17,6 +17,7 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
+#include <Databases/DataLake/IcebergRestLabels.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -1895,6 +1896,9 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (metadata_object->has("table-uuid"))
         result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
+
+    if (result.requiresLabels())
+        result.setLabels(parseIcebergRestTableLabels(object));
 
     return true;
 }
