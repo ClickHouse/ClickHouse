@@ -12,6 +12,7 @@ SELECT 'MySQLDump', * FROM format(MySQLDump, 'e Enum8(\'a\' = 1, \'b\' = 2)', 'I
 SELECT 'Values', * FROM format(Values, 't Tuple(n UInt8, e Enum8(\'a\' = 1, \'b\' = 2))', '(NULL)');
 SELECT 'Values without interpreter', * FROM format(Values, 'e Enum8(\'a\' = 1, \'b\' = 2)', '(NULL)') SETTINGS input_format_values_interpret_expressions = 0;
 SELECT 'Values without templates', * FROM format(Values, 'e Enum8(\'a\' = 1, \'b\' = 2)', '(NULL)') SETTINGS input_format_values_interpret_expressions = 0, input_format_values_deduce_templates_of_expressions = 0;
+SELECT 'Values after an expression', * FROM format(Values, 'e Enum8(\'a\' = 1, \'b\' = 2)', '(1 + 0), (NULL)') SETTINGS input_format_values_interpret_expressions = 0;
 SELECT 'BSONEachRow', * FROM format(BSONEachRow, 'e Enum8(\'a\' = 1, \'b\' = 2), a Array(Enum8(\'a\' = 1, \'b\' = 2))', x'130000000a6500046100080000000a30000000');
 SELECT 'Nothing', toTypeName(x), count() FROM format(JSONEachRow, 'x Nothing', '{"x": null}') GROUP BY 2;
 
@@ -20,6 +21,8 @@ CREATE TABLE t_null_as_default_enum (id UInt8, e Enum8('a' = 1, 'b' = 2), d Enum
 INSERT INTO t_null_as_default_enum FORMAT JSONEachRow {"id": 1, "e": null, "d": null}
 
 INSERT INTO t_null_as_default_enum SETTINGS input_format_defaults_for_omitted_fields = 0 FORMAT JSONEachRow {"id": 2, "e": null, "d": null}
+
+INSERT INTO t_null_as_default_enum SETTINGS input_format_values_interpret_expressions = 0 VALUES (3, 1 + 1, 1 + 0), (4, NULL, NULL);
 
 SELECT * FROM t_null_as_default_enum ORDER BY id;
 DROP TABLE t_null_as_default_enum;
