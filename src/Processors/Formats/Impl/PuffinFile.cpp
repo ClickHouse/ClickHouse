@@ -28,7 +28,7 @@ std::optional<String> PuffinReader::readBlob(const PuffinBlob & blob) const
     if (blob.compression_codec.empty())
         return bytes;
 
-    CompressionMethod method;
+    CompressionMethod method = CompressionMethod::None;
     if (blob.compression_codec == "zstd")
         method = CompressionMethod::Zstd;
     else if (blob.compression_codec == "lz4")
