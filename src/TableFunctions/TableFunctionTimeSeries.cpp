@@ -109,14 +109,22 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         context->checkAccess(AccessType::INSERT, target_table->getStorageID());
     }
     else
+    {
         context->checkAccess(AccessType::SELECT, time_series_storage_id);
+        /// The planner doesn't check the storage returned by a table function, so the whole target must be readable.
+        context->checkAccess(AccessType::SELECT, target_table->getStorageID());
+    }
     return target_table;
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    auto target_table = getTargetTable(context);
+    /// The columns are the target's, so this needs what `DESCRIBE` of the target needs.
+    context->checkAccess(AccessType::SHOW_COLUMNS, target_table->getStorageID());
+    checkSourceStorageAccess(context, target_table, target_table->getStorageID(), AccessType::SHOW_COLUMNS);
+    auto metadata_snapshot = target_table->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 

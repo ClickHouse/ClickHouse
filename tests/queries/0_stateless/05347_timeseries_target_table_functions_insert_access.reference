@@ -22,5 +22,12 @@ timeSeriesTags: OK
 timeSeriesTimeRanges: OK
 timeSeriesMetricFamilies: OK
 2	2	2	2
--- reading still needs SELECT:
-grant SELECT ON db.ts (ACCESS_DENIED)
+-- reading needs SELECT on the TimeSeries table and on the whole target:
+without SELECT on the TimeSeries table: grant SELECT ON db.ts (ACCESS_DENIED)
+inner target without SELECT: grant SELECT ON db.<tags target> (ACCESS_DENIED)
+inner target with SELECT: OK
+external target without grants: grant SELECT ON db.ext_tags (ACCESS_DENIED)
+external target without grants, DESCRIBE: grant SHOW COLUMNS ON db.ext_tags (ACCESS_DENIED)
+external target with SELECT on other columns: grant SELECT ON db.ext_tags (ACCESS_DENIED)
+external target with SELECT: OK
+external target with SELECT, DESCRIBE: OK

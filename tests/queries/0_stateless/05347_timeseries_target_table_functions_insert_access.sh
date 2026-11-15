@@ -2,6 +2,7 @@
 
 # Writing through a target table function of a TimeSeries table needs INSERT on that table and on the target,
 # like `INSERT INTO` the TimeSeries table, and does not need SELECT.
+# Reading through it needs SELECT on that table and on the whole target.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -53,11 +54,40 @@ try_inserts "SELECT, INSERT on the TimeSeries table and its targets"
 ${CLICKHOUSE_CLIENT} -q "REVOKE SELECT ON ${db}.ts FROM ${user}"
 try_inserts "INSERT on the TimeSeries table and its targets"
 
-echo "-- reading still needs SELECT:"
-${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT count() FROM timeSeriesTags(${db}.ts)" 2>&1 \
-    | grep -m1 -oE "grant SELECT ON ${db}\.ts|\([A-Z_]+\)" | sed "s/${db}/db/" | paste -sd ' ' -
+function try_read()
+{
+    error=$(${CLICKHOUSE_CLIENT} --user "${user}" -q "${2}" 2>&1 \
+        | grep -m1 -oE "grant (SELECT|SHOW COLUMNS) ON ${db}\.(\`[^\`]*\`|[a-z_]+)|\([A-Z_]+\)" \
+        | sed -E "s/${db}/db/; s/\`\.inner_id\.([a-z]+)\.[^\`]*\`/<\1 target>/" | paste -sd ' ' -)
+    echo "${1}: ${error:-OK}"
+}
+
+echo "-- reading needs SELECT on the TimeSeries table and on the whole target:"
+try_read "without SELECT on the TimeSeries table" "SELECT count() FROM timeSeriesTags(${db}.ts)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.ts TO ${user}"
+try_read "inner target without SELECT" "SELECT count() FROM timeSeriesTags(${db}.ts)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.* TO ${user}"
+try_read "inner target with SELECT" "SELECT count() FROM timeSeriesTags(${db}.ts)"
+
+# An external target is checked the same way, so a grant on the TimeSeries table does not open the columns of the target.
+${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
+    REVOKE ALL ON ${db}.* FROM ${user};
+    CREATE TABLE ${db}.ext_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
+    ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
+    CREATE TABLE ${db}.ts_ext ENGINE = TimeSeries SETTINGS version = 9 TAGS ${db}.ext_tags;
+    GRANT SELECT ON ${db}.ts_ext TO ${user};
+"
+try_read "external target without grants" "SELECT count() FROM timeSeriesTags(${db}.ts_ext)"
+try_read "external target without grants, DESCRIBE" "DESCRIBE timeSeriesTags(${db}.ts_ext)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT(id, metric_name) ON ${db}.ext_tags TO ${user}"
+try_read "external target with SELECT on other columns" "SELECT tags FROM timeSeriesTags(${db}.ts_ext)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.ext_tags TO ${user}"
+try_read "external target with SELECT" "SELECT tags FROM timeSeriesTags(${db}.ts_ext)"
+try_read "external target with SELECT, DESCRIBE" "DESCRIBE timeSeriesTags(${db}.ts_ext)"
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE ${db}.ts;
+    DROP TABLE ${db}.ts_ext;
+    DROP TABLE ${db}.ext_tags;
     DROP USER ${user};
 "
