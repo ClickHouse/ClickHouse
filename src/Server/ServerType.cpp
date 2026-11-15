@@ -60,6 +60,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::INTERSERVER_HTTPS:
             case Type::ARROW_FLIGHT:
             case Type::ICEBERG_REST_CATALOG:
+            case Type::KAFKA:
                 return true;
             default:
                 return false;
@@ -130,6 +131,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;
+
+    else if (port_name == "kafka_port")
+        port_type = Type::KAFKA;
 
     else if (port_name == "grpc_port")
         port_type = Type::GRPC;

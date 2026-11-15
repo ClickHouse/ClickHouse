@@ -1805,6 +1805,33 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
+## kafka_port {#kafka_port}
+Port for communicating with clients over the Kafka protocol. See [Kafka interface](/interfaces/kafka).
+
+<Note>
+- Positive integers specify the port number to listen to
+- Empty values are used to disable communication with clients over the Kafka protocol.
+</Note>
+
+**Example**
+
+```xml
+<kafka_port>9092</kafka_port>
+```
+
+## kafka_protocol {#kafka_protocol}
+Settings of the Kafka-compatible interface enabled by [kafka_port](#kafka_port): the database of the topics, the advertised host and port, the table of committed offsets of consumer groups, and others. See [Kafka interface](/interfaces/kafka#enabling).
+
+**Example**
+
+```xml
+<kafka_protocol>
+    <database>default</database>
+    <advertised_host>clickhouse.example.com</advertised_host>
+    <group_initial_rebalance_delay_ms>3000</group_initial_rebalance_delay_ms>
+</kafka_protocol>
+```
+
 ## url_scheme_mappers {#url_scheme_mappers}
 Configuration for translating shortened or symbolic URL prefixes into full URLs.
 

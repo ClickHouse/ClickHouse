@@ -1,0 +1,12 @@
+--- consumed the records inserted by SQL
+0	10	k0	2026-01-01 00:00:00.000
+1	10	k1	2026-01-01 00:00:00.000
+2	10	k11	2026-01-01 00:00:00.000
+k7	sql 7	['n']	['7']
+--- the Kafka offset is _block_number * 2^32 + _block_offset
+30
+--- the produced records are inserted into the table
+20	190	20
+--- and consumed
+20	190
+1

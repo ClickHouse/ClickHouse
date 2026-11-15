@@ -151,6 +151,7 @@
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/Kafka/KafkaHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
@@ -594,6 +595,8 @@ namespace ProfileEvents
     extern const Event InterfaceMySQLReceiveBytes;
     extern const Event InterfacePostgreSQLSendBytes;
     extern const Event InterfacePostgreSQLReceiveBytes;
+    extern const Event InterfaceKafkaReceiveBytes;
+    extern const Event InterfaceKafkaSendBytes;
 }
 
 namespace fs = std::filesystem;
@@ -4867,6 +4870,31 @@ void Server::createServers(
                          makeServerParams(server_settings),
                          connection_filter));
 #endif
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::KAFKA))
+        {
+            port_name = "kafka_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                Kafka::BrokerSettings kafka_settings;
+                kafka_settings.load(config, "kafka_protocol");
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    ServerType::Type::KAFKA,
+                    "Kafka compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                         new KafkaHandlerFactory(*this, kafka_settings, ProfileEvents::InterfaceKafkaReceiveBytes, ProfileEvents::InterfaceKafkaSendBytes),
+                         server_pool,
+                         socket,
+                         makeServerParams(server_settings),
+                         connection_filter));
             });
         }
 

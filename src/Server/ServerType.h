@@ -30,6 +30,7 @@ public:
         QUERIES_CUSTOM,
         CLOUD,
         ICEBERG_REST_CATALOG,
+        KAFKA,
         END
     };
 
