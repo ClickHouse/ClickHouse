@@ -289,13 +289,18 @@ bool Elf::decompressSections(const std::vector<size_t> & indices) const
         inputs.emplace_back(compression, payload);
     }
 
-    /// The memory tracker does not throw while an exception is being formatted, so check the server limit here.
-    if (Int64 limit = total_memory_tracker.getHardLimit(); limit > 0)
+    /// The memory tracker does not throw while an exception is being formatted, so check the server limit here:
+    /// before allocating, and again with every buffer charged, since other threads allocate meanwhile.
+    auto fits_server_limit = [](uint64_t size)
     {
+        Int64 limit = total_memory_tracker.getHardLimit();
+        if (limit <= 0)
+            return true;
         Int64 used = std::max(total_memory_tracker.get(), total_memory_tracker.getRSS());
-        if (used >= limit || total_size > static_cast<uint64_t>(limit - used))
-            return false;
-    }
+        return used <= limit && size <= static_cast<uint64_t>(limit - used);
+    };
+    if (!fits_server_limit(total_size))
+        return false;
 
     bool done = false;
     try
@@ -304,14 +309,14 @@ bool Elf::decompressSections(const std::vector<size_t> & indices) const
             decompressed_sections.try_emplace(idx);
 
         std::vector<Memory<>> buffers(indices.size());
-        done = true;
+        for (size_t i = 0; i < indices.size(); ++i)
+            if (inputs[i].first.size != 0)
+                buffers[i] = Memory<>(inputs[i].first.size);
+
+        done = fits_server_limit(0);
         for (size_t i = 0; done && i < indices.size(); ++i)
-        {
-            if (inputs[i].first.size == 0)
-                continue;
-            buffers[i] = Memory<>(inputs[i].first.size);
-            done = decompressSection(inputs[i].first, inputs[i].second, buffers[i].data());
-        }
+            if (inputs[i].first.size != 0)
+                done = decompressSection(inputs[i].first, inputs[i].second, buffers[i].data());
 
         if (done)
             for (size_t i = 0; i < indices.size(); ++i)
