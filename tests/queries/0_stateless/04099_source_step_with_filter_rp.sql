@@ -57,3 +57,45 @@ DROP VIEW v_rp;
 DROP ROW POLICY rp_100003 ON t_rp;
 DROP TABLE ref_rp;
 DROP TABLE t_rp;
+
+DROP VIEW IF EXISTS v;
+DROP TABLE IF EXISTS t;
+
+CREATE TABLE t
+(
+    a Int32,
+    b Int32,
+    c Int32,
+    d String
+)
+ENGINE = MergeTree
+ORDER BY (d, a)
+PRIMARY KEY (d, a);
+
+INSERT INTO t VALUES
+    (1, 10, 11, 'fault'),
+    (2, 20, 0,  'fault');
+
+CREATE ROW POLICY t_rp
+ON t
+USING d = substring(currentUser(), 3)
+TO CURRENT_USER;
+
+CREATE VIEW v AS
+SELECT 101 AS x, 1 AS y;
+
+SELECT x, b
+FROM v AS r
+INNER JOIN
+(
+    SELECT a AS k, b
+    FROM t
+    WHERE c = 11
+) AS l
+    ON r.y = l.k
+SETTINGS optimize_move_to_prewhere = 1
+FORMAT JSONEachRow;
+
+DROP VIEW v;
+DROP ROW POLICY t_rp ON t;
+DROP TABLE t;

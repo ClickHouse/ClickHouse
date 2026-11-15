@@ -1,0 +1,12 @@
+ab
+ab
+AbC	abc	0
+\N	\N	1
+AbC	abc	0
+\N	\N	1
+a	b	ab	0	0
+\N	\N	\N	1	1
+a	\N	\N	0	1
+\N	b	\N	1	0
+a	\N	\N	0	1
+\N	\N	\N	1	1

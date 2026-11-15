@@ -6,6 +6,15 @@
 #include <cpuid.h>
 #endif
 
+#if defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+#include <sys/auxv.h>
+/// FreeBSD's <sys/auxv.h> pulls in <machine/elf.h>, which already defines HWCAP_SVE
+/// with the same bit value as Linux, so <asm/hwcap.h> is Linux-only.
+#if defined(__linux__) && !defined(HWCAP_SVE)
+#include <asm/hwcap.h>
+#endif
+#endif
+
 #include <cstring>
 
 #ifdef OS_LINUX
@@ -21,8 +30,8 @@ namespace CPU
 /// Our version is independent of -mxsave option, because we do dynamic dispatch.
 inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 {
-    UInt32 eax;
-    UInt32 edx;
+    UInt32 eax = 0;
+    UInt32 edx = 0;
     __asm__ volatile(
         "xgetbv"
         : "=a"(eax), "=d"(edx)
@@ -71,7 +80,7 @@ inline int get_cpuid()
 
 union CPUInfo
 {
-    UInt32 info[4];
+    UInt32 info[4]{};
 
     struct Registers
     {
@@ -389,6 +398,26 @@ inline bool haveGenuineIntel() noexcept
 #endif
 }
 
+inline bool haveSVE() noexcept
+{
+#if defined(__aarch64__) && defined(__linux__)
+    /** "Support for the execution of SVE instructions in userspace can also be detected by reading the CPU ID register ID_AA64PFR0_EL1
+      *  using an MRS instruction, and checking that the value of the SVE field is nonzero. It does not guarantee the presence of the system
+      *  interfaces described in the following sections: software that needs to verify that those interfaces are present must check for
+      *  HWCAP_SVE instead." (c) https://www.kernel.org/doc/Documentation/arm64/sve.txt
+      */
+    const UInt64 hwcap = getauxval(AT_HWCAP);
+    return (hwcap & HWCAP_SVE) != 0;
+#elif defined(__aarch64__) && defined(__FreeBSD__)
+    /// FreeBSD has no getauxval(); elf_aux_info() is the portable equivalent (see elf_aux_info(3)).
+    /// AT_HWCAP / HWCAP_SVE share the same values as Linux.
+    unsigned long hwcap = 0;
+    return elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0 && (hwcap & HWCAP_SVE) != 0;
+#else
+    return false;
+#endif
+}
+
 #define CPU_ID_ENUMERATE(OP) \
     OP(SSE) \
     OP(SSE2) \
@@ -440,11 +469,12 @@ inline bool haveGenuineIntel() noexcept
     OP(AMXBF16) \
     OP(AMXTILE) \
     OP(AMXINT8) \
-    OP(GenuineIntel)
+    OP(GenuineIntel) \
+    OP(SVE)
 
 struct CPUFlagsCache
 {
-#define DEF_NAME(X) static inline bool have_##X = have##X();
+#define DEF_NAME(X) static inline const bool have_##X = have##X();
     CPU_ID_ENUMERATE(DEF_NAME)
 #undef DEF_NAME
 };

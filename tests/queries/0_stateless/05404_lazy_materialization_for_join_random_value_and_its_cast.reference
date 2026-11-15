@@ -1,0 +1,10 @@
+-- the random value first
+0	1	p0
+1	1	p1
+2	1	p2
+-- the value computed from it first
+0	1	p0
+1	1	p1
+2	1	p2
+-- the payload is read lazily
+1

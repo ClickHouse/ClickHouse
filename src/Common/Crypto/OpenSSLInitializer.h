@@ -15,16 +15,18 @@ namespace DB
 struct OpenSSLInitializer : private boost::noncopyable
 {
 public:
-    static OpenSSLInitializer & instance()
-    {
-        static OpenSSLInitializer instance;
-        return instance;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static OpenSSLInitializer & instance();
 
     static void initialize();
     static void cleanup();
 
     bool isFIPSEnabled() const;
+
+    /// Whether the `MD5` digest can be fetched with the current default properties. It cannot under FIPS.
+    /// The result is cached on the first call.
+    bool isMD5Available() const;
 
 private:
     OpenSSLInitializer();

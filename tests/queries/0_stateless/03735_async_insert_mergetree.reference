@@ -35,7 +35,7 @@ Row 1:
 query:                       INSERT INTO default.src_table (id, name) FORMAT Values
 query_kind:                  AsyncInsertFlush
 exception_code:              0
-read_rows:                   72
+read_rows:                   81
 written_rows:                60
 QueriesWithSubqueries:       17
 SelectQueriesWithSubqueries: 12
@@ -48,7 +48,7 @@ Row 2:
 query:                       INSERT INTO default.src_table (id, name) FORMAT Values
 query_kind:                  AsyncInsertFlush
 exception_code:              0
-read_rows:                   0
+read_rows:                   6
 written_rows:                6
 QueriesWithSubqueries:       0
 SelectQueriesWithSubqueries: 0

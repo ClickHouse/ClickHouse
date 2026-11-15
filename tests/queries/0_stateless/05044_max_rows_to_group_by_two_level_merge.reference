@@ -1,0 +1,10 @@
+A merged total above the limit aborts the merge
+TOO_MANY_ROWS
+A bucket Top-K plan cannot hide the crossing
+TOO_MANY_ROWS
+A limit above the merged total leaves the result exact
+1
+The NULL group counts toward the limit
+has 600000 rows, maximum: 599999
+A break-mode limit does not stop the merge
+600000

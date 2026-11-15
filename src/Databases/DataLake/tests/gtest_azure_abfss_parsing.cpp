@@ -1,6 +1,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+#include <Core/SettingsEnums.h>
 #include <base/types.h>
 
 namespace DB::ErrorCodes
@@ -30,9 +31,27 @@ TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfssWithProtocol)
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfs)
+{
+    auto storage_type = parseStorageTypeFromString("abfs");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfsWithProtocol)
+{
+    auto storage_type = parseStorageTypeFromString("abfs://");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
 TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfss)
 {
     auto storage_type = parseStorageTypeFromLocation("abfss://container@account.dfs.core.windows.net/path/to/data");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfs)
+{
+    auto storage_type = parseStorageTypeFromLocation("abfs://container@account.dfs.core.windows.net/path/to/data");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
@@ -58,6 +77,21 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfss)
     EXPECT_TRUE(metadata.hasLocation());
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfs)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+
+    EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
+    EXPECT_TRUE(metadata.hasLocation());
+
+    /// The scheme is carried through verbatim; it selects the storage engine, never the wire protocol.
+    EXPECT_EQ(metadata.getLocation(), "abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+    EXPECT_EQ(metadata.getLocationWithEndpoint("https://mystorageaccount.dfs.core.windows.net"),
+              "https://mystorageaccount.dfs.core.windows.net/mycontainer/path/to/table/");
+}
+
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssGetLocation)
 {
     TableMetadata metadata;
@@ -75,7 +109,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssWithEndpoint)
     metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
     metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net");
 
-    std::string location = metadata.getLocation();
+    std::string location = metadata.getLocationWithEndpoint("https://mystorageaccount.dfs.core.windows.net");
     EXPECT_EQ(location, "https://mystorageaccount.dfs.core.windows.net/mycontainer/path/to/table/");
 }
 
@@ -92,18 +126,55 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationS3)
     EXPECT_EQ(location, "s3://mybucket/path/to/table");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3WithHttpEndpoint)
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointPathStyle)
 {
     TableMetadata metadata;
     metadata.withLocation();
-    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
-    metadata.setEndpoint("http://minio:9000");
+    metadata.setLocation("s3://mybucket/path/to/table");
 
-    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/data/testns/testtable/");
+    std::string location = metadata.getLocationWithEndpoint("https://s3.mycompany.com", DB::S3UriStyle::PATH);
+    EXPECT_EQ(location, "https://s3.mycompany.com/mybucket/path/to/table/");
+}
 
-    const std::string metadata_file =
-        "s3://warehouse-rest/data/testns/testtable/metadata/v1.metadata.json";
-    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHosted)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://mybucket/path/to/table");
+
+    std::string location = metadata.getLocationWithEndpoint("https://s3.mycompany.com", DB::S3UriStyle::VIRTUAL_HOSTED);
+    EXPECT_EQ(location, "https://mybucket.s3.mycompany.com/path/to/table/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedWithPort)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://mybucket/path/to/table");
+
+    std::string location = metadata.getLocationWithEndpoint("https://s3.mycompany.com:9000", DB::S3UriStyle::VIRTUAL_HOSTED);
+    EXPECT_EQ(location, "https://mybucket.s3.mycompany.com:9000/path/to/table/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedAlreadyEmbedded)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://mybucket/path/to/table");
+
+    std::string location = metadata.getLocationWithEndpoint("https://mybucket.s3.mycompany.com", DB::S3UriStyle::VIRTUAL_HOSTED);
+    EXPECT_EQ(location, "https://mybucket.s3.mycompany.com/path/to/table/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointAutoDefaultsToPathStyle)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://mybucket/path/to/table");
+
+    std::string auto_location = metadata.getLocationWithEndpoint("https://s3.mycompany.com", DB::S3UriStyle::AUTO);
+    std::string path_location = metadata.getLocationWithEndpoint("https://s3.mycompany.com", DB::S3UriStyle::PATH);
+    EXPECT_EQ(auto_location, path_location);
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationInvalidFormat)
@@ -137,16 +208,6 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationNonPolarisContainerInPath)
     EXPECT_EQ(metadata.getLocation(), location);
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationNonPolarisContainerInPathWithEndpoint)
-{
-    TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
-    metadata.setLocation("abfss://c@account.dfs.core.windows.net/c/table");
-    metadata.setEndpoint("https://account.dfs.core.windows.net");
-
-    EXPECT_EQ(metadata.getLocation(), "https://account.dfs.core.windows.net/c/table/");
-}
-
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationNonPolarisContainerInPath)
 {
     TableMetadata metadata;
@@ -161,7 +222,7 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationNonPolarisContaine
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationPolarisStyle)
 {
     TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
+    metadata.withLocation().withForceAddBucket();
     metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
 
     const std::string metadata_file =
@@ -174,35 +235,45 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationPolarisStyle)
     const std::string location = "abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path";
 
     TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
+    metadata.withLocation().withForceAddBucket();
     metadata.setLocation(location);
 
     /// `getLocation` without endpoint is always a round-trip regardless of the Polaris flag.
     EXPECT_EQ(metadata.getLocation(), location);
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationPolarisStyleWithEndpoint)
+/// A catalog can spell the table location and the metadata location with different ABFS schemes, e.g. the OneLake
+/// catalog reports `abfs://` locations for Fabric-written tables. Both name the same storage, so the metadata location
+/// must still become relative to the table.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfsTableAbfssMetadata)
 {
     TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
-    metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
-    metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net");
+    metadata.withLocation();
+    metadata.setLocation("abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
 
-    EXPECT_EQ(
-        metadata.getLocation(),
-        "https://mystorageaccount.dfs.core.windows.net/mycontainer/actual/path/");
+    const std::string metadata_file = "abfss://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationPolarisStyleWithEndpoint)
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfssTableAbfsMetadata)
 {
     TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
-    metadata.setLocation("abfss://mycontainer@account.dfs.core.windows.net/mycontainer/actual/path");
-    metadata.setEndpoint("https://account.dfs.core.windows.net");
+    metadata.withLocation();
+    metadata.setLocation("abfss://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
 
-    const std::string metadata_file =
-        "abfss://mycontainer@account.dfs.core.windows.net/mycontainer/actual/path/metadata/v1.metadata.json";
+    const std::string metadata_file = "abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
     EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
+/// Only the two ABFS spellings are equivalent: a scheme of another storage stays and the location is not relativized.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfsTableOtherSchemeMetadata)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
+
+    const std::string metadata_file = "s3://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), metadata_file);
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationEqualStrings)
@@ -215,55 +286,99 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationEqualStrings)
     EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationPolarisStyleEndpointTrailingSlash)
-{
-    TableMetadata metadata_no_slash;
-    metadata_no_slash.withLocation().withPolarisStyleAbfssPaths();
-    metadata_no_slash.setLocation("abfss://mycontainer@account.dfs.core.windows.net/mycontainer/actual/path");
-    metadata_no_slash.setEndpoint("https://account.dfs.core.windows.net");
-
-    TableMetadata metadata_with_slash;
-    metadata_with_slash.withLocation().withPolarisStyleAbfssPaths();
-    metadata_with_slash.setLocation("abfss://mycontainer@account.dfs.core.windows.net/mycontainer/actual/path");
-    metadata_with_slash.setEndpoint("https://account.dfs.core.windows.net/");
-
-    const std::string metadata_file =
-        "abfss://mycontainer@account.dfs.core.windows.net/mycontainer/actual/path/metadata/v1.metadata.json";
-
-    EXPECT_EQ(metadata_no_slash.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
-    EXPECT_EQ(metadata_with_slash.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
-}
-
-TEST_F(AzureAbfssParsingTest, TableMetadataContainerNamedDirNotStrippedWithoutPolarisFlag)
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointPathStyleRejectedForVirtualHostedEndpoint)
 {
     TableMetadata metadata;
     metadata.withLocation();
-    metadata.setLocation("abfss://mycontainer@account.dfs.core.windows.net/mycontainer/data/table");
-    metadata.setEndpoint("https://account.dfs.core.windows.net");
+    metadata.setLocation("s3://mybucket/path/to/table");
 
-    EXPECT_EQ(
-        metadata.getLocation(),
-        "https://account.dfs.core.windows.net/mycontainer/mycontainer/data/table/");
-
-    const std::string metadata_file =
-        "abfss://mycontainer@account.dfs.core.windows.net/mycontainer/data/table/metadata/v1.metadata.json";
-    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+    EXPECT_THROW(
+        metadata.getLocationWithEndpoint("https://mybucket.s3.mycompany.com", DB::S3UriStyle::PATH),
+        DB::Exception);
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataContainerNamedDirStrippedWithPolarisFlag)
+TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedDottedBucketName)
 {
     TableMetadata metadata;
-    metadata.withLocation().withPolarisStyleAbfssPaths();
-    metadata.setLocation("abfss://mycontainer@account.dfs.core.windows.net/mycontainer/data/table");
-    metadata.setEndpoint("https://account.dfs.core.windows.net");
+    metadata.withLocation();
+    metadata.setLocation("s3://my.dotted.bucket/path/to/table");
+
+    std::string location = metadata.getLocationWithEndpoint("https://s3.mycompany.com", DB::S3UriStyle::VIRTUAL_HOSTED);
+    EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssEndpointAlreadyContainsContainerDefault)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
+    metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net/mycontainer");
 
     EXPECT_EQ(
         metadata.getLocation(),
-        "https://account.dfs.core.windows.net/mycontainer/data/table/");
+        "https://mystorageaccount.dfs.core.windows.net/mycontainer/mycontainer/actual/path/");
+}
 
-    const std::string metadata_file =
-        "abfss://mycontainer@account.dfs.core.windows.net/mycontainer/data/table/metadata/v1.metadata.json";
-    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssEndpointAlreadyContainsContainerForceAddBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation().withForceAddBucket();
+    metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
+    metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net/mycontainer");
+
+    EXPECT_EQ(
+        metadata.getLocation(),
+        "https://mystorageaccount.dfs.core.windows.net/mycontainer/mycontainer/mycontainer/actual/path/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketDefault)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
+    metadata.setEndpoint("http://minio:9000/warehouse-rest");
+
+    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/data/testns/testtable/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketForceAddBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation().withForceAddBucket();
+    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
+    metadata.setEndpoint("http://minio:9000/warehouse-rest");
+
+    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/warehouse-rest/data/testns/testtable/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssContainerIsPrefixOfAccountHost)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://data@datalake.dfs.core.windows.net/some/path");
+    EXPECT_EQ(metadata.getLocationWithEndpoint("https://datalake.dfs.core.windows.net"),
+              "https://datalake.dfs.core.windows.net/data/some/path/");
+
+    TableMetadata same_name;
+    same_name.withLocation();
+    same_name.setLocation("abfss://analytics@analytics.dfs.core.windows.net/warehouse/t");
+    EXPECT_EQ(same_name.getLocationWithEndpoint("https://analytics.dfs.core.windows.net"),
+              "https://analytics.dfs.core.windows.net/analytics/warehouse/t/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssContainerMatchesWholeEndpointPathSegment)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://dev@devstoreaccount1.dfs.core.windows.net/t");
+    EXPECT_EQ(metadata.getLocationWithEndpoint("http://azurite1:10000/devstoreaccount1"),
+              "http://azurite1:10000/devstoreaccount1/dev/t/");
+
+    TableMetadata in_endpoint;
+    in_endpoint.withLocation();
+    in_endpoint.setLocation("abfss://mycontainer@devstoreaccount1.dfs.core.windows.net/t");
+    EXPECT_EQ(in_endpoint.getLocationWithEndpoint("http://azurite1:10000/devstoreaccount1/mycontainer"),
+              "http://azurite1:10000/devstoreaccount1/mycontainer/t/");
 }
 
 }

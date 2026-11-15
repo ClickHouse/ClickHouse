@@ -59,6 +59,7 @@ enum class HTTPConnectionGroupType : uint8_t
     DISK,
     STORAGE,
     HTTP,
+    AMBER,
 };
 
 class HTTPConnectionPools
@@ -72,6 +73,12 @@ public:
         size_t hard_limit = 25000;
 
         static constexpr size_t warning_step = 100;
+    };
+
+    struct SocketBufferSizes
+    {
+        size_t rcvbuf = 0;
+        size_t sndbuf = 0;
     };
 
     /// Socket inodes of live connections, grouped by connection pool type.
@@ -93,7 +100,13 @@ private:
 public:
     static HTTPConnectionPools & instance();
 
-    void setLimits(Limits disk, Limits storage, Limits http);
+    void setLimits(Limits disk, Limits storage, Limits http, Limits amber);
+    /// Whether the group holds at least `soft_limit` connections, in use and idle together. Above
+    /// the soft limit the pool economizes connections: idle ones expire sooner, and readers that
+    /// consult this stop keeping a connection open between reads.
+    bool isSoftLimitReached(HTTPConnectionGroupType type) const;
+    void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http, SocketBufferSizes amber);
+    SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
     void dropCache();
 
     IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);

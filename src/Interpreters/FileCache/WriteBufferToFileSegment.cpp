@@ -81,14 +81,20 @@ void WriteBufferToFileSegment::nextImpl()
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
     std::string failure_reason;
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, &reserve_stat);
+    bool ok = file_segment->reserve(
+        bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
+        &reserve_stat, /* reserve_hint */std::nullopt, &reserve_ahead);
 
     if (!ok)
     {
         String reserve_stat_msg;
-        for (const auto & [kind, stat] : reserve_stat.stat_by_kind)
+        for (size_t i = 0; i < reserve_stat.stat_by_kind.size(); ++i)
+        {
+            const auto kind = static_cast<FileSegmentKind>(i);
+            const auto & stat = reserve_stat.stat_by_kind[i];
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
+        }
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,

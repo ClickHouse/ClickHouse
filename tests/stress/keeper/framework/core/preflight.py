@@ -1,4 +1,3 @@
-import os
 
 from keeper.framework.core.util import has_bin, sh_root
 

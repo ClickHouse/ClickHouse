@@ -1,0 +1,13 @@
+-- ATTACH PARTITION FROM needs only INSERT on the destination
+OK
+OK
+-- ... and INSERT is still required: ALTER DELETE alone is not enough
+ACCESS_DENIED
+-- CREATE TABLE ... CLONE AS attaches all partitions, so it needs only INSERT as well
+OK
+-- REPLACE PARTITION drops the destination data, so it still needs ALTER DELETE
+ACCESS_DENIED
+-- ... and works once ALTER DELETE is granted
+OK
+-- the cloned table has the data of the source
+3
