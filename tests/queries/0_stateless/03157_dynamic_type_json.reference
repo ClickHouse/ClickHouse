@@ -1,5 +1,5 @@
-1	(((((((((('deep_value'))))))))))
-2	(((((((((('deep_array_value'))))))))))
+1	{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_value"}}}}}}}}}}
+2	{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_array_value"}}}}}}}}}}
 
-(((((((((('deep_value'))))))))))	Tuple(level1 Tuple(level2 Tuple(level3 Tuple(level4 Tuple(level5 Tuple(level6 Tuple(level7 Tuple(level8 Tuple(level9 Tuple(level10 String))))))))))
-(((((((((('deep_array_value'))))))))))	Tuple(level1 Tuple(level2 Tuple(level3 Tuple(level4 Tuple(level5 Tuple(level6 Tuple(level7 Tuple(level8 Tuple(level9 Tuple(level10 String))))))))))
+{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_value"}}}}}}}}}}	JSON
+{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_array_value"}}}}}}}}}}	JSON

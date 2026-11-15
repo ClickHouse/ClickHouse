@@ -1,30 +1,58 @@
 #pragma once
 
+#include <exception>
 #include <Core/Types.h>
 
 
 namespace DB
 {
-class Exception;
 enum class UserDefinedSQLObjectType : uint8_t;
 class ASTCreateQuery;
+struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
-/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationRemote.
+/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationOnCluster.
 /// RestoreCoordinationLocal is used while executing RESTORE without ON CLUSTER and performs coordination in memory.
-/// RestoreCoordinationRemote is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
+/// RestoreCoordinationOnCluster is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
 class IRestoreCoordination
 {
 public:
     virtual ~IRestoreCoordination() = default;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & new_stage, const String & message) = 0;
-    virtual void setError(const Exception & exception) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual void startup() {}
 
-    static constexpr const char * kErrorStatus = "error";
+    /// Sets that the restore query was sent to other hosts.
+    /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
+    virtual void setRestoreQueryIsSentToOtherHosts() = 0;
+    virtual bool isRestoreQuerySentToOtherHosts() const = 0;
+
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
+
+    /// Lets other hosts know that the current host has encountered an error.
+    virtual void setError(std::exception_ptr exception, bool throw_if_error) = 0;
+
+    /// Returns true if some host (the current host or one of the other hosts) has encountered an error.
+    virtual bool isErrorSet() const = 0;
+
+    /// Waits until all the other hosts finish their work.
+    /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
+    virtual void waitOtherHostsFinish(bool throw_if_error) const = 0;
+
+    /// Lets other hosts know that the current host has finished its work.
+    virtual void finish(bool throw_if_error) = 0;
+
+    /// Returns true if this host finished its work (i.e. finish() was called successfully).
+    virtual bool finished() const = 0;
+
+    /// Returns true if all the hosts finished their work.
+    virtual bool allHostsFinished() const = 0;
+
+    /// Removes temporary nodes in ZooKeeper.
+    virtual void cleanup(bool throw_if_error) = 0;
+
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    virtual bool acquireCreatingSharedDatabase(const String & database_name) = 0;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
@@ -41,17 +69,50 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
 
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    virtual bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) = 0;
+
+    /// Sets that this replica is going to restore the named collections of a replicated (Keeper) storage.
+    /// The function returns false if the collections of this storage are being already restored by another replica.
+    virtual bool acquireReplicatedNamedCollections(const String & replication_id) = 0;
+
+    /// Adds the directory in the backup from which this host would restore the named collections into
+    /// a replicated (Keeper) storage. The storage is shared by the hosts using it, so the one host
+    /// which acquires the restore (see acquireReplicatedNamedCollections) restores the directories
+    /// added by every host sharing it: the directories hold different collections when the backup was
+    /// taken from hosts with storages not shared the same way, e.g. a local storage on every host.
+    virtual void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) = 0;
+
+    /// Returns all the directories added for the given storage by addReplicatedNamedCollectionsDir.
+    virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
+
+    /// Whether the initiating host of the RESTORE ON CLUSTER query requires the right restoring
+    /// named collections needs (`CREATE NAMED COLLECTION`) of the initiating user before
+    /// dispatching the query. An internal restore must not restore the collections when the
+    /// initiator predates that check, because the dispatched query may be executed with full
+    /// access (see `restoreNamedCollections`).
+    virtual bool doesInitiatorCheckNamedCollectionsRestoreRights() const = 0;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;
+
+    /// Registers an EmbeddedRocksDB table sharing rocksdb_dir with the given election_id. When a writable
+    /// table shares the directory with read_only siblings, only the writable table replays the shared RocksDB.
+    virtual void addRocksDBTable(const String & rocksdb_dir, const String & election_id) = 0;
+
+    /// Returns the election_id of the elected owner for rocksdb_dir. The caller replays the shared data only
+    /// when it is the owner, or when the owner is not a writable table (an all-read_only group has no common
+    /// live view, so each table restores its own). Must be called only after all tables sharing the directory
+    /// have registered via addRocksDBTable().
+    virtual String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const = 0;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     virtual void generateUUIDForTable(ASTCreateQuery & create_query) = 0;
 
-    /// This function is used to check if concurrent restores are running
-    /// other than the restore passed to the function
-    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
+    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }

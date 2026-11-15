@@ -1,0 +1,8 @@
+--- COPY (query) resolves the qualified catalog relations to the emulated views
+int4
+text
+--- COPY (query) and a plain query agree on pg_table_is_visible
+only_in_other	0
+visible_here	1
+only_in_other|0
+visible_here|1

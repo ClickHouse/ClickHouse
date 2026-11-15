@@ -1,0 +1,177 @@
+query='SELECT * FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_mt)' with custom_key='sipHash64(x)'
+filter_type='custom_key_sampling' max_replicas=1
+Hello
+filter_type='custom_key_sampling' max_replicas=2
+Hello
+filter_type='custom_key_sampling' max_replicas=3
+Hello
+filter_type='custom_key_range' max_replicas=1
+Hello
+filter_type='custom_key_range' max_replicas=2
+Hello
+filter_type='custom_key_range' max_replicas=3
+Hello
+query='SELECT * FROM 02535_custom_key_mt' with custom_key='sipHash64(x)'
+filter_type='custom_key_sampling' max_replicas=1
+Hello
+filter_type='custom_key_sampling' max_replicas=2
+Hello
+filter_type='custom_key_sampling' max_replicas=3
+Hello
+filter_type='custom_key_range' max_replicas=1
+Hello
+filter_type='custom_key_range' max_replicas=2
+Hello
+filter_type='custom_key_range' max_replicas=3
+Hello
+query='SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_mt) GROUP BY y ORDER BY y' with custom_key='y'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+query='SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_mt) GROUP BY y ORDER BY y' with custom_key='cityHash64(y)'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+query='SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key_mt) GROUP BY y ORDER BY y' with custom_key='cityHash64(y) + 1'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+query='SELECT y, count() FROM 02535_custom_key_mt GROUP BY y ORDER BY y' with custom_key='y'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+query='SELECT y, count() FROM 02535_custom_key_mt GROUP BY y ORDER BY y' with custom_key='cityHash64(y)'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+query='SELECT y, count() FROM 02535_custom_key_mt GROUP BY y ORDER BY y' with custom_key='cityHash64(y) + 1'
+filter_type='custom_key_sampling' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_sampling' max_replicas=3
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=1
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=2
+0	334
+1	333
+2	333
+filter_type='custom_key_range' max_replicas=3
+0	334
+1	333
+2	333
+1

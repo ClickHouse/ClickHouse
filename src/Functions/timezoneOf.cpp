@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -9,12 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 namespace
 {
 
@@ -22,7 +17,7 @@ namespace
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
   * Example: Pacific/Pitcairn.
   */
-class FunctionTimezoneOf : public IFunction
+class FunctionTimezoneOf final : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
@@ -33,14 +28,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
+    String getSignatureString() const override
     {
-        DataTypePtr type_no_nullable = removeNullable(types[0]);
+        /// Legacy validator removed Nullable before checking DateTime/DateTime64.
+        return "(MaybeNullable(DateTime | DateTime64)) -> String";
+    }
 
-        if (isDateTime(type_no_nullable) || isDateTime64(type_no_nullable))
-            return std::make_shared<DataTypeString>();
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad argument for function {}, should be DateTime or DateTime64", name);
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -62,13 +58,37 @@ public:
         return DataTypeString().createColumnConst(1,
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
+
 };
 
 }
 
 REGISTER_FUNCTION(TimezoneOf)
 {
-    factory.registerFunction<FunctionTimezoneOf>();
+    FunctionDocumentation::Description description = R"(
+Returns the timezone name of a [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) value.
+    )";
+    FunctionDocumentation::Syntax syntax = "timezoneOf(datetime)";
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "A value of type.", {"DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name to convert the `datetime` value's timezone to.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the timezone name for `datetime`", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", R"(
+SELECT timezoneOf(now());
+        )",
+        R"(
+┌─timezoneOf(now())─┐
+│ Etc/UTC           │
+└───────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTimezoneOf>(documentation);
     factory.registerAlias("timeZoneOf", "timezoneOf");
 }
 

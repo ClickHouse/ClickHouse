@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/45535
-SET allow_experimental_analyzer=1;
 
 SELECT
   *,

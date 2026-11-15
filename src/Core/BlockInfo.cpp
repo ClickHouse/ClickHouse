@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
@@ -14,16 +15,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_BLOCK_INFO_FIELD;
+    extern const int INCORRECT_DATA;
 }
 
 
 /// Write values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
-void BlockInfo::write(WriteBuffer & out) const
+void BlockInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
 /// Set of pairs `FIELD_NUM`, value in binary form. Then 0.
-#define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
-    writeVarUInt(FIELD_NUM, out); \
-    writeBinary(NAME, out);
+#define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
+    if (server_protocol_revision >= (MIN_PROTOCOL_REVISION)) \
+    { \
+        writeVarUInt(FIELD_NUM, out); \
+        writeBinary(NAME, out); \
+    }
 
     APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD)
 
@@ -31,8 +36,50 @@ void BlockInfo::write(WriteBuffer & out) const
     writeVarUInt(0, out);
 }
 
+namespace
+{
+
+template <typename T>
+void readField(T & value, ReadBuffer & in)
+{
+    readBinary(value, in);
+}
+
+/** The number of out of order buckets comes from the peer, and the vector is resized to it before the
+  * bucket ids are read. A list of two-level aggregation bucket ids cannot name more buckets than
+  * there are (256), and in practice it holds a few of them.
+  */
+constexpr size_t MAX_OUT_OF_ORDER_BUCKETS = 256;
+
+/// Bucket numbers are used as indices of the buckets of two-level aggregation (there are 256 of them).
+constexpr Int32 MAX_BUCKET_NUM = 255;
+
+void checkBucketNum(Int32 bucket_num, Int32 min_bucket_num)
+{
+    if (bucket_num < min_bucket_num || bucket_num > MAX_BUCKET_NUM)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Bucket number {} in BlockInfo is out of range, expected a value from {} to {}",
+            bucket_num, min_bucket_num, MAX_BUCKET_NUM);
+}
+
+/// The only `Int32` field is `bucket_num`, which is -1 for a block that does not belong to a bucket.
+void readField(Int32 & value, ReadBuffer & in)
+{
+    readBinary(value, in);
+    checkBucketNum(value, -1);
+}
+
+void readField(VectorWithMemoryTracking<Int32> & value, ReadBuffer & in)
+{
+    readVectorBinary(value, in, MAX_OUT_OF_ORDER_BUCKETS);
+    for (Int32 bucket : value)
+        checkBucketNum(bucket, 0);
+}
+
+}
+
 /// Read values in binary form.
-void BlockInfo::read(ReadBuffer & in)
+void BlockInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     UInt64 field_num = 0;
 
@@ -44,10 +91,11 @@ void BlockInfo::read(ReadBuffer & in)
 
         switch (field_num)
         {
-        #define READ_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
-            case FIELD_NUM: \
-                readBinary(NAME, in); \
-                break;
+#define READ_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
+    case FIELD_NUM: \
+        if (client_protocol_revision >= (MIN_PROTOCOL_REVISION)) \
+            readField(NAME, in); \
+        break;
 
             APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD)
 
@@ -58,36 +106,4 @@ void BlockInfo::read(ReadBuffer & in)
     }
 }
 
-void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(row_idx + 1);
-    mask[row_idx] = true;
-}
-
-void BlockMissingValues::setBits(size_t column_idx, size_t rows)
-{
-    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
-    mask.resize(rows);
-    std::fill(mask.begin(), mask.end(), true);
-}
-
-const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const
-{
-    static RowsBitMask none;
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it != rows_mask_by_column_id.end())
-        return it->second;
-    return none;
-}
-
-bool BlockMissingValues::hasDefaultBits(size_t column_idx) const
-{
-    auto it = rows_mask_by_column_id.find(column_idx);
-    if (it == rows_mask_by_column_id.end())
-        return false;
-
-    const auto & col_mask = it->second;
-    return std::find(col_mask.begin(), col_mask.end(), true) != col_mask.end();
-}
 }

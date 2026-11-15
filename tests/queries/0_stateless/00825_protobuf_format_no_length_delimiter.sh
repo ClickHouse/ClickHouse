@@ -9,7 +9,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS no_length_delimiter_protobuf_00825;
 DROP TABLE IF EXISTS roundtrip_no_length_delimiter_protobuf_00825;
 
@@ -30,6 +30,7 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM no_length_delimiter_protobuf_00825 LIM
 echo
 echo "Binary representation:"
 hexdump -C $BINARY_FILE_PATH
+trap 'rm -f "$BINARY_FILE_PATH"' EXIT
 
 echo
 (cd $SCHEMADIR && $PROTOC_BINARY --decode Message 00825_protobuf_format_no_length_delimiter.proto) < $BINARY_FILE_PATH
@@ -43,11 +44,11 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_no_length_delimiter_protobuf
 rm "$BINARY_FILE_PATH"
 
 # The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
-$CLICKHOUSE_CLIENT --multiquery > /dev/null <<EOF
+$CLICKHOUSE_CLIENT > /dev/null <<EOF
 SELECT * FROM no_length_delimiter_protobuf_00825 FORMAT ProtobufSingle SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_no_length_delimiter:Message'; -- { clientError 546 }
 EOF
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE no_length_delimiter_protobuf_00825;
 DROP TABLE roundtrip_no_length_delimiter_protobuf_00825;
 EOF

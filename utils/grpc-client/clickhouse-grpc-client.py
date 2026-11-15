@@ -20,14 +20,23 @@ STDIN_BUFFER_SIZE = 1048576
 DEFAULT_ENCODING = "utf-8"
 
 
+import argparse
+import cmd
+import os
+import signal
+import sys
+import threading
+import time
+import uuid
+
 import grpc  # pip3 install grpcio
-import argparse, cmd, os, signal, sys, threading, time, uuid
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 
 class ClickHouseGRPCError(Exception):
@@ -65,6 +74,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         port=DEFAULT_PORT,
         user_name=DEFAULT_USER_NAME,
         password="",
+        jwt="",
         database="",
         output_format="",
         settings="",
@@ -76,6 +86,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         self.port = port
         self.user_name = user_name
         self.password = password
+        self.jwt = jwt
         self.database = database
         self.output_format = output_format
         self.settings = settings
@@ -99,6 +110,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
                 query=query_text,
                 user_name=self.user_name,
                 password=self.password,
+                jwt=self.jwt,
                 database=self.database,
                 output_format="TabSeparated",
                 settings=self.settings,
@@ -140,6 +152,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
                         query=query_text,
                         user_name=self.user_name,
                         password=self.password,
+                        jwt=self.jwt,
                         database=self.database,
                         output_format=self.output_format,
                         settings=self.settings,
@@ -295,7 +308,7 @@ def main(args):
     parser.add_argument(
         "--host",
         "-h",
-        help="The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.",
+        help="The server name, 'localhost' by default. You can use either the name or the IPv4 or IPv6 address.",
         default="localhost",
     )
     parser.add_argument(
@@ -307,11 +320,16 @@ def main(args):
         "--user",
         "-u",
         dest="user_name",
-        help="The username. Default value: ‘default’.",
+        help="The username. Default value: 'default'.",
         default="default",
     )
     parser.add_argument(
         "--password", help="The password. Default value: empty string.", default=""
+    )
+    parser.add_argument(
+        "--jwt",
+        help="JSON Web Token based authentication. Default value: empty string.",
+        default="",
     )
     parser.add_argument(
         "--query",
@@ -322,7 +340,7 @@ def main(args):
     parser.add_argument(
         "--database",
         "-d",
-        help="Select the current default database. Default value: the current database from the server settings (‘default’ by default).",
+        help="Select the current default database. Default value: the current database from the server settings ('default' by default).",
         default="",
     )
     parser.add_argument(
@@ -357,6 +375,7 @@ def main(args):
             port=args.port,
             user_name=args.user_name,
             password=args.password,
+            jwt=args.jwt,
             database=args.database,
             output_format=output_format,
             verbatim=verbatim,

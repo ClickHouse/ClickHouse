@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/CaseAwareBlockNameMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -24,7 +25,7 @@ class JSONEachRowRowInputFormat : public IRowInputFormat
 public:
     JSONEachRowRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_,
         bool yield_strings_);
@@ -43,25 +44,20 @@ private:
 
     size_t countRows(size_t max_block_size) override;
     bool supportsCountRows() const override { return true; }
+    bool supportsCustomSerializations() const override { return true; }
 
     const String & columnName(size_t i) const;
-    size_t columnIndex(StringRef name, size_t key_index);
+    size_t columnIndex(std::string_view name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
-    void skipUnknownField(StringRef name_ref);
-    StringRef readColumnName(ReadBuffer & buf);
+    void skipUnknownField(std::string_view name_ref);
+    std::string_view readColumnName(ReadBuffer & buf);
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
 
     virtual void readRowStart(MutableColumns &) {}
     virtual void skipRowStart() {}
-    String transformFieldNameToLowerCase(const StringRef & field_name)
-    {
-        String field_name_str = field_name.toString();
-        std::transform(field_name_str.begin(), field_name_str.end(), field_name_str.begin(),
-            [](unsigned char c) { return std::tolower(c); });
-        return field_name_str;
-    }
+
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
     /// of the nested column names (so that appending the field name to it produces
@@ -79,11 +75,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
-    Block::NameMap name_map;
-    /// Hash table match `lower_case field name -> field name in the block`.
-    std::unordered_map<String, StringRef> lower_case_name_map;
+    CaseAwareBlockNameMap name_map;
+
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::const_iterator> prev_positions;
+    VectorWithMemoryTracking<std::pair<std::string_view, size_t>> prev_positions;
 
     bool yield_strings;
 
@@ -93,9 +88,9 @@ protected:
     const FormatSettings format_settings;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    std::vector<UInt8> read_columns;
+    VectorWithMemoryTracking<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
     size_t seen_columns_count = 0;
     size_t total_columns = 0;
 

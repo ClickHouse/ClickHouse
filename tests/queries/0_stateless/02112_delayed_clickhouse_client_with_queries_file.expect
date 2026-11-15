@@ -22,7 +22,7 @@ expect_after {
 }
 
 system "echo \"drop table if exists t; create table t(i String) engine=Memory; insert into t select 'test string'\" > $CLICKHOUSE_TMP/file_02112"
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion --interactive --queries-file $CLICKHOUSE_TMP/file_02112"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion --enable-progress-table-toggle=0 --interactive --queries-file $CLICKHOUSE_TMP/file_02112"
 expect ":) "
 
 send -- "select i from t format TSV\r"

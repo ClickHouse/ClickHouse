@@ -1,0 +1,100 @@
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+
+namespace DB
+{
+
+namespace
+{
+
+std::string astToString(ASTPtr ast_ptr)
+{
+    if (!ast_ptr)
+        return "";
+
+    return ast_ptr->formatWithSecretsOneLine();
+}
+
+std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
+{
+    if (!metadata_snapshot->hasAnyTTL())
+        return std::nullopt;
+
+    return PartProperties::GeneralTTLInfo{
+        .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
+        .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
+        .has_any_non_finished_column_ttls = part->ttl_infos.hasAnyNonFinishedColumnTTLs(),
+        .part_min_ttl = part->ttl_infos.part_min_ttl,
+        .part_max_ttl = part->ttl_infos.part_max_ttl,
+        .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
+    };
+}
+
+std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
+{
+    if (!metadata_snapshot->hasAnyRecompressionTTL())
+        return std::nullopt;
+
+    const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
+    const auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
+
+    if (ttl_description)
+    {
+        /// If the part's own default codec could not be recovered exactly (see
+        /// `IMergeTreeDataPart::default_codec_is_approximate`), the comparison below cannot be trusted
+        /// either way: treat the codec as unknown and always let the merge selector reconsider the
+        /// part, rather than risk a wrong guess suppressing a recompression that is still needed.
+        if (part->default_codec_is_approximate)
+            return PartProperties::RecompressTTLInfo{
+                .will_change_codec = true,
+                .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
+            };
+
+        /// FIXME: Implement in other way -- not string comparison
+        const std::string next_codec = astToString(ttl_description->recompression_codec);
+        const std::string current_codec = astToString(part->default_codec->getFullCodecDescription());
+
+        return PartProperties::RecompressTTLInfo{
+            .will_change_codec = (next_codec != current_codec),
+            .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
+        };
+    }
+
+    return std::nullopt;
+}
+
+std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & part)
+{
+    std::set<std::string> projection_names;
+
+    for (auto && [name, projection_part] : part->getProjectionParts())
+        if (!projection_part->is_broken)
+            projection_names.insert(name);
+
+    return projection_names;
+}
+
+}
+
+PartProperties buildPartProperties(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    time_t current_time)
+{
+    return PartProperties{
+        .name = part->name,
+        .info = part->info,
+        .projection_names = getCalculatedProjectionNames(part),
+        .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
+        .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
+        .size = part->getExistingBytesOnDisk(),
+        .age = current_time - part->modification_time,
+        .rows = part->rows_count,
+        .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
+        .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
+    };
+}
+
+}

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/TypeList.h>
 #include <base/range.h>
 
 
@@ -14,12 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 template <typename Impl>
-class FunctionNumericPredicate : public IFunction
+class FunctionNumericPredicate final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -43,49 +43,49 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isNativeNumber(arguments.front()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
+        /// `BFloat16` is not a `NativeNumber` but is accepted by these predicates (matches the
+        /// legacy `isNativeNumber(arg) || isBFloat16(arg)` check); `Decimal` / wide integers stay rejected.
+        return "(NativeNumber | BFloat16) -> UInt8";
+    }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * in = arguments.front().column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(in))
-            || (res = execute<UInt16>(in))
-            || (res = execute<UInt32>(in))
-            || (res = execute<UInt64>(in))
-            || (res = execute<Int8>(in))
-            || (res = execute<Int16>(in))
-            || (res = execute<Int32>(in))
-            || (res = execute<Int64>(in))
-            || (res = execute<Float32>(in))
-            || (res = execute<Float64>(in))))
+        TypeListUtils::forEach(
+            TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16>{},
+            [&]<typename T>(TypeList<T>)
+            {
+                if (!res)
+                    res = execute<T>(in, input_rows_count);
+            });
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return res;
     }
 
     template <typename T>
-    ColumnPtr execute(const IColumn * in_untyped) const
+    ColumnPtr execute(const IColumn * in_untyped, size_t input_rows_count) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
-            const auto size = in->size();
-
-            auto out = ColumnUInt8::create(size);
+            auto out = ColumnUInt8::create(input_rows_count);
 
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
 
-            for (const auto i : collections::range(0, size))
+            for (size_t i = 0; i < input_rows_count; ++i)
                 out_data[i] = Impl::execute(in_data[i]);
 
             return out;

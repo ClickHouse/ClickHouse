@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/ParsedTemplateFormatString.h>
 
@@ -11,9 +12,11 @@ class WriteBuffer;
 class CustomSeparatedRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    CustomSeparatedRowOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
+    CustomSeparatedRowOutputFormat(SharedHeader header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_);
 
     String getName() const override { return "CustomSeparatedRowOutputFormat"; }
+
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     using EscapingRule = FormatSettings::EscapingRule;
@@ -26,7 +29,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
 
-    void writeLine(const std::vector<String> & values);
+    void writeLine(std::span<const String> values);
     bool with_names;
     bool with_types;
     const FormatSettings format_settings;

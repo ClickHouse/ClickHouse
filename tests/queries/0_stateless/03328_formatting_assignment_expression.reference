@@ -1,0 +1,3 @@
+ALTER TABLE t (UPDATE  c = (1 AS a) WHERE true)
+ALTER TABLE t (UPDATE  c = a > 1 WHERE true)
+ALTER TABLE t (UPDATE  c = a IS NULL WHERE true)

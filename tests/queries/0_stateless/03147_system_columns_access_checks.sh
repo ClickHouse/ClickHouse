@@ -18,7 +18,7 @@ seq 1 $NUM_TABLES | xargs -P "${THREADS}" -I{} bash -c "
 "
 echo
 
-$CLICKHOUSE_CLIENT --multiquery "
+$CLICKHOUSE_CLIENT "
 DROP USER IF EXISTS test_03147;
 CREATE USER test_03147;
 GRANT SELECT (end) ON ${CLICKHOUSE_DATABASE}.test1 TO test_03147;
@@ -31,6 +31,6 @@ GRANT SELECT (end) ON ${CLICKHOUSE_DATABASE}.test1 TO test_03147;
 # The test could succeed even on the previous version, but it will show up as being too slow.
 $CLICKHOUSE_CLIENT --user test_03147 --query "SELECT name FROM system.columns WHERE database = currentDatabase()"
 
-$CLICKHOUSE_CLIENT --multiquery "
+$CLICKHOUSE_CLIENT "
 DROP USER test_03147;
 "

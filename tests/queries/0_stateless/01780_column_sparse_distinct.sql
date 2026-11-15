@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 1;
+
 DROP TABLE IF EXISTS t_sparse_distinct;
 
 CREATE TABLE t_sparse_distinct (id UInt32, v UInt64)

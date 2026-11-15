@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer=1;
 SELECT
     1 AS value,
     *

@@ -52,9 +52,26 @@ bool ReadBufferFromFileDecorator::nextImpl()
     return result;
 }
 
-size_t ReadBufferFromFileDecorator::getFileSize()
+std::optional<size_t> ReadBufferFromFileDecorator::tryGetFileSize()
 {
-    return getFileSizeFromReadBuffer(*impl);
+    return tryGetFileSizeFromReadBuffer(*impl);
+}
+
+std::optional<Field> ReadBufferFromFileDecorator::getMetadata(const String & name) const
+{
+    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(impl.get()))
+        return provider->getMetadata(name);
+    return std::nullopt;
+}
+
+void ReadBufferFromFileDecorator::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
+{
+    if (auto * file_impl = dynamic_cast<ReadBufferFromFileBase *>(impl.get()))
+    {
+        swap(*impl);
+        file_impl->setIOSchedulingSettings(io_scheduling);
+        swap(*impl);
+    }
 }
 
 }

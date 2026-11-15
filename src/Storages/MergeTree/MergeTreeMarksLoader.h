@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Storages/MarkCache.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Common/ThreadPool_fwd.h>
 
+#include <atomic>
+#include <future>
 
 namespace DB
 {
@@ -46,7 +48,8 @@ public:
         bool save_marks_in_cache_,
         const ReadSettings & read_settings_,
         ThreadPool * load_marks_threadpool_,
-        size_t num_columns_in_mark_);
+        size_t num_columns_in_mark_,
+        bool use_streaming_compression_);
 
     ~MergeTreeMarksLoader();
 
@@ -63,6 +66,7 @@ private:
     const bool save_marks_in_cache;
     const ReadSettings read_settings;
     const size_t num_columns_in_mark;
+    const bool use_streaming_compression;
 
     std::mutex load_mutex;
     MarkCache::MappedPtr marks;
@@ -73,8 +77,21 @@ private:
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;
+    std::atomic<bool> is_canceled{false};
 };
 
 using MergeTreeMarksLoaderPtr = std::shared_ptr<MergeTreeMarksLoader>;
+
+class IMergeTreeDataPart;
+struct MergeTreeSettings;
+
+/// Adds computed marks for part to the marks cache.
+void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache);
+
+/// Removes cached marks for all columns from part.
+void removeMarksFromCache(const IMergeTreeDataPart & part, MarkCache * mark_cache);
+
+/// Returns the list of columns suitable for prewarming of mark cache according to settings.
+Names getColumnsToPrewarmMarks(const MergeTreeSettings & settings, const NamesAndTypesList & columns_list);
 
 }

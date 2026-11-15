@@ -1,4 +1,1 @@
-SELECT
-    a,
-    b
-FROM a
+SELECT *\nFROM a

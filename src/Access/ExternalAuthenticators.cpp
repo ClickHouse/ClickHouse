@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
 #include <Access/SettingsAuthResponseParser.h>
@@ -6,8 +7,9 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Interpreters/ClientInfo.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <optional>
@@ -43,7 +45,7 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
     if (has_scope)
     {
         auto scope = config.getString(prefix + ".scope");
-        boost::algorithm::to_lower(scope);
+        toLowerASCII(scope);
 
         if (scope == "base")           params.scope = LDAPClient::SearchParams::Scope::BASE;
         else if (scope == "one_level") params.scope = LDAPClient::SearchParams::Scope::ONE_LEVEL;
@@ -79,6 +81,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
+    const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -119,7 +122,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_enable_tls)
     {
         String enable_tls_lc_str = config.getString(ldap_server_config + ".enable_tls");
-        boost::to_lower(enable_tls_lc_str);
+        toLowerASCII(enable_tls_lc_str);
 
         if (enable_tls_lc_str == "starttls")
             params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
@@ -132,7 +135,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_tls_minimum_protocol_version)
     {
         String tls_minimum_protocol_version_lc_str = config.getString(ldap_server_config + ".tls_minimum_protocol_version");
-        boost::to_lower(tls_minimum_protocol_version_lc_str);
+        toLowerASCII(tls_minimum_protocol_version_lc_str);
 
         if (tls_minimum_protocol_version_lc_str == "ssl2")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL2;
@@ -153,7 +156,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_tls_require_cert)
     {
         String tls_require_cert_lc_str = config.getString(ldap_server_config + ".tls_require_cert");
-        boost::to_lower(tls_require_cert_lc_str);
+        toLowerASCII(tls_require_cert_lc_str);
 
         if (tls_require_cert_lc_str == "never")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::NEVER;
@@ -190,13 +193,16 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (port > 65535)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'port' entry");
 
-        params.port = port;
+        params.port = static_cast<UInt16>(port);
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     if (has_search_limit)
         params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
+
+    if (has_follow_referrals)
+        params.follow_referrals = config.getBool(ldap_server_config + ".follow_referrals");
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
@@ -213,7 +219,7 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
         if (bracket_pos != std::string::npos)
             key.resize(bracket_pos);
 
-        boost::algorithm::to_lower(key);
+        toLowerASCII(key);
 
         reealm_key_count += (key == "realm");
         principal_keys_count += (key == "principal");
@@ -250,6 +256,14 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     http_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
     http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
     http_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+
+    Strings forward_headers;
+    config.keys(prefix + ".forward_headers", forward_headers);
+    for (const auto & header : forward_headers)
+    {
+        String name = config.getString(prefix + ".forward_headers." + header);
+        http_auth_params.forward_headers.push_back(name);
+    }
 
     return http_auth_params;
 }
@@ -299,7 +313,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         if (bracket_pos != std::string::npos)
             key.resize(bracket_pos);
 
-        boost::algorithm::to_lower(key);
+        toLowerASCII(key);
 
         ldap_servers_key_count += (key == "ldap_servers");
         kerberos_keys_count += (key == "kerberos");
@@ -371,7 +385,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 }
 
-UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
+static UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
 {
     SipHash hash;
     params.updateHash(hash);
@@ -548,12 +562,12 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
-    const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
+    const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
 {
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword());
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));

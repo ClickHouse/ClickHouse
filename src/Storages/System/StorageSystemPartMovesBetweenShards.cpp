@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -6,6 +7,10 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
+#include <Storages/System/extractTablesFilter.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -43,26 +48,41 @@ ColumnsDescription StorageSystemPartMovesBetweenShards::getColumnsDescription()
 }
 
 
+Block StorageSystemPartMovesBetweenShards::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
 void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
+    /// from resolving every table of every database just to throw the rows away afterwards.
+    const auto database_name_filter = extractNameFilter(predicate, "database", context);
+    const auto table_name_filter = extractNameFilter(predicate, "table", context);
+
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (database_name_filter && !database_name_filter(db.first))
+            continue;
+
         /// Check if database can contain replicated tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        for (; iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
@@ -105,9 +125,10 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
-        String database = (*col_database_to_filter)[i].safeGet<const String &>();
-        String table = (*col_table_to_filter)[i].safeGet<const String &>();
+        String database = (*col_database_to_filter)[i].safeGet<String>();
+        String table = (*col_table_to_filter)[i].safeGet<String>();
 
+        /// NOLINT(storage-cast): `replicated_tables` is filled with already resolved storages.
         auto moves = dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getPartMovesBetweenShardsEntries();
 
         for (auto & entry : moves)
@@ -138,3 +159,6 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPartMovesBetweenShards) }

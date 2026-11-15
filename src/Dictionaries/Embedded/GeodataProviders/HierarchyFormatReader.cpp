@@ -1,4 +1,4 @@
-#include "HierarchyFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchyFormatReader.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

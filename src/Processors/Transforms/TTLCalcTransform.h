@@ -1,22 +1,24 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Core/Block.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Processors/TTL/ITTLAlgorithm.h>
 
-#include <Common/DateLUT.h>
+#include <Interpreters/PreparedSets.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Processors/IAccumulatingTransform.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 
 namespace DB
 {
 
-class TTLCalcTransform : public IAccumulatingTransform
+class Block;
+
+class TTLCalcTransform final : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
         const ContextPtr & context,
-        const Block & header_,
+        SharedHeader header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -37,7 +39,7 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading

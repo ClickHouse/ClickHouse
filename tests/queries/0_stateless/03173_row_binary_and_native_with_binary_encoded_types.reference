@@ -1,0 +1,114 @@
+42	UInt8
+42	UInt8
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+42	UInt8
+42	UInt8
+-42	Int8
+-42	Int8
+42	UInt16
+42	UInt16
+-42	Int16
+-42	Int16
+42	UInt32
+42	UInt32
+-42	Int32
+-42	Int32
+42	UInt64
+42	UInt64
+-42	Int64
+-42	Int64
+42	UInt128
+42	UInt128
+-42	Int128
+-42	Int128
+42	UInt256
+42	UInt256
+-42	Int256
+-42	Int256
+42.42	Float32
+42.42	Float32
+42.42	Float64
+42.42	Float64
+2020-01-01	Date
+2020-01-01	Date
+2020-01-01	Date32
+2020-01-01	Date32
+2020-01-01 00:00:00	DateTime
+2020-01-01 00:00:00	DateTime
+2020-01-01 00:00:00	DateTime(\'EST\')
+2020-01-01 00:00:00	DateTime(\'EST\')
+2020-01-01 00:00:00	DateTime(\'CET\')
+2020-01-01 00:00:00	DateTime(\'CET\')
+2020-01-01 00:00:00.000000	DateTime64(6)
+2020-01-01 00:00:00.000000	DateTime64(6)
+2020-01-01 00:00:00.000000	DateTime64(6, \'EST\')
+2020-01-01 00:00:00.000000	DateTime64(6, \'EST\')
+2020-01-01 00:00:00.000000	DateTime64(6, \'CET\')
+2020-01-01 00:00:00.000000	DateTime64(6, \'CET\')
+Hello, World!	String
+Hello, World!	String
+aaaaa	FixedString(5)
+aaaaa	FixedString(5)
+a	Enum8(\'c\' = -128, \'a\' = 1, \'b\' = 2)
+a	Enum8(\'c\' = -128, \'a\' = 1, \'b\' = 2)
+a	Enum16(\'c\' = -1280, \'a\' = 1, \'b\' = 2)
+a	Enum16(\'c\' = -1280, \'a\' = 1, \'b\' = 2)
+42.42	Decimal(9, 3)
+42.42	Decimal(9, 3)
+42.42	Decimal(18, 3)
+42.42	Decimal(18, 3)
+42.42	Decimal(38, 3)
+42.42	Decimal(38, 3)
+42.42	Decimal(76, 3)
+42.42	Decimal(76, 3)
+984ac60f-4d08-4ef1-9c62-d82f343fbc90	UUID
+984ac60f-4d08-4ef1-9c62-d82f343fbc90	UUID
+[1,2,3]	Array(UInt64)
+[1,2,3]	Array(UInt64)
+[[[1],[2]],[[3,4,5]]]	Array(Array(Array(UInt64)))
+[[[1],[2]],[[3,4,5]]]	Array(Array(Array(UInt64)))
+(1,'str',42.42)	Tuple(UInt32, String, Float32)
+(1,'str',42.42)	Tuple(UInt32, String, Float32)
+(1,'str',42.42)	Tuple(\n    a UInt32,\n    b String,\n    c Float32)
+(1,'str',42.42)	Tuple(\n    a UInt32,\n    b String,\n    c Float32)
+(1,('str',(42.42,-30)))	Tuple(UInt32, Tuple(String, Tuple(Float32, Int8)))
+(1,('str',(42.42,-30)))	Tuple(UInt32, Tuple(String, Tuple(Float32, Int8)))
+(1,('str',(42.42,-30)))	Tuple(\n    a UInt32,\n    b Tuple(\n        c String,\n        d Tuple(\n            e Float32,\n            f Int8)))
+(1,('str',(42.42,-30)))	Tuple(\n    a UInt32,\n    b Tuple(\n        c String,\n        d Tuple(\n            e Float32,\n            f Int8)))
+\0 \0\0\0\0\0\0\0\0\0\0\0\0\06364136223846793005 0 123459*\0\0\0\0\0\0\0	AggregateFunction(quantile(0.5), UInt64)
+\0 \0\0\0\0\0\0\0\0\0\0\0\0\06364136223846793005 0 123459*\0\0\0\0\0\0\0	AggregateFunction(quantile(0.5), UInt64)
+42	SimpleAggregateFunction(sum, UInt64)
+42	SimpleAggregateFunction(sum, UInt64)
+Hello, World!	LowCardinality(String)
+Hello, World!	LowCardinality(String)
+{1:'str1',2:'str2'}	Map(UInt64, String)
+{1:'str1',2:'str2'}	Map(UInt64, String)
+{1:{1:{1:'str1'}},2:{2:{2:'str2'}}}	Map(UInt64, Map(UInt64, Map(UInt64, String)))
+{1:{1:{1:'str1'}},2:{2:{2:'str2'}}}	Map(UInt64, Map(UInt64, Map(UInt64, String)))
+127.0.0.0	IPv4
+127.0.0.0	IPv4
+2001:db8:cafe:1::1	IPv6
+2001:db8:cafe:1::1	IPv6
+true	Bool
+true	Bool
+[(1,2),(3,4)]	Nested(a UInt32, b UInt32)
+[(1,2),(3,4)]	Nested(a UInt32, b UInt32)
+[(0,0),(10,0),(10,10),(0,10)]	Ring
+[(0,0),(10,0),(10,10),(0,10)]	Ring
+(0,0)	Point
+(0,0)	Point
+[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]	Polygon
+[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]	Polygon
+[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]	MultiPolygon
+[[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]	MultiPolygon
+[{42:(1,[(2,{1:2})])}]	Array(Map(UInt8, Tuple(UInt8, Array(Tuple(UInt8, Map(UInt8, UInt8))))))
+[{42:(1,[(2,{1:2})])}]	Array(Map(UInt8, Tuple(UInt8, Array(Tuple(UInt8, Map(UInt8, UInt8))))))
+42	Variant(String, Tuple(\n    a UInt32,\n    b Array(Map(String, String))), UInt32)
+42	Variant(String, Tuple(\n    a UInt32,\n    b Array(Map(String, String))), UInt32)
+[{42:(1,[(2,{1:2})])}]	Dynamic
+[{42:(1,[(2,{1:2})])}]	Dynamic
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=10)
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=10)
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=254)
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=254)

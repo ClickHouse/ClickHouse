@@ -1,0 +1,82 @@
+    # BUGS
+
+    Can't select from temporary table
+    ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
+00542_access_to_temporary_table_in_readonly_mode
+03156_nullable_number_tips
+03143_cte_scope
+02995_bad_formatting_union_intersect
+03045_unknown_identifier_alias_substitution
+
+    https://github.com/ClickHouse/ClickHouse/issues/74367
+    Cannot find column in source stream
+01358_mutation_delete_null_rows
+
+    GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
+01231_operator_null_in
+
+    https://github.com/ClickHouse/ClickHouse/issues/74366
+    Cannot convert type UInt8 to Variant(String, UInt64)
+02990_variant_where_cond
+
+    order is never guaranteed
+    https://github.com/ClickHouse/ClickHouse/issues/63203
+01513_optimize_aggregation_in_order_memory_long
+
+    https://github.com/ClickHouse/clickhouse-private/issues/15758
+    dictGet by dict name
+03062_analyzer_join_engine_missing_column
+
+    Transactions
+    Storage StorageDummy (table test_8yblzvrs.mt1 (560aada5-04ba-4faa-9297-c032a1798def)) does not support transactions. (NOT_IMPLEMENTED)
+    query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
+01173_transaction_control_queries
+01171_mv_select_insert_isolation_long
+
+    https://github.com/ClickHouse/clickhouse-private/issues/13900
+03075_shared_merge_tree_recursive_cte_smoke_test
+03034_recursive_cte_tree_merge_tree
+03154_recursive_cte_distributed
+
+    EXPLAIN / PLAN / ProfileEvents
+02877_optimize_read_in_order_from_view
+03151_analyzer_view_read_only_necessary_columns
+01737_move_order_key_to_prewhere_select_final
+03168_read_in_order_buffering_1
+02155_read_in_order_max_rows_to_read
+02493_max_streams_for_merge_tree_reading
+    Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
+01655_plan_optimizations_optimize_read_in_window_order_long
+03355_join_to_in_optimization
+03273_group_by_in_order_still_used_when_group_by_key_doesnt_match_order_by_key
+02151_hash_table_sizes_stats_joins_reordered
+03173_set_transformed_partition_pruning
+    profile events
+03279_join_choose_build_table
+03279_join_choose_build_table_statistics
+03279_join_choose_build_table_auto_statistics
+02944_variant_as_common_type
+03262_filter_push_down_view
+01283_max_threads_simple_query_optimization
+
+    # NOT BUGS
+    Not a bug
+01913_exact_rows_before_limit
+03203_optimize_disjunctions_chain_to_in
+01748_partition_id_pruning
+
+    plan and incorrect result
+01763_filter_push_down_bugs
+
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
+    !!!max rows: 8.00, current rows: 16.38 thousand
+01414_push_predicate_when_contains_with_clause
+    max rows: 4.00, current rows: 10.00
+01585_use_index_for_global_in
+    max rows: 2.00, current rows: 11.00
+01585_use_index_for_global_in_with_null
+
+01624_soft_constraints
+
+    Failpoint
+02910_prefetch_unexpceted_exception

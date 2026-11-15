@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -19,24 +20,35 @@ class Context;
   * If subclass want to support virtual columns, it should override getVirtuals method of IStorage interface.
   * IStorageSystemOneBlock will add virtuals columns at the end of result columns of fillData method.
   */
-class IStorageSystemOneBlock : public IStorage
+class IStorageSystemOneBlock : public StorageWithCommonVirtualColumns
 {
 protected:
+    /// If this method uses `predicate`, getFilterSampleBlock() must list all columns to which
+    /// it's applied. (Otherwise there'll be a LOGICAL_ERROR "Not-ready Set is passed" on subqueries.)
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const = 0;
+
+    /// Columns to which fillData() applies the `predicate`.
+    virtual Block getFilterSampleBlock() const
+    {
+        return {};
+    }
 
     virtual bool supportsColumnsMask() const { return false; }
 
     friend class ReadFromSystemOneBlock;
 
 public:
-    explicit IStorageSystemOneBlock(const StorageID & table_id_, ColumnsDescription columns_description) : IStorage(table_id_)
+    explicit IStorageSystemOneBlock(const StorageID & table_id_, ColumnsDescription columns_description) : StorageWithCommonVirtualColumns(table_id_)
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(std::move(columns_description));
+        storage_metadata.setVirtuals(createVirtuals());
         setInMemoryMetadata(storage_metadata);
     }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

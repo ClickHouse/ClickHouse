@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -nm -q """
+${CLICKHOUSE_CLIENT} -m -q """
 DROP TABLE IF EXISTS with_lonely;
 
 CREATE TABLE with_lonely
@@ -23,7 +23,7 @@ ORDER BY (id);
 """
 
 create_optimize_partition() {
-    ${CLICKHOUSE_CLIENT} -nm -q """
+    ${CLICKHOUSE_CLIENT} -m -q """
     INSERT INTO with_lonely SELECT number, '$1', number*10, 0 FROM numbers(10);
     INSERT INTO with_lonely SELECT number+500000, '$1', number*10, 1 FROM numbers(10);
     """
@@ -39,7 +39,7 @@ create_optimize_partition "2022-10-29"
 create_optimize_partition "2022-10-30"
 create_optimize_partition "2022-10-31"
 
-${CLICKHOUSE_CLIENT} -nm -q """
+${CLICKHOUSE_CLIENT} -m -q """
 SYSTEM STOP MERGES with_lonely;
 
 INSERT INTO with_lonely SELECT number, '2022-11-01', number*10, 0 FROM numbers(10);

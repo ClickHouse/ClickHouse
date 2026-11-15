@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/61950
-SET allow_experimental_analyzer=1;
 
 with dummy + 1 as dummy select dummy from system.one;
 

@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test;"
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE test
 (
 n0 UInt64,
@@ -30,11 +31,12 @@ function test
 {
     QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" -q "SELECT * FROM test SETTINGS load_marks_asynchronously=$1 FORMAT Null"
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
-    result=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['BackgroundLoadingMarksTasks'] FROM system.query_log WHERE query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND current_database = currentDatabase()")
+    # With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
+    result=$(${CLICKHOUSE_CLIENT} -q "SELECT sum(ProfileEvents['BackgroundLoadingMarksTasks']) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '${QUERY_ID}' AND type = 'QueryFinish' AND has(databases, currentDatabase())")
     if [[ $result -ne 0 ]]; then
         echo 'Ok'
     else

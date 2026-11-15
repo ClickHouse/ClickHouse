@@ -23,4 +23,9 @@ void throwDateTimeIsNotSupported(const char * name)
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument of type DateTime for function {}", name);
 }
 
+void throwTimeIsNotSupported(const char * name)
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument of type Time for function {}", name);
+}
+
 }

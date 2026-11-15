@@ -28,30 +28,27 @@ bool matchFnUniq(String name)
 bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & alias)
 {
     if (lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true))
-    {
         return true;
-    }
-    else
+
+    auto * lhs_idf = lhs->as<ASTIdentifier>();
+    auto * rhs_idf = rhs->as<ASTIdentifier>();
+    if (lhs_idf && rhs_idf)
     {
-        auto * lhs_idf = lhs->as<ASTIdentifier>();
-        auto * rhs_idf = rhs->as<ASTIdentifier>();
-        if (lhs_idf && rhs_idf)
-        {
-            /// compound identifiers, such as: <t.name, name>
-            if (lhs_idf->shortName() == rhs_idf->shortName())
-                return true;
+        /// compound identifiers, such as: <t.name, name>
+        if (lhs_idf->shortName() == rhs_idf->shortName())
+            return true;
 
-            /// translate alias
-            if (alias.find(lhs_idf->shortName()) != alias.end())
-                lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
+        /// translate alias
+        if (alias.contains(lhs_idf->shortName()))
+            lhs_idf = alias.find(lhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (alias.find(rhs_idf->shortName()) != alias.end())
-                rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
+        if (alias.contains(rhs_idf->shortName()))
+            rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
-                return true;
-        }
+        if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
+            return true;
     }
+
     return false;
 }
 
@@ -98,6 +95,14 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
     auto * func = expr_list->children[0]->as<ASTFunction>();
     if (!func || !matchFnUniq(func->name))
         return;
+    auto * uniq_arguments = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+    /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
+    /// `SELECT DISTINCT` or `GROUP BY` emits for it, so `uniq(x)` becomes `count(x)`, which skips a
+    /// NULL exactly like `uniq` does. A multi-argument `uniq(x, y)` has no such counterpart - it
+    /// skips a row where any of the arguments is NULL - and this visitor runs before the tables are
+    /// resolved, so it cannot tell whether an argument is NULL-able and has to decline.
+    if (!uniq_arguments || uniq_arguments->children.size() != 1)
+        return;
     if (selectq->tables()->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->children.size() != 1)
         return;
     auto * table_expr = selectq->tables()
@@ -135,7 +140,7 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         if (!sub_selectq->distinct)
             return false;
         /// uniq expression list == subquery group by expression list
-        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), sub_expr_list->as<ASTExpressionList>(), alias))
+        if (!expressionListEquals(uniq_arguments, sub_expr_list->as<ASTExpressionList>(), alias))
             return false;
         return true;
     };
@@ -146,11 +151,16 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
         auto group_by = sub_selectq->groupBy();
         if (!group_by)
             return false;
+        /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -
+        /// which `count()` would count as additional distinct values.
+        if (sub_selectq->group_by_with_rollup || sub_selectq->group_by_with_cube
+            || sub_selectq->group_by_with_totals || sub_selectq->group_by_with_grouping_sets)
+            return false;
         /// uniq expression list == subquery group by expression list
-        if (!expressionListEquals(func->children[0]->as<ASTExpressionList>(), group_by->as<ASTExpressionList>(), alias))
+        if (!expressionListEquals(uniq_arguments, group_by->as<ASTExpressionList>(), alias))
             return false;
         /// subquery select expression list must contain all columns in uniq expression list
-        if (!expressionListContainsAll(sub_expr_list->as<ASTExpressionList>(), func->children[0]->as<ASTExpressionList>(), alias))
+        if (!expressionListContainsAll(sub_expr_list->as<ASTExpressionList>(), uniq_arguments, alias))
             return false;
         return true;
     };
@@ -158,7 +168,7 @@ void RewriteUniqToCountMatcher::visit(ASTPtr & ast, Data & /*data*/)
     if (match_subquery_with_distinct() || match_subquery_with_group_by())
     {
         auto main_alias = expr_list->children[0]->tryGetAlias();
-        expr_list->children[0] = makeASTFunction("count");
+        expr_list->children[0] = makeASTFunction("count", uniq_arguments->children[0]->clone());
         expr_list->children[0]->setAlias(main_alias);
     }
 }

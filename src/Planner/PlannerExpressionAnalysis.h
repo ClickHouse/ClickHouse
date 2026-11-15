@@ -1,16 +1,16 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/InterpolateDescription.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
 {
@@ -18,6 +18,7 @@ namespace DB
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
+    CorrelatedSubtrees correlated_subtrees;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -26,6 +27,7 @@ struct ProjectionAnalysisResult
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
+    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
@@ -49,12 +51,22 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
+    NameToNameMap interpolated_column_names;
+    /// INTERPOLATE target name -> name of its column in the `FillingStep` header; the target name unless another column has it.
+    NameToNameMap interpolate_target_column_names;
 };
 
 struct LimitByAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_limit_by_actions;
     Names limit_by_column_names;
+};
+
+struct LimitRangeAnalysisResult
+{
+    ActionsAndProjectInputsFlagPtr before_limit_range_actions;
 };
 
 class PlannerExpressionsAnalysisResult
@@ -64,7 +76,7 @@ public:
         : projection_analysis_result(std::move(projection_analysis_result_))
     {}
 
-    const ProjectionAnalysisResult & getProjection() const
+    ProjectionAnalysisResult & getProjection()
     {
         return projection_analysis_result;
     }
@@ -74,7 +86,7 @@ public:
         return where_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getWhere() const
+    FilterAnalysisResult & getWhere()
     {
         return where_analysis_result;
     }
@@ -86,10 +98,11 @@ public:
 
     bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
+            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
     }
 
-    const AggregationAnalysisResult & getAggregation() const
+    AggregationAnalysisResult & getAggregation()
     {
         return aggregation_analysis_result;
     }
@@ -104,7 +117,7 @@ public:
         return having_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getHaving() const
+    FilterAnalysisResult & getHaving()
     {
         return having_analysis_result;
     }
@@ -119,7 +132,7 @@ public:
         return !window_analysis_result.window_descriptions.empty();
     }
 
-    const WindowAnalysisResult & getWindow() const
+    WindowAnalysisResult & getWindow()
     {
         return window_analysis_result;
     }
@@ -134,7 +147,7 @@ public:
         return qualify_analysis_result.filter_actions != nullptr;
     }
 
-    const FilterAnalysisResult & getQualify() const
+    FilterAnalysisResult & getQualify()
     {
         return qualify_analysis_result;
     }
@@ -149,7 +162,7 @@ public:
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
 
-    const SortAnalysisResult & getSort() const
+    SortAnalysisResult & getSort()
     {
         return sort_analysis_result;
     }
@@ -164,7 +177,7 @@ public:
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
 
-    const LimitByAnalysisResult & getLimitBy() const
+    LimitByAnalysisResult & getLimitBy()
     {
         return limit_by_analysis_result;
     }
@@ -172,6 +185,21 @@ public:
     void addLimitBy(LimitByAnalysisResult limit_by_analysis_result_)
     {
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
+    }
+
+    bool hasLimitRange() const
+    {
+        return limit_range_analysis_result.before_limit_range_actions != nullptr;
+    }
+
+    LimitRangeAnalysisResult & getLimitRange()
+    {
+        return limit_range_analysis_result;
+    }
+
+    void addLimitRange(LimitRangeAnalysisResult limit_range_analysis_result_)
+    {
+        limit_range_analysis_result = std::move(limit_range_analysis_result_);
     }
 
 private:
@@ -183,12 +211,16 @@ private:
     FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
+    LimitRangeAnalysisResult limit_range_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` (see `JoinTreeQueryPlan::source_constants`) are constant columns the chain
+/// keeps flowing rather than fold-and-drop, so a distributed shard delivers what the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

@@ -1,0 +1,73 @@
+-- Tags: no-parallel, no-shared-merge-tree
+
+SET use_columns_cache = 0;
+
+DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
+DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;
+
+CREATE TABLE t_prewarm_cache_rmt_1 (a UInt64, b UInt64, c UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/03254_prewarm_mark_cache_smt/t_prewarm_cache', '1')
+ORDER BY a SETTINGS prewarm_mark_cache = 1;
+
+CREATE TABLE t_prewarm_cache_rmt_2 (a UInt64, b UInt64, c UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/03254_prewarm_mark_cache_smt/t_prewarm_cache', '2')
+ORDER BY a SETTINGS prewarm_mark_cache = 1;
+
+SYSTEM CLEAR MARK CACHE;
+
+SYSTEM STOP FETCHES t_prewarm_cache_rmt_2;
+
+-- Check that prewarm works on insert.
+INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(20000);
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+
+-- Check that prewarm works on fetch.
+SYSTEM CLEAR MARK CACHE;
+SYSTEM START FETCHES t_prewarm_cache_rmt_2;
+SYSTEM SYNC REPLICA t_prewarm_cache_rmt_2;
+SELECT count() FROM t_prewarm_cache_rmt_2 WHERE NOT ignore(*);
+
+-- Check that prewarm works on merge.
+INSERT INTO t_prewarm_cache_rmt_1 SELECT number, rand(), rand() FROM numbers(20000);
+OPTIMIZE TABLE t_prewarm_cache_rmt_1 FINAL;
+
+SYSTEM SYNC REPLICA t_prewarm_cache_rmt_2;
+
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+SELECT count() FROM t_prewarm_cache_rmt_2 WHERE NOT ignore(*);
+
+-- Check that prewarm works on restart.
+SYSTEM CLEAR MARK CACHE;
+
+DETACH TABLE t_prewarm_cache_rmt_1;
+DETACH TABLE t_prewarm_cache_rmt_2;
+
+ATTACH TABLE t_prewarm_cache_rmt_1;
+ATTACH TABLE t_prewarm_cache_rmt_2;
+
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+SELECT count() FROM t_prewarm_cache_rmt_2 WHERE NOT ignore(*);
+
+SYSTEM CLEAR MARK CACHE;
+
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+
+--- Check that system query works.
+SYSTEM PREWARM MARK CACHE t_prewarm_cache_rmt_1;
+
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+
+SYSTEM FLUSH LOGS query_log;
+
+-- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
+SELECT sum(ProfileEvents['LoadedMarksCount']) > 0 FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND query LIKE 'SELECT count() FROM t_prewarm_cache%'
+)
+GROUP BY initial_query_id
+ORDER BY min(event_time_microseconds);
+
+DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
+DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;

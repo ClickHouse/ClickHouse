@@ -42,9 +42,35 @@ void write(const Error & x, WriteBuffer & out)
     write(static_cast<int32_t>(x), out);
 }
 
+size_t size(OpNum x)
+{
+    return size(static_cast<int32_t>(x));
+}
+
+size_t size(const std::string & s)
+{
+    return size(static_cast<int32_t>(s.size())) + s.size();
+}
+
+size_t size(const ACL & acl)
+{
+    return size(acl.permissions) + size(acl.scheme) + size(acl.id);
+}
+
+size_t size(const Stat & stat)
+{
+    return size(stat.czxid) + size(stat.mzxid) + size(stat.ctime) + size(stat.mtime) + size(stat.version) + size(stat.cversion)
+        + size(stat.aversion) + size(stat.ephemeralOwner) + size(stat.dataLength) + size(stat.numChildren) + size(stat.pzxid);
+}
+
+size_t size(const Error & x)
+{
+    return size(static_cast<int32_t>(x));
+}
+
 void read(OpNum & x, ReadBuffer & in)
 {
-    int32_t raw_op_num;
+    int32_t raw_op_num = 0;
     read(raw_op_num, in);
     x = getOpNum(raw_op_num);
 }
@@ -65,13 +91,26 @@ void read(std::string & s, ReadBuffer & in)
         throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading string from ZooKeeper");
 
     if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception::fromMessage(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper");
+        throw Exception(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper {}", size);
 
-    s.resize(size);
-    size_t read_bytes = in.read(s.data(), size);
-    if (read_bytes != static_cast<size_t>(size))
-        throw Exception(
-            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
+    /// Memory must track bytes actually read, not the declared size:
+    /// do not pre-allocate for an attacker-controlled length.
+    s.clear();
+    size_t remaining = static_cast<size_t>(size);
+    while (remaining > 0)
+    {
+        const size_t chunk = std::min<size_t>(remaining, MAX_STRING_PREALLOCATION);
+        const size_t old_size = s.size();
+        s.resize(old_size + chunk);
+        const size_t read_bytes = in.read(s.data() + old_size, chunk);
+        if (read_bytes != chunk)
+            throw Exception(
+                Error::ZMARSHALLINGERROR,
+                "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}",
+                size,
+                old_size + read_bytes);
+        remaining -= chunk;
+    }
 }
 
 void read(ACL & acl, ReadBuffer & in)
@@ -98,9 +137,13 @@ void read(Stat & stat, ReadBuffer & in)
 
 void read(Error & x, ReadBuffer & in)
 {
-    int32_t code;
+    int32_t code = 0;
     read(code, in);
-    x = Coordination::Error(code);
+    /// A code this client does not know (e.g. QUOTAEXCEEDED from a newer ZooKeeper) becomes the generic error of its range.
+    if (magic_enum::enum_contains<Error>(code))
+        x = static_cast<Error>(code);
+    else
+        x = code < static_cast<int32_t>(Error::ZAPIERROR) ? Error::ZAPIERROR : Error::ZSYSTEMERROR;
 }
 
 }

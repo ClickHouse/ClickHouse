@@ -1,7 +1,6 @@
-version: '2.3'
 services:
     hdfs1:
-        image: sequenceiq/hadoop-docker:2.7.0
+        image: prasanthj/docker-hadoop:2.6.0
         hostname: hdfs1
         restart: always
         expose:

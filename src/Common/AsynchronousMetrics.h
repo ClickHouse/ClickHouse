@@ -1,15 +1,20 @@
 #pragma once
 
+#include <Server/ServerType.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
+#include <limits>
 #include <map>
-#include <mutex>
+#include <source_location>
 #include <string>
-#include <thread>
 #include <vector>
 #include <optional>
 #include <unordered_map>
@@ -25,23 +30,62 @@ namespace DB
 
 class ReadBuffer;
 
+/// Per-entity values of a "key-value" metric: one value per CPU core, block device, network interface, etc.
+/// Ordered by key for deterministic output.
+using AsynchronousMetricKeyValues = std::map<String, double>;
+
 struct AsynchronousMetricValue
 {
-    double value;
-    const char * documentation;
+    /// The value of a scalar metric. For key-value metrics it is NaN: an aggregate across entities
+    /// (sum, average, ...) is not meaningful for every metric, so none is provided.
+    double value = 0;
+    /// The values of a key-value metric (exposed as `Map(String, Float64)` in `system.asynchronous_metrics`).
+    /// Empty for scalar metrics.
+    AsynchronousMetricKeyValues key_values;
+    /// For key-value metrics: what the key means, e.g. "cpu", "device", "disk". It is used as the label name
+    /// for the Prometheus endpoint. Non-null if and only if the metric is a key-value metric.
+    const char * key_label = nullptr;
+    const char * documentation = nullptr;
+    /// The source file where this metric and its documentation are produced. Asynchronous metrics are defined across
+    /// several files (`AsynchronousMetrics.cpp`, `ServerAsynchronousMetrics.cpp`, `KeeperAsynchronousMetrics.cpp`, ...),
+    /// so it is captured per metric at the construction site via the constructor's default argument. Used by
+    /// `system.documentation`. May be `nullptr` for a default-constructed value (before it is assigned).
+    const char * source = nullptr;
 
     template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_)
-        : value(static_cast<double>(value_)), documentation(documentation_) {}
+    AsynchronousMetricValue(T value_, const char * documentation_, std::source_location source_ = std::source_location::current())
+        : value(static_cast<double>(value_)), documentation(documentation_), source(source_.file_name()) {}
+    AsynchronousMetricValue(const char * key_label_, AsynchronousMetricKeyValues key_values_, const char * documentation_,
+        std::source_location source_ = std::source_location::current())
+        : value(std::numeric_limits<double>::quiet_NaN()), key_values(std::move(key_values_)), key_label(key_label_)
+        , documentation(documentation_), source(source_.file_name()) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
+
+    bool isMap() const { return key_label != nullptr; }
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
+/// The name under which a single key of a key-value metric was published before version 26.8, when every key
+/// was a separate scalar metric with the key mangled into the name (`BlockReadBytes_sda`, `OSUserTimeCPU3`).
+/// Returns an empty string for a metric family that never had such a name.
+String getLegacyAsynchronousMetricName(const String & metric, const String & key);
+
+/// Rewrites the key-value metrics of `values` into the form requested by `mode`: adds their pre-26.8 scalar
+/// representation and/or removes the key-value one. Families with no legacy name are left as they are.
+void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode);
+
+/// The frequency of every CPU core in MHz, keyed by the core number, read from the contents of `/proc/cpuinfo`.
+/// Lines that do not parse are skipped.
+AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in);
+
 struct ProtocolServerMetrics
 {
     String port_name;
+    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
+    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
+    size_t rejected_connections;
 };
 
 /** Periodically (by default, each second)
@@ -68,7 +112,10 @@ public:
 
     AsynchronousMetrics(
         unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_,
+        const ContextPtr & context_);
 
     virtual ~AsynchronousMetrics();
 
@@ -88,7 +135,16 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) {}
+    virtual void logImpl(AsynchronousMetricValues &) { }
+    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
+
+    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
+    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
+
+    using Clock = std::chrono::steady_clock;
+    mutable std::optional<Clock::time_point> mem_overload_started;
+    mutable std::optional<Clock::time_point> cpu_overload_started;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -98,6 +154,7 @@ private:
     std::condition_variable wait_cond;
     bool quit TSA_GUARDED_BY(thread_mutex) = false;
 
+    /// Protects all raw data and serializes multiple updates.
     mutable std::mutex data_mutex;
 
     /// Some values are incremental and we have to calculate the difference.
@@ -105,11 +162,18 @@ private:
     bool first_run TSA_GUARDED_BY(data_mutex) = true;
     TimePoint previous_update_time TSA_GUARDED_BY(data_mutex);
 
-    AsynchronousMetricValues values TSA_GUARDED_BY(data_mutex);
+    /// Protects saved values.
+    mutable SharedMutex values_mutex;
+    /// Values store the result of the last update prepared for reading.
+    AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if HAS_MEMORY_STATISTICS_OS
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
+
+    [[maybe_unused]] const bool update_jemalloc_epoch;
+    [[maybe_unused]] const bool update_rss;
+    ContextPtr context;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -119,15 +183,30 @@ private:
     std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp6 TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> cpu_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
+
+    std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
+    std::shared_ptr<ICgroupsReader> cgroupmem_reader;
+    std::optional<std::string> cgroupmem_dir TSA_GUARDED_BY(data_mutex);
+    /// Where the last reader open failed: the open is retried on every update, the failure is logged once.
+    std::optional<std::string> cgroupmem_failed_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+    std::optional<std::string> cgroupcpu_max_dir TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> process_status TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 
@@ -160,6 +239,22 @@ private:
         ProcStatValuesCPU operator-(const ProcStatValuesCPU & other) const;
     };
 
+    /// Accumulators for the per-CPU-core breakdown of the `/proc/stat` metrics,
+    /// published as key-value metrics (`OSUserTimeCPU` and friends) keyed by the CPU core number.
+    struct ProcStatPerCPUMaps
+    {
+        AsynchronousMetricKeyValues user;
+        AsynchronousMetricKeyValues nice;
+        AsynchronousMetricKeyValues system;
+        AsynchronousMetricKeyValues idle;
+        AsynchronousMetricKeyValues iowait;
+        AsynchronousMetricKeyValues irq;
+        AsynchronousMetricKeyValues softirq;
+        AsynchronousMetricKeyValues steal;
+        AsynchronousMetricKeyValues guest;
+        AsynchronousMetricKeyValues guest_nice;
+    };
+
     struct ProcStatValuesOther
     {
         uint64_t interrupts;
@@ -169,6 +264,7 @@ private:
         ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
     };
 
+    ProcStatValuesCPU cgroup_values_all_cpus TSA_GUARDED_BY(data_mutex){};
     ProcStatValuesCPU proc_stat_values_all_cpus TSA_GUARDED_BY(data_mutex) {};
     ProcStatValuesOther proc_stat_values_other TSA_GUARDED_BY(data_mutex) {};
     std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu TSA_GUARDED_BY(data_mutex);
@@ -217,9 +313,34 @@ private:
     Stopwatch block_devices_rescan_delay TSA_GUARDED_BY(data_mutex);
 
     void openSensors();
+    void openCgroupv2MemoryFiles(const std::optional<std::string> & dir);
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
+
+    std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
+    void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
+    /// Returns the cgroup directory of the opened file, or nullopt if it was not opened.
+    std::optional<std::string> openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+
+    void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
+
+    void applyCgroupNormalizedCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values,
+        double num_cpus_to_normalize,
+        const ProcStatValuesCPU & delta_values_all_cpus,
+        double multiplier);
+
+    void applyCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
+
+    void applyPerCPUMetricsUpdate(AsynchronousMetricValues & new_values, ProcStatPerCPUMaps && per_cpu_maps);
+
+    void applyNormalizedCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values,
+        double num_cpus_to_normalize,
+        const ProcStatValuesCPU & delta_values_all_cpus,
+        double multiplier);
 #endif
 
     void run();

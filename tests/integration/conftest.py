@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
+# pylint: disable=unused-argument
+# pylint: disable=broad-exception-raised
 
 import logging
 import os
+from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
-from helpers.cluster import run_and_check
-from helpers.network import _NetworkManager
+
+from helpers.cluster import arm_per_test_coverage_for_module, run_and_check
 
 # This is a workaround for a problem with logging in pytest [1].
 #
 #   [1]: https://github.com/pytest-dev/pytest/issues/5502
 logging.raiseExceptions = False
+
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+if _ENV_FILE.is_file():
+    from dotenv import load_dotenv
+
+    load_dotenv(dotenv_path=_ENV_FILE, override=False)
+
+PORTS_PER_WORKER = 50
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -19,8 +30,8 @@ def pdb_history(request):
     Fixture loads and saves pdb history to file, so it can be preserved between runs
     """
     if request.config.getoption("--pdb"):
-        import readline  # pylint:disable=import-outside-toplevel
         import pdb  # pylint:disable=import-outside-toplevel
+        import readline  # pylint:disable=import-outside-toplevel
 
         def save_history():
             readline.write_history_file(".pdb_history")
@@ -57,12 +68,39 @@ def tune_local_port_range():
         )
 
 
+def is_xdist_replacement_worker():
+    """True when this worker was spawned to replace one that died mid-run.
+
+    `pytest-xdist` numbers a replacement past the size of the original pool, so `gw8` in a pool of
+    eight (`gw0`..`gw7`) is a replacement. A replacement starts a fresh pytest *session*, which
+    re-runs every session-scoped fixture - and `cleanup_environment` kills every container on the
+    host, including the ones the workers that are still running own. One worker dying, from an OOM
+    kill for instance, would otherwise take the containers of the whole job with it.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "")
+    count = os.environ.get("PYTEST_XDIST_WORKER_COUNT", "")
+    if not worker.startswith("gw") or not count.isdigit():
+        return False
+
+    index = worker.removeprefix("gw")
+    if not index.isdigit():
+        return False
+
+    return int(index) >= int(count)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
+    if is_xdist_replacement_worker():
+        logging.info(
+            "Worker %s replaces a worker that died, so the containers of the workers which are "
+            "still running are not ours to clean up. Skipping the environment cleanup.",
+            os.environ["PYTEST_XDIST_WORKER"],
+        )
+        yield
+        return
+
     try:
-        if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug("Cleaning all iptables rules")
-            _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:
@@ -86,8 +124,6 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker-compose", "ps", "--services", "--all"])
-                logging.debug("Docker ps before start:%s", r.stdout)
         else:
             logging.debug("No running containers")
 
@@ -103,6 +139,13 @@ def cleanup_environment():
     yield
 
 
+@pytest.fixture(autouse=True, scope="module")
+def per_test_coverage_module():
+    # A cluster shared between modules keeps running into the next one.
+    arm_per_test_coverage_for_module()
+    yield
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-id",
@@ -113,3 +156,8 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
+
+
+if hasattr(pytest, "xdist_plugin"):
+    def pytest_xdist_setupnodes(config, specs):
+        pass

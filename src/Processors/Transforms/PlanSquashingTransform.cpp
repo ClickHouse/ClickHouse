@@ -1,4 +1,6 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
+
+#include <Processors/Port.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -10,35 +12,42 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : IInflatingTransform(header, header), squashing(header, min_block_size_rows, min_block_size_bytes)
+        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
+        size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
+    : ExceptionKeepingTransform(header_, header_, false)
+    , squashing(header_, min_block_size_rows, min_block_size_bytes,
+                max_block_size_rows, max_block_size_bytes, squash_with_strict_limits)
 {
 }
 
-void PlanSquashingTransform::consume(Chunk chunk)
+void PlanSquashingTransform::onConsume(Chunk chunk)
 {
-    if (Chunk current_chunk = squashing.add(std::move(chunk)); current_chunk.hasChunkInfo())
-        squashed_chunk.swap(current_chunk);
+    squashing.add(std::move(chunk));
 }
 
-Chunk PlanSquashingTransform::generate()
+PlanSquashingTransform::GenerateResult PlanSquashingTransform::onGenerate()
 {
-    if (!squashed_chunk.hasChunkInfo())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
+    squashed_chunk = squashing.generate();
 
-    Chunk result_chunk;
-    result_chunk.swap(squashed_chunk);
-    return result_chunk;
+    if (!squashed_chunk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in PlanSquashingChunksTransform");
+
+    GenerateResult res;
+    res.chunk.swap(squashed_chunk);
+    res.is_done = !squashing.canGenerate();
+    return res;
 }
 
 bool PlanSquashingTransform::canGenerate()
 {
-    return squashed_chunk.hasChunkInfo();
+    return squashing.canGenerate();
 }
 
-Chunk PlanSquashingTransform::getRemaining()
+PlanSquashingTransform::GenerateResult PlanSquashingTransform::getRemaining()
 {
-    Chunk current_chunk = squashing.flush();
-    return current_chunk;
+    GenerateResult res;
+    res.chunk = squashing.flush();
+    res.is_done = true;
+    return res;
 }
 }

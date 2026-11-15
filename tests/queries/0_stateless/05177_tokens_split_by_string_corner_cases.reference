@@ -1,0 +1,49 @@
+NUL separators, binary strings, and duplicate separators
+['61','62','63']
+['61','6200','63']
+['61','62','63']
+['a','b','c']
+['a','b\tc\nd']
+all byte values at offsets 0 through 64
+16640	0
+more than eight high nibbles, duplicates, and bytes added after the ninth nibble
+16640	0
+all bytes are separators
+16640	0
+separators sharing a first byte, with a missing or different last byte
+16640	0
+multi-byte separators with more than eight distinct first-byte high nibbles
+16640	0
+long separators at every alignment, including incomplete suffixes
+65	0
+overlapping separators in both priority orders
+65	0	0	0	0
+UTF-8 separators across every block alignment
+65	0
+adjacent rows and fixed strings
+1	['6161616161616161616161616161613D']
+2	['3E626262626262626262626262626262']
+3	[]
+4	[]
+5	['6363636363636363636363636363633D']
+6	['3E']
+7	['3D']
+['61','62']
+['610062']
+['61','620000000000000000000000000000']
+['a','b','a']
+[]
+string and array needles, early matches, last matches, and misses
+0	0	0	0	0
+1	0	0	1	1
+2	0	0	1	1
+3	0	0	1	1
+4	1	1	1	1
+5	1	1	1	1
+6	0	0	1	1
+7	0	0	0	0
+8	0	0	0	0
+single-byte separators in string needles
+1	0	1
+scalar classification of string needles with more than eight high nibbles
+1	0

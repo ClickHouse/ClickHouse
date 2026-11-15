@@ -1,0 +1,12 @@
+SELECT __table1.`m.size0` AS `length(m)`
+FROM default.t_func_to_subcolumns_map AS __table1
+2
+1
+SELECT __table1.`m.size0` = 0 AS `empty(m)`
+FROM default.t_func_to_subcolumns_map AS __table1
+0
+0
+SELECT __table1.`m.size0` != 0 AS `notEmpty(m)`
+FROM default.t_func_to_subcolumns_map AS __table1
+1
+1

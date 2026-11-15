@@ -32,12 +32,13 @@ public:
     bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (CustomType &) const;
+    bool operator() (NumberLiteral &) const;
     bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const
     {
-        x += rhs.get<DecimalField<T>>();
+        x += rhs.safeGet<DecimalField<T>>();
         return x.getValue() != T(0);
     }
 

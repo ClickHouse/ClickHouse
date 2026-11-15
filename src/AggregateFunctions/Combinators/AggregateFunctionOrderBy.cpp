@@ -74,14 +74,14 @@ public:
         ParserOrderByExpressionList parser;
         parser.parse(pos, sort_asts, expected);
 
-        if (!std::dynamic_pointer_cast<ASTExpressionList>(sort_asts))
+        if (!sort_asts || !sort_asts->as<ASTExpressionList>())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse ORDER BY expression list");
 
         SortDescription sorts;
 
         size_t column_idx = arguments.size() - sort_asts->children.size();
         for (const auto & child : sort_asts->children) {
-            auto sort_ast = std::dynamic_pointer_cast<ASTOrderByElement>(child);
+            const auto * sort_ast = child->as<ASTOrderByElement>();
             if (!sort_ast)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse ORDER BY expression list");
 
@@ -102,6 +102,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorOrderBy(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorOrderBy(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrderBy>());

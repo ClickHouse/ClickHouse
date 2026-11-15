@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -nm --query "
+${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS tbl;
 DROP TABLE IF EXISTS tbl2;
 CREATE TABLE tbl (a Int32) ENGINE = MergeTree() ORDER BY tuple();
@@ -24,7 +24,7 @@ function wait_status()
     local expected_status="$2"
     local timeout=60
     local start=$EPOCHSECONDS
-    while true; do
+    while clickhouse_test_time_left; do
         local current_status
         current_status=$(${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.backups WHERE id='${operation_id}'")
         if [ "${current_status}" == "${expected_status}" ]; then
@@ -51,7 +51,7 @@ wait_status "${restore_operation_id}" "RESTORED"
 # Check the result of that restoration.
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM tbl2"
 
-${CLICKHOUSE_CLIENT} -nm --query "
+${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE tbl;
 DROP TABLE tbl2;
 "

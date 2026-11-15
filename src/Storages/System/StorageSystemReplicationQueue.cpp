@@ -1,16 +1,21 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
+#include <Storages/System/extractTablesFilter.h>
 
 
 namespace DB
@@ -54,7 +59,7 @@ ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
         { "last_exception",          std::make_shared<DataTypeString>(), "Text message about the last error that occurred (if any)."},
         { "last_exception_time",     std::make_shared<DataTypeDateTime>(), "Date and time when the last error occurred."},
         { "last_attempt_time",       std::make_shared<DataTypeDateTime>(), "Date and time when the task was last attempted."},
-        { "num_postponed",           std::make_shared<DataTypeUInt32>(), "The number of postponed tasks."},
+        { "num_postponed",           std::make_shared<DataTypeUInt32>(), "The number of times the action was postponed."},
         { "postpone_reason",         std::make_shared<DataTypeString>(), "The reason why the task was postponed."},
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>(), "Date and time when the task was last postponed."},
         { "merge_type",              std::make_shared<DataTypeString>(), "Type of the current merge. Empty if it's a mutation."},
@@ -62,26 +67,41 @@ ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
 }
 
 
+Block StorageSystemReplicationQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
 void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    /// Conditions on `database` and `table` act like an index: they keep the enumeration below
+    /// from resolving every table of every database just to throw the rows away afterwards.
+    const auto database_name_filter = extractNameFilter(predicate, "database", context);
+    const auto table_name_filter = extractNameFilter(predicate, "table", context);
+
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (database_name_filter && !database_name_filter(db.first))
+            continue;
+
         /// Check if database can contain replicated tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+        for (; iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
@@ -127,9 +147,10 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
-        String database = (*col_database_to_filter)[i].safeGet<const String &>();
-        String table = (*col_table_to_filter)[i].safeGet<const String &>();
+        String database = (*col_database_to_filter)[i].safeGet<String>();
+        String table = (*col_table_to_filter)[i].safeGet<String>();
 
+        /// NOLINT(storage-cast): `replicated_tables` is filled with already resolved storages.
         dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
 
         for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)
@@ -157,7 +178,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
             res_columns[col_num++]->insert(entry.currently_executing);
             res_columns[col_num++]->insert(entry.num_tries);
             res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, true) : "");
-            res_columns[col_num++]->insert(UInt64(entry.last_exception_time));
+            res_columns[col_num++]->insert(entry.last_exception_time_ms / 1000ull);
             res_columns[col_num++]->insert(UInt64(entry.last_attempt_time));
             res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);
@@ -172,3 +193,6 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicationQueue) }

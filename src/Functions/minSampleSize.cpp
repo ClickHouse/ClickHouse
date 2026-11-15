@@ -1,17 +1,16 @@
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 
 #include <boost/math/distributions/normal.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/castTypeToEither.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -24,7 +23,7 @@ namespace ErrorCodes
 }
 
 template <typename Impl>
-class FunctionMinSampleSize : public IFunction
+class FunctionMinSampleSize final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -43,29 +42,19 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    static DataTypePtr getReturnType()
+    String getSignatureString() const override
     {
-        auto float_64_type = std::make_shared<DataTypeNumber<Float64>>();
-
-        DataTypes types{
-            float_64_type,
-            float_64_type,
-            float_64_type,
-        };
-
-        Strings names{
-            "minimum_sample_size",
-            "detect_range_lower",
-            "detect_range_upper",
-        };
-
-        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        Impl::validateArguments(arguments);
-        return getReturnType();
+        String args;
+        for (size_t i = 0; i < Impl::num_args; ++i)
+        {
+            if (i) args += ", ";
+            if (std::find(std::begin(Impl::const_args), std::end(Impl::const_args), i) != std::end(Impl::const_args))
+                args += "const ";
+            args += Impl::arg_matcher;
+        }
+        return "(" + args + ") -> Tuple(minimum_sample_size Float64, "
+                                       "detect_range_lower Float64, "
+                                       "detect_range_upper Float64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -84,17 +73,7 @@ struct ContinuousImpl
     static constexpr auto name = "minSampleSizeContinuous";
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
-
-    static void validateArguments(const DataTypes & arguments)
-    {
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!isNativeNumber(arguments[i]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th Argument of function {} must be a number.", i + 1, name);
-            }
-        }
-    }
+    static constexpr std::string_view arg_matcher = "NativeNumber";
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
@@ -175,18 +154,7 @@ struct ConversionImpl
     static constexpr auto name = "minSampleSizeConversion";
     static constexpr size_t num_args = 4;
     static constexpr size_t const_args[] = {1, 2, 3};
-
-    static void validateArguments(const DataTypes & arguments)
-    {
-        size_t arguments_size = arguments.size();
-        for (size_t i = 0; i < arguments_size; ++i)
-        {
-            if (!isFloat(arguments[i]))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The {}th argument of function {} must be a float.", i + 1, name);
-            }
-        }
-    }
+    static constexpr std::string_view arg_matcher = "Float";
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
@@ -197,14 +165,12 @@ struct ConversionImpl
             const Float64 left_value = col_p1_const->template getValue<Float64>();
             return process<true>(arguments, &left_value, input_rows_count);
         }
-        else if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
+        if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
         {
             return process<false>(arguments, col_p1->getData().data(), input_rows_count);
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
-        }
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
     }
 
     template <bool const_p1>
@@ -238,7 +204,7 @@ struct ConversionImpl
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             /// Proportion of control-metric
-            Float64 p1;
+            Float64 p1 = 0;
 
             if constexpr (const_p1)
             {
@@ -284,10 +250,69 @@ struct ConversionImpl
 
 REGISTER_FUNCTION(MinSampleSize)
 {
-    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
+    FunctionDocumentation::Description description_continuous = R"(
+Calculates the minimum required sample size for an A/B test comparing means of a continuous metric in two samples.
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a).
+Assumes equal sizes of treatment and control groups.
+Returns the required sample size for one group (i.e. the sample size required for the whole experiment is twice the returned value).
+Also assumes equal variance of the test metric in treatment and control groups.
+)";
+    FunctionDocumentation::Syntax syntax_continuous = "minSampleSizeContinuous(baseline, sigma, mde, power, alpha)";
+    FunctionDocumentation::Arguments arguments_continuous = {
+        {"baseline", "Baseline value of a metric.", {"(U)Int*", "Float*"}},
+        {"sigma", "Baseline standard deviation of a metric.", {"(U)Int*", "Float*"}},
+        {"mde", "Minimum detectable effect (MDE) as percentage of the baseline value (e.g. for a baseline value 112.25 the MDE 0.03 means an expected change to 112.25 ± 112.25*0.03).", {"(U)Int*", "Float*"}},
+        {"power", "Required statistical power of a test (1 - probability of Type II error).", {"(U)Int*", "Float*"}},
+        {"alpha", "Required significance level of a test (probability of Type I error).", {"(U)Int*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_continuous = {
+        "Returns a named Tuple with 3 elements: `minimum_sample_size`, `detect_range_lower` and  `detect_range_upper`. These are respectively: the required sample size, the lower bound of the range of values not detectable with the returned required sample size, calculated as `baseline * (1 - mde)`, and the upper bound of the range of values not detectable with the returned required sample size, calculated as `baseline * (1 + mde)` (Float64).",
+        {"Tuple(Float64, Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples_continuous = {
+    {
+        "minSampleSizeContinuous",
+        R"(
+SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
+        )",
+        R"(
+(616.2931945826209,108.8825,115.6175)
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category_continuous = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_continuous = {description_continuous, syntax_continuous, arguments_continuous, {}, returned_value_continuous, examples_continuous, introduced_in, category_continuous};
+
+    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>(documentation_continuous);
     /// Needed for backward compatibility
     factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
-    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
+
+    FunctionDocumentation::Description description_conversion = R"(
+Calculates minimum required sample size for an A/B test comparing conversions (proportions) in two samples.
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). Assumes equal sizes of treatment and control groups. Returns the sample size required for one group (i.e. the sample size required for the whole experiment is twice the returned value).
+)";
+    FunctionDocumentation::Syntax syntax_conversion = "minSampleSizeConversion(baseline, mde, power, alpha)";
+    FunctionDocumentation::Arguments arguments_conversion = {
+        {"baseline", "Baseline conversion.", {"Float*"}},
+        {"mde", "Minimum detectable effect (MDE) as percentage points (e.g. for a baseline conversion 0.25 the MDE 0.03 means an expected change to 0.25 ± 0.03).", {"Float*"}},
+        {"power", "Required statistical power of a test (1 - probability of Type II error).", {"Float*"}},
+        {"alpha", "Required significance level of a test (probability of Type I error).", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_conversion = {
+        "Returns a named Tuple with 3 elements: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. These are, respectively: the required sample size, the lower bound of the range of values not detectable with the returned required sample size, calculated as `baseline - mde`, the upper bound of the range of values not detectable with the returned required sample size, calculated as `baseline + mde`.",
+        {"Tuple(Float64, Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples_conversion = {
+        {"minSampleSizeConversion", "SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size", "(3396.077603219162,0.22,0.28)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_conversion = {22, 6};
+    FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_conversion = {description_conversion, syntax_conversion, arguments_conversion, {}, returned_value_conversion, examples_conversion, introduced_in_conversion, category_conversion};
+
+    factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>(documentation_conversion);
 }
 
 }

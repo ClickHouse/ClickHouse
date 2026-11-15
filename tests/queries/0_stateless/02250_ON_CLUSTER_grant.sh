@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -nmq "
+    $CLICKHOUSE_CLIENT -mq "
         DROP USER IF EXISTS with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME;
         DROP USER IF EXISTS without_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME;
         DROP DATABASE IF EXISTS db_with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME;
@@ -15,7 +15,7 @@ function cleanup()
 cleanup
 trap cleanup EXIT
 
-$CLICKHOUSE_CLIENT -nmq "
+$CLICKHOUSE_CLIENT -mq "
     CREATE USER with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME;
     CREATE USER without_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME;
 

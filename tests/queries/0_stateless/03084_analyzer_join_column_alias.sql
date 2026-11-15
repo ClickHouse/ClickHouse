@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/47432
-SET allow_experimental_analyzer=1;
 create table t1
 engine = MergeTree()
 order by tuple()

@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isNotDistinctFrom.h>
 
 
 namespace DB
@@ -8,9 +9,33 @@ namespace DB
 
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
+/// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
+extern template class FunctionComparison<EqualsOp, NameEquals, true>;
+
 REGISTER_FUNCTION(Equals)
 {
-    factory.registerFunction<FunctionEquals>();
+    FunctionDocumentation::Description description = "Compares two values for equality.";
+    FunctionDocumentation::Syntax syntax = R"(
+        equals(a, b)
+        -- a = b
+        -- a == b
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is equal to `b`, otherwise `0`", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT 1 = 1, 1 = 2;", R"(
+┌─equals(1, 1)─┬─equals(1, 2)─┐
+│            1 │            0 │
+└──────────────┴──────────────┘
+)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionEquals>(documentation);
 }
 
 template <>
@@ -18,8 +43,7 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
 {
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow));
-
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     FunctionOverloadResolverPtr func_builder_and
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
@@ -29,5 +53,30 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
         func_builder_and,
         x, y, tuple_size, input_rows_count);
 }
+
+template <>
+ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    /// Array element equality is null-as-value at every nesting level, so use the null-safe equals
+    /// comparator: it returns a definite UInt8
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
+
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
+}
+
+/// Explicit instantiation definition, paired with the `extern template class` declarations in the other comparison
+/// functions. An implicit instantiation emits only the base-object constructor (`C2`), and at `-O0` clang does not
+/// emit `available_externally` members, so a translation unit that relies on `extern template` would reference the
+/// complete-object constructor (`C1`) by name and fail to link. This must come after the explicit member
+/// specializations above.
+template class FunctionComparison<EqualsOp, NameEquals>;
 
 }

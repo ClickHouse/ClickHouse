@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -26,14 +25,19 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const ContextPtr & context_);
+        const MergeTreeReadTask::BlockSizeParams & params_,
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     ~MergeTreeReadPool() override = default;
 
@@ -64,12 +68,7 @@ public:
         size_t min_concurrency = 1;
 
         /// Constants above is just an example.
-        explicit BackoffSettings(const Settings & settings)
-            : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
-            max_throughput(settings.read_backoff_max_throughput),
-            min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-            min_events(settings.read_backoff_min_events),
-            min_concurrency(settings.read_backoff_min_concurrency) {}
+        explicit BackoffSettings(const Settings & settings);
 
         BackoffSettings() : min_read_latency_ms(0) {}
     };
@@ -77,8 +76,11 @@ public:
 private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
+    /// Per part, the number of granules in a stripe of the columns cache, or 0 when the part is
+    /// not read through the cache. The ranges are cut at the ends of stripes, see `ColumnsCacheStripes`.
+    std::vector<size_t> columns_cache_stripe_marks;
+
     mutable std::mutex mutex;
-    size_t min_marks_for_concurrent_read = 0;
 
     /// State to track numbers of slow reads.
     struct BackoffState
@@ -90,14 +92,16 @@ private:
         explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
     const BackoffSettings backoff_settings;
-    BackoffState backoff_state;
+    BackoffState backoff_state TSA_GUARDED_BY(mutex);
 
     struct ThreadTask
     {
         struct PartIndexAndRange
         {
-            size_t part_idx;
+            size_t part_idx{};
             MarkRanges ranges;
         };
 
@@ -105,8 +109,20 @@ private:
         std::vector<size_t> sum_marks_in_parts;
     };
 
-    std::vector<ThreadTask> threads_tasks;
-    std::set<size_t> remaining_thread_tasks;
+    std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
+    std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+
+    /// Cuts the next portion of marks to read from the per-thread queues (possibly stealing from
+    /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
+    /// Outputs the queue and the intended task size so that the caller can continue cutting from
+    /// the same part with cutMoreRangesToRead when the ranges refiner drops a part of the cut.
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part);
+
+    /// Cuts up to need_marks more marks of the same part, or returns false if the part
+    /// is not on top of the given thread's queue anymore.
+    bool cutMoreRangesToRead(size_t thread_idx, size_t part_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part);
+
+    void cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part) TSA_REQUIRES(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

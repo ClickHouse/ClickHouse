@@ -1,5 +1,6 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/EnvironmentProxyConfigurationResolver.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Common/Exception.h>
@@ -7,6 +8,7 @@
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -64,6 +66,10 @@ namespace
     {
         std::vector<String> keys;
         configuration.keys(config_prefix, keys);
+        /// The URIs are picked by a prefix of their names. Look up the prefix, so that a configuration
+        /// tracking the read keys (`ConfigurationWithUsageTracking`, used for a definition of a disk) knows that
+        /// the elements with such names are read even when they are absent.
+        configuration.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_prefix + ".uri"));
 
         std::vector<Poco::URI> uris;
         for (const auto & key : keys)
@@ -112,9 +118,8 @@ namespace
         return configuration.has(config_prefix + ".uri");
     }
 
-    /*
-     * New syntax requires protocol prefix "<http> or <https>"
-     * */
+    /* New syntax requires protocol prefix "<http> or <https>"
+     */
     std::optional<std::string> getProtocolPrefix(
         ProxyConfiguration::Protocol request_protocol,
         const String & config_prefix,
@@ -130,61 +135,77 @@ namespace
         return protocol_prefix;
     }
 
-    template <bool new_syntax>
     std::optional<std::string> calculatePrefixBasedOnSettingsSyntax(
+        bool new_syntax,
         ProxyConfiguration::Protocol request_protocol,
         const String & config_prefix,
         const Poco::Util::AbstractConfiguration & configuration
     )
     {
         if (!configuration.has(config_prefix))
-        {
             return std::nullopt;
-        }
 
-        if constexpr (new_syntax)
-        {
+        if (new_syntax)
             return getProtocolPrefix(request_protocol, config_prefix, configuration);
-        }
 
         return config_prefix;
     }
+}
+
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol request_protocol)
+{
+    auto context = Context::getGlobalContextInstance();
+
+    /// tryGetConfig: during late shutdown (after resetSharedContext) the
+    /// global context still exists but its shared part is destroyed, so
+    /// getConfigRef would be a member call on a null pointer, racing with the
+    /// shutdown thread. The fault-reporting path (SignalListener handling a
+    /// crash on its own thread, not a POSIX signal handler) reaches this in
+    /// that window; taking the config lock here is therefore fine. The
+    /// returned pointer also keeps the configuration alive while it is being
+    /// read.
+    const auto config = context ? context->tryGetConfig() : nullptr;
+    if (!config)
+    {
+        return std::make_shared<EnvironmentProxyConfigurationResolver>(
+            request_protocol,
+            false);
+    }
+
+    return get(request_protocol, *config);
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
     Protocol request_protocol,
     const Poco::Util::AbstractConfiguration & configuration)
 {
-    if (auto resolver = getFromSettings(request_protocol, "proxy", configuration))
-    {
+    if (auto resolver = getFromSettings(true, request_protocol, "proxy", configuration))
         return resolver;
-    }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>(
         request_protocol,
         isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
 }
 
-template <bool is_new_syntax>
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromSettings(
+    bool new_syntax,
     Protocol request_protocol,
     const String & config_prefix,
-    const Poco::Util::AbstractConfiguration & configuration
-)
+    const Poco::Util::AbstractConfiguration & configuration)
 {
-    auto prefix_opt = calculatePrefixBasedOnSettingsSyntax<is_new_syntax>(request_protocol, config_prefix, configuration);
+    auto prefix_opt = calculatePrefixBasedOnSettingsSyntax(new_syntax, request_protocol, config_prefix, configuration);
 
     if (!prefix_opt)
     {
         return nullptr;
     }
-    auto prefix = *prefix_opt;
+    const auto & prefix = *prefix_opt;
 
     if (hasRemoteResolver(prefix, configuration))
     {
         return getRemoteResolver(request_protocol, prefix, configuration);
     }
-    else if (hasListResolver(prefix, configuration))
+    if (hasListResolver(prefix, configuration))
     {
         return getListResolver(request_protocol, prefix, configuration);
     }
@@ -195,20 +216,17 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
     Protocol request_protocol,
     const String & config_prefix,
-    const Poco::Util::AbstractConfiguration & configuration
-)
+    const Poco::Util::AbstractConfiguration & configuration)
 {
-    /*
-     * First try to get it from settings only using the combination of config_prefix and configuration.
+    /* First try to get it from settings only using the combination of config_prefix and configuration.
      * This logic exists for backward compatibility with old S3 storage specific proxy configuration.
      * */
-    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings<false>(request_protocol, config_prefix + ".proxy", configuration))
+    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings(false, request_protocol, config_prefix + ".proxy", configuration))
     {
         return resolver;
     }
 
-    /*
-     * In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
+    /* In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
      * Falls back to Environment resolver if no configuration is found.
      * */
     return ProxyConfigurationResolverProvider::get(request_protocol, configuration);

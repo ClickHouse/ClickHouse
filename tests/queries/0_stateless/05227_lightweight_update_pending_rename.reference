@@ -1,0 +1,11 @@
+an update of a column whose rename is pending
+while the rename is pending	200
+after it materialized	200
+and a rename that follows the update is still applied to the patch
+while the rename is pending	200
+after it materialized	200
+and a merge of the patches keeps the version they were written at
+before the merge of the patches	600
+active patch parts after the merge	1
+while the rename is pending	600
+after it materialized	600

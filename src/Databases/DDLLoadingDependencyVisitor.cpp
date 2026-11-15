@@ -1,3 +1,4 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
@@ -21,14 +23,15 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
-    assert(global_context == global_context->getGlobalContext());
+    chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
+    data.can_throw = can_throw;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
@@ -83,7 +86,8 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction 
         if (!args || args->children.size() != 2)
             return -1;
 
-        if (args->children[1]->as<ASTFunction>())
+        /// A literal, as in x IN ('db.table'), is a set of values, not a table name.
+        if (args->children[1]->as<ASTFunction>() || args->children[1]->as<ASTLiteral>())
             return -1;
 
         return 1;
@@ -124,7 +128,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     {
         /// We don't have a table name, we have a select query instead that will be executed during dictionary loading.
         /// We need to find all tables used in this select query and add them to dependencies.
-        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database);
+        auto select_query_dependencies = getDependenciesFromDictionaryNestedSelectQuery(data.global_context, data.table_name, data.create_query, info->query, data.default_database, data.can_throw);
         data.dependencies.merge(select_query_dependencies);
     }
 }
@@ -133,8 +137,8 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
-        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
-        data.dependencies.merge(ttl_dependensies);
+        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
+        data.dependencies.merge(ttl_dependencies.dependencies);
     }
 
     if (!storage.engine)
@@ -182,7 +186,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.safeGet<String>());
         if (!maybe_qualified_name)
             return;
 
@@ -193,7 +197,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         if (literal->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
         /// Just return if name if invalid
         if (!maybe_qualified_name)
             return;
@@ -211,9 +215,16 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         qualified_name.database = table_identifier->getDatabaseName();
         qualified_name.table = table_identifier->shortName();
     }
+    else if (arg->as<ASTSubquery>())
+    {
+        /// Allow IN subquery.
+        /// Do not add tables from the subquery into dependencies,
+        /// because CREATE will succeed anyway.
+        return;
+    }
     else
     {
-        assert(false);
+        /// Just return if the argument has unexpected type.
         return;
     }
 

@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT --multiquery --query "DROP TABLE IF EXISTS test; CREATE TABLE IF NOT EXISTS test (x UInt64, s Array(Nullable(String))) ENGINE = TinyLog;"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test; CREATE TABLE IF NOT EXISTS test (x UInt64, s Array(Nullable(String))) ENGINE = TinyLog;"
 
 function thread_select {
     local TIMELIMIT=$((SECONDS+$1))
@@ -47,4 +47,4 @@ thread_insert $TIMEOUT &
 wait
 echo "Done"
 
-$CLICKHOUSE_CLIENT --multiquery --query "DROP TABLE IF EXISTS test;"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test;"

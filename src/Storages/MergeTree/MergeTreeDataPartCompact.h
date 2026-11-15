@@ -12,7 +12,8 @@ namespace DB
   * In compact format one mark is an array of marks for every column and a number of rows in granule.
   * Format of other data part files is not changed.
   * It's considered to store only small parts in compact format (up to 10M).
-  * NOTE: Compact parts aren't supported for tables with non-adaptive granularity.
+  * NOTE: New Compact parts aren't created for tables with non-adaptive granularity (a Compact
+  *       part is always adaptive), but an existing Compact part can still be loaded by such a table.
   * NOTE: In compact part compressed and uncompressed size of single column is unknown.
   */
 class MergeTreeDataPartCompact : public IMergeTreeDataPart
@@ -23,24 +24,16 @@ public:
 
     MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const IMergeTreeDataPart * parent_part_,
+        PartDirIntent intent);
 
-    MergeTreeReaderPtr getReader(
-        const NamesAndTypesList & columns,
-        const StorageSnapshotPtr & storage_snapshot,
-        const MarkRanges & mark_ranges,
-        const VirtualFields & virtual_fields,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        const AlterConversionsPtr & alter_conversions,
-        const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
+    Strings getPreferredFileOrder() const override;
 
-    bool isStoredOnDisk() const override { return true; }
+    bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
 
@@ -50,22 +43,28 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+    std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
+    void removeMarksFromCache(MarkCache * mark_cache) const override;
 
     ~MergeTreeDataPartCompact() override;
 
-protected:
-     static void loadIndexGranularityImpl(
-         MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count, const IDataPartStorage & data_part_storage_);
+    static void loadIndexGranularityImpl(
+        MergeTreeIndexGranularityPtr & index_granularity_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        size_t marks_per_granule,
+        const IDataPartStorage & data_part_storage_,
+        const MergeTreeSettings & storage_settings);
 
-     void doCheckConsistency(bool require_part_metadata) const override;
+protected:
+    void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
      /// Loads marks index granularity into memory
      void loadIndexGranularity() override;
 
-     /// Compact parts doesn't support per column size, only total size
+     /// Compact parts don't support per column size, only total size
      void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 

@@ -1,0 +1,14 @@
+<test>
+    <create_query>CREATE TABLE IF NOT EXISTS t_opt_orderby (a UInt64, b Nullable(UInt64)) ENGINE = Memory()</create_query>
+    <fill_query>insert into t_opt_orderby select * from  generateRandom('a UInt64, b Nullable(UInt64)') limit 10000000</fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+        <compile_sort_description>0</compile_sort_description>
+    </settings>
+
+    <query>select a from t_opt_orderby order by a</query>
+    <query>select b from t_opt_orderby order by b</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_opt_orderby</drop_query>
+</test>

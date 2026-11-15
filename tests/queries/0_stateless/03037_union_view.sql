@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/55803
-SET allow_experimental_analyzer=1;
 DROP TABLE IF EXISTS broken_table;
 DROP TABLE IF EXISTS broken_view;
 

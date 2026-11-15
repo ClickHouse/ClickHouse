@@ -1,0 +1,12 @@
+<!-- Tests functions replaceRegexpAll and replaceRegexpOne with trivial patterns. These trigger internally a fallback to simple string replacement -->
+<!-- _materialize_ because the shortcut is only implemented for non-const haystack + const needle + const replacement strings -->
+<test>
+    <!-- trivial pattern -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceRegexpAll(materialize(s), ' ', '\n') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceRegexpOne(materialize(s), ' ', '\n') AS w FROM numbers_mt(5000000) FORMAT Null</query>
+
+    <!-- non-trivial patterns -->
+    <!-- deliberately testing with fewer rows to keep runtimes reasonable -->
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceRegexpAll(materialize(s), '\s+', '\\0\n') AS w FROM numbers_mt(500000) FORMAT Null</query>
+    <query>WITH 'Many years later as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice.' AS s SELECT replaceRegexpOne(materialize(s), '\s+', '\\0\n') AS w FROM numbers_mt(500000) FORMAT Null</query>
+</test>

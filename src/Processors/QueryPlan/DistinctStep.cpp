@@ -1,14 +1,132 @@
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/Transforms/DistinctSortedChunkTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
+#include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Processors/Transforms/ExternalDistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <IO/Operators.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Core/SortDescription.h>
+
+namespace ProfileEvents
+{
+    extern const Event ExternalDistinctWritePart;
+    extern const Event ExternalDistinctCompressedBytes;
+    extern const Event ExternalDistinctUncompressedBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForDistinct;
+}
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 prefer_external_sort_block_bytes;
+    extern const SettingsUInt64 max_bytes_before_external_distinct;
+    extern const SettingsDouble max_bytes_ratio_before_external_distinct;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
+    extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+bool preliminaryDistinctIsUseful(size_t max_threads)
+{
+    return max_threads > 1;
+}
+
+DistinctStep::Settings::Settings(const DB::Settings & settings_)
+{
+    set_size_limits = SizeLimits(
+        settings_[Setting::max_rows_in_distinct], settings_[Setting::max_bytes_in_distinct], settings_[Setting::distinct_overflow_mode]);
+    max_block_size = settings_[Setting::max_block_size];
+    prefer_external_sort_block_bytes = settings_[Setting::prefer_external_sort_block_bytes];
+
+    max_bytes_before_external_distinct = settings_[Setting::max_bytes_before_external_distinct];
+    max_bytes_ratio_before_external_distinct = settings_[Setting::max_bytes_ratio_before_external_distinct];
+
+    min_free_disk_space = settings_[Setting::min_free_disk_space_for_temporary_data];
+    temporary_files_codec = settings_[Setting::temporary_files_codec];
+    temporary_files_buffer_size = settings_[Setting::temporary_files_buffer_size];
+}
+
+DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings_)
+{
+    set_size_limits = SizeLimits(
+        settings_[QueryPlanSerializationSetting::max_rows_in_distinct],
+        settings_[QueryPlanSerializationSetting::max_bytes_in_distinct],
+        settings_[QueryPlanSerializationSetting::distinct_overflow_mode]);
+    max_block_size = settings_[QueryPlanSerializationSetting::max_block_size];
+    prefer_external_sort_block_bytes = settings_[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
+
+    max_bytes_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_before_external_distinct];
+    max_bytes_ratio_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct];
+
+    min_free_disk_space = settings_[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
+    temporary_files_codec = settings_[QueryPlanSerializationSetting::temporary_files_codec];
+    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings_[QueryPlanSerializationSetting::temporary_files_buffer_size]);
+}
+
+void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
+{
+    plan_settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
+    plan_settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
+    plan_settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
+    plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+    plan_settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = prefer_external_sort_block_bytes;
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT)
+    {
+        plan_settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct] = max_bytes_before_external_distinct;
+        plan_settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct] = max_bytes_ratio_before_external_distinct;
+    }
+
+    plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
+    plan_settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    plan_settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
+}
 
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
@@ -26,136 +144,201 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
     };
 }
 
-static SortDescription getSortDescription(const SortDescription & input_sort_desc, const Names& columns)
-{
-    SortDescription distinct_sort_desc;
-    for (const auto & sort_column_desc : input_sort_desc)
-    {
-        if (std::find(begin(columns), end(columns), sort_column_desc.column_name) == columns.end())
-            break;
-        distinct_sort_desc.emplace_back(sort_column_desc);
-    }
-    return distinct_sort_desc;
-}
-
 DistinctStep::DistinctStep(
-    const DataStream & input_stream_,
-    const SizeLimits & set_size_limits_,
+    const SharedHeader & input_header_,
+    Settings settings_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_,
-    bool optimize_distinct_in_order_)
+    bool pre_distinct_)
     : ITransformingStep(
-            input_stream_,
-            input_stream_.header,
+            input_header_,
+            input_header_,
             getTraits(pre_distinct_))
-    , set_size_limits(set_size_limits_)
+    , settings(std::move(settings_))
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
-    , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::updateLimitHint(UInt64 hint)
 {
-    if (!pre_distinct)
-        pipeline.resize(1);
+    if (hint && limit_hint)
+        /// Both limits are set - take the min
+        limit_hint = std::min(hint, limit_hint);
+    else
+        /// Some limit is not set - take the other one
+        limit_hint = std::max(hint, limit_hint);
+}
 
-    if (optimize_distinct_in_order)
+bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
+{
+    /// Each input chunk is split across all partitions. Bound both dimensions of the scatter mesh
+    /// to limit hashing, copying, and scheduling overhead at high thread counts.
+    static constexpr size_t max_partitions = 16;
+    static constexpr size_t max_scatter_streams = 16;
+
+    /// A single stream is not scattered: its `DISTINCT` keeps the input row order, which unordered queries
+    /// rely on in practice, and small single-stream inputs, the common case, would pay for the extra transforms.
+    const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
+    if (pipeline.getNumStreams() <= 1 || num_partitions <= 1)
+        return false;
+
+    const auto key_column_positions = calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns);
+    if (key_column_positions.empty())
+        return false;
+
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
+    scatterByPartition(pipeline, num_partitions, key_column_positions);
+    return true;
+}
+
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
+{
+    const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
+        settings.max_bytes_before_external_distinct,
+        settings.max_bytes_ratio_before_external_distinct,
+        "max_bytes_ratio_before_external_distinct");
+    const auto & query_status = build_settings.process_list_element;
+    const bool scheduler_spilling = query_status && build_settings.temp_data_on_disk
+        && (query_status->getMemoryReservation()
+            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
+    /// Constant keys produce at most one row and need no external storage.
+    const bool external = !pre_distinct && (external_threshold || scheduler_spilling)
+        && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
+
+    if (!pre_distinct && !skip_stream_merging)
     {
-        const auto & input_stream = input_streams.back();
-        const SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
-        if (!distinct_sort_desc.empty())
-        {
-            /// pre-distinct for sorted chunks
-            if (pre_distinct)
-            {
-                pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                    {
-                        if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                            return nullptr;
-
-                        return std::make_shared<DistinctSortedChunkTransform>(
-                            header,
-                            set_size_limits,
-                            limit_hint,
-                            distinct_sort_desc,
-                            columns,
-                            input_stream.sort_scope == DataStream::SortScope::Stream);
-                    });
-                return;
-            }
-            /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_scope == DataStream::SortScope::Global)
-            {
-                assert(input_stream.has_single_port);
-
-                if (distinct_sort_desc.size() < columns.size())
-                {
-                    if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
-                    {
-                        pipeline.addSimpleTransform(
-                            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                            {
-                                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                    return nullptr;
-
-                                return std::make_shared<DistinctSortedTransform>(
-                                    header, distinct_sort_desc, set_size_limits, limit_hint, columns);
-                            });
-                        return;
-                    }
-                }
-                else
-                {
-                    pipeline.addSimpleTransform(
-                        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                        {
-                            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                return nullptr;
-
-                            return std::make_shared<DistinctSortedChunkTransform>(
-                                header, set_size_limits, limit_hint, distinct_sort_desc, columns, true);
-                        });
-                    return;
-                }
-            }
-        }
+        /// Hash partitioning makes the streams disjoint, but changes their order: an input-order requirement
+        /// forbids it, and so does sorted deduplication, which needs equal prefix values to remain contiguous.
+        /// The requirement can outlive its `ORDER BY` when the optimizer removes a sort no consumer needs,
+        /// so the step may still receive several streams; they are merged like any other input.
+        const bool scattered = parallel_distinct && !preserve_input_order
+            && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
+        if (!scattered)
+            pipeline.resize(1);
     }
 
-    pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
+    /// Size limits apply to the combined set across all disjoint streams, whether inherited from the
+    /// input or created by scattering. Each stream reports its new keys and retained set bytes to one
+    /// limit processor, so local size checks are disabled in this case. Preliminary sets are independent.
+    const bool global_limits = !pre_distinct && pipeline.getNumStreams() > 1 && settings.set_size_limits.hasLimits();
+    /// The planner selects sorted final deduplication only for globally ordered, single-stream input.
+    chassert(!global_limits || distinct_sort_desc.empty());
+    const SizeLimits local_limits = global_limits ? SizeLimits{} : settings.set_size_limits;
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
-        });
+    /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of equal prefix
+    /// values, hashing only the remaining columns within a range (and with no remaining columns, keeping
+    /// one row per range without hashing at all). This holds at most one range in memory, so none of the
+    /// external `DISTINCT` machinery below applies to it.
+    if (!distinct_sort_desc.empty())
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<DistinctSortedStreamTransform>(
+                    header, settings.set_size_limits, limit_hint, distinct_sort_desc, columns);
+            });
+        return;
+    }
+
+    const auto shared_set_bytes = global_limits ? std::make_shared<std::atomic<UInt64>>(0) : nullptr;
+    if (external)
+    {
+        if (!build_settings.temp_data_on_disk)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external DISTINCT is not provided");
+
+        auto tmp_data_on_disk = build_settings.temp_data_on_disk->childScope(
+            {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
+             .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
+             .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
+             .num_files = ProfileEvents::ExternalDistinctWritePart,
+             .spilled_to_disk_operator = "distinct"},
+            settings.temporary_files_buffer_size,
+            settings.temporary_files_codec);
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<ExternalDistinctTransform>(
+                    header,
+                    local_limits,
+                    limit_hint,
+                    columns,
+                    external_threshold,
+                    tmp_data_on_disk,
+                    settings.min_free_disk_space,
+                    settings.max_block_size,
+                    settings.prefer_external_sort_block_bytes,
+                    preserve_input_order,
+                    shared_set_bytes);
+            });
+    }
+    else
+    {
+        /// Preliminary hashing is optional: a downstream step deduplicates its output exactly. Releasing
+        /// its set under memory pressure can send more duplicates through intervening steps such as sorting.
+        const UInt64 pass_through_threshold = pre_distinct ? external_threshold : 0;
+
+        /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+        /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
+        /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
+        const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<DistinctTransform>(
+                    header, local_limits, limit_hint, columns,
+                    allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, shared_set_bytes,
+                    /*coalesce_rows_=*/ coalesce_output ? settings.max_block_size : 0,
+                    /*allow_spilling_=*/ pre_distinct && limit_hint == 0);
+            });
+    }
+
+    /// The parallel final outputs are already disjoint, so a later merge needs no further deduplication.
+    /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.
+    if (global_limits)
+        pipeline.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(pipeline.getSharedHeader(), settings.set_size_limits, pipeline.getNumStreams()));
 }
 
-void DistinctStep::describeActions(FormatSettings & settings) const
+void DistinctStep::describeActions(FormatSettings & format_settings) const
 {
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Columns: ";
+    const String & prefix = format_settings.detail_prefix;
+    format_settings.out << prefix << "Columns: ";
 
     if (columns.empty())
-        settings.out << "none";
+        format_settings.out << "none";
     else
     {
         bool first = true;
         for (const auto & column : columns)
         {
             if (!first)
-                settings.out << ", ";
+                format_settings.out << ", ";
             first = false;
 
-            settings.out << column;
+            format_settings.out
+                << (format_settings.pretty ? QueryPlanFormat::formatColumnPretty(column, format_settings.pretty_names) : column);
         }
     }
 
-    settings.out << '\n';
+    format_settings.out << '\n';
+
+    if (skip_stream_merging)
+        format_settings.out << prefix << "Skip stream merging: 1\n";
+    if (preserve_input_order)
+        format_settings.out << prefix << "Preserve input order: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -165,14 +348,87 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
+    if (skip_stream_merging)
+        map.add("Skip stream merging", true);
+    if (preserve_input_order)
+        map.add("Preserve input order", true);
 }
 
-void DistinctStep::updateOutputStream()
+void DistinctStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        input_streams.front().header,
-        getTraits(pre_distinct).data_stream_traits);
+    output_header = input_headers.front();
+}
+
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
+{
+    settings.updatePlanSettings(plan_settings, version);
+}
+
+void DistinctStep::serialize(Serialization & ctx) const
+{
+    writeVarUInt(columns.size(), ctx.out);
+    for (const auto & column : columns)
+        ctx.writeColumnName(column);
+
+    if (ctx.step_version >= 1 && !ctx.for_cache_key)
+        writeBinary(preserve_input_order, ctx.out);
+
+    /// A shipped plan fragment may not contain the LIMIT the hint comes from, so it cannot be derived there again.
+    if (ctx.step_version >= 2 && !ctx.for_cache_key)
+        writeVarUInt(limit_hint, ctx.out);
+}
+
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
+
+    size_t columns_size = 0;
+    readVarUInt(columns_size, ctx.in);
+    Names column_names(columns_size);
+    for (size_t i = 0; i < columns_size; ++i)
+        readStringBinary(column_names[i], ctx.in);
+
+    bool preserve_input_order = false;
+    if (ctx.step_version >= 1)
+        readBinary(preserve_input_order, ctx.in);
+
+    UInt64 limit_hint = 0;
+    if (ctx.step_version >= 2)
+        readVarUInt(limit_hint, ctx.in);
+
+    auto step = std::make_unique<DistinctStep>(
+        ctx.input_headers.front(), Settings(ctx.settings), limit_hint, column_names, pre_distinct_);
+    if (preserve_input_order)
+        step->preserveInputOrder();
+    return step;
+}
+
+QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, false);
+}
+QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, true);
+}
+
+QueryPlanStepPtr DistinctStep::clone() const
+{
+    return std::make_unique<DistinctStep>(*this);
+}
+
+void registerDistinctStep(QueryPlanStepRegistry & registry);
+void registerDistinctStep(QueryPlanStepRegistry & registry)
+{
+    /// Preliminary distinct probably can be a query plan optimization.
+    /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0},
+        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT},
+        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT}};
+    registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
+    registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }
 
 }

@@ -7,7 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
@@ -16,7 +16,7 @@
 namespace DB
 {
 
-class HiveSettings;
+struct HiveSettings;
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
@@ -40,7 +40,16 @@ public:
 
     String getName() const override { return "Hive"; }
 
+    bool isExternalDatabase() const override { return true; }
+
     bool supportsSubcolumns() const override { return true; }
+    /// Like `File` and `URL`, the requested names go straight to the Parquet/ORC reader, which cannot
+    /// serve synthesised subcolumns such as `.null`/`.size0`/`.keys` as standalone inputs. The reader
+    /// also binds flattened names up to case (`input_format_parquet_case_insensitive_column_matching`),
+    /// so a physical `M.keys` column would shadow a rewritten `m.keys`. Only the tuple element rewrite
+    /// is allowed; its guard in `FunctionToSubcolumnsPass` handles the case-insensitive collision.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     void read(
         QueryPlan & query_plan,
@@ -56,8 +65,7 @@ public:
 
     bool supportsSubsetOfColumns() const;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context_) const override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
 protected:
@@ -88,26 +96,26 @@ private:
 
     void initMinMaxIndexExpression();
 
-    HiveFiles collectHiveFiles(
+    HiveFilesWithSkipSplits collectHiveFiles(
         size_t max_threads,
-        const ActionsDAGPtr & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFiles collectHiveFilesFromPartition(
+    HiveFilesWithSkipSplits collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
-        const ActionsDAGPtr & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilePtr getHiveFileIfNeeded(
+    HiveFileWithSkipSplits getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
-        const ActionsDAGPtr & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
@@ -115,7 +123,7 @@ private:
     void lazyInitialize();
 
     std::optional<UInt64>
-    totalRowsImpl(const Settings & settings, const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, PruneLevel prune_level) const;
+    totalRowsImpl(const Settings & settings, const ActionsDAG * filter_actions_dag, ContextPtr context_, PruneLevel prune_level) const;
 
     String hive_metastore_url;
 

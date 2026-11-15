@@ -24,12 +24,12 @@ $CLICKHOUSE_LOCAL -q "select * from generateRandom('a UInt64, b String, c Array(
 
 $CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE', auto, 'a UInt64, b String, c Array(UInt64), d Tuple(a UInt64, b String)')"
 
-$CLICKHOUSE_LOCAL -nmq "
+$CLICKHOUSE_LOCAL -mq "
 desc file('$DATA_FILE');
 desc file('$DATA_FILE');
 "
 
-$CLICKHOUSE_LOCAL -nmq "
+$CLICKHOUSE_LOCAL -mq "
 desc file('$DATA_FILE', JSONEachRow);
 desc file('$DATA_FILE');
 "
@@ -39,7 +39,7 @@ $CLICKHOUSE_LOCAL -q "select * from generateRandom('a UInt64, b String, c Array(
 $CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE.{1,2}')"
 $CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE.{1,2}') settings schema_inference_mode='union'" 2>&1 | grep -c "CANNOT_DETECT_FORMAT"
 
-$CLICKHOUSE_LOCAL -nmq "
+$CLICKHOUSE_LOCAL -mq "
 desc file('$DATA_FILE.2');
 desc file('$DATA_FILE.{1,2}');
 "

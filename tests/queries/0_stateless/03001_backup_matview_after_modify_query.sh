@@ -9,7 +9,7 @@ db="$CLICKHOUSE_DATABASE"
 db_2="${db}_2"
 backup_name="${db}_backup"
 
-${CLICKHOUSE_CLIENT} --multiquery "
+${CLICKHOUSE_CLIENT} "
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 CREATE TABLE src(Timestamp DateTime64(9), c1 String, c2 String) ENGINE=MergeTree ORDER BY Timestamp;

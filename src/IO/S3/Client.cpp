@@ -1,21 +1,40 @@
 #include <IO/S3/Client.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
+#include <algorithm>
+#include <ctime>
+#include <iterator>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Poco/URI.h>
+#include <aws/core/utils/crypto/Hash.h>
+#include <Poco/MD5Engine.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/Stopwatch.h>
+#include <Common/Exception.h>
+#include <Common/Hex.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SipHash.h>
+
+#include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
+#include <aws/core/utils/cbor/CborValue.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
+#include <aws/core/utils/logging/LogLevel.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Exception.h>
 
+#include <IO/Expect404ResponseScope.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -23,30 +42,65 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-
+#include <Common/Base64.h>
 #include <Common/logger_useful.h>
+#include <Common/OpenSSLHelpers.h>
+#include <IO/S3Common.h>
+
+#include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <Core/Settings.h>
+
 #include <base/sleep.h>
+
+#include <Common/thread_local_rng.h>
+#include <random>
 
 
 namespace ProfileEvents
 {
     extern const Event S3WriteRequestsErrors;
+    extern const Event S3WriteRequestAttempts;
+    extern const Event S3WriteRequestRetryableErrors;
+
     extern const Event S3ReadRequestsErrors;
+    extern const Event S3ReadRequestAttempts;
+    extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
+    extern const Event DiskS3WriteRequestAttempts;
+    extern const Event DiskS3WriteRequestRetryableErrors;
+
     extern const Event DiskS3ReadRequestsErrors;
+    extern const Event DiskS3ReadRequestAttempts;
+    extern const Event DiskS3ReadRequestRetryableErrors;
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskS3NoSuchKeyErrors;
 }
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool s3_use_adaptive_timeouts;
+}
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
@@ -54,12 +108,14 @@ namespace ErrorCodes
 namespace S3
 {
 
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
-    : maxRetries(maxRetries_)
-    , scaleFactor(scaleFactor_)
-    , maxDelayMs(maxDelayMs_)
+static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
+
+Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
+    : config(config_)
+    , log(getLogger("S3ClientRetryStrategy"))
 {
-    chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
+    chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
+    chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -68,31 +124,83 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    if (attemptedRetries >= maxRetries)
+    if (attemptedRetries >= config.max_retries)
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            return false;
+        return false;
+
+    /// It does not make sense to retry when GCS suggest to use Rewrite
+    if (useGCSRewrite(error))
+        return false;
 
     return error.ShouldRetry();
 }
 
+bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT
+        && error.GetExceptionName() == "InternalError"
+        && error.GetMessage().contains("use the Rewrite method in the JSON API");
+}
+
+
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
-    if (attemptedRetries == 0)
-    {
-        return 0;
-    }
+    chassert(attemptedRetries >= 0);
+    uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
-    uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
-    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
+    uint64_t res = 0;
+    if (config.jitter_factor > 0)
+    {
+        auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
+        double jitter = dist(thread_local_rng);
+        res = static_cast<std::uint64_t>(
+            std::min(jitter * static_cast<double>(config.initial_delay_ms) * static_cast<double>(backoff_limited_pow), static_cast<double>(config.max_delay_ms)));
+    }
+    else
+        res = std::min<uint64_t>(config.initial_delay_ms * backoff_limited_pow, config.max_delay_ms);
+
+    LOG_TEST(log, "Next retry in {} ms", res);
+    return res;
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
-    return maxRetries + 1;
+    return config.max_retries + 1;
+}
+
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome & httpResponseOutcome)
+{
+    if (!httpResponseOutcome.IsSuccess())
+    {
+        const auto & error = httpResponseOutcome.GetError();
+        if (error.ShouldRetry())
+            LOG_TRACE(
+                log,
+                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
+                httpResponseOutcome.GetRetryCount() + 1,
+                GetMaxAttempts(),
+                error.GetResponseCode(),
+                error.GetMessage());
+    }
+}
+
+void Client::RetryStrategy::RequestBookkeeping(
+    const Aws::Client::HttpResponseOutcome & httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors> & lastError)
+{
+    if (httpResponseOutcome.IsSuccess())
+        LOG_TRACE(
+            log,
+            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
+            httpResponseOutcome.GetRetryCount() + 1,
+            GetMaxAttempts(),
+            httpResponseOutcome.GetResult()->GetResponseCode(),
+            lastError.GetResponseCode(),
+            lastError.GetMessage());
+    RequestBookkeeping(httpResponseOutcome);
 }
 
 namespace
@@ -108,7 +216,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
+    const NormalizedHTTPHeaderEntries & extra_headers
 )
 {
     for (const auto & [name, value] : extra_headers)
@@ -120,6 +228,14 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     }
 }
 
+template <bool IsReadMethod>
+void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Event write_event)
+{
+    if constexpr (IsReadMethod)
+        ProfileEvents::increment(read_event);
+    else
+        ProfileEvents::increment(write_event);
+}
 }
 
 std::unique_ptr<Client> Client::create(
@@ -128,16 +244,32 @@ std::unique_ptr<Client> Client::create(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    const ClientSettings & client_settings)
+    const ClientSettings & client_settings,
+    const std::shared_ptr<ClientCache> & shared_cache)
 {
     verifyClientConfiguration(client_configuration);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings, shared_cache));
 }
 
 std::unique_ptr<Client> Client::clone() const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration));
+    return cloneWithConfigurationOverride(this->client_configuration);
+}
+
+std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
+{
+    /// `retryStrategy` is the object the SDK retries with, and `ClientFactory::create` builds it from
+    /// `retry_strategy`, so overriding only the latter would keep the retries of the client being cloned.
+    auto config = client_configuration_override;
+    config.validateRetryStrategy();
+    auto retry_strategy = config.retry_strategy;
+    /// As in `ClientFactory::create`: per-thread retries give way to the global coordination.
+    if (config.s3_slow_all_threads_after_retryable_error)
+        retry_strategy.max_retries = 1;
+    config.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_strategy);
+
+    return std::unique_ptr<Client>(new Client(*this, config));
 }
 
 namespace
@@ -145,10 +277,10 @@ namespace
 
 ProviderType deduceProviderType(const std::string & url)
 {
-    if (url.find(".amazonaws.com") != std::string::npos)
+    if (url.contains(".amazonaws.com"))
         return ProviderType::AWS;
 
-    if (url.find("storage.googleapis.com") != std::string::npos)
+    if (url.contains("storage.googleapis.com"))
         return ProviderType::GCS;
 
     return ProviderType::UNKNOWN;
@@ -162,7 +294,8 @@ Client::Client(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    const ClientSettings & client_settings_)
+    const ClientSettings & client_settings_,
+    const std::shared_ptr<ClientCache> & shared_cache)
     : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
@@ -178,7 +311,7 @@ Client::Client(
 
     provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-
+    LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
     if (provider_type == ProviderType::GCS)
     {
         /// GCS can operate in 2 modes for header and query params names:
@@ -198,9 +331,14 @@ Client::Client(
 
     LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
+    logConfiguration();
+
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
-    cache = std::make_shared<ClientCache>();
+    if (shared_cache)
+        cache = shared_cache;
+    else
+        cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
 
     ProfileEvents::increment(ProfileEvents::S3Clients);
@@ -218,12 +356,15 @@ Client::Client(
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
+    , api_mode(other.api_mode)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
     , log(getLogger("S3Client"))
 {
-    cache = std::make_shared<ClientCache>(*other.cache);
+    cache = other.cache;
     ClientCacheRegistry::instance().registerClient(cache);
+
+    logConfiguration();
 
     ProfileEvents::increment(ProfileEvents::TinyS3Clients);
 }
@@ -238,13 +379,17 @@ Client::~Client()
     catch (...)
     {
         tryLogCurrentException(log);
-        throw;
     }
 }
 
 Aws::Auth::AWSCredentials Client::getCredentials() const
 {
     return credentials_provider->GetAWSCredentials();
+}
+
+bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
+{
+    return error.GetExceptionName() == "AuthenticationRequired" || error.GetExceptionName() == "ExpiredToken";
 }
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
@@ -259,7 +404,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
         if (region.empty())
             region = getRegionForBucket(bucket, /*force_detect*/ true);
 
-        assert(!explicit_region.empty());
+        chassert(!explicit_region.empty());
         if (region == explicit_region)
             return false;
 
@@ -273,7 +418,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -301,6 +446,16 @@ template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & reque
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
+{
+    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
+    /// as a cancellation instead of the stale S3/network outcome.
+    auto outcome = headObjectInternal(request);
+    if (!outcome.IsSuccess())
+        CurrentThread::checkIfNotCancelled();
+    return outcome;
+}
+
+Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
@@ -380,63 +535,116 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return enrichErrorMessage(
+    return processRequestResult(
         HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
+
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
+        request, [this](Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
 Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
+        request, [this](Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return enrichErrorMessage(
-        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
+    return processRequestResult(
+        doRequest(request, [this](Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
+        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
+        request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
+}
+
+bool Client::isObjectWrittenWithIdempotencyId(
+    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id, bool warn_if_unproven) const
+{
+    if (idempotency_id.empty())
+        return false;
+
+    Expect404ResponseScope scope; /// The object is absent whenever the write did not land.
+
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    if (isClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
+    /// Not `HeadObjectRequest().WithBucket(...)`: that returns the SDK's base, so `auto` drops our wrapper.
+    HeadObjectRequest head_request;
+    head_request.SetBucket(bucket);
+    head_request.SetKey(key);
+
+    auto head_outcome = HeadObject(head_request);
+
+    const auto logs_level = warn_if_unproven ? LogsLevel::warning : LogsLevel::information;
+    const auto priority = warn_if_unproven ? Poco::Message::PRIO_WARNING : Poco::Message::PRIO_INFORMATION;
+
+    if (!head_outcome.IsSuccess())
+    {
+        LOG_IMPL(
+            log, logs_level, priority,
+            "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
+            key, bucket, head_outcome.GetError().GetMessage());
+        return false;
+    }
+
+    const auto & metadata = head_outcome.GetResult().GetMetadata();
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    if (it != metadata.end() && it->second == idempotency_id)
+        return true;
+
+    LOG_IMPL(log, logs_level, priority, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
+    return false;
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
+        request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    if (!outcome.IsSuccess()
-        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
-    {
-        auto check_request = HeadObjectRequest()
-                                 .WithBucket(bucket)
-                                 .WithKey(key);
-        auto check_outcome = HeadObject(check_request);
+    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
+    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
+    const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
+        && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
+            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
+    if (may_be_replay_of_a_landed_completion)
+    {
+        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
+        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), warn_if_unproven))
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
+                outcome.GetError().GetExceptionName(), key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
@@ -467,42 +675,69 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
 Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
+        request, [this](Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
+    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+        request,
+        [this](Model::PutObjectRequest & req)
+        {
+            if (isGCSCreateIfAbsentWithHMAC(req))
+                return putObjectWithGOOG4Signature(req);
+            return PutObject(req);
+        });
+
+    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
+    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
+    {
+        const auto & key = request.GetKey();
+        const auto & bucket = request.GetBucket();
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), /* warn_if_unproven= */ false))
+        {
+            LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
+            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        }
+    }
+
+    return outcome;
+}
+
+Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
+{
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
+        request, [this](const Model::PutObjectTaggingRequest & req) { return PutObjectTagging(req); });
 }
 
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
+        request, [this](Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
 Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
+        request, [this](Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
+        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
+        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
 {
-    auto request_fn = [this](const ComposeObjectRequest & req)
+    auto request_fn = [this](ComposeObjectRequest & req)
     {
         auto & endpoint_provider = const_cast<Client &>(*this).accessEndpointProvider();
         AWS_OPERATION_CHECK_PTR(endpoint_provider, ComposeObject, Aws::Client::CoreErrors, Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE);
@@ -531,18 +766,26 @@ Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & reques
 }
 
 template <typename RequestType, typename RequestFn>
-std::invoke_result_t<RequestFn, RequestType>
+std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    /// With an empty key the SDK addresses the bucket itself, e.g. `DeleteObject` becomes `DeleteBucket`.
+    if constexpr (requires { request.GetKey(); })
+    {
+        if (request.GetKey().empty())
+            return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::MISSING_PARAMETER,
+                "MISSING_PARAMETER",
+                fmt::format("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
+                /*isRetryable*/ false));
+    }
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
-    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
     if (client_settings.is_s3express_bucket)
         request.setIsS3ExpressBucket();
-    else if (client_settings.disable_checksum)
-        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -562,18 +805,62 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (found_new_endpoint)
         {
             auto uri_override = request.getURIOverride();
-            assert(uri_override.has_value());
+            chassert(uri_override.has_value());
             updateURIForBucket(bucket, std::move(*uri_override));
         }
     );
 
-    for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
+    std::optional<Stopwatch> expired_token_retry_watch;
+    size_t expired_token_retries = 0;
+    for (size_t attempt = 0; ; ++attempt)
     {
+        chassert(attempt >= expired_token_retries);
+        const size_t effective_redirect_attempt = attempt - expired_token_retries;
+        if (effective_redirect_attempt > max_redirects)
+            break;
+
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
 
+        CurrentThread::checkIfNotCancelled();
+
         const auto & error = result.GetError();
+
+        if (checkIfCredentialsChanged(error))
+        {
+            if (error.GetExceptionName() != "ExpiredToken")
+            {
+                LOG_INFO(log, "Credentials changed, attempting again");
+                credentials_provider->SetNeedRefresh();
+                continue;
+            }
+
+            const auto timeout_ms = client_configuration.expired_token_retry_timeout_ms;
+            if (timeout_ms == 0)
+                return result;
+
+            if (!expired_token_retry_watch)
+                expired_token_retry_watch.emplace(CLOCK_MONOTONIC);
+
+            const auto elapsed_ms = expired_token_retry_watch->elapsedMilliseconds();
+            if (expired_token_retries >= client_configuration.retry_strategy.max_retries || elapsed_ms >= timeout_ms)
+                return result;
+
+            RetryStrategy retry_strategy(client_configuration.retry_strategy);
+            const auto retry_delay_ms = static_cast<UInt64>(retry_strategy.CalculateDelayBeforeNextRetry(error, expired_token_retries));
+            if (retry_delay_ms >= timeout_ms - elapsed_ms)
+                return result;
+
+            if (expired_token_retries == 0)
+                LOG_INFO(log, "ExpiredToken on S3 request, refreshing credentials and retrying");
+            ++expired_token_retries;
+            credentials_provider->SetNeedRefresh();
+            sleepForMilliseconds(retry_delay_ms);
+            if (expired_token_retry_watch->elapsedMilliseconds() >= timeout_ms)
+                return result;
+            continue;
+        }
 
         std::string new_region;
         if (checkIfWrongRegionDefined(bucket, error, new_region))
@@ -582,25 +869,29 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+        /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
+        /// In that case, we need to update the region and try again
+        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
             return result;
 
         // maybe we detect a correct region
-        if (!detect_region)
+        if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
+                LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
             }
         }
 
         // we possibly got new location, need to try with that one
-        auto new_uri = getURIFromError(error);
+        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (initial_endpoint.size() > 11 && initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();
@@ -619,89 +910,202 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 }
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
-std::invoke_result_t<RequestFn, RequestType>
+std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
+    /// S3 does retries network errors actually.
+    /// But it does matter when errors occur.
+    /// This code retries a specific case when
+    /// network error happens when XML document is being read from the response body.
+    /// Hence, the response body is a stream, network errors are possible at reading.
+    /// S3 doesn't retry them.
+
+    /// Not all requests can be retried in that way.
+    /// Requests that read out response body to build the result are possible to retry.
+    /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
-    auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
+    auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
-        chassert(max_attempts > 0);
-        std::exception_ptr last_exception = nullptr;
-        for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
+        const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
+
+        Int64 attempt_no = 1;
+        std::invoke_result_t<RequestFn, RequestType &> outcome;
+
+        auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+
+            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
+
+            outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::NETWORK_CONNECTION,
+                /*name*/ "",
+                /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
+                /*retryable*/ true);
+
+            // network exceptions are always retryable, we could just return true here
+            // but we have to check cancellation points for query, ShouldRetry method does it already
+            return client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1);
+        };
+
+        for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
+        {
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
+
+            if (attempt_no > 1)
+            {
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                if (isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+
+                // use previously attempt number to calculate delay
+                updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no - 1);
+
+                // update ClickHouse-specific attempt number in the request
+                // to help choose the right timeouts on the HTTP client which depends on retry attempt number
+                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
+                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+            }
+
+            /// Slowing down due to a previously encountered retryable error, possibly from another thread.
+            slowDownAfterRetryableError();
+
             try
             {
-                /// S3 does retries network errors actually.
-                /// But it is matter when errors occur.
-                /// This code retries a specific case when
-                /// network error happens when XML document is being read from the response body.
-                /// Hence, the response body is a stream, network errors are possible at reading.
-                /// S3 doesn't retry them.
+                outcome = request_fn_(request_);
 
-                /// Not all requests can be retried in that way.
-                /// Requests that read out response body to build the result are possible to retry.
-                /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
-                return request_fn_(request_);
-            }
-            catch (Poco::Net::ConnectionResetException &)
-            {
-
-                if constexpr (IsReadMethod)
-                {
-                    if (isClientForDisk())
-                        ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
-                }
-                else
-                {
-                    if (isClientForDisk())
-                        ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
-                }
-
-                tryLogCurrentException(log, "Will retry");
-                last_exception = std::current_exception();
-
-                auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-
-                /// Check if query is canceled
-                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
+                if (outcome.IsSuccess())
                     break;
 
-                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
-                sleepForMilliseconds(sleep_ms);
+                // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
-                continue;
+                /// Unless retries are coordinated across threads, the SDK has already retried this error.
+                if (!client_configuration.s3_slow_all_threads_after_retryable_error)
+                    break;
+
+                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
+                    break;
+            }
+            catch (Poco::Net::NetException &)
+            {
+                /// This includes "connection reset", "malformed message", and possibly other exceptions.
+                if (!net_exception_handler())
+                    break;
+            }
+            catch (Poco::TimeoutException &)
+            {
+                /// This includes "Timeout"
+                if (!net_exception_handler())
+                    break;
             }
         }
 
-        chassert(last_exception);
-        std::rethrow_exception(last_exception);
+        return outcome;
     };
 
     return doRequest(request, with_retries);
 }
 
 template <typename RequestResult>
-RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
+RequestResult Client::processRequestResult(RequestResult && outcome) const
 {
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
 
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY && !Expect404ResponseScope::is404Expected())
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
+
     String enriched_message = fmt::format(
         "{} {}",
         outcome.GetError().GetMessage(),
-        "This error happened for S3 disk.");
+        Expect404ResponseScope::is404Expected() ? "This error is expected for S3 disk."  : "This error happened for S3 disk.");
 
     auto error = outcome.GetError();
     error.SetMessage(enriched_message);
 
     return RequestResult(error);
+}
+
+void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const
+{
+    if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
+        return;
+
+    auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+    /// Other S3 requests must wait until this time.
+    UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    UInt64 next_time_ms = current_time_ms + sleep_ms;
+    UInt64 stored_next_time = next_time_to_retry_after_retryable_error;
+    /// Update to a later retry time, but only if it's further in the future.
+    while (stored_next_time < next_time_ms)
+    {
+        if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
+        {
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
+            break;
+        }
+    }
+}
+
+void Client::slowDownAfterRetryableError() const
+{
+    if (!client_configuration.s3_slow_all_threads_after_network_error && !client_configuration.s3_slow_all_threads_after_retryable_error)
+        return;
+
+    /// Wait until `next_time_to_retry_after_retryable_error`.
+    for (;;)
+    {
+        UInt64 current_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        UInt64 next_time_ms = next_time_to_retry_after_retryable_error.load();
+        if (current_time_ms >= next_time_ms)
+        {
+            if (next_time_ms != 0)
+                LOG_TRACE(log, "Retry time has passed; proceeding without delay");
+            break;
+        }
+        UInt64 sleep_ms = next_time_ms - current_time_ms;
+
+        /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
+        /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
+        std::uniform_real_distribution<double> dist(1.0, 1.1);
+        double jitter = dist(thread_local_rng);
+        sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
+
+        LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
+        sleepForMilliseconds(sleep_ms);
+    }
+}
+
+void Client::logConfiguration() const
+{
+    if (client_configuration.group == HTTPConnectionGroupType::DISK)
+    {
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+    else
+    {
+        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client: slowing down threads on retryable errors is {}",
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
 }
 
 bool Client::supportsMultiPartCopy() const
@@ -715,12 +1119,25 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
     if (api_mode == ApiMode::GCS)
-    {
-        /// some GCS requests don't like S3 specific headers that the client sets
-        /// all "x-amz-*" headers have to be either converted or deleted
-        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
-        httpRequest->DeleteHeader("x-amz-api-version");
-    }
+        translateHeadersToGCS(*httpRequest);
+}
+
+std::string Client::getGCSOAuthToken() const
+{
+    if (provider_type != ProviderType::GCS)
+        return "";
+
+    const auto & http_client = GetHttpClient();
+
+    if (!http_client)
+        return "";
+
+    auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
+
+    if (!gcp_oauth_client)
+        return "";
+
+    return gcp_oauth_client->getBearerToken();
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
@@ -782,7 +1199,15 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    return S3::URI(uri.GetURIString());
+    S3::URI result(uri.GetURIString());
+
+    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
+    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
+    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). Unlike the Poco 307
+    /// path in PocoHTTPClient, this also accepts `<s3_bucket>` entries. Throws UNACCEPTABLE_URL.
+    result.checkRemoteHostFilter(client_configuration.remote_host_filter);
+
+    return result;
 }
 
 // Do a list request because head requests don't have body in response
@@ -824,6 +1249,17 @@ void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) con
     cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
+ClientCache::ClientCache(const ClientCache & other)
+{
+    {
+        std::lock_guard lock(other.region_cache_mutex);
+        region_for_bucket_cache = other.region_for_bucket_cache;
+    }
+    {
+        std::lock_guard lock(other.uri_cache_mutex);
+        uri_for_bucket_cache = other.uri_for_bucket_cache;
+    }
+}
 
 void ClientCache::clearCache()
 {
@@ -837,53 +1273,125 @@ void ClientCache::clearCache()
     }
 }
 
+ClientCacheRegistry & ClientCacheRegistry::instance()
+{
+    static ClientCacheRegistry registry;
+    return registry;
+}
+
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
-    auto [it, inserted] = client_caches.emplace(client_cache.get(), client_cache);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Same S3 client registered twice");
+    auto it = client_caches.find(client_cache.get());
+    if (it != client_caches.end())
+    {
+        ++it->second.second;
+        return;
+    }
+    client_caches.emplace(client_cache.get(), std::pair{std::weak_ptr<ClientCache>(client_cache), size_t(1)});
 }
 
 void ClientCacheRegistry::unregisterClient(ClientCache * client)
 {
     std::lock_guard lock(clients_mutex);
-    auto erased = client_caches.erase(client);
-    if (erased == 0)
+    auto it = client_caches.find(client);
+    if (it == client_caches.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unregister S3 client, either it was already unregistered or not registered at all");
+    if (--it->second.second == 0)
+        client_caches.erase(it);
+}
+
+size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
+{
+    std::lock_guard lock(clients_mutex);
+    auto it = client_caches.find(client);
+    if (it == client_caches.end())
+        return 0;
+    return it->second.second;
+}
+
+void ClientCacheRegistry::pruneUnusedCachesLocked()
+{
+    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
+}
+
+std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
+{
+    SipHash hash;
+    hash.update(endpoint.size());
+    hash.update(endpoint);
+    hash.update(bucket);
+    UInt128 key = hash.get128();
+
+    std::lock_guard lock(cache_by_key_mutex);
+
+    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
+        pruneUnusedCachesLocked();
+
+    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
+        return it->second;
+
+    auto cache = std::make_shared<ClientCache>();
+    cache_by_endpoint_bucket.emplace(key, cache);
+
+    return cache;
 }
 
 void ClientCacheRegistry::clearCacheForAll()
 {
-    std::lock_guard lock(clients_mutex);
-
-    for (auto it = client_caches.begin(); it != client_caches.end();)
     {
-        if (auto locked_client = it->second.lock(); locked_client)
+        std::lock_guard lock(clients_mutex);
+
+        for (auto it = client_caches.begin(); it != client_caches.end();)
         {
-            locked_client->clearCache();
-            ++it;
-        }
-        else
-        {
-            LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
-            it = client_caches.erase(it);
+            if (auto locked_client = it->second.first.lock(); locked_client)
+            {
+                locked_client->clearCache();
+                ++it;
+            }
+            else
+            {
+                LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
+                it = client_caches.erase(it);
+            }
         }
     }
 
+    {
+        std::lock_guard lock(cache_by_key_mutex);
+        pruneUnusedCachesLocked();
+        for (const auto & [_, cache] : cache_by_endpoint_bucket)
+            cache->clearCache();
+    }
 }
 
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
+
+    aws_options.cryptoOptions = Aws::CryptoOptions{};
+    aws_options.cryptoOptions.initAndCleanupOpenSSL = false;
+
+    aws_options.httpOptions = Aws::HttpOptions{};
+    aws_options.httpOptions.initAndCleanupCurl = false;
+    aws_options.httpOptions.httpClientFactory_create_fn = []() { return std::make_shared<PocoHTTPClientFactory>(); };
+
+    aws_options.loggingOptions = Aws::LoggingOptions{};
+    /// Log level is set to Off by default, skipping calling logger_create_fn entirely.
+    /// https://github.com/ClickHouse/aws-sdk-cpp/blob/22f694afbdc7e9766894998c3745e23f004f8b86/src/aws-cpp-sdk-core/include/aws/core/Aws.h#L31
+    aws_options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
+    aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
+
+    aws_options.ioOptions = Aws::IoOptions{};
+    /// We don't need to initialize TLS, because we use PocoHTTPClientFactory
+    aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
+
     Aws::InitAPI(aws_options);
-    Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
-    Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }
 
 ClientFactory::~ClientFactory()
 {
-    Aws::Utils::Logging::ShutdownAWSLogging();
     Aws::ShutdownAPI(aws_options);
 }
 
@@ -900,15 +1408,31 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
-    HTTPHeaderEntries headers,
+    NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
-    const String & session_token)
+    const String & session_token,
+    const std::shared_ptr<ClientCache> & shared_cache)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
 
     if (!server_side_encryption_customer_key_base64.empty())
     {
+        /// `base64Decode` throws on characters outside the alphabet but skips whitespace and ignores padding bits,
+        /// so the round trip below accepts only the canonical base64 of an AES-256 key, the only key SSE-C takes.
+        String customer_key;
+        try
+        {
+            customer_key = base64Decode(server_side_encryption_customer_key_base64);
+        }
+        catch (const Poco::DataFormatException &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+        }
+
+        if (customer_key.size() != AES256_KEY_BYTES || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+
         /// See Client::GeneratePresignedUrlWithSSEC().
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
@@ -917,22 +1441,38 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
             server_side_encryption_customer_key_base64});
 
-        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
-        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
     }
 
     // These will be added after request signing
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
-    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
-            client_configuration,
-            std::move(credentials),
-            credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+    // we need to force environment credentials if explicit credentials are empty and we have role_arn
+    // this is a crutch because we know that we have environment credentials on our Cloud.
+    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
+    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
+    if (!credentials_configuration.forbid_implicit_credentials)
+        credentials_configuration.use_environment_credentials =
+            credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+
+    auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
+
+    /// Only after the credentials providers have taken their copies of the configuration: their
+    /// requests are helper traffic and must not be reported as the connection of a logged request.
+    client_configuration.publish_connection_info = true;
+
+    /// Disable per-thread retry loops if global retry coordination is in use.
+    if (client_configuration.s3_slow_all_threads_after_retryable_error)
+    {
+        auto configuration = client_configuration.retry_strategy;
+        configuration.max_retries = 1;
+        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(configuration);
+    }
+    else
+        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.retry_strategy);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
@@ -945,43 +1485,186 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         client_configuration, // Client configuration.
         client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
                                             : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings);
+        client_settings,
+        shared_cache);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
-    unsigned int s3_retry_attempts,
+    const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
+    bool s3_slow_all_threads_after_network_error,
+    bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
-    bool for_disk_s3,
-    const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler,
+    HTTPConnectionGroupType group,
+    std::optional<std::string> opt_disk_name,
+    const HTTPRequestThrottler & request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
         force_region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
+        retry_strategy,
+        s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
-        for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
-        get_request_throttler,
-        put_request_throttler,
+        group,
+        opt_disk_name,
+        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
+        request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
 
     return config;
+}
+
+bool Client::isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const
+{
+    return provider_type == ProviderType::GCS && api_mode == ApiMode::AWS && request.GetIfNoneMatch() == "*";
+}
+
+Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const
+{
+    String body;
+    if (const auto & body_stream = request.GetBody())
+    {
+        body_stream->clear();
+        body_stream->seekg(0);
+        body.assign(std::istreambuf_iterator<char>(*body_stream), std::istreambuf_iterator<char>());
+    }
+
+    const auto credentials = getCredentials();
+    const auto & secret = credentials.GetAWSSecretKey();
+    const auto & access_key = credentials.GetAWSAccessKeyId();
+    if (secret.empty() || access_key.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GCS conditional create of {} requires HMAC credentials", request.GetKey());
+
+    std::time_t now = std::time(nullptr);
+    struct tm tm_buf{};
+    if (!gmtime_r(&now, &tm_buf))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "gmtime_r failed while signing a GCS create");
+
+    char goog_date[32];
+    if (strftime(goog_date, sizeof(goog_date), "%Y%m%dT%H%M%SZ", &tm_buf) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "strftime failed while signing a GCS create");
+    const String datestamp(goog_date, 8);
+
+    const String payload_sha256 = encodeSHA256(body);
+    const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
+
+    const Poco::URI endpoint(initial_endpoint);
+    const String host = endpoint.getAuthority();
+    const String path = "/" + request.GetBucket() + "/" + request.GetKey();
+
+    Aws::Http::HeaderValueCollection request_headers = request.GetHeaders();
+    for (const auto & [name, value] : request.GetAdditionalCustomHeaders())
+        request_headers.emplace(name, value);
+
+    MapWithMemoryTracking<String, String> headers;
+    for (const auto & [name, value] : translateHeadersToGCS(std::move(request_headers)))
+        headers[boost::algorithm::to_lower_copy(name)] = boost::algorithm::trim_copy(value);
+
+    headers.erase("content-length");
+    headers["host"] = host;
+    headers["x-goog-content-sha256"] = payload_hash;
+    headers["x-goog-date"] = goog_date;
+
+    String canonical_headers;
+    String signed_headers;
+    for (const auto & [name, value] : headers)
+    {
+        canonical_headers += fmt::format("{}:{}\n", name, value);
+        if (!signed_headers.empty())
+            signed_headers += ';';
+        signed_headers += name;
+    }
+
+    const String canonical_request = fmt::format(
+        "PUT\n{}\n\n{}\n{}\n{}",
+        S3::encodeRequestPath(path),
+        canonical_headers,
+        signed_headers,
+        payload_hash);
+
+    /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key.
+    const String scope = fmt::format("{}/auto/s3/goog4_request", datestamp);
+    const String canonical_request_sha256 = encodeSHA256(canonical_request);
+    const String string_to_sign = fmt::format(
+        "GOOG4-HMAC-SHA256\n{}\n{}\n{}",
+        goog_date,
+        scope,
+        hexString(canonical_request_sha256.data(), canonical_request_sha256.size()));
+
+    std::string key_secret = "GOOG4";
+    key_secret.append(secret.data(), secret.size());
+    const auto date_key = hmacSHA256({key_secret.begin(), key_secret.end()}, datestamp);
+    const auto region_key = hmacSHA256(date_key, "auto");
+    const auto service_key = hmacSHA256(region_key, "s3");
+    const auto signing_key = hmacSHA256(service_key, "goog4_request");
+    const auto signature_bytes = hmacSHA256(signing_key, string_to_sign);
+
+    const String authorization = fmt::format(
+        "GOOG4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
+        access_key,
+        scope,
+        signed_headers,
+        hexString(signature_bytes.data(), signature_bytes.size()));
+
+    auto http_request = Aws::Http::CreateHttpRequest(
+        Aws::String(endpoint.getScheme() + "://" + host + path),
+        Aws::Http::HttpMethod::HTTP_PUT,
+        Aws::Utils::Stream::DefaultResponseStreamFactoryMethod);
+
+    auto payload = Aws::MakeShared<Aws::StringStream>("GCSCreateIfAbsent");
+    payload->write(body.data(), static_cast<std::streamsize>(body.size()));
+    payload->seekg(0);
+    http_request->AddContentBody(payload);
+    http_request->SetContentLength(std::to_string(body.size()));
+    for (const auto & [name, value] : headers)
+        if (name != "host")
+            http_request->SetHeaderValue(name, value);
+    http_request->SetHeaderValue("authorization", authorization);
+
+    const auto & retry_strategy = client_configuration.retryStrategy;
+    for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
+    {
+        /// `PocoHTTPClient` picks the adaptive timeouts from the attempt number, as `AWSClient` sets it. Not part of the signature.
+        http_request->SetHeaderValue(Aws::Http::SDK_REQUEST_HEADER, fmt::format("attempt={}", retries + 1));
+        auto response = GetHttpClient()->MakeRequest(http_request);
+        Aws::Client::AWSError<Aws::Client::CoreErrors> error;
+        if (!response)
+        {
+            error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true);
+        }
+        else if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
+        {
+            Model::PutObjectResult result;
+            if (response->HasHeader("etag"))
+                result.SetETag(response->GetHeader("etag"));
+            return result;
+        }
+        else
+        {
+            error = BuildAWSError(response);
+        }
+
+        if (!retry_strategy->ShouldRetry(error, retries))
+            return Aws::S3::S3Error(error);
+
+        GetHttpClient()->RetryRequestSleep(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(error, retries)));
+    }
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)

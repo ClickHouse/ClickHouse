@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # pylint: disable=line-too-long
 
+import multiprocessing
 import os
 import subprocess
-import multiprocessing
 from tempfile import NamedTemporaryFile
-import pytest
 
+import pytest
 
 CPU_ID = 4
 
@@ -46,7 +46,20 @@ def run_with_cpu_limit(cmd, *args):
         #   [1]: https://github.com/ClickHouse/ClickHouse/issues/32806
         args += (
             "--volume",
-            f"{online_cpu.name}:/sys/devices/system/cpu/online",
+            f"{online_cpu.name}:/sys/devices/system/cpu/online:ro",
+        )
+
+        return run_command_in_container(cmd, *args)
+
+
+def run_with_cpu_possible_limit(cmd, possible, *args):
+    with NamedTemporaryFile() as possible_cpu:
+        possible_cpu.write(f"{possible}".encode())
+        possible_cpu.flush()
+
+        args += (
+            "--volume",
+            f"{possible_cpu.name}:/sys/devices/system/cpu/possible:ro",
         )
 
         return run_command_in_container(cmd, *args)
@@ -54,12 +67,26 @@ def run_with_cpu_limit(cmd, *args):
 
 def skip_if_jemalloc_disabled():
     output = run_command_in_container(
-        """clickhouse local -q "
+        """clickhouse local --tmp -q "
         SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
     """
     ).strip()
     if output != b"ON" and output != b"1":
         pytest.skip(f"Compiled without jemalloc (USE_JEMALLOC={output})")
+
+
+def skip_if_musl():
+    output = run_command_in_container(
+        """clickhouse local -q "
+        SELECT value FROM system.build_options WHERE name = 'USE_MUSL'"
+    """
+    ).strip()
+    if output == b"ON" or output == b"1":
+        # musl implements both _SC_NPROCESSORS_CONF and _SC_NPROCESSORS_ONLN via
+        # sched_getaffinity, ignoring the /sys/devices/system/cpu/online override
+        # this test plants, so the CONF/ONLN inconsistency jemalloc aborts on
+        # cannot be constructed at all.
+        pytest.skip("musl derives both CPU-count sysconf values from the affinity mask")
 
 
 # Ensure that clickhouse works even when number of online CPUs
@@ -68,40 +95,75 @@ def skip_if_jemalloc_disabled():
 # Refs: https://github.com/jemalloc/jemalloc/pull/2181
 def test_jemalloc_percpu_arena():
     skip_if_jemalloc_disabled()
+    skip_if_musl()
 
     assert multiprocessing.cpu_count() > CPU_ID
 
     online_cpus = int(run_with_cpu_limit("getconf _NPROCESSORS_ONLN"))
-    assert online_cpus == 1, online_cpus
+    if online_cpus != 1:
+        pytest.skip(
+            f"sysconf(_SC_NPROCESSORS_ONLN) returned {online_cpus} instead of 1: "
+            "/sys/devices/system/cpu/online override not effective on this system"
+        )
 
     all_cpus = int(run_with_cpu_limit("getconf _NPROCESSORS_CONF"))
     assert all_cpus == multiprocessing.cpu_count(), all_cpus
 
-    # implicitly disable percpu arena
+    # smoke under the online override
     result = run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
-        # NOTE: explicitly disable, since it is enabled by default in debug build
-        # (and even though debug builds are not in CI let's state this).
+        'clickhouse local --tmp -q "select 1"',
         "--env",
         "MALLOC_CONF=abort_conf:false",
     )
     assert int(result) == int(1), result
 
-    # should fail because of abort_conf:true
-    with pytest.raises(subprocess.CalledProcessError):
-        run_with_cpu_limit(
-            'clickhouse local -q "select 1"', "--env", "MALLOC_CONF=abort_conf:true"
-        )
+    # Restricted affinity (cpuset) on top of the online override: percpu arenas
+    # are sized by the possible CPU count (nr_cpu_ids), so this must not abort
+    # even with abort_conf:true.
+    # NOTE: abort:false to make it compatible with debug build
+    result = run_with_cpu_limit(
+        'clickhouse local --tmp -q "select 1"',
+        "--cpuset-cpus", f"{CPU_ID}",
+        "--env", "MALLOC_CONF=abort_conf:true,abort:false",
+    )
+    assert int(result) == int(1), result
+
+    # ... and percpu arena must stay enabled (the old behavior was to disable
+    # it with "Number of CPUs detected is not deterministic").
+    stats = run_with_cpu_limit(
+        '''clickhouse local --tmp -q "select 1" 2>&1 | grep -F "opt.percpu_arena"''',
+        "--cpuset-cpus", f"{CPU_ID}",
+        "--env", "MALLOC_CONF=abort_conf:true,abort:false,stats_print:true",
+    )
+    assert b'"percpu"' in stats, stats
 
     # should not fail even with abort_conf:true, due to explicit narenas
     # NOTE: abort:false to make it compatible with debug build
     run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
-        "--env",
-        f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
+        'clickhouse local --tmp -q "select 1"',
+        "--env", f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
     )
+
+
+# If /sys/devices/system/cpu/possible is masked and does not cover the CPUs in
+# the affinity mask, it is lying and percpu arena cannot be sized safely:
+# jemalloc must fail close (disable percpu arena, abort with abort_conf:true)
+# instead of indexing arenas out of range.
+def test_jemalloc_percpu_arena_inconsistent_possible():
+    skip_if_jemalloc_disabled()
+
+    assert multiprocessing.cpu_count() > CPU_ID
+
+    with pytest.raises(subprocess.CalledProcessError):
+        run_with_cpu_possible_limit(
+            'clickhouse local --tmp -q "select 1"',
+            "0",
+            "--cpuset-cpus", f"{CPU_ID}",
+            "--env", "MALLOC_CONF=abort_conf:true",
+        )
 
 
 # For manual run.
 if __name__ == "__main__":
     test_jemalloc_percpu_arena()
+    test_jemalloc_percpu_arena_inconsistent_possible()

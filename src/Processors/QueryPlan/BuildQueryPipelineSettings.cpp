@@ -1,18 +1,45 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Core/Settings.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 namespace DB
 {
 
-BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr from)
+namespace Setting
 {
-    BuildQueryPipelineSettings settings;
-    settings.actions_settings = ExpressionActionsSettings::fromSettings(from->getSettingsRef(), CompileExpressions::yes);
-    settings.process_list_element = from->getProcessListElement();
-    settings.progress_callback = from->getProgressCallback();
-    return settings;
+    extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool allow_preliminary_distinct_abandoning;
+    extern const SettingsBool optimize_uniq_exact_radix_partitioning;
+    extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsUInt64 min_outstreams_per_resize_after_split;
+    extern const SettingsUInt64 max_streams_for_union_step;
+    extern const SettingsFloat max_streams_for_union_step_to_max_threads_ratio;
+}
+
+BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
+{
+    const auto & settings = from->getSettingsRef();
+
+    actions_settings = ExpressionActionsSettings(settings, CompileExpressions::yes);
+    process_list_element = from->getProcessListElement();
+    temp_data_on_disk = from->getTempDataOnDisk();
+    progress_callback = from->getProgressCallback();
+
+    max_threads = getEffectiveMaxThreads(*from);
+    aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
+    min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
+    max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
+    max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);
+    allow_preliminary_distinct_abandoning = settings[Setting::allow_preliminary_distinct_abandoning];
+    optimize_uniq_exact_radix_partitioning = settings[Setting::optimize_uniq_exact_radix_partitioning];
+
+    /// Setting query_plan_merge_filters is enabled by default.
+    /// But it can brake short-circuit without splitting filter step into smaller steps.
+    /// So, enable and disable this optimizations together.
+    enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
+
+    block_marshalling_callback = from->getBlockMarshallingCallback();
 }
 
 }

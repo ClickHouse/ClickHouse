@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DequeWithMemoryTracking.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
@@ -33,7 +34,7 @@ public:
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
     off_t getPosition() override;
 
     const SeekableReadBuffer & getReadBuffer() const { return input; }
@@ -46,6 +47,10 @@ private:
 
     /// First worker in deque have new data or processed all available amount
     bool currentWorkerReady() const;
+
+    /// Expose `worker.segment[offset, offset + size)` as both the internal and working buffer.
+    void setSegmentBuffers(ReadWorker & worker, size_t offset, size_t size);
+
     /// First worker in deque processed and flushed all data
     bool currentWorkerCompleted() const;
 
@@ -77,7 +82,7 @@ private:
      * from deque and data from next reader will be delivered.
      * After removing from deque, call addReaders().
      */
-    std::deque<ReadWorkerPtr> read_workers;
+    DequeWithMemoryTracking<ReadWorkerPtr> read_workers;
 
     /// Triggered when new data available
     std::condition_variable next_condvar;

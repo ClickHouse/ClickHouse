@@ -3,6 +3,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
@@ -100,7 +101,8 @@ def test_replication_after_partition(both_https_cluster):
     ires.wait()
 
     assert_eq_with_retry(node1, "SELECT count() FROM test_table", "100")
-    assert_eq_with_retry(node2, "SELECT count() FROM test_table", "100")
+    node2.query("SYSTEM SYNC REPLICA test_table", timeout=120)
+    assert node2.query("SELECT count() FROM test_table") == "100\n"
 
 
 node3 = cluster.add_instance(

@@ -8,8 +8,8 @@ select 'MergeTree';
 drop table if exists lc_small_dict;
 drop table if exists lc_big_dict;
 
-create table lc_small_dict (str StringWithDictionary) engine = MergeTree order by str SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-create table lc_big_dict (str StringWithDictionary) engine = MergeTree order by str SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+create table lc_small_dict (str LowCardinality(String)) engine = MergeTree order by str SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+create table lc_big_dict (str LowCardinality(String)) engine = MergeTree order by str SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into lc_small_dict select toString(number % 1000) from system.numbers limit 1000000;
 insert into lc_big_dict select toString(number) from system.numbers limit 1000000;

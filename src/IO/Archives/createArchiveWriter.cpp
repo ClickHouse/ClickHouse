@@ -1,4 +1,4 @@
-#include <IO/Archives/LibArchiveWriter.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/TarArchiveWriter.h>
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/Archives/createArchiveWriter.h>
@@ -15,19 +15,13 @@ extern const int SUPPORT_IS_DISABLED;
 }
 
 
-std::shared_ptr<IArchiveWriter> createArchiveWriter(const String & path_to_archive)
+std::shared_ptr<IArchiveWriter> createArchiveWriter(
+    const String & path_to_archive,
+    [[maybe_unused]] std::unique_ptr<WriteBuffer> archive_write_buffer,
+    [[maybe_unused]] size_t buf_size,
+    [[maybe_unused]] size_t adaptive_buffer_max_size)
 {
-    return createArchiveWriter(path_to_archive, nullptr);
-}
-
-
-std::shared_ptr<IArchiveWriter>
-createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique_ptr<WriteBuffer> archive_write_buffer)
-{
-    using namespace std::literals;
-    static constexpr std::array tar_extensions{
-        ".tar"sv, ".tar.gz"sv, ".tgz"sv, ".tar.bz2"sv, ".tar.lzma"sv, ".tar.zst"sv, ".tzst"sv, ".tar.xz"sv};
-    if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
+    if (hasSupportedZipExtension(path_to_archive))
     {
 #if USE_MINIZIP
         return std::make_shared<ZipArchiveWriter>(path_to_archive, std::move(archive_write_buffer));
@@ -35,11 +29,10 @@ createArchiveWriter(const String & path_to_archive, [[maybe_unused]] std::unique
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
 #endif
     }
-    else if (std::any_of(
-                 tar_extensions.begin(), tar_extensions.end(), [&](const auto extension) { return path_to_archive.ends_with(extension); }))
+    else if (hasSupportedTarExtension(path_to_archive))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<TarArchiveWriter>(path_to_archive, std::move(archive_write_buffer));
+        return std::make_shared<TarArchiveWriter>(path_to_archive, std::move(archive_write_buffer), buf_size, adaptive_buffer_max_size);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif

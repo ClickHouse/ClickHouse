@@ -1,12 +1,16 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Backups/BackupEntryFromMemory.h>
 
+#include <cerrno>
 #include <utility>
 
 
@@ -16,11 +20,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_FILE;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_mutation_csn_store_fail[];
+    extern const char transaction_mutation_csn_store_fail_after_write[];
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
-    assert(block_number_);
+    chassert(block_number_);
     return fmt::format("mutation_{}.txt", block_number_);
 }
 
@@ -34,7 +46,7 @@ UInt64 MergeTreeMutationEntry::tryParseFileName(const String & file_name_)
         return 0;
     if (!checkString(".txt", file_name_buf))
         return 0;
-    assert(maybe_block_number);
+    chassert(maybe_block_number);
     return maybe_block_number;
 }
 
@@ -50,7 +62,7 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
                                                const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
-    , commands(std::move(commands_))
+    , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
@@ -59,22 +71,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
 {
     try
     {
+        if (tid.isNonTransactional())
+            csn = Tx::NonTransactionalCSN;
+
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
-        *out << "commands: ";
-        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
-        *out << "\n";
-        if (tid.isPrehistoric())
-        {
-            csn = Tx::PrehistoricCSN;
-        }
-        else
-        {
-            *out << "tid: ";
-            TransactionID::write(tid, *out);
-            *out << "\n";
-        }
+        writeRecord(*out);
         out->finalize();
         out->sync();
     }
@@ -85,9 +86,24 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     }
 }
 
+void MergeTreeMutationEntry::writeRecord(WriteBuffer & out) const
+{
+    out << "format version: 1\n"
+        << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+    out << "commands: ";
+    commands->writeText(out, /* with_pure_metadata_commands = */ false);
+    out << "\n";
+    if (!tid.isNonTransactional())
+    {
+        out << "tid: ";
+        TransactionID::write(tid, out);
+        out << "\n";
+    }
+}
+
 void MergeTreeMutationEntry::commit(UInt64 block_number_)
 {
-    assert(block_number_);
+    chassert(block_number_);
     block_number = block_number_;
     String new_file_name = versionToFileName(block_number);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
@@ -99,47 +115,78 @@ void MergeTreeMutationEntry::removeFile()
 {
     if (!file_name.empty())
     {
-        if (!disk->exists(path_prefix + file_name))
+        if (!disk->existsFile(path_prefix + file_name))
             return;
 
-        disk->removeFile(path_prefix + file_name);
+        disk->removeFileIfExists(path_prefix + file_name);
         file_name.clear();
     }
 }
 
-void MergeTreeMutationEntry::writeCSN(CSN csn_)
+void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
 {
-    csn = csn_;
-    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
-    *out << "csn: " << csn << "\n";
+    /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.
+    fiu_do_on(FailPoints::transaction_mutation_csn_store_fail,
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Injected transient failure while storing mutation CSN");
+    });
+
+    /// The whole record is rewritten through a temporary file instead of appending the
+    /// `csn:` line: a write that fails half-way, or is repeated, must not leave a partial
+    /// or duplicated line behind, because the loader accepts exactly one.
+    /// The name must not collide with the constructor's `tmp_mutation_<N>.txt`, whose
+    /// number comes from a different counter; the `tmp_mutation_` prefix keeps it covered
+    /// by the startup cleanup of leftover temporary files.
+    String tmp_file_name = "tmp_mutation_csn_" + toString(block_number) + ".txt";
+    auto out = disk->writeFile(path_prefix + tmp_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    writeRecord(*out);
+    *out << "csn: " << csn_ << "\n";
     out->finalize();
+    out->sync();
+    /// Fault injection for tests: a disk error after the temporary file is complete, so a retry
+    /// has to overwrite it.
+    fiu_do_on(FailPoints::transaction_mutation_csn_store_fail_after_write,
+    {
+        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE, ENOSPC, "Injected transient failure after writing mutation CSN");
+    });
+    /// The rename is durable only once the directory is synced. The sync is explicit: the guard's
+    /// destructor only logs a failure, and the caller must see it to retry the write.
+    SyncGuardPtr sync_guard;
+    if (sync_directory)
+        sync_guard = disk->getDirectorySyncGuard(path_prefix);
+    disk->replaceFile(path_prefix + tmp_file_name, path_prefix + file_name);
+    if (sync_guard)
+        sync_guard->sync();
+    csn = csn_;
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
-    : disk(std::move(disk_))
+    : commands(std::make_shared<MutationCommands>())
+    , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
+    , is_registered(true)
 {
     block_number = parseFileName(file_name);
-    auto buf = disk->readFile(path_prefix + file_name);
+    auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
 
     *buf >> "format version: 1\n";
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
-    create_time = DateLUT::serverTimezoneInstance().makeDateTime(
+    create_time = makeDateTime(DateLUT::serverTimezoneInstance(),
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     *buf >> "commands: ";
-    commands.readText(*buf);
+    commands->readText(*buf, false);
     *buf >> "\n";
 
     if (buf->eof())
     {
-        tid = Tx::PrehistoricTID;
-        csn = Tx::PrehistoricCSN;
+        tid = Tx::NonTransactionalTID;
+        csn = Tx::NonTransactionalCSN;
     }
     else
     {
@@ -156,12 +203,55 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     assertEOF(*buf);
 }
 
+MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
+    : create_time(other.create_time)
+    , commands(std::move(other.commands))
+    , disk(std::move(other.disk))
+    , path_prefix(std::move(other.path_prefix))
+    , file_name(std::exchange(other.file_name, {}))
+    , is_temp(std::exchange(other.is_temp, false))
+    , is_registered(std::exchange(other.is_registered, false))
+    , is_done(other.is_done)
+    , block_number(other.block_number)
+    , latest_failed_part(std::move(other.latest_failed_part))
+    , latest_failed_part_info(std::move(other.latest_failed_part_info))
+    , latest_fail_time(other.latest_fail_time)
+    , latest_fail_reason(std::move(other.latest_fail_reason))
+    , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
+    , tid(other.tid)
+    , csn(other.csn)
+{
+}
+
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
 {
+    if (file_name.empty())
+        return;
+
     if (is_temp && startsWith(file_name, "tmp_"))
     {
         try
         {
+            removeFile();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
+    }
+
+    /// Committed to disk but never registered in `current_mutations_by_version`.
+    /// Remove the orphaned `mutation_*.txt` so it is not replayed on restart.
+    /// Mirrors the visibility of `killMutation` and `clearOldMutations`, which
+    /// log permanent mutation-file removals from their callers. See #80648.
+    if (!is_temp && !is_registered)
+    {
+        try
+        {
+            LOG_INFO(getLogger("MergeTreeMutationEntry"),
+                "Removing orphaned mutation file {} (block number {}); registration was not completed",
+                path_prefix + file_name, block_number);
             removeFile();
         }
         catch (...)
@@ -177,7 +267,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "block number: " << block_number << "\n";
 
     out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    commands->writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

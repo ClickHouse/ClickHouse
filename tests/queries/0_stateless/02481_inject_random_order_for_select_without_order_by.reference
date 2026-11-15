@@ -1,0 +1,8 @@
+Simple SELECT: expect a Shuffle step injected
+1
+Simple SELECT with ORDER BY: no SHUFFLE injected
+0	1
+UNION: expect SHUFFLE injected into each child
+2
+Simple SELECT: no SHUFFLE injected
+0

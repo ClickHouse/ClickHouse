@@ -1,0 +1,11 @@
+<clickhouse>
+  <include_from>/etc/clickhouse-server/config.d/substitutions.xml</include_from>
+  <profiles>
+    <default>
+        <max_query_size incl="mqs" />
+    </default>
+  </profiles>
+  <users>
+      <include incl="extra_users" />
+  </users>
+</clickhouse>

@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/29734
-SET allow_experimental_analyzer=1;
 SELECT *
 FROM
 (
@@ -49,4 +48,3 @@ INNER JOIN
     SELECT number AS x
     FROM numbers(10)
 ) AS c ON a.x = c.x; -- { serverError UNKNOWN_IDENTIFIER }
-

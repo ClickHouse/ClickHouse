@@ -13,8 +13,6 @@ CREATE TABLE clickhouse_alias_issue_2 (
     column_2 Nullable(Float32)
 ) Engine=Memory;
 
-SET allow_experimental_analyzer = 1;
-
 INSERT INTO `clickhouse_alias_issue_1`
 VALUES (1, 100), (2, 200), (3, 300);
 
@@ -28,7 +26,7 @@ VALUES (1, 10), (2, 20), (3, 30);
 -- \N	30	3
 -- \N	20	2
 -- \N	10	1
-SELECT * 
+SELECT *
 FROM
 (
 SELECT

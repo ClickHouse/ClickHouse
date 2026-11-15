@@ -1,48 +1,102 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/DDLGuard.h>
+#include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/AsyncLoader.h>
-#include <Common/PoolId.h>
-#include <Common/ThreadPool_fwd.h>
-#include <QueryPipeline/BlockIO.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
-#include <map>
 
 
 namespace DB
 {
 
+
 struct Settings;
 struct ConstraintsDescription;
+class ColumnsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
+struct RenderOptions;
+struct RenderedCreateQuery;
+struct RenderedCreateQueryFields;
+using RenderedCreateQueryPtr = std::shared_ptr<const RenderedCreateQuery>;
 
-namespace ErrorCodes
+/// This structure is returned when getLightweightTablesIterator is called
+/// It contains basic details of the table, currently only the table name
+struct LightWeightTableDetails
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int LOGICAL_ERROR;
-}
+    String name;
+};
+
+/// What a query asks of the table names of one database, passed to getTablesIterator so the
+/// database enumerates less than everything it holds: a DataLake catalog lists only the
+/// namespaces it needs, and any database can skip the names the query cannot ask for.
+struct TablesFilter
+{
+    /// How the table name column is constrained: `In` (`name = 'ns.table'`, or
+    /// `name IN ('ns.a', 'ns.b')`) or `Like` (`name LIKE 'ns.%'`); `None` means no usable
+    /// predicate.
+    enum class Kind
+    {
+        None,
+        In,
+        Like,
+    };
+
+    Kind kind = Kind::None;
+
+    /// `Like`: the pattern (e.g. `ns.%`).
+    String pattern;
+
+    /// `In`: the names the query can ask for (e.g. `ns.a`, `ns.b`). It is an
+    /// over-approximation - a name in it need not exist, and a database is free to return
+    /// fewer - but every name the query can ask for is in it, so restricting an enumeration
+    /// to these names never hides a row. Shared so that handing the filter to one database
+    /// after another does not rebuild it.
+    std::shared_ptr<const NameSet> names;
+
+    static TablesFilter createIn(const Names & names_)
+    {
+        return {Kind::In, {}, std::make_shared<const NameSet>(names_.begin(), names_.end())};
+    }
+
+    static TablesFilter createLike(String pattern_) { return {Kind::Like, std::move(pattern_), {}}; }
+
+    /// A `filter_by_table_name` predicate accepting only the names the query can ask for, or
+    /// an empty function when this filter cannot decide by name alone (`None`, and `Like`,
+    /// whose pattern is only a listing hint and is not matched here).
+    std::function<bool(const String &)> getFilterByTableName() const
+    {
+        if (kind != Kind::In)
+            return {};
+        return [name_set = names](const String & name) { return name_set->contains(name); };
+    }
+};
 
 class IDatabaseTablesIterator
 {
@@ -52,9 +106,8 @@ public:
 
     virtual const String & name() const = 0;
 
-    /// This method can return nullptr if it's Lazy database
-    /// (a database with support for lazy tables loading
-    /// - it maintains a list of tables but tables are loaded lazily).
+    /// This method can return nullptr if table metadata could not be loaded
+    /// (e.g. DataLake database where individual table metadata fetch fails).
     virtual const StoragePtr & table() const = 0;
 
     explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
@@ -64,7 +117,7 @@ public:
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
-    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
+    const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
 
 protected:
     String database_name;
@@ -110,6 +163,57 @@ public:
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
+struct SnapshotDetachedTable final
+{
+    String database;
+    String table;
+    UUID uuid = UUIDHelpers::Nil;
+    String metadata_path;
+    bool is_permanently{};
+};
+
+class DatabaseDetachedTablesSnapshotIterator
+{
+private:
+    SnapshotDetachedTables snapshot;
+    SnapshotDetachedTables::iterator it;
+
+protected:
+    DatabaseDetachedTablesSnapshotIterator(DatabaseDetachedTablesSnapshotIterator && other) noexcept
+    {
+        size_t idx = std::distance(other.snapshot.begin(), other.it);
+        std::swap(snapshot, other.snapshot);
+        other.it = other.snapshot.end();
+        it = snapshot.begin();
+        std::advance(it, idx);
+    }
+
+public:
+    explicit DatabaseDetachedTablesSnapshotIterator(const SnapshotDetachedTables & tables_) : snapshot(tables_), it(snapshot.begin())
+    {
+    }
+
+    explicit DatabaseDetachedTablesSnapshotIterator(SnapshotDetachedTables && tables_) : snapshot(std::move(tables_)), it(snapshot.begin())
+    {
+    }
+
+    void next() { ++it; }
+
+    bool isValid() const { return it != snapshot.end(); }
+
+    String database() const { return it->second.database; }
+
+    String table() const { return it->second.table; }
+
+    UUID uuid() const { return it->second.uuid; }
+
+    String metadataPath() const { return it->second.metadata_path; }
+
+    bool isPermanently() const { return it->second.is_permanently; }
+};
+
+using DatabaseDetachedTablesSnapshotIteratorPtr = std::unique_ptr<DatabaseDetachedTablesSnapshotIterator>;
+
 
 /** Database engine.
   * It is responsible for:
@@ -129,9 +233,18 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    virtual bool canContainMergeTreeTables() const { return true; }
+    /// External database (i.e. `PostgreSQL`/Datalake/...) does not support any of ClickHouse internal tables:
+    /// - `*MergeTree`
+    /// - `Distributed`
+    /// - `RocksDB`
+    /// - ...
+    virtual bool isExternal() const { return true; }
 
-    virtual bool canContainDistributedTables() const { return true; }
+    virtual bool isDatalakeCatalog() const { return false; }
+
+    /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
+    /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
+    virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -148,20 +261,14 @@ public:
     {
     }
 
-    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/);
 
     virtual void loadTableFromMetadata(
         ContextMutablePtr /*local_context*/,
         const String & /*file_path*/,
         const QualifiedTableName & /*name*/,
         const ASTPtr & /*ast*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
+        LoadingStrictnessLevel /*mode*/);
 
     /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
     /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
@@ -173,10 +280,7 @@ public:
         const String & /*file_path*/,
         const QualifiedTableName & /*name*/,
         const ASTPtr & /*ast*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
+        LoadingStrictnessLevel /*mode*/);
 
     /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
     /// The returned task is also stored inside the database for cancellation on destruction.
@@ -184,10 +288,7 @@ public:
         AsyncLoader & /*async_loader*/,
         LoadJobSet /*startup_after*/,
         const QualifiedTableName & /*name*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
+        LoadingStrictnessLevel /*mode*/);
 
     /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
     /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
@@ -195,10 +296,7 @@ public:
     [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
         AsyncLoader & /*async_loader*/,
         LoadJobSet /*startup_after*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
+        LoadingStrictnessLevel /*mode*/);
 
     /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
     virtual void waitTableStarted(const String & /*name*/) const {}
@@ -217,6 +315,11 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
+    /// Whether a full-definition `ATTACH` may take a detached table's name, i.e. skip `checkMetadataFilenameAvailability`.
+    virtual bool canReattachTableWithFullDefinition() const { return true; }
+
+    /// Check if the table name exceeds the max allowed length
+    virtual void checkTableNameLength(const String & /*table_name*/) const {}
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
@@ -227,16 +330,88 @@ public:
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
+    /// Conjunction of an explicit `filter_by_table_name` and what `tables_filter` can decide
+    /// by name; either side may be absent, and an absent side accepts every name.
+    static FilterByNameFunction combineFilters(const FilterByNameFunction & filter_by_table_name, const TablesFilter & tables_filter)
+    {
+        auto filter_by_names = tables_filter.getFilterByTableName();
+        if (!filter_by_names)
+            return filter_by_table_name;
+        if (!filter_by_table_name)
+            return filter_by_names;
+        return [filter_by_table_name, filter_by_names](const String & name)
+        {
+            return filter_by_names(name) && filter_by_table_name(name);
+        };
+    }
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
 
+    /// Maps a table obtained from `getTablesIterator` to the storage a user-facing read must go
+    /// through. For almost every database this is the very same storage, and the default
+    /// implementation returns it unchanged.
+    ///
+    /// `MaterializedPostgreSQL` is the exception: the iterator exposes the physical nested
+    /// `ReplacingMergeTree` tables, so that generic enumerators - `system.parts`,
+    /// `ServerAsynchronousMetrics`, backups - keep seeing real `MergeTree` storages and their
+    /// UUIDs, while reading the data requires the `StorageMaterializedPostgreSQL` wrapper, which
+    /// filters out the deleted rows and forces `FINAL`. Engines that read data through the
+    /// iterator - `Merge` - must therefore map every enumerated table through this method.
+    virtual StoragePtr getTableForRead(const String & /*table_name*/, const StoragePtr & table, ContextPtr /*local_context*/) const
+    {
+        return table;
+    }
+
+    /// Same as getTablesIterator, but accepts what the query asks of the table names.
+    /// Implementations that can push it down to an external catalog (e.g. DataLake) or look a
+    /// table up by name (e.g. DatabaseWithOwnTablesBase) override this; the default only
+    /// narrows the enumeration to the names the query can ask for.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const
+    {
+        return getTablesIterator(context, combineFilters(filter_by_table_name, tables_filter), skip_not_loaded);
+    }
+
+    /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
+    /// Useful for queries like "SHOW TABLES"
+    virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    {
+        std::vector<LightWeightTableDetails> result;
+
+        for (auto iterator = getTablesIterator(context, filter_by_table_name, skip_not_loaded); iterator->isValid(); iterator->next())
+        {
+            if (const auto & table = iterator->table())
+                result.emplace_back(iterator->name());
+        }
+
+        return result;
+    }
+
+    /// Lightweight tables iterator with a TablesFilter hint. Default only narrows the
+    /// enumeration to the names the query can ask for.
+    virtual std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const
+    {
+        return getLightweightTablesIterator(context, combineFilters(filter_by_table_name, tables_filter), skip_not_loaded);
+    }
+
+    virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;
+
     /// Returns list of table names.
-    virtual Strings getAllTableNames(ContextPtr context) const
+    virtual VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const
     {
         // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
-        Strings result;
+        VectorWithMemoryTracking<String> result;
         for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
             result.emplace_back(table_it->name());
         return result;
@@ -252,47 +427,29 @@ public:
         ContextPtr /*context*/,
         const String & /*name*/,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no CREATE TABLE query for Database{}", getEngineName());
-    }
+        const ASTPtr & /*query*/);
 
     /// Delete the table from the database, drop table and delete the metadata.
     virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool sync = false)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
-    }
+        [[maybe_unused]] bool sync = false);
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
-    }
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path);
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
-    virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
-    }
+    virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/);
 
     /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
     /// with next restart. The database may not support this method.
-    virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", getEngineName());
-    }
+    virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/);
 
     /// Returns list of table names that were permanently detached.
     /// This list may not be updated in runtime and may be filled only on server startup
-    virtual Strings getNamesOfPermanentlyDetachedTables() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get names of permanently detached tables for Database{}", getEngineName());
-    }
+    virtual Strings getNamesOfPermanentlyDetachedTables() const;
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
@@ -301,10 +458,7 @@ public:
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
         bool /*exchange*/,
-        bool /*dictionary*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", getEngineName());
-    }
+        bool /*dictionary*/);
 
     using ASTModifier = std::function<void(IAST &)>;
 
@@ -313,10 +467,8 @@ public:
     virtual void alterTable(
         ContextPtr /*context*/,
         const StorageID & /*table_id*/,
-        const StorageInMemoryMetadata & /*metadata*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
-    }
+        const StorageInMemoryMetadata & /*metadata*/,
+        bool validate_new_create_query);
 
     /// Special method for ReplicatedMergeTree and DatabaseReplicated
     virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
@@ -327,19 +479,30 @@ public:
         return static_cast<time_t>(0);
     }
 
-    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const noexcept
+    /// Get the CREATE TABLE query for the table.
+    /// It can also provide information for detached tables for which there is metadata.
+    ///
+    /// Does not throw if the table does not exist, but can throw on other errors.
+    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const
     {
-        return getCreateTableQueryImpl(name, context, false);
+        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
-    {
-        return getCreateTableQueryImpl(name, context, true);
-    }
+    /// Throws if the table does not exist. If a similarly-named table exists (in this or
+    /// another database), the exception message contains a "Maybe you meant ...?" hint,
+    /// like the one produced for `SELECT` queries.
+    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const;
+
+    /// The CREATE query rendered for `system.tables`. Never null. Read only the requested `fields`.
+    RenderedCreateQueryPtr
+    getRenderedCreateTableQuery(const String & name, ContextPtr context, const RenderedCreateQueryFields & fields) const;
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    ASTPtr getCreateDatabaseQuery() const
+    {
+        std::lock_guard lock{mutex};
+        return getCreateDatabaseQueryImpl();
+    }
 
     String getDatabaseComment() const
     {
@@ -358,13 +521,19 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
+
+    virtual void checkDatabase() const
+    {
+        //No-op
+    }
+
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
+
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
-    virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());
-    }
+    virtual void renameDatabase(ContextPtr, const String & /*new_name*/);
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
@@ -373,6 +542,15 @@ public:
     virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
+
+    virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
+
+    /// Creates the table in the external catalog of the database, and returns the table loaded from the catalog.
+    /// Returns nullptr if the database does not create tables this way. In such cases the storage factory creates the table.
+    virtual StoragePtr maybeCreateTableInExternalCatalog(ContextPtr /*context*/, const ASTCreateQuery & /*create*/, const ColumnsDescription & /*columns*/) const
+    {
+        return nullptr;
+    }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
@@ -383,7 +561,7 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { }
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/, std::function<void()> /*throw_if_cancelled*/) { }
     virtual void checkDetachedTableNotInUse(const UUID & /*uuid*/) { }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
@@ -392,26 +570,15 @@ public:
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 
-    virtual void applySettingsChanges(const SettingsChanges &, ContextPtr)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Database engine {} either does not support settings, or does not support altering settings",
-                        getEngineName());
-    }
+    virtual void applySettingsChanges(const SettingsChanges &, ContextPtr);
 
     virtual bool hasReplicationThread() const { return false; }
 
-    virtual void stopReplication()
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
-    }
+    virtual void stopReplication();
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags = {}) /// NOLINT
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
-    }
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags, DDLGuardPtr && /*database_guard*/);
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
     virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
@@ -419,15 +586,18 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
+    /// Get the disk storing metedata files of the tables
+    virtual DiskPtr getDisk() const;
+
     virtual ~IDatabase();
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
-        return nullptr;
-    }
+    virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
+
+    /// Renders on every call. An override may serve a cached rendering of more fields than asked.
+    virtual RenderedCreateQueryPtr getRenderedCreateTableQueryImpl(
+        const String & name, ContextPtr context, const RenderOptions & options, const RenderedCreateQueryFields & fields) const;
 
     mutable std::mutex mutex;
     String database_name TSA_GUARDED_BY(mutex);
@@ -436,6 +606,6 @@ protected:
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
-using Databases = std::map<String, DatabasePtr>;
+using Databases = std::map<String, DatabasePtr, std::less<>>;
 
 }

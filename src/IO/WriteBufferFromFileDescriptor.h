@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 
 namespace DB
@@ -18,7 +18,9 @@ public:
         char * existing_memory = nullptr,
         ThrottlerPtr throttler_ = {},
         size_t alignment = 0,
-        std::string file_name_ = "");
+        std::string file_name_ = "",
+        bool use_adaptive_buffer_size_ = false,
+        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
     /** Could be used before initialization if needed 'fd' was not passed to constructor.
       * It's not possible to change 'fd' during work.
@@ -27,8 +29,6 @@ public:
     {
         fd = fd_;
     }
-
-    ~WriteBufferFromFileDescriptor() override;
 
     int getFD() const
     {

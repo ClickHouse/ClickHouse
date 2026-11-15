@@ -29,10 +29,14 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
 
+    /** Check if identifier is a parameter */
+    bool isParam() const;
     /** Get the query param out of a non-compound identifier. */
     ASTPtr getParam() const;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override { set.insert(name()); }
 
@@ -50,7 +54,8 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
-    std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
+    /// Returns |nullptr| if identifier is not table, or if it is parameterized (see `isParam`).
+    boost::intrusive_ptr<ASTTableIdentifier> createTable() const;
 
     String full_name;
     std::vector<String> name_parts;
@@ -58,7 +63,7 @@ public:
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
@@ -81,8 +86,14 @@ public:
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
+    /// True iff the parser saw an explicit `UUID '...'` clause, set even when the parsed value is `Nil`.
+    /// Use this (not `uuid != UUIDHelpers::Nil`) when you need to distinguish "user wrote `UUID '...'`"
+    /// from "no UUID clause": explicit `UUID '00000000-0000-0000-0000-000000000000'` parses to `Nil`.
+    bool has_uuid = false;
 
     StorageID getTableId() const;
     String getDatabaseName() const;

@@ -1,3 +1,17 @@
+Cache query result in query cache
 1
+1
+DROP entries with a certain tag, no entry will match
+1
+After a full DROP, the cache is empty now
+0
+Cache query result with different or no tag in query cache
+1
+1
+1
+2
+4
+DROP entries with certain tags
+2
 1
 0

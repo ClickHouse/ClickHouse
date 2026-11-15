@@ -3,12 +3,14 @@
         <s3_snapshot>
             <endpoint>http://minio1:9001/snapshots/</endpoint>
             <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </s3_snapshot>
+        <use_cluster>false</use_cluster>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <four_letter_word_white_list>*</four_letter_word_white_list>
 
         <coordination_settings>

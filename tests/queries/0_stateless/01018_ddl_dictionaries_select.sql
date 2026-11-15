@@ -139,6 +139,6 @@ SELECT {CLICKHOUSE_DATABASE:String} || '.dict3' as n, dictGet(n, 'some_column', 
 
 DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.table_for_dict;
 
-SYSTEM RELOAD DICTIONARIES; -- {serverError UNKNOWN_TABLE}
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict3; -- {serverError UNKNOWN_TABLE}
 
 SELECT dictGetString({CLICKHOUSE_DATABASE:String} || '.dict3', 'some_column', toUInt64(12));

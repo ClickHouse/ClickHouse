@@ -14,6 +14,18 @@
 /* Global client configuration file path */
 #define GLOBAL_CLIENT_CONFIG "/etc/ssh/ssh_config"
 
+/* Global configuration directory (libssh >= 0.12 uses it unconditionally) */
+#define GLOBAL_CONF_DIR "/etc/ssh"
+
+/* Define to 1 if we have support for ML-KEM in libgcrypt */
+/* #undef HAVE_GCRYPT_MLKEM */
+
+/* Define to 1 if we have support for ML-KEM in OpenSSL */
+#define HAVE_OPENSSL_MLKEM 1
+
+/* Define to 1 if we have support for ML-KEM1024 in either backend */
+#define HAVE_MLKEM1024 1
+
 /************************** HEADER FILES *************************/
 
 /* Define to 1 if you have the <argp.h> header file. */
@@ -82,63 +94,36 @@
 /* Define to 1 if you have the <pthread.h> header file. */
 #define HAVE_PTHREAD_H 1
 
-/* Define to 1 if you have eliptic curve cryptography in openssl */
+/* Define to 1 if you have elliptic curve cryptography in openssl */
 #define HAVE_OPENSSL_ECC 1
 
-/* Define to 1 if you have eliptic curve cryptography in gcrypt */
+/* Define to 1 if you have elliptic curve cryptography in gcrypt */
 /* #undef HAVE_GCRYPT_ECC */
 
-/* Define to 1 if you have eliptic curve cryptography */
+/* Define to 1 if you have elliptic curve cryptography */
 #define HAVE_ECC 1
 
-/* Define to 1 if you have DSA */
-/* #undef HAVE_DSA */
-
-/* Define to 1 if you have gl_flags as a glob_t sturct member */
+/* Define to 1 if you have gl_flags as a glob_t struct member */
 #define HAVE_GLOB_GL_FLAGS_MEMBER 1
 
-/* Define to 1 if you have OpenSSL with Ed25519 support */
-#define HAVE_OPENSSL_ED25519 1
+/* Define to 1 if you have gcrypt with ChaCha20/Poly1305 support */
+/* #undef HAVE_GCRYPT_CHACHA_POLY */
 
-/* Define to 1 if you have OpenSSL with X25519 support */
-#define HAVE_OPENSSL_X25519 1
+/* Define to 1 if you have gcrypt with curve25519 support */
+/* #undef HAVE_GCRYPT_CURVE25519 */
 
 /*************************** FUNCTIONS ***************************/
 
-/* Define to 1 if you have the `EVP_aes128_ctr' function. */
-#define HAVE_OPENSSL_EVP_AES_CTR 1
+/* Define to 1 if you have the `EVP_chacha20' function. */
+#define HAVE_OPENSSL_EVP_CHACHA20 1
 
-/* Define to 1 if you have the `EVP_aes128_cbc' function. */
-#define HAVE_OPENSSL_EVP_AES_CBC 1
-
-/* Define to 1 if you have the `EVP_aes128_gcm' function. */
-/* #undef HAVE_OPENSSL_EVP_AES_GCM */
-
-/* Define to 1 if you have the `CRYPTO_THREADID_set_callback' function. */
-#define HAVE_OPENSSL_CRYPTO_THREADID_SET_CALLBACK 1
-
-/* Define to 1 if you have the `CRYPTO_ctr128_encrypt' function. */
-#define HAVE_OPENSSL_CRYPTO_CTR128_ENCRYPT 1
-
-/* Define to 1 if you have the `EVP_CIPHER_CTX_new' function. */
-#define HAVE_OPENSSL_EVP_CIPHER_CTX_NEW 1
-
-/* Define to 1 if you have the `EVP_KDF_CTX_new_id' function. */
-/* #undef HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID */
+/* Define to 1 if you have the `EVP_KDF_CTX_new_id' or `EVP_KDF_CTX_new` function. */
+#define HAVE_OPENSSL_EVP_KDF_CTX 1
 
 /* Define to 1 if you have the `FIPS_mode' function. */
 #if USE_BORINGSSL
 #define HAVE_OPENSSL_FIPS_MODE 1
 #endif
-
-/* Define to 1 if you have the `EVP_DigestSign' function. */
-#define HAVE_OPENSSL_EVP_DIGESTSIGN 1
-
-/* Define to 1 if you have the `EVP_DigestVerify' function. */
-#define HAVE_OPENSSL_EVP_DIGESTVERIFY 1
-
-/* Define to 1 if you have the `OPENSSL_ia32cap_loc' function. */
-/* #undef HAVE_OPENSSL_IA32CAP_LOC */
 
 /* Define to 1 if you have the `snprintf' function. */
 #define HAVE_SNPRINTF 1
@@ -212,6 +197,10 @@
 /* Define to 1 if you have the `cmocka_set_test_filter' function. */
 /* #undef HAVE_CMOCKA_SET_TEST_FILTER */
 
+/* Define to 1 if we have support for blowfish */
+/* #undef HAVE_BLOWFISH */
+
+
 /*************************** LIBRARIES ***************************/
 
 /* Define to 1 if you have the `crypto' library (-lcrypto). */
@@ -229,6 +218,10 @@
 /* Define to 1 if you have the `cmocka' library (-lcmocka). */
 /* #undef HAVE_CMOCKA */
 
+/* Define to 1 if you have the `libfido2' library (-lfido2).
+ * This is required for interacting with FIDO2/U2F devices over USB-HID. */
+/* #undef HAVE_LIBFIDO2 */
+
 /**************************** OPTIONS ****************************/
 
 #define HAVE_GCC_THREAD_LOCAL_STORAGE 1
@@ -236,6 +229,7 @@
 
 #define HAVE_FALLTHROUGH_ATTRIBUTE 1
 #define HAVE_UNUSED_ATTRIBUTE 1
+/* #undef HAVE_WEAK_ATTRIBUTE */
 
 #define HAVE_CONSTRUCTOR_ATTRIBUTE 1
 #define HAVE_DESTRUCTOR_ATTRIBUTE 1
@@ -262,6 +256,14 @@
 /* Define to 1 if you want to enable DH group exchange algorithms */
 /* #undef WITH_GEX */
 
+/* Define to 1 if you want to enable insecure none cipher and MAC */
+/* #undef WITH_INSECURE_NONE */
+
+/* Define to 1 if you want to allow libssh to execute arbitrary commands from
+ * configuration files or options (match exec, proxy commands and OpenSSH-based
+ * proxy-jumps). */
+/* #undef WITH_EXEC */
+
 /* Define to 1 if you want to enable blowfish cipher support */
 /* #undef WITH_BLOWFISH_CIPHER */
 
@@ -279,6 +281,15 @@
 
 /* Define to 1 if you want to enable NaCl support */
 /* #undef WITH_NACL */
+
+/* Define to 1 if you want to enable PKCS #11 URI support */
+/* #undef WITH_PKCS11_URI */
+
+/* Define to 1 if we want to build a support for PKCS #11 provider. */
+/* #undef WITH_PKCS11_PROVIDER */
+
+/* Define to 1 if you want to enable FIDO2/U2F support */
+/* #undef WITH_FIDO2 */
 
 /*************************** ENDIAN *****************************/
 

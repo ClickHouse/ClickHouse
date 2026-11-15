@@ -1,0 +1,587 @@
+#include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Common/Exception.h>
+#include <Common/Hex.h>
+#include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <Poco/String.h>
+
+#include <algorithm>
+#include <filesystem>
+#include <iterator>
+#include <set>
+#include <tuple>
+
+#include <Common/FailPoint.h>
+#include <Poco/URI.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
+}
+
+namespace DB::FailPoints
+{
+    extern const char database_iceberg_gcs[];
+}
+
+namespace DataLake
+{
+
+StorageType parseStorageTypeFromLocation(const std::string & location)
+{
+    /// Table location in catalog metadata always starts with one of s3://, file://, etc.
+    /// So just extract this part of the path and deduce storage type from it.
+
+    auto pos = location.find("://");
+    if (pos == std::string::npos)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unexpected path format: {}", location);
+    }
+
+    return parseStorageTypeFromString(location.substr(0, pos));
+}
+
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
+{
+    auto capitalize_first_letter = [] (const std::string & s)
+    {
+        auto result = Poco::toLower(s);
+        if (!result.empty())
+            result[0] = static_cast<char>(std::toupper(result[0]));
+        return result;
+    };
+
+    std::string storage_type_str = type;
+    auto pos = storage_type_str.find("://");
+    if (pos != std::string::npos)
+    {
+        // convert s3://, file://, etc. to s3, file etc.
+        storage_type_str = storage_type_str.substr(0,pos);
+    }
+    if (storage_type_str == "hdfs")
+        return StorageType::HDFS;
+
+    if (capitalize_first_letter(storage_type_str) == "File")
+        storage_type_str = "Local";
+    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
+    {
+        fiu_do_on(DB::FailPoints::database_iceberg_gcs,
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Google cloud storage converts to S3");
+        });
+        storage_type_str = "S3";
+    }
+    /// Azure Blob File System, secure and plain spelling: both name the same ADLS Gen2 storage.
+    /// The scheme selects the storage engine here; it never selects the wire protocol.
+    else if (storage_type_str == "abfss" || storage_type_str == "abfs")
+        storage_type_str = "Azure";
+
+    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+}
+
+StorageType parseStorageTypeFromString(const std::string & type)
+{
+    auto storage_type = tryParseStorageTypeFromString(type);
+
+    if (!storage_type)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Unsupported storage type: {}", type);
+    }
+
+    return *storage_type;
+}
+
+std::string encodeLocationForURI(std::string_view location)
+{
+    /// `S3::URI` reads every `%` of a URL with a raw `?` literally, see `URI::URI`.
+    const bool keep_escapes = !location.contains('?');
+    std::string result;
+    result.reserve(location.size());
+    for (size_t i = 0; i < location.size(); ++i)
+    {
+        const char c = location[i];
+        const auto byte = static_cast<UInt8>(c);
+        const bool is_escape = keep_escapes && c == '%' && i + 2 < location.size()
+            && isHexDigit(location[i + 1]) && isHexDigit(location[i + 2]);
+        if (byte <= 0x20 || byte >= 0x7F || c == '?' || c == '#' || (c == '%' && !is_escape))
+        {
+            char hex[2];
+            writeHexByteUppercase(byte, hex);
+            result += '%';
+            result.append(hex, 2);
+        }
+        else
+            result += c;
+    }
+    return result;
+}
+
+void TableMetadata::setLocation(const std::string & location_)
+{
+    if (!with_location)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
+
+    /// Location has format:
+    /// s3://<bucket>/path/to/table/data.
+    /// We want to split s3://<bucket> and path/to/table/data.
+
+    /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
+    /// We want to split the bucket/container and path.
+
+    auto pos = location_.find("://");
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+
+    // pos+3 to account for ://
+    storage_type_str = location_.substr(0, pos+3);
+    auto pos_to_bucket = pos + std::strlen("://");
+    auto path_separator_offset = location_.substr(pos_to_bucket).find('/');
+
+    size_t pos_to_path = 0;
+    if (path_separator_offset == std::string::npos)
+    {
+        /// Some catalogs (notably AWS S3 Tables) return the table's data location as just
+        /// `<scheme>://<bucket>` because the table data lives at the root of a dedicated bucket.
+        /// Treat the whole input as `location_without_path` and leave `path` empty.
+        /// This bucket-only form is only expected for S3, so reject any other scheme
+        /// instead of silently accepting a malformed location.
+        if (parseStorageTypeFromString(storage_type_str) != StorageType::S3)
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Location without a path is only supported for the s3 scheme: {}", location_);
+
+        pos_to_path = location_.size();
+        location_without_path = location_;
+        path.clear();
+    }
+    else
+    {
+        pos_to_path = pos_to_bucket + path_separator_offset;
+        location_without_path = location_.substr(0, pos_to_path);
+        path = location_.substr(pos_to_path + 1);
+    }
+
+    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
+    /// The bucket (container) is the part before '@', not the whole string before '/'
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    auto at_pos = bucket_part.find('@');
+    if (at_pos != std::string::npos)
+    {
+        /// Azure ABFSS format: extract container (before @) and account (after @)
+        bucket = bucket_part.substr(0, at_pos);
+        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed Azure location - container: {}, account: {}, path: {}",
+                 bucket, azure_account_with_suffix, path);
+    }
+    else
+    {
+        /// Standard format (S3, GCS, etc.)
+        bucket = bucket_part;
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed location without path: {}, path: {}",
+                 location_without_path, path);
+    }
+}
+
+std::string TableMetadata::getLocation() const
+{
+    if (!with_location)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
+
+    if (!endpoint.empty())
+        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
+
+    if (path.empty())
+        return location_without_path;
+
+    return (std::filesystem::path(location_without_path) / path).string();
+}
+
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+{
+    if (!with_location)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
+
+    if (endpoint_.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
+
+    return constructLocation(endpoint_, uri_style);
+}
+
+std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+{
+    std::string location = endpoint_;
+    if (location.ends_with('/'))
+        location.pop_back();
+
+    /// For Azure storage, the endpoint format is: https://<account>.dfs.core.windows.net
+    /// We need to construct: https://<account>.dfs.core.windows.net/<container>/<path>
+    /// The bucket variable contains the container name for Azure.
+    if (!azure_account_with_suffix.empty())
+    {
+        /// An Azure host never names a container, only a segment of the endpoint path can.
+        std::vector<std::string> endpoint_path_segments;
+        Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
+        if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
+            return std::filesystem::path(location) / path / "";
+        return std::filesystem::path(location) / bucket / path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
+    {
+        /// Virtual-hosted style: embed the bucket name in the hostname.
+        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
+        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
+        Poco::URI endpoint_uri(location);
+        const std::string & host = endpoint_uri.getHost();
+        if (!host.starts_with(bucket + "."))
+            endpoint_uri.setHost(bucket + "." + host);
+        std::string vhosted_base = endpoint_uri.toString();
+        if (vhosted_base.ends_with('/'))
+            vhosted_base.pop_back();
+        return std::filesystem::path(vhosted_base) / path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::PATH)
+    {
+        Poco::URI endpoint_uri(location);
+        if (endpoint_uri.getHost().starts_with(bucket + "."))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use PATH addressing style with endpoint '{}': "
+                "the hostname already embeds bucket '{}' in virtual-hosted form",
+                endpoint_uri.getHost(), bucket);
+    }
+
+    if (!force_add_bucket && location.ends_with(bucket))
+        return std::filesystem::path(location) / path / "";
+    return std::filesystem::path(location) / bucket / path / "";
+}
+
+void TableMetadata::setEndpoint(const std::string & endpoint_)
+{
+    endpoint = endpoint_;
+}
+
+void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)
+{
+    if (!with_schema)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
+    DB::validateLakeSchemaColumnNames(schema_, "data lake catalog");
+    schema = schema_;
+}
+
+const DB::NamesAndTypesList & TableMetadata::getSchema() const
+{
+    if (!with_schema)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
+    return schema;
+}
+
+void TableMetadata::setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_)
+{
+    if (!with_storage_credentials)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Storage credentials were not requested");
+
+    storage_credentials = std::move(credentials_);
+}
+
+std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() const
+{
+    if (!with_storage_credentials)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
+
+    return storage_credentials;
+}
+
+void TableMetadata::setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata)
+{
+    data_lake_specific_metadata = metadata;
+}
+
+std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProperties() const
+{
+    return data_lake_specific_metadata;
+}
+
+StorageType TableMetadata::getStorageType() const
+{
+    if (!storage_type_str.empty())
+    {
+        return parseStorageTypeFromString(storage_type_str);
+    }
+    return parseStorageTypeFromLocation(location_without_path);
+}
+
+bool TableMetadata::isS3Location() const
+{
+    return tryParseStorageTypeFromString(storage_type_str) == StorageType::S3;
+}
+
+bool TableMetadata::hasLocation() const
+{
+    return !location_without_path.empty();
+}
+bool TableMetadata::hasSchema() const
+{
+    return !schema.empty();
+}
+bool TableMetadata::hasStorageCredentials() const
+{
+    return storage_credentials != nullptr;
+}
+
+bool TableMetadata::hasDataLakeSpecificProperties() const
+{
+    return data_lake_specific_metadata.has_value();
+}
+
+/// Removes the scheme from `uri` if it names the storage whose scheme is `storage_scheme` (e.g. `s3://`): the same
+/// scheme, or for ADLS Gen2 either spelling, because `abfs://` and `abfss://` name the same storage and a catalog can
+/// report the table location with one and the metadata location with the other.
+static bool removeStorageScheme(std::string & uri, const std::string & storage_scheme)
+{
+    if (uri.starts_with(storage_scheme))
+    {
+        uri.erase(0, storage_scheme.size());
+        return true;
+    }
+
+    if (storage_scheme == "abfs://" || storage_scheme == "abfss://")
+    {
+        for (const std::string_view scheme : {"abfs://", "abfss://"})
+        {
+            if (uri.starts_with(scheme))
+            {
+                uri.erase(0, scheme.size());
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
+{
+    std::string metadata_location = iceberg_metadata_file_location;
+    if (!metadata_location.empty())
+    {
+        std::string data_location = getLocation();
+
+        // Use the actual storage type prefix (e.g., s3://, file://, etc.)
+        removeStorageScheme(metadata_location, storage_type_str);
+        if (!removeStorageScheme(data_location, storage_type_str) && !endpoint.empty() && data_location.starts_with(endpoint))
+            data_location = data_location.substr(endpoint.size());
+
+        if (metadata_location.starts_with(data_location))
+        {
+            size_t remove_slash = (metadata_location.size() > data_location.size() && metadata_location[data_location.size()] == '/') ? 1 : 0;
+            metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+        }
+    }
+    return metadata_location;
+}
+
+DB::SettingsChanges CatalogSettings::allChanged() const
+{
+    DB::SettingsChanges changes;
+    changes.emplace_back("storage_endpoint", storage_endpoint);
+    changes.emplace_back("aws_access_key_id", aws_access_key_id);
+    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
+    changes.emplace_back("region", region);
+    changes.emplace_back("aws_role_arn", aws_role_arn);
+    changes.emplace_back("aws_role_session_name", aws_role_session_name);
+    changes.emplace_back("aws_external_id", aws_external_id);
+
+    return changes;
+}
+
+std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
+{
+    if (!table_metadata.isDefaultReadableTable())
+        return FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+
+    switch (getTableFormat(table_metadata))
+    {
+        case DataLakeTableFormat::UNKNOWN:
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table is readable, but its catalog reports no data lake format");
+        case DataLakeTableFormat::DELTA:
+            return "DeltaLake";
+        case DataLakeTableFormat::ICEBERG:
+            return "Iceberg";
+        case DataLakeTableFormat::PAIMON:
+            return "Paimon";
+    }
+}
+
+CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::In:
+        {
+            /// `name IN ('ns.a', 'other.b')` -> list only namespaces `ns` and `other`; the outer
+            /// filter keeps the exact rows. A name without a namespace tells us nothing about
+            /// which namespace to list, so fall back to the whole catalog.
+            std::set<std::string> namespaces;
+            for (const auto & value : filter.values)
+            {
+                const auto pos = value.rfind('.');
+                if (pos == std::string::npos)
+                    return getTables();
+                namespaces.emplace(value.substr(0, pos));
+            }
+
+            CatalogTables result;
+            for (const auto & namespace_name : namespaces)
+            {
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// Every table name matching `pattern` must start with the pattern's
+            /// fixed prefix — the literal part before the first LIKE wildcard
+            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
+            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
+            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
+            /// prefix of the other. This never rejects a namespace `LIKE` could match
+            /// (the fixed prefix is a *necessary* prefix of any match), so no
+            /// `system.tables` row is dropped; a looser match only costs an extra
+            /// table listing.
+            const String fixed_prefix = extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false).prefix;
+
+            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
+            /// Calling getTables() is better as its parallel.
+            if (fixed_prefix.empty())
+                return getTables();
+
+            CatalogTables result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                const std::string namespace_prefix = namespace_name + ".";
+                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
+}
+
+std::optional<std::string> ICatalog::getDefaultTableLocation(const std::string & /*namespace_name*/, const std::string & /*table_name*/) const
+{
+    return std::nullopt;
+}
+
+void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
+}
+
+void ICatalog::createTableAtDefaultLocation(const String & /*namespace_name*/, const String & /*table_name*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTableAtDefaultLocation is not implemented");
+}
+
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
+}
+
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr /*new_snapshot*/, Poco::JSON::Object::Ptr /*new_metadata*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
+bool ICatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
+}
+
+Poco::JSON::Object::Ptr ICatalog::removeSnapshots(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    Poco::JSON::Object::Ptr /*base_metadata*/,
+    const std::vector<Int64> & /*snapshot_ids*/,
+    const std::vector<String> & /*ref_names*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshots is not implemented");
+}
+
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
+ICatalog::PreparedSettingsChangesPtr ICatalog::prepareSettingsChanges(const DB::SettingsChanges & /*changes*/)
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Settings of a catalog of this type cannot be altered");
+}
+
+void ICatalog::commitSettingsChanges(PreparedSettingsChangesPtr /*prepared*/)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes were prepared for a catalog that cannot commit them");
+}
+
+CatalogSettingsAlterValidatorFactory & CatalogSettingsAlterValidatorFactory::instance()
+{
+    static CatalogSettingsAlterValidatorFactory factory;
+    return factory;
+}
+
+void CatalogSettingsAlterValidatorFactory::registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator)
+{
+    if (!validators.emplace(catalog_type, std::move(validator)).second)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Settings alter validator for catalog type '{}' is already registered",
+            DB::SettingFieldDatabaseDataLakeCatalogType(catalog_type).toString());
+}
+
+void CatalogSettingsAlterValidatorFactory::validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const
+{
+    const auto it = validators.find(current_settings[DB::DatabaseDataLakeSetting::catalog_type].value);
+    if (it == validators.end())
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER MODIFY SETTING is not supported for catalog type '{}'",
+            current_settings[DB::DatabaseDataLakeSetting::catalog_type].toString());
+
+    it->second(current_settings, changes);
+}
+
+}

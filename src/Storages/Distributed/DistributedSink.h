@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Parsers/formatAST.h>
+#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Common/PODArray.h>
+#include <Core/Block_fwd.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
-#include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
 
@@ -36,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink : public SinkToStorage
+class DistributedSink final : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -48,12 +48,22 @@ public:
         UInt64 insert_timeout_,
         const Names & columns_to_send_);
 
+    ~DistributedSink() override;
+
     String getName() const override { return "DistributedSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
-    void onCancel() override;
+    void onCancel() noexcept override;
+
+    /// Cancels the executor of every writing job. Requires `execution_mutex` to be held: holding it is
+    /// what proves no writing job is running, hence that the executors may be touched from this thread.
+    void cancelExecutors() noexcept;
+
+    /// An executor may only be touched by the thread that owns it, so a writing job acts on the
+    /// cancellation flag itself rather than having another thread cancel it.
+    void throwIfCancelled();
 
     IColumn::Selector createSelector(const Block & source_block) const;
 
@@ -124,10 +134,13 @@ private:
         size_t replica_index = 0;
         bool is_local_job = false;
 
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
+
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        ContextPtr local_context;
+        ContextMutablePtr local_context;
         QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;
 

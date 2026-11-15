@@ -1,8 +1,10 @@
-#include "insertPostgreSQLValue.h"
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -10,10 +12,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <pqxx/pqxx>
 
@@ -37,7 +42,8 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         ExternalResultDescription::ValueType type, DataTypePtr data_type,
-        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+        const UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+try
 {
     switch (type)
     {
@@ -49,7 +55,7 @@ void insertPostgreSQLValue(
             else if (value == "f")
                 assert_cast<ColumnUInt8 &>(column).insertValue(0);
             else
-                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(pqxx::from_string<uint16_t>(value)));
             break;
         }
         case ExternalResultDescription::ValueType::vtUInt16:
@@ -62,7 +68,7 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt64 &>(column).insertValue(pqxx::from_string<uint64_t>(value));
             break;
         case ExternalResultDescription::ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(pqxx::from_string<int16_t>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(pqxx::from_string<int16_t>(value)));
             break;
         case ExternalResultDescription::ValueType::vtInt16:
             assert_cast<ColumnInt16 &>(column).insertValue(pqxx::from_string<int16_t>(value));
@@ -73,6 +79,17 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtInt64:
             assert_cast<ColumnInt64 &>(column).insertValue(pqxx::from_string<int64_t>(value));
             break;
+        case ExternalResultDescription::ValueType::vtInt256:
+        {
+            /// Used for PostgreSQL `numeric` with precision wider than Decimal256 can hold.
+            Int256 v = parse<Int256>(value.data(), value.size());
+            /// Wide-integer text parsing does not detect overflow, so verify by round-tripping
+            /// the parsed value back to text to avoid silently storing a wrapped-around value.
+            if (toString(v) != value)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", String(value));
+            assert_cast<ColumnInt256 &>(column).insertValue(v);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(pqxx::from_string<float>(value));
             break;
@@ -80,8 +97,14 @@ void insertPostgreSQLValue(
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
         case ExternalResultDescription::ValueType::vtEnum8:
+            assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum8 &>(*data_type).getValue(value));
+            break;
         case ExternalResultDescription::ValueType::vtEnum16:
+            assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum16 &>(*data_type).getValue(value));
+            break;
         case ExternalResultDescription::ValueType::vtFixedString:
+            assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+            break;
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
@@ -107,7 +130,10 @@ void insertPostgreSQLValue(
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;
-            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            /// Parse with the column's own scale: the inferred type is no longer always `DateTime64(6)`
+            /// (a `timestamp(p)` carries its precision), and the stored value is in units of 10^-scale.
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -125,16 +151,18 @@ void insertPostgreSQLValue(
             pqxx::array_parser parser{value};
             std::pair<pqxx::array_parser::juncture, std::string> parsed = parser.get_next();
 
-            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info.at(idx).num_dimensions;
+            size_t dimension = 0;
+            size_t max_dimension = 0;
+            size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
-            std::vector<Row> dimensions(expected_dimensions + 1);
+            VectorWithMemoryTracking<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
-                else if (parsed.first == pqxx::array_parser::juncture::string_value)
+                if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
 
                 else if (parsed.first == pqxx::array_parser::juncture::null_value)
@@ -143,6 +171,9 @@ void insertPostgreSQLValue(
                 else if (parsed.first == pqxx::array_parser::juncture::row_end)
                 {
                     max_dimension = std::max(max_dimension, dimension);
+
+                    if (dimension == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected array closing bracket");
 
                     --dimension;
                     if (dimension == 0)
@@ -155,7 +186,9 @@ void insertPostgreSQLValue(
                 parsed = parser.get_next();
             }
 
-            if (max_dimension < expected_dimensions)
+            /// PostgreSQL prints an empty array as `{}` whatever its dimensionality, so an empty value
+            /// carries no nesting to count and is a valid empty array for every expected dimension.
+            if (max_dimension < expected_dimensions && !dimensions[1].empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Got less dimensions than expected. ({} instead of {})", max_dimension, expected_dimensions);
 
@@ -166,10 +199,34 @@ void insertPostgreSQLValue(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
+catch (const Exception & e)
+{
+    /// ClickHouse text parsers used above (parse<UUID>, LocalDate, readDateTimeText,
+    /// readDateTime64Text, deserializeWholeText for Decimal, ...) throw DB::Exception with a
+    /// CANNOT_PARSE_* / DECIMAL / INCORRECT_DATA code when a PostgreSQL text value does not fit
+    /// the declared type. Report such a type mismatch as BAD_ARGUMENTS so every declared-type
+    /// mismatch surfaces with a single, catchable error code (which the MaterializedPostgreSQL
+    /// consumer relies on to log + insert a default and keep replicating). Anything that is not a
+    /// parse error (LOGICAL_ERROR, MEMORY_LIMIT_EXCEEDED, ...) is a genuine failure - rethrow it.
+    if (e.code() == ErrorCodes::BAD_ARGUMENTS || isParseError(e.code()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot parse PostgreSQL value '{}' as {}: {}", value, data_type->getName(), e.message());
+    throw;
+}
+catch (const std::exception & e)
+{
+    /// pqxx (pqxx::from_string) and a few helpers (LocalDate::init) throw their own std::exception
+    /// hierarchy for a bad text value (e.g. 'name_0' read into a column declared as Int32, or a
+    /// malformed Date). Convert it into a DB::Exception so a type mismatch between the declared and
+    /// the actual PostgreSQL type is reported as a query error instead of escaping as a foreign
+    /// exception and aborting the server.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Cannot parse PostgreSQL value '{}' as {}: {}", value, data_type->getName(), e.what());
+}
 
 
 void preparePostgreSQLArrayInfo(
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();
@@ -188,7 +245,16 @@ void preparePostgreSQLArrayInfo(
     WhichDataType which(nested);
     std::function<Field(std::string & fields)> parser;
 
-    if (which.isUInt8() || which.isUInt16())
+    if (which.isUInt8())
+        parser = [](std::string & field) -> Field
+        {
+            if (field == "t")
+                return UInt8(1);
+            else if (field == "f")
+                return UInt8(0);
+            return pqxx::from_string<uint16_t>(field);
+        };
+    else if (which.isUInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
     else if (which.isInt8() || which.isInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int16_t>(field); };
@@ -200,6 +266,16 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint64_t>(field); };
     else if (which.isInt64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int64_t>(field); };
+    else if (which.isInt256())
+        parser = [](std::string & field) -> Field
+        {
+            /// Used for PostgreSQL `numeric` wider than Decimal256 can hold. Wide-integer text
+            /// parsing does not detect overflow, so verify by round-tripping the parsed value.
+            Int256 v = parse<Int256>(field.data(), field.size());
+            if (toString(v) != field)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", field);
+            return v;
+        };
     else if (which.isFloat32())
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
@@ -210,6 +286,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
+    else if (which.isDate32())
+        parser = [](std::string & field) -> Field { return Int32{LocalDate{field}.getExtenedDayNum()}; };
     else if (which.isDateTime())
         parser = [nested](std::string & field) -> Field
         {
@@ -224,8 +302,13 @@ void preparePostgreSQLArrayInfo(
         {
             ReadBufferFromString in(field);
             DateTime64 time = 0;
-            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
-            time = std::max<time_t>(time, 0);
+            /// Parse with the element type's own scale: the inferred type is no longer always
+            /// `DateTime64(6)` (a `timestamp(p)` carries its precision), and the stored value is in
+            /// units of 10^-scale.
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*nested);
+            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
+            /// No non-negative clamp here: unlike 32-bit `DateTime`, `DateTime64` has a valid
+            /// pre-epoch range, so negative values must be preserved (same as the scalar parser).
             return time;
         };
     else if (which.isDecimal32())

@@ -1,15 +1,18 @@
+import contextlib
 import os
-import pytest
 import sys
+
 import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
-
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI
@@ -55,10 +58,13 @@ def create_secure_channel():
     return channel
 
 
+@contextlib.contextmanager
 def create_insecure_channel():
-    channel = grpc.insecure_channel(get_grpc_url())
-    grpc.channel_ready_future(channel).result(timeout=2)
-    return channel
+    # Closed even when it never becomes ready: gRPC shares its connection and reconnect backoff with every later
+    # channel to this address in the process.
+    with grpc.insecure_channel(get_grpc_url()) as channel:
+        grpc.channel_ready_future(channel).result(timeout=2)
+        yield channel
 
 
 def create_secure_channel_with_wrong_client_certificate():

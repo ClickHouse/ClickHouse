@@ -8,7 +8,9 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (
 SET input_format_tsv_enum_as_number = 1;
 
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2
+
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TabSeparatedRaw 103	1
+
 SELECT * FROM table_with_enum_column_for_tsv_insert ORDER BY Id;
 
 SET input_format_tsv_enum_as_number = 0;

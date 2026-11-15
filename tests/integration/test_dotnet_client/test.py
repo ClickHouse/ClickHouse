@@ -1,14 +1,10 @@
 # coding: utf-8
 
-import datetime
-import math
 import os
-import time
 
-import logging
 import docker
 import pytest
-from docker.models.containers import Container
+
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -18,7 +14,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 
@@ -37,19 +32,16 @@ def dotnet_container():
         DOCKER_COMPOSE_PATH, "docker_compose_dotnet_client.yml"
     )
     run_and_check(
-        [
-            "docker-compose",
-            "-p",
-            cluster.project_name,
+        cluster.compose_cmd(
             "-f",
             docker_compose,
             "up",
             "--force-recreate",
             "-d",
             "--no-build",
-        ]
+        )
     )
-    yield docker.from_env().containers.get(cluster.project_name + "_dotnet1_1")
+    yield docker.from_env().containers.get(cluster.get_instance_docker_id("dotnet1"))
 
 
 def test_dotnet_client(started_cluster, dotnet_container):
@@ -57,11 +49,14 @@ def test_dotnet_client(started_cluster, dotnet_container):
         reference = fp.read()
 
     code, (stdout, stderr) = dotnet_container.exec_run(
-        "dotnet run --host {host} --port {port} --user default --password 123 --database default".format(
+        "dotnet /client/out/clickhouse.test.dll --host {host} --port {port} --user default --password 123 --database default".format(
             host=started_cluster.get_instance_ip("node"), port=8123
         ),
         demux=True,
     )
 
-    assert code == 0
-    assert stdout == reference
+    # These two streams exist nowhere else: the client runs in its own container and nothing in the
+    # job collects its output. Reporting them here is what makes a client that died on a signal
+    # diagnosable at all, instead of leaving a bare exit code behind.
+    assert code == 0, f"stdout:\n{stdout!r}\nstderr:\n{stderr!r}"
+    assert stdout == reference, f"stderr:\n{stderr!r}"

@@ -11,7 +11,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS nested_in_nested_protobuf_00825;
 
 CREATE TABLE nested_in_nested_protobuf_00825 (x Nested (y Nested (z Int64))) ENGINE = MergeTree ORDER BY tuple();

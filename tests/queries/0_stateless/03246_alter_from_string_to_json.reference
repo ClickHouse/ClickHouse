@@ -1,0 +1,134 @@
+All paths:
+['key0','key1','key2','key3','key4','key5']
+Shared data paths:
+key2
+key3
+key4
+key5
+{"key0":"value0"}
+{"key1":"value1"}
+{"key0":"value2"}
+{"key1":"value3"}
+{"key0":"value4"}
+{"key1":"value5"}
+{"key0":"value6"}
+{"key1":"value7"}
+{"key0":"value8"}
+{"key1":"value9"}
+{"key2":"value60000"}
+{"key3":"value60001"}
+{"key2":"value60002"}
+{"key3":"value60003"}
+{"key2":"value60004"}
+{"key3":"value60005"}
+{"key2":"value60006"}
+{"key3":"value60007"}
+{"key2":"value60008"}
+{"key3":"value60009"}
+{"key4":"value120000"}
+{"key5":"value120001"}
+{"key4":"value120002"}
+{"key5":"value120003"}
+{"key4":"value120004"}
+{"key5":"value120005"}
+{"key4":"value120006"}
+{"key5":"value120007"}
+{"key4":"value120008"}
+{"key5":"value120009"}
+value0	\N	\N	\N	\N	\N
+\N	value1	\N	\N	\N	\N
+value2	\N	\N	\N	\N	\N
+\N	value3	\N	\N	\N	\N
+value4	\N	\N	\N	\N	\N
+\N	value5	\N	\N	\N	\N
+value6	\N	\N	\N	\N	\N
+\N	value7	\N	\N	\N	\N
+value8	\N	\N	\N	\N	\N
+\N	value9	\N	\N	\N	\N
+\N	\N	value60000	\N	\N	\N
+\N	\N	\N	value60001	\N	\N
+\N	\N	value60002	\N	\N	\N
+\N	\N	\N	value60003	\N	\N
+\N	\N	value60004	\N	\N	\N
+\N	\N	\N	value60005	\N	\N
+\N	\N	value60006	\N	\N	\N
+\N	\N	\N	value60007	\N	\N
+\N	\N	value60008	\N	\N	\N
+\N	\N	\N	value60009	\N	\N
+\N	\N	\N	\N	value120000	\N
+\N	\N	\N	\N	\N	value120001
+\N	\N	\N	\N	value120002	\N
+\N	\N	\N	\N	\N	value120003
+\N	\N	\N	\N	value120004	\N
+\N	\N	\N	\N	\N	value120005
+\N	\N	\N	\N	value120006	\N
+\N	\N	\N	\N	\N	value120007
+\N	\N	\N	\N	value120008	\N
+\N	\N	\N	\N	\N	value120009
+All paths:
+['key0','key1','key2','key3','key4','key5']
+Shared data paths:
+key2
+key3
+key4
+key5
+{"key0":"value0"}
+{"key1":"value1"}
+{"key0":"value2"}
+{"key1":"value3"}
+{"key0":"value4"}
+{"key1":"value5"}
+{"key0":"value6"}
+{"key1":"value7"}
+{"key0":"value8"}
+{"key1":"value9"}
+{"key2":"value60000"}
+{"key3":"value60001"}
+{"key2":"value60002"}
+{"key3":"value60003"}
+{"key2":"value60004"}
+{"key3":"value60005"}
+{"key2":"value60006"}
+{"key3":"value60007"}
+{"key2":"value60008"}
+{"key3":"value60009"}
+{"key4":"value120000"}
+{"key5":"value120001"}
+{"key4":"value120002"}
+{"key5":"value120003"}
+{"key4":"value120004"}
+{"key5":"value120005"}
+{"key4":"value120006"}
+{"key5":"value120007"}
+{"key4":"value120008"}
+{"key5":"value120009"}
+value0	\N	\N	\N	\N	\N
+\N	value1	\N	\N	\N	\N
+value2	\N	\N	\N	\N	\N
+\N	value3	\N	\N	\N	\N
+value4	\N	\N	\N	\N	\N
+\N	value5	\N	\N	\N	\N
+value6	\N	\N	\N	\N	\N
+\N	value7	\N	\N	\N	\N
+value8	\N	\N	\N	\N	\N
+\N	value9	\N	\N	\N	\N
+\N	\N	value60000	\N	\N	\N
+\N	\N	\N	value60001	\N	\N
+\N	\N	value60002	\N	\N	\N
+\N	\N	\N	value60003	\N	\N
+\N	\N	value60004	\N	\N	\N
+\N	\N	\N	value60005	\N	\N
+\N	\N	value60006	\N	\N	\N
+\N	\N	\N	value60007	\N	\N
+\N	\N	value60008	\N	\N	\N
+\N	\N	\N	value60009	\N	\N
+\N	\N	\N	\N	value120000	\N
+\N	\N	\N	\N	\N	value120001
+\N	\N	\N	\N	value120002	\N
+\N	\N	\N	\N	\N	value120003
+\N	\N	\N	\N	value120004	\N
+\N	\N	\N	\N	\N	value120005
+\N	\N	\N	\N	value120006	\N
+\N	\N	\N	\N	\N	value120007
+\N	\N	\N	\N	value120008	\N
+\N	\N	\N	\N	\N	value120009

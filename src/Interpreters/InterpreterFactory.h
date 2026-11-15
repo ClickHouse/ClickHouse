@@ -5,6 +5,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {

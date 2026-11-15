@@ -2,6 +2,8 @@
 #include "config.h"
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
 #include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
 #include <llvm/DebugInfo/DWARF/DWARFContext.h>
@@ -11,28 +13,26 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Elf.h>
-#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Columns/ColumnVector.h>
 
 namespace DB
 {
 
-class DWARFBlockInputFormat : public IInputFormat
+class DWARFBlockInputFormat final : public IInputFormat
 {
 public:
-    DWARFBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, size_t num_threads_);
+    DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_);
     ~DWARFBlockInputFormat() override;
 
     String getName() const override { return "DWARFBlockInputFormat"; }
-
-    void resetParser() override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -60,7 +60,7 @@ private:
         uint64_t base_address = UINT64_MAX;
 
         uint64_t offset = 0;
-        std::vector<StackEntry> stack;
+        VectorWithMemoryTracking<StackEntry> stack;
 
         bool eof() const { return offset == end_offset; }
 
@@ -79,12 +79,12 @@ private:
     std::atomic<int> is_stopped{0};
     size_t approx_bytes_read_for_chunk = 0;
 
-    std::optional<ThreadPool> pool;
+    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
-    std::deque<UnitState> units_queue;
-    std::deque<std::pair<Chunk, size_t>> delivery_queue;
+    DequeWithMemoryTracking<UnitState> units_queue;
+    DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
     std::optional<Elf> elf;
@@ -121,7 +121,7 @@ private:
         const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };
 
-class DWARFSchemaReader : public ISchemaReader
+class DWARFSchemaReader final : public ISchemaReader
 {
 public:
     explicit DWARFSchemaReader(ReadBuffer & in_);

@@ -2,25 +2,29 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
+#include <limits>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
+}
 
 namespace ErrorCodes
 {
@@ -43,6 +47,7 @@ namespace ErrorCodes
   * - otherwise, an empty array
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
+  * sparseGrams(s[, min_length])                - find all substrings where border ngrams hashes are bigger than internal.
   *
   * URL functions are located separately.
   */
@@ -50,11 +55,13 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens : public IFunction
+class FunctionTokens final : public IFunction
 {
 private:
     using Pos = const char *;
     bool max_substrings_includes_remaining_string;
+    /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 
 public:
     static constexpr auto name = Generator::name;
@@ -63,7 +70,9 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
+        max_substrings_includes_remaining_string = settings[Setting::splitby_max_substrings_includes_remaining_string];
+        if (settings[Setting::compile_regular_expressions])
+            regexp_jit_min_count = settings[Setting::min_count_to_compile_regular_expression];
     }
 
     String getName() const override { return name; }
@@ -76,6 +85,18 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
 
+    /// Per-Generator opt-in to declarative signatures: when the Generator defines a
+    /// `signature` static member the framework uses it for type checking and return-type
+    /// resolution; otherwise we fall back to the legacy `Generator::checkArguments` path
+    /// which always returns `Array(String)`.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Generator::signature; })
+            return Generator::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Generator::checkArguments(*this, arguments);
@@ -83,57 +104,62 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        Generator generator;
-        generator.init(arguments, max_substrings_includes_remaining_string);
+        Generator generator{};
+        /// Only generators that opt in (currently `ExtractAllImpl`) take the JIT compile-count threshold.
+        if constexpr (requires { generator.init(arguments, max_substrings_includes_remaining_string, regexp_jit_min_count); })
+            generator.init(arguments, max_substrings_includes_remaining_string, regexp_jit_min_count);
+        else
+            generator.init(arguments, max_substrings_includes_remaining_string);
 
         const auto & array_argument = arguments[generator.strings_argument_position];
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
         const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
 
-        auto col_res = ColumnArray::create(ColumnString::create());
+        auto res_strings_column = ColumnString::create();
+        auto res_offsets_column = ColumnArray::ColumnOffsets::create();
 
-        ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+        ColumnString & res_strings = *res_strings_column;
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
-        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
 
         if (col_str)
         {
             const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
-            res_offsets.reserve(src_offsets.size());
-            res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
+            res_offsets.reserve(input_rows_count);
+            res_strings_offsets.reserve(input_rows_count * 5);    /// Constant 5 - at random.
             res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
 
-            size_t size = src_offsets.size();
             ColumnString::Offset current_src_offset = 0;
             ColumnArray::Offset current_dst_offset = 0;
             ColumnString::Offset current_dst_strings_offset = 0;
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
+                    chassert(token_begin >= pos && token_end >= token_begin);
+                    chassert(token_end <= end);
                     size_t token_size = token_end - token_begin;
 
-                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    res_strings_chars.resize(res_strings_chars.size() + token_size);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
-                    res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
-                    current_dst_strings_offset += token_size + 1;
+                    current_dst_strings_offset += token_size;
                     res_strings_offsets.push_back(current_dst_strings_offset);
                     ++j;
                 }
@@ -142,9 +168,9 @@ public:
                 res_offsets.push_back(current_dst_offset);
             }
 
-            return col_res;
+            return ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
         }
-        else if (col_str_const)
+        if (col_str_const)
         {
             String src = col_str_const->getValue<String>();
             Array dst;
@@ -158,9 +184,12 @@ public:
 
             return result_type->createColumnConst(col_str_const->size(), dst);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
-                    array_argument.column->getName(), array_argument.column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal columns {}, {} of arguments of function {}",
+            array_argument.column->getName(),
+            array_argument.column->getName(),
+            getName());
     }
 };
 
@@ -194,7 +223,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
+    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
 }
 
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
@@ -207,7 +236,7 @@ static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & fun
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
+    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
 }
 
 }

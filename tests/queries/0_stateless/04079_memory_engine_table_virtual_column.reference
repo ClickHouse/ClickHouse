@@ -1,0 +1,18 @@
+-- { echoOn }
+SELECT _table FROM test_memory_virt LIMIT 1;
+test_memory_virt
+SELECT x, _table FROM test_memory_virt ORDER BY x;
+1	test_memory_virt
+2	test_memory_virt
+3	test_memory_virt
+SELECT DISTINCT _table FROM test_memory_virt;
+test_memory_virt
+SELECT x FROM test_memory_virt WHERE _table = 'test_memory_virt' ORDER BY x;
+1
+2
+3
+SELECT count() FROM test_memory_virt WHERE _table = 'nonexistent';
+0
+SELECT count() FROM test_memory_virt_empty;
+0
+SELECT _table FROM test_memory_virt_empty;

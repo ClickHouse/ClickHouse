@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/47422
-SET allow_experimental_analyzer=1;
 
 DROP TEMPORARY TABLE IF EXISTS test;
 CREATE TEMPORARY TABLE test (a Float32, id UInt64);

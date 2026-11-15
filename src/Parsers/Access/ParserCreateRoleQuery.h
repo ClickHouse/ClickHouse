@@ -11,12 +11,19 @@ namespace DB
   *
   * ALTER ROLE [IF EXISTS] name
   *     [RENAME TO new_name]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+  *     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
+  *     [DROP SETTINGS variable [,...] ]
+  *     [ADD PROFILES 'profile_name' [,...] ]
+  *     [DROP PROFILES 'profile_name' [,...] ]
+  *     [DROP ALL PROFILES]
+  *     [DROP ALL SETTINGS]
   */
 class ParserCreateRoleQuery : public IParserBase
 {
 public:
     void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
+
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     const char * getName() const override { return "CREATE ROLE or ALTER ROLE query"; }

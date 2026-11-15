@@ -166,7 +166,7 @@ TEST(Common, RWLockRecursive)
 
             auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
-#ifndef ABORT_ON_LOGICAL_ERROR
+#ifndef DEBUG_OR_SANITIZER_BUILD
             /// It throws LOGICAL_ERROR
             EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
 #endif
@@ -207,7 +207,7 @@ TEST(Common, RWLockDeadlock)
             if (!holder2)
             {
                 throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
+                        "Locking attempt timed out. Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)
@@ -237,7 +237,7 @@ TEST(Common, RWLockDeadlock)
             if (!holder1)
             {
                 throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
+                        "Locking attempt timed out. Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)

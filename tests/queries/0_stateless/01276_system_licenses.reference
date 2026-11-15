@@ -1,2 +1,4 @@
 1
-zstd	BSD	/contrib/zstd/LICENSE
+abseil-cpp	Apache	/contrib/abseil-cpp/LICENSE
+libxml2	MIT	/contrib/libxml2/Copyright
+pdqsort	zLib	/contrib/pdqsort/license.txt

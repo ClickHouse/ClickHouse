@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 // Simhash: String -> UInt64
 // Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool is_simhash, bool is_arg = false>
-class FunctionsStringHash : public IFunction
+class FunctionsStringHash final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -43,12 +42,40 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (is_simhash)
             return {1};
         else
             return {1, 2};
+    }
+
+    /// Signature opt-in:
+    /// - SimHash: `(String, [const UInt]) -> UInt64`.
+    /// - MinHash (non-arg): `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(UInt64, UInt64)`.
+    /// - MinHashArg variants: no signature is advertised. The natural shape
+    ///   `(String, [const UInt], [const UInt]) ->
+    ///   Tuple(Tuple(String, ...), Tuple(String, ...))` has a `...` on the
+    ///   return side with no argument-side ellipsis to supply its size, so the
+    ///   type-only `getReturnTypeImpl(DataTypes)` fallback would raise
+    ///   `BAD_FUNCTION_SIGNATURE` when it parses and applies it. Keep it empty
+    ///   until variable-length tuple returns are expressible; the
+    ///   `ColumnsWithTypeAndName` path below stays authoritative.
+    /// Value bounds (`shingle_size > 0`, `num_hashes ≤ 25`, etc.) are still
+    /// enforced separately at execute time.
+    String getSignatureString() const override
+    {
+        if constexpr (is_arg)
+            return "";
+        else if constexpr (is_simhash)
+            return "(String, [const UInt]) -> UInt64";
+        else
+            return "(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -135,7 +162,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -152,9 +179,9 @@ public:
         {
             auto col_res = ColumnVector<UInt64>::create();
             auto & vec_res = col_res->getData();
-            vec_res.resize(column->size());
+            vec_res.resize(input_rows_count);
             const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
-            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, vec_res);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, vec_res, input_rows_count);
             return col_res;
         }
         else if constexpr (is_arg) // Min hash arg
@@ -171,7 +198,7 @@ public:
             auto max_tuple = ColumnTuple::create(std::move(max_columns));
 
             const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
-            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get(), input_rows_count);
 
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(min_tuple));
@@ -184,10 +211,10 @@ public:
             auto col_h2 = ColumnVector<UInt64>::create();
             auto & vec_h1 = col_h1->getData();
             auto & vec_h2 = col_h2->getData();
-            vec_h1.resize(column->size());
-            vec_h2.resize(column->size());
+            vec_h1.resize(input_rows_count);
+            vec_h2.resize(input_rows_count);
             const ColumnString & col_str_vector = checkAndGetColumn<ColumnString>(*column);
-            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr);
+            Impl::apply(col_str_vector.getChars(), col_str_vector.getOffsets(), shingle_size, num_hashes, &vec_h1, &vec_h2, nullptr, nullptr, input_rows_count);
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(col_h1));
             tuple_columns.emplace_back(std::move(col_h2));

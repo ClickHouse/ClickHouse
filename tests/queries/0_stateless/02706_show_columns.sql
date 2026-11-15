@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 -- no-parallel: creates a custom database schema and expects to use it exclusively
 
 -- Create a test table and verify that the output of SHOW COLUMNS is sane.
@@ -54,6 +54,11 @@ DROP TABLE IF EXISTS NULL;
 CREATE TABLE NULL (c String) ENGINE = MergeTree ORDER BY c;
 SHOW COLUMNS FROM NULL;
 DROP TABLE NULL;
+
+DROP TABLE IF EXISTS `tab.with.dots`;
+CREATE TABLE `tab.with.dots` (c String) ENGINE = MergeTree ORDER BY c;
+SHOW COLUMNS FROM `tab.with.dots`;
+DROP TABLE `tab.with.dots`;
 
 DROP DATABASE IF EXISTS `'`;
 CREATE DATABASE `'`;

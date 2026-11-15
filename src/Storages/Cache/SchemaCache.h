@@ -51,7 +51,7 @@ public:
     {
         std::optional<ColumnsDescription> columns;
         std::optional<size_t> num_rows;
-        time_t registration_time;
+        time_t registration_time{};
     };
 
     using LastModificationTimeGetter = std::function<std::optional<time_t>()>;

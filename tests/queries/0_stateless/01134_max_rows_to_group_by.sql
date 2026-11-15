@@ -4,6 +4,7 @@ SET group_by_overflow_mode = 'throw';
 
 -- Settings 'max_rows_to_group_by' and 'max_bytes_before_external_group_by' are mutually exclusive.
 SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'test1', number FROM system.numbers GROUP BY number; -- { serverError TOO_MANY_ROWS }
 

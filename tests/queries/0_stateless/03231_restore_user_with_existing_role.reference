@@ -1,0 +1,13 @@
+Everything dropped
+User dropped
+Role dropped
+Nothing dropped
+Nothing dropped, mode=replace
+Nothing dropped, mode=create
+ACCESS_ENTITY_ALREADY_EXISTS
+Everything dropped, restore system.roles, then system.users
+user_a	0
+role_b	1
+Everything dropped, restore system.users, then system.roles
+user_a	1
+role_b	0

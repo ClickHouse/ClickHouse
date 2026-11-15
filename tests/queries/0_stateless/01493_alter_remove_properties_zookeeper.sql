@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS r_prop_table1;
 DROP TABLE IF EXISTS r_prop_table2;

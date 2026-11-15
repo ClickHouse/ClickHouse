@@ -33,8 +33,6 @@
 
 -- { echoOn }
 
-SET allow_experimental_analyzer = 1;
-
 --
 -- test multiple WITH queries
 --
