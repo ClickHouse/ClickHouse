@@ -1,0 +1,26 @@
+the state type does not depend on the nullability of the argument
+AggregateFunction(uniqApacheHLL, UInt64)
+AggregateFunction(uniqApacheHLL, UInt64)
+AggregateFunction(uniqApacheHLL(14, \'HLL_8\'), String)
+LowCardinality is stripped from the arguments of aggregate functions
+AggregateFunction(uniqApacheHLL, String)
+2
+1
+states of Nullable and plain arguments mix
+6
+the If combinator over Nullable arguments keeps the same state and type
+AggregateFunction(uniqApacheHLL, UInt64)
+AggregateFunction(uniqApacheHLL, UInt64)
+AggregateFunction(uniqApacheHLL, UInt64)
+1
+1
+5
+5
+5
+a declared Nullable state type is interchangeable with the plain one
+AggregateFunction(uniqApacheHLL, Nullable(UInt64))
+4
+4
+tables
+6
+6
