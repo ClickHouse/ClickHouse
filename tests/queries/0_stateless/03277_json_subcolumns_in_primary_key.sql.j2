@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 
 set explain_query_plan_default='legacy';
 set optimize_read_in_order=1;
@@ -26,49 +26,49 @@ insert into test select number, toJSONString(map('a', number % 2, 'b', 'str_' ||
 insert into test select number, toJSONString(map('a', number % 2 + 4, 'b', 'str_' || number % 3 + 4, 'c', range(number % 10))), 'Hello, World!' from numbers(4, 4);
 
 select * from test order by json.a, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc settings enable_parallel_replicas = 0);
 select * from test order by json.a, json.b::String, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, json.b::String, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String settings enable_parallel_replicas = 0);
 select * from test order by json.a, json.b::String desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String desc settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, json.b::String desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String desc settings enable_parallel_replicas = 0);
 
 select * from test where json.a = 0 order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where json.a = 0);
+select trimLeft(explain) from (explain indexes=1 select * from test where json.a = 0 settings enable_parallel_replicas = 0);
 select * from test where json.a = 0 and json.b::String = 'str_0' order by id;
-select trimLeft(explain) from (explain indexes=1 select * from test where json.a = 0 and json.b::String = 'str_0');
+select trimLeft(explain) from (explain indexes=1 select * from test where json.a = 0 and json.b::String = 'str_0' settings enable_parallel_replicas = 0);
 
 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 
 system start merges test;
 optimize table test final;
 select count() from system.parts where active and table = 'test' and database = currentDatabase();
 
 select * from test order by json.a, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc settings enable_parallel_replicas = 0);
 select * from test order by json.a, json.b::String, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, json.b::String, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String settings enable_parallel_replicas = 0);
 select * from test order by json.a, json.b::String desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a, json.b::String desc settings enable_parallel_replicas = 0);
 select * from test order by json.a desc, json.b::String desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by json.a desc, json.b::String desc settings enable_parallel_replicas = 0);
 
 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1;
-select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1);
+select trimLeft(explain) from (explain indexes=1 select count() from test where json.a = 0 and json.b = 'str_0' settings optimize_use_implicit_projections = 1, enable_parallel_replicas = 0);
 
 drop table test;
 

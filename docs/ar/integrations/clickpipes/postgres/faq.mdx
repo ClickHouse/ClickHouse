@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="are-transaction-rollbacks-replicated">
   ### هل يتم نسخ المعاملات التي تم التراجع عنها إلى ClickHouse؟
 </div>
@@ -433,7 +431,15 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 
 نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة النسخ المتماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</Frame>
+
+</div>
 
 إذا كان المصدر مُهيّأً وفقًا لذلك، فستظل فتحة النسخ المتماثل محفوظة بعد عمليات failover إلى replica قراءة في Postgres، مما يضمن استمرار نسخ البيانات المتماثل. تعرّف على المزيد [هنا](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

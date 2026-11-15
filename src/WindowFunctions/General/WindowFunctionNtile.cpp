@@ -51,7 +51,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.partition = true, .order_by = true};
+        return WindowFunctionRequirements{.partition_end = true, .order_by = true};
     }
 
     size_t sizeOfState() const override { return sizeof(NtileState); }
@@ -59,21 +59,7 @@ public:
     void createState(char * place) const override { new (place) NtileState(); }
     void resetPartition(char * place) const override { new (place) NtileState(); }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame.begin_type != WindowFrame::BoundaryType::Unbounded || window.frame.end_type != WindowFrame::BoundaryType::Unbounded)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', '{}' given", getName(), window.frame.toString());
-    }
-
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         NtileState & state = *reinterpret_cast<NtileState *>(place);
         if (state.buckets == 0)
@@ -85,12 +71,13 @@ public:
         const Int64 large_bucket_rows = small_bucket_rows + 1;
         const Int64 rows_in_large_buckets = large_buckets * large_bucket_rows;
         auto & data = assert_cast<ColumnUInt64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 row = bounds.row[i];
             const Int64 bucket = row < rows_in_large_buckets ? row / large_bucket_rows : large_buckets + (row - rows_in_large_buckets) / small_bucket_rows;
             data.push_back(bucket + 1);
         }
+        return bounds.row.back() + 1;
     }
 };
 
@@ -110,15 +97,14 @@ Divides the ordered rows within a partition into a specified number of buckets (
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
 ```
 
 For each partition, ntile uses the positive integer bucket count from its first row in window order; subsequent values are ignored
 
-An `ORDER BY` clause is required. The window frame must be the whole partition (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), which is also the default frame used when none is specified explicitly.
+An `ORDER BY` clause is required. The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 

@@ -107,13 +107,18 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
+    std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings)
 {
+    /// A pattern scan delivers known tokens again, so embedded postings are added only with a new token.
     if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
     addRowsRange(token_rows_range);
+
+    if (embedded_postings)
+        addPostings(*embedded_postings);
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -175,6 +180,8 @@ PaddedPODArrayPtr TextIndexAnalyzer::QueryBuilder::getFlatPostings() const
 TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
+    bool all_patterns_have_automata = true;
+    bool has_general_pattern = false;
 
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
@@ -188,8 +195,42 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         }
 
         for (const auto & pattern : query->getPatterns())
+        {
             queries_by_pattern[&pattern].insert(hash);
+            has_general_pattern |= pattern.getMatchKind() == RegexpMatchKind::General;
+        }
+        for (const auto & automaton : query->getPatternAutomata())
+        {
+            if (automaton)
+                pattern_cursors.emplace_back(*automaton);
+            else
+                all_patterns_have_automata = false;
+        }
     }
+
+    /// Prefix and exact literals already have a cheaper contiguous block-range scan.
+    /// Infix patterns without a rejecting prefix retain the SIMD literal filter.
+    if (!all_patterns_have_automata || !has_general_pattern)
+        pattern_cursors.clear();
+}
+
+TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & lower_bound)
+{
+    using Result = TextIndexDictionaryDFA::Cursor::Result;
+    bool found = false;
+    String candidate;
+    for (auto & cursor : pattern_cursors)
+    {
+        auto result = cursor.next(token, candidate);
+        if (result == Result::Match)
+            return Result::Match;
+        if (result == Result::Seek && (!found || candidate < lower_bound))
+        {
+            lower_bound = candidate;
+            found = true;
+        }
+    }
+    return found ? Result::Seek : Result::Exhausted;
 }
 
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
@@ -239,16 +280,33 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         token_rows_range = *clipped_range;
     }
 
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addTokenInfo(token, token_info, token_rows_range);
-    });
-
+    /// Clip the embedded postings to the readable rows once.
+    std::optional<PostingList> embedded_postings;
     if (!token_info->embedded_postings.empty())
     {
-        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
-        addPostings(token, embedded);
+        tokens_with_postings.emplace(token);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+
+        embedded_postings.emplace(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        if (readable_rows)
+            embedded_postings = readable_rows->clipPostings(*embedded_postings);
+    }
+
+    const bool no_readable_postings = embedded_postings && embedded_postings->isEmpty();
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addTokenInfo(token, token_info, token_rows_range, embedded_postings && !no_readable_postings ? &*embedded_postings : nullptr);
+    });
+
+    /// Same as in `addPostings`: a token without readable postings is missing.
+    if (no_readable_postings)
+    {
+        processTokenOperation(token, [&](QueryBuilder & query_builder)
+        {
+            query_builder.addMissingToken(token);
+        });
+
+        queries_by_token.erase(token);
     }
 }
 

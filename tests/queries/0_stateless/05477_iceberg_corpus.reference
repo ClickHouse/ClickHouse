@@ -1,0 +1,507 @@
+iceberg/ice143_v1_all_types WHERE `id` < 10	ok
+iceberg/ice143_v1_all_types WHERE `id` = 7	ok
+iceberg/ice143_v1_all_types WHERE `id` >= 25	ok
+iceberg/ice143_v1_all_types `arr`	ok
+iceberg/ice143_v1_all_types `arr`.size0	ok
+iceberg/ice143_v1_all_types `b`	ok
+iceberg/ice143_v1_all_types `bin`	ok
+iceberg/ice143_v1_all_types `d`	ok
+iceberg/ice143_v1_all_types `dec38`	ok
+iceberg/ice143_v1_all_types `dec`	ok
+iceberg/ice143_v1_all_types `dt`	ok
+iceberg/ice143_v1_all_types `f`	ok
+iceberg/ice143_v1_all_types `i`	ok
+iceberg/ice143_v1_all_types `id`	ok
+iceberg/ice143_v1_all_types `mp`	ok
+iceberg/ice143_v1_all_types `s`	ok
+iceberg/ice143_v1_all_types `st`	ok
+iceberg/ice143_v1_all_types `st`.`x`	ok
+iceberg/ice143_v1_all_types `st`.`y`	ok
+iceberg/ice143_v1_all_types `ts_ntz`	ok
+iceberg/ice143_v1_all_types `ts`	ok
+iceberg/ice143_v1_all_types content	35	ok
+iceberg/ice143_v1_all_types content snapshot 1 append	20	ok
+iceberg/ice143_v1_all_types count()	ok
+iceberg/ice143_v1_all_types count() snapshot 1 append	ok
+iceberg/ice143_v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/ice143_v2_all_types WHERE `id` < 10	ok
+iceberg/ice143_v2_all_types WHERE `id` = 7	ok
+iceberg/ice143_v2_all_types WHERE `id` >= 25	ok
+iceberg/ice143_v2_all_types `arr`	ok
+iceberg/ice143_v2_all_types `arr`.size0	ok
+iceberg/ice143_v2_all_types `b`	ok
+iceberg/ice143_v2_all_types `bin`	ok
+iceberg/ice143_v2_all_types `d`	ok
+iceberg/ice143_v2_all_types `dec38`	ok
+iceberg/ice143_v2_all_types `dec`	ok
+iceberg/ice143_v2_all_types `dt`	ok
+iceberg/ice143_v2_all_types `f`	ok
+iceberg/ice143_v2_all_types `i`	ok
+iceberg/ice143_v2_all_types `id`	ok
+iceberg/ice143_v2_all_types `mp`	ok
+iceberg/ice143_v2_all_types `s`	ok
+iceberg/ice143_v2_all_types `st`	ok
+iceberg/ice143_v2_all_types `st`.`x`	ok
+iceberg/ice143_v2_all_types `st`.`y`	ok
+iceberg/ice143_v2_all_types `ts_ntz`	ok
+iceberg/ice143_v2_all_types `ts`	ok
+iceberg/ice143_v2_all_types content	30	ok
+iceberg/ice143_v2_all_types count()	ok
+iceberg/ice143_v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/ice143_v2_position_deletes WHERE `id` < 10	ok
+iceberg/ice143_v2_position_deletes WHERE `id` = 7	ok
+iceberg/ice143_v2_position_deletes WHERE `id` >= 25	ok
+iceberg/ice143_v2_position_deletes WHERE `p` = 2	ok
+iceberg/ice143_v2_position_deletes `id`	ok
+iceberg/ice143_v2_position_deletes `p`	ok
+iceberg/ice143_v2_position_deletes `s`	ok
+iceberg/ice143_v2_position_deletes `ts`	ok
+iceberg/ice143_v2_position_deletes content	37	ok
+iceberg/ice143_v2_position_deletes content snapshot 1 append	60	ok
+iceberg/ice143_v2_position_deletes content snapshot 2 overwrite	40	ok
+iceberg/ice143_v2_position_deletes content snapshot 3 overwrite	40	ok
+iceberg/ice143_v2_position_deletes count()	ok
+iceberg/ice143_v2_position_deletes count() snapshot 1 append	ok
+iceberg/ice143_v2_position_deletes count() snapshot 2 overwrite	ok
+iceberg/ice143_v2_position_deletes count() snapshot 3 overwrite	ok
+iceberg/ice143_v2_position_deletes types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/ice143_v2_schema_evolution `a`	ok
+iceberg/ice143_v2_schema_evolution `b_renamed`	ok
+iceberg/ice143_v2_schema_evolution `c`	ok
+iceberg/ice143_v2_schema_evolution `d`	ok
+iceberg/ice143_v2_schema_evolution `e`	ok
+iceberg/ice143_v2_schema_evolution `st`	ok
+iceberg/ice143_v2_schema_evolution `st`.`x`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/ice143_v2_schema_evolution `st`.`y`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/ice143_v2_schema_evolution content	15	ok
+iceberg/ice143_v2_schema_evolution content snapshot 1 append	5	ok
+iceberg/ice143_v2_schema_evolution content snapshot 2 append	10	ok
+iceberg/ice143_v2_schema_evolution count()	ok
+iceberg/ice143_v2_schema_evolution count() snapshot 1 append	ok
+iceberg/ice143_v2_schema_evolution count() snapshot 2 append	ok
+iceberg/ice143_v2_schema_evolution types	Nullable(Int32), Nullable(Int64), Nullable(String), Nullable(Float64), Nullable(Decimal(9, 2)), Tuple(x Nullable(Int32), y Nullable(String))
+iceberg/ice143_v2_transforms WHERE `id` < 10	ok
+iceberg/ice143_v2_transforms WHERE `id` = 7	ok
+iceberg/ice143_v2_transforms WHERE `id` >= 25	ok
+iceberg/ice143_v2_transforms `b`	ok
+iceberg/ice143_v2_transforms `d`	ok
+iceberg/ice143_v2_transforms `id`	ok
+iceberg/ice143_v2_transforms `n`	ok
+iceberg/ice143_v2_transforms `s`	ok
+iceberg/ice143_v2_transforms `ts2`	ok
+iceberg/ice143_v2_transforms `ts`	ok
+iceberg/ice143_v2_transforms content	40	ok
+iceberg/ice143_v2_transforms count()	ok
+iceberg/ice143_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Nullable(Bool)
+iceberg/py_v1_all_types WHERE `id` < 10	ok
+iceberg/py_v1_all_types WHERE `id` = 7	ok
+iceberg/py_v1_all_types WHERE `id` >= 25	ok
+iceberg/py_v1_all_types `arr`	ok
+iceberg/py_v1_all_types `arr`.size0	ok
+iceberg/py_v1_all_types `b`	ok
+iceberg/py_v1_all_types `bin`	ok
+iceberg/py_v1_all_types `d`	ok
+iceberg/py_v1_all_types `dec38`	ok
+iceberg/py_v1_all_types `dec`	ok
+iceberg/py_v1_all_types `dt`	ok
+iceberg/py_v1_all_types `f`	ok
+iceberg/py_v1_all_types `fx`	ok
+iceberg/py_v1_all_types `i`	ok
+iceberg/py_v1_all_types `id`	ok
+iceberg/py_v1_all_types `mp`	ok
+iceberg/py_v1_all_types `s`	ok
+iceberg/py_v1_all_types `st`	ok
+iceberg/py_v1_all_types `st`.`x`	ok
+iceberg/py_v1_all_types `st`.`y`	ok
+iceberg/py_v1_all_types `tm`	ok
+iceberg/py_v1_all_types `ts`	ok
+iceberg/py_v1_all_types `tstz`	ok
+iceberg/py_v1_all_types `u`	ok
+iceberg/py_v1_all_types content	30	ok
+iceberg/py_v1_all_types content snapshot 1 append	20	ok
+iceberg/py_v1_all_types count()	ok
+iceberg/py_v1_all_types count() snapshot 1 append	ok
+iceberg/py_v1_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v1_month_day WHERE `id` < 10	ok
+iceberg/py_v1_month_day WHERE `id` = 7	ok
+iceberg/py_v1_month_day WHERE `id` >= 25	ok
+iceberg/py_v1_month_day WHERE `p` = 2	ok
+iceberg/py_v1_month_day `d`	ok
+iceberg/py_v1_month_day `id`	ok
+iceberg/py_v1_month_day `p`	ok
+iceberg/py_v1_month_day `s`	ok
+iceberg/py_v1_month_day `ts`	ok
+iceberg/py_v1_month_day content	30	ok
+iceberg/py_v1_month_day count()	ok
+iceberg/py_v1_month_day types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_all_types WHERE `id` < 10	ok
+iceberg/py_v2_all_types WHERE `id` = 7	ok
+iceberg/py_v2_all_types WHERE `id` >= 25	ok
+iceberg/py_v2_all_types `arr`	ok
+iceberg/py_v2_all_types `arr`.size0	ok
+iceberg/py_v2_all_types `b`	ok
+iceberg/py_v2_all_types `bin`	ok
+iceberg/py_v2_all_types `d`	ok
+iceberg/py_v2_all_types `dec38`	ok
+iceberg/py_v2_all_types `dec`	ok
+iceberg/py_v2_all_types `dt`	ok
+iceberg/py_v2_all_types `f`	ok
+iceberg/py_v2_all_types `fx`	ok
+iceberg/py_v2_all_types `i`	ok
+iceberg/py_v2_all_types `id`	ok
+iceberg/py_v2_all_types `mp`	ok
+iceberg/py_v2_all_types `s`	ok
+iceberg/py_v2_all_types `st`	ok
+iceberg/py_v2_all_types `st`.`x`	ok
+iceberg/py_v2_all_types `st`.`y`	ok
+iceberg/py_v2_all_types `tm`	ok
+iceberg/py_v2_all_types `ts`	ok
+iceberg/py_v2_all_types `tstz`	ok
+iceberg/py_v2_all_types `u`	ok
+iceberg/py_v2_all_types content	30	ok
+iceberg/py_v2_all_types content snapshot 1 append	20	ok
+iceberg/py_v2_all_types count()	ok
+iceberg/py_v2_all_types count() snapshot 1 append	ok
+iceberg/py_v2_all_types types	Int64, Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(9, 3)), Nullable(Decimal(38, 10)), Nullable(String), Nullable(String), Nullable(FixedString(5)), Nullable(Bool), Nullable(Date32), Nullable(Int64), Nullable(DateTime64(6)), Nullable(DateTime64(6, \'UTC\')), Nullable(UUID), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int64)), Map(String, Nullable(Int32))
+iceberg/py_v2_name_mapping WHERE `id` < 10	ok
+iceberg/py_v2_name_mapping WHERE `id` = 7	ok
+iceberg/py_v2_name_mapping WHERE `id` >= 25	ok
+iceberg/py_v2_name_mapping WHERE `p` = 2	ok
+iceberg/py_v2_name_mapping `d`	ok
+iceberg/py_v2_name_mapping `id`	ok
+iceberg/py_v2_name_mapping `p`	ok
+iceberg/py_v2_name_mapping `s`	ok
+iceberg/py_v2_name_mapping `ts`	ok
+iceberg/py_v2_name_mapping content	25	ok
+iceberg/py_v2_name_mapping count()	ok
+iceberg/py_v2_name_mapping types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_overwrite_delete WHERE `id` < 10	ok
+iceberg/py_v2_overwrite_delete WHERE `id` = 7	ok
+iceberg/py_v2_overwrite_delete WHERE `id` >= 25	ok
+iceberg/py_v2_overwrite_delete WHERE `p` = 2	ok
+iceberg/py_v2_overwrite_delete `d`	ok
+iceberg/py_v2_overwrite_delete `id`	ok
+iceberg/py_v2_overwrite_delete `p`	ok
+iceberg/py_v2_overwrite_delete `s`	ok
+iceberg/py_v2_overwrite_delete `ts`	ok
+iceberg/py_v2_overwrite_delete content	27	ok
+iceberg/py_v2_overwrite_delete content snapshot 1 append	30	ok
+iceberg/py_v2_overwrite_delete content snapshot 2 append	50	ok
+iceberg/py_v2_overwrite_delete content snapshot 3 overwrite	40	ok
+iceberg/py_v2_overwrite_delete content snapshot 4 delete	30	ok
+iceberg/py_v2_overwrite_delete content snapshot 5 append	35	ok
+iceberg/py_v2_overwrite_delete content snapshot 6 delete	30	ok
+iceberg/py_v2_overwrite_delete count()	ok
+iceberg/py_v2_overwrite_delete count() snapshot 1 append	ok
+iceberg/py_v2_overwrite_delete count() snapshot 2 append	ok
+iceberg/py_v2_overwrite_delete count() snapshot 3 overwrite	ok
+iceberg/py_v2_overwrite_delete count() snapshot 4 delete	ok
+iceberg/py_v2_overwrite_delete count() snapshot 5 append	ok
+iceberg/py_v2_overwrite_delete count() snapshot 6 delete	ok
+iceberg/py_v2_overwrite_delete types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/py_v2_schema_evolution WHERE `id` < 10	ok
+iceberg/py_v2_schema_evolution WHERE `id` = 7	ok
+iceberg/py_v2_schema_evolution WHERE `id` >= 25	ok
+iceberg/py_v2_schema_evolution WHERE `p` = 2	ok
+iceberg/py_v2_schema_evolution `added`	ok
+iceberg/py_v2_schema_evolution `d`	ok
+iceberg/py_v2_schema_evolution `id`	ok
+iceberg/py_v2_schema_evolution `p`	ok
+iceberg/py_v2_schema_evolution `s_renamed`	ok
+iceberg/py_v2_schema_evolution content	30	ok
+iceberg/py_v2_schema_evolution content snapshot 1 append	10	ok
+iceberg/py_v2_schema_evolution content snapshot 2 append	20	ok
+iceberg/py_v2_schema_evolution count()	ok
+iceberg/py_v2_schema_evolution count() snapshot 1 append	ok
+iceberg/py_v2_schema_evolution count() snapshot 2 append	ok
+iceberg/py_v2_schema_evolution types	Nullable(Int64), Nullable(String), Nullable(Int64), Nullable(Date32), Nullable(String)
+iceberg/py_v2_transforms WHERE `id` < 10	ok
+iceberg/py_v2_transforms WHERE `id` = 7	ok
+iceberg/py_v2_transforms WHERE `id` >= 25	ok
+iceberg/py_v2_transforms WHERE `p` = 2	ok
+iceberg/py_v2_transforms `d`	ok
+iceberg/py_v2_transforms `id`	ok
+iceberg/py_v2_transforms `p`	ok
+iceberg/py_v2_transforms `s`	ok
+iceberg/py_v2_transforms `ts`	ok
+iceberg/py_v2_transforms content	40	ok
+iceberg/py_v2_transforms count()	ok
+iceberg/py_v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6)), Nullable(Date32)
+iceberg/v1_all_types WHERE `id` < 10	ok
+iceberg/v1_all_types WHERE `id` = 7	ok
+iceberg/v1_all_types WHERE `id` >= 25	ok
+iceberg/v1_all_types `arr`	ok
+iceberg/v1_all_types `arr`.size0	ok
+iceberg/v1_all_types `b`	ok
+iceberg/v1_all_types `bin`	ok
+iceberg/v1_all_types `d`	ok
+iceberg/v1_all_types `dec38`	ok
+iceberg/v1_all_types `dec`	ok
+iceberg/v1_all_types `dt`	ok
+iceberg/v1_all_types `f`	ok
+iceberg/v1_all_types `i`	ok
+iceberg/v1_all_types `id`	ok
+iceberg/v1_all_types `mp`	ok
+iceberg/v1_all_types `s`	ok
+iceberg/v1_all_types `st`	ok
+iceberg/v1_all_types `st`.`x`	ok
+iceberg/v1_all_types `st`.`y`	ok
+iceberg/v1_all_types `ts_ntz`	ok
+iceberg/v1_all_types `ts`	ok
+iceberg/v1_all_types content	35	ok
+iceberg/v1_all_types content snapshot 1 append	20	ok
+iceberg/v1_all_types count()	ok
+iceberg/v1_all_types count() snapshot 1 append	ok
+iceberg/v1_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v1_partition_evolution_void WHERE `id` < 10	ok
+iceberg/v1_partition_evolution_void WHERE `id` = 7	ok
+iceberg/v1_partition_evolution_void WHERE `id` >= 25	ok
+iceberg/v1_partition_evolution_void WHERE `p` = 2	ok
+iceberg/v1_partition_evolution_void `id`	ok
+iceberg/v1_partition_evolution_void `p`	ok
+iceberg/v1_partition_evolution_void `s`	ok
+iceberg/v1_partition_evolution_void `ts`	ok
+iceberg/v1_partition_evolution_void content	40	ok
+iceberg/v1_partition_evolution_void content snapshot 1 append	20	ok
+iceberg/v1_partition_evolution_void count()	ok
+iceberg/v1_partition_evolution_void count() snapshot 1 append	ok
+iceberg/v1_partition_evolution_void types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_all_types WHERE `id` < 10	ok
+iceberg/v2_all_types WHERE `id` = 7	ok
+iceberg/v2_all_types WHERE `id` >= 25	ok
+iceberg/v2_all_types `arr`	ok
+iceberg/v2_all_types `arr`.size0	ok
+iceberg/v2_all_types `b`	ok
+iceberg/v2_all_types `bin`	ok
+iceberg/v2_all_types `d`	ok
+iceberg/v2_all_types `dec38`	ok
+iceberg/v2_all_types `dec`	ok
+iceberg/v2_all_types `dt`	ok
+iceberg/v2_all_types `f`	ok
+iceberg/v2_all_types `i`	ok
+iceberg/v2_all_types `id`	ok
+iceberg/v2_all_types `mp`	ok
+iceberg/v2_all_types `s`	ok
+iceberg/v2_all_types `st`	ok
+iceberg/v2_all_types `st`.`x`	ok
+iceberg/v2_all_types `st`.`y`	ok
+iceberg/v2_all_types `ts_ntz`	ok
+iceberg/v2_all_types `ts`	ok
+iceberg/v2_all_types content	30	ok
+iceberg/v2_all_types count()	ok
+iceberg/v2_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v2_avro WHERE `id` < 10	ok
+iceberg/v2_avro WHERE `id` = 7	ok
+iceberg/v2_avro WHERE `id` >= 25	ok
+iceberg/v2_avro WHERE `p` = 2	ok
+iceberg/v2_avro `id`	ok
+iceberg/v2_avro `p`	ok
+iceberg/v2_avro `s`	ok
+iceberg/v2_avro `ts`	ok
+iceberg/v2_avro content	25	ok
+iceberg/v2_avro count()	ok
+iceberg/v2_avro types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_copy_on_write WHERE `id` < 10	ok
+iceberg/v2_copy_on_write WHERE `id` = 7	ok
+iceberg/v2_copy_on_write WHERE `id` >= 25	ok
+iceberg/v2_copy_on_write WHERE `p` = 2	ok
+iceberg/v2_copy_on_write `id`	ok
+iceberg/v2_copy_on_write `p`	ok
+iceberg/v2_copy_on_write `s`	ok
+iceberg/v2_copy_on_write `ts`	ok
+iceberg/v2_copy_on_write content	3	ok
+iceberg/v2_copy_on_write content snapshot 1 append	30	ok
+iceberg/v2_copy_on_write content snapshot 2 append	50	ok
+iceberg/v2_copy_on_write content snapshot 3 delete	37	ok
+iceberg/v2_copy_on_write content snapshot 4 overwrite	37	ok
+iceberg/v2_copy_on_write content snapshot 5 overwrite	3	ok
+iceberg/v2_copy_on_write count()	ok
+iceberg/v2_copy_on_write count() snapshot 1 append	ok
+iceberg/v2_copy_on_write count() snapshot 2 append	ok
+iceberg/v2_copy_on_write count() snapshot 3 delete	ok
+iceberg/v2_copy_on_write count() snapshot 4 overwrite	ok
+iceberg/v2_copy_on_write count() snapshot 5 overwrite	ok
+iceberg/v2_copy_on_write types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_gzip_metadata WHERE `id` < 10	ok
+iceberg/v2_gzip_metadata WHERE `id` = 7	ok
+iceberg/v2_gzip_metadata WHERE `id` >= 25	ok
+iceberg/v2_gzip_metadata WHERE `p` = 2	ok
+iceberg/v2_gzip_metadata `id`	ok
+iceberg/v2_gzip_metadata `p`	ok
+iceberg/v2_gzip_metadata `s`	ok
+iceberg/v2_gzip_metadata `ts`	ok
+iceberg/v2_gzip_metadata content	30	ok
+iceberg/v2_gzip_metadata content snapshot 1 append	25	ok
+iceberg/v2_gzip_metadata count()	ok
+iceberg/v2_gzip_metadata count() snapshot 1 append	ok
+iceberg/v2_gzip_metadata types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_identity_days WHERE `id` < 10	ok
+iceberg/v2_identity_days WHERE `id` = 7	ok
+iceberg/v2_identity_days WHERE `id` >= 25	ok
+iceberg/v2_identity_days WHERE `p` = 2	ok
+iceberg/v2_identity_days `id`	ok
+iceberg/v2_identity_days `p`	ok
+iceberg/v2_identity_days `s`	ok
+iceberg/v2_identity_days `ts`	ok
+iceberg/v2_identity_days content	40	ok
+iceberg/v2_identity_days count()	ok
+iceberg/v2_identity_days types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_mixed_formats_codecs WHERE `id` < 10	ok
+iceberg/v2_mixed_formats_codecs WHERE `id` = 7	ok
+iceberg/v2_mixed_formats_codecs WHERE `id` >= 25	ok
+iceberg/v2_mixed_formats_codecs WHERE `p` = 2	ok
+iceberg/v2_mixed_formats_codecs `id`	ok
+iceberg/v2_mixed_formats_codecs `p`	ok
+iceberg/v2_mixed_formats_codecs `s`	ok
+iceberg/v2_mixed_formats_codecs `ts`	ok
+iceberg/v2_mixed_formats_codecs content	50	ok
+iceberg/v2_mixed_formats_codecs content snapshot 1 append	10	ok
+iceberg/v2_mixed_formats_codecs content snapshot 2 append	20	ok
+iceberg/v2_mixed_formats_codecs content snapshot 3 append	30	ok
+iceberg/v2_mixed_formats_codecs content snapshot 4 append	40	ok
+iceberg/v2_mixed_formats_codecs count()	ok
+iceberg/v2_mixed_formats_codecs count() snapshot 1 append	ok
+iceberg/v2_mixed_formats_codecs count() snapshot 2 append	ok
+iceberg/v2_mixed_formats_codecs count() snapshot 3 append	ok
+iceberg/v2_mixed_formats_codecs count() snapshot 4 append	ok
+iceberg/v2_mixed_formats_codecs types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_orc WHERE `id` < 10	ok
+iceberg/v2_orc WHERE `id` = 7	ok
+iceberg/v2_orc WHERE `id` >= 25	ok
+iceberg/v2_orc WHERE `p` = 2	ok
+iceberg/v2_orc `id`	ok
+iceberg/v2_orc `p`	ok
+iceberg/v2_orc `s`	ok
+iceberg/v2_orc `ts`	ok
+iceberg/v2_orc content	25	ok
+iceberg/v2_orc count()	ok
+iceberg/v2_orc types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_partition_evolution WHERE `id` < 10	ok
+iceberg/v2_partition_evolution WHERE `id` = 7	ok
+iceberg/v2_partition_evolution WHERE `id` >= 25	ok
+iceberg/v2_partition_evolution WHERE `p` = 2	ok
+iceberg/v2_partition_evolution `id`	ok
+iceberg/v2_partition_evolution `p`	ok
+iceberg/v2_partition_evolution `s`	ok
+iceberg/v2_partition_evolution `ts`	ok
+iceberg/v2_partition_evolution content	60	ok
+iceberg/v2_partition_evolution content snapshot 1 append	20	ok
+iceberg/v2_partition_evolution content snapshot 2 append	40	ok
+iceberg/v2_partition_evolution count()	ok
+iceberg/v2_partition_evolution count() snapshot 1 append	ok
+iceberg/v2_partition_evolution count() snapshot 2 append	ok
+iceberg/v2_partition_evolution types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_position_deletes WHERE `id` < 10	ok
+iceberg/v2_position_deletes WHERE `id` = 7	ok
+iceberg/v2_position_deletes WHERE `id` >= 25	ok
+iceberg/v2_position_deletes WHERE `p` = 2	ok
+iceberg/v2_position_deletes `id`	ok
+iceberg/v2_position_deletes `p`	ok
+iceberg/v2_position_deletes `s`	ok
+iceberg/v2_position_deletes `ts`	ok
+iceberg/v2_position_deletes content	37	ok
+iceberg/v2_position_deletes content snapshot 1 append	60	ok
+iceberg/v2_position_deletes content snapshot 2 delete	40	ok
+iceberg/v2_position_deletes content snapshot 3 overwrite	40	ok
+iceberg/v2_position_deletes count()	ok
+iceberg/v2_position_deletes count() snapshot 1 append	ok
+iceberg/v2_position_deletes count() snapshot 2 delete	ok
+iceberg/v2_position_deletes count() snapshot 3 overwrite	ok
+iceberg/v2_position_deletes types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_position_deletes_unpartitioned WHERE `id` < 10	ok
+iceberg/v2_position_deletes_unpartitioned WHERE `id` = 7	ok
+iceberg/v2_position_deletes_unpartitioned WHERE `id` >= 25	ok
+iceberg/v2_position_deletes_unpartitioned WHERE `p` = 2	ok
+iceberg/v2_position_deletes_unpartitioned `id`	ok
+iceberg/v2_position_deletes_unpartitioned `p`	ok
+iceberg/v2_position_deletes_unpartitioned `s`	ok
+iceberg/v2_position_deletes_unpartitioned `ts`	ok
+iceberg/v2_position_deletes_unpartitioned content	39	ok
+iceberg/v2_position_deletes_unpartitioned content snapshot 1 append	30	ok
+iceberg/v2_position_deletes_unpartitioned content snapshot 2 append	60	ok
+iceberg/v2_position_deletes_unpartitioned content snapshot 3 delete	29	ok
+iceberg/v2_position_deletes_unpartitioned count()	ok
+iceberg/v2_position_deletes_unpartitioned count() snapshot 1 append	ok
+iceberg/v2_position_deletes_unpartitioned count() snapshot 2 append	ok
+iceberg/v2_position_deletes_unpartitioned count() snapshot 3 delete	ok
+iceberg/v2_position_deletes_unpartitioned types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_schema_evolution `a`	ok
+iceberg/v2_schema_evolution `b_renamed`	ok
+iceberg/v2_schema_evolution `c`	ok
+iceberg/v2_schema_evolution `d`	ok
+iceberg/v2_schema_evolution `e`	ok
+iceberg/v2_schema_evolution `st`	ok
+iceberg/v2_schema_evolution `st`.`x`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/v2_schema_evolution `st`.`y`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/v2_schema_evolution content	15	ok
+iceberg/v2_schema_evolution content snapshot 1 append	5	ok
+iceberg/v2_schema_evolution content snapshot 2 append	10	ok
+iceberg/v2_schema_evolution count()	ok
+iceberg/v2_schema_evolution count() snapshot 1 append	ok
+iceberg/v2_schema_evolution count() snapshot 2 append	ok
+iceberg/v2_schema_evolution types	Nullable(Int32), Nullable(Int64), Nullable(String), Nullable(Float64), Nullable(Decimal(9, 2)), Tuple(x Nullable(Int32), y Nullable(String))
+iceberg/v2_sorted WHERE `id` < 10	ok
+iceberg/v2_sorted WHERE `id` = 7	ok
+iceberg/v2_sorted WHERE `id` >= 25	ok
+iceberg/v2_sorted WHERE `p` = 2	ok
+iceberg/v2_sorted `id`	ok
+iceberg/v2_sorted `p`	ok
+iceberg/v2_sorted `s`	ok
+iceberg/v2_sorted `ts`	ok
+iceberg/v2_sorted content	40	ok
+iceberg/v2_sorted count()	ok
+iceberg/v2_sorted types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
+iceberg/v2_transforms WHERE `id` < 10	ok
+iceberg/v2_transforms WHERE `id` = 7	ok
+iceberg/v2_transforms WHERE `id` >= 25	ok
+iceberg/v2_transforms `b`	ok
+iceberg/v2_transforms `d`	ok
+iceberg/v2_transforms `id`	ok
+iceberg/v2_transforms `n`	ok
+iceberg/v2_transforms `s`	ok
+iceberg/v2_transforms `ts2`	ok
+iceberg/v2_transforms `ts`	ok
+iceberg/v2_transforms content	40	ok
+iceberg/v2_transforms count()	ok
+iceberg/v2_transforms types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Nullable(Bool)
+iceberg/v3_all_types WHERE `id` < 10	ok
+iceberg/v3_all_types WHERE `id` = 7	ok
+iceberg/v3_all_types WHERE `id` >= 25	ok
+iceberg/v3_all_types `arr`	ok
+iceberg/v3_all_types `arr`.size0	ok
+iceberg/v3_all_types `b`	ok
+iceberg/v3_all_types `bin`	ok
+iceberg/v3_all_types `d`	ok
+iceberg/v3_all_types `dec38`	ok
+iceberg/v3_all_types `dec`	ok
+iceberg/v3_all_types `dt`	ok
+iceberg/v3_all_types `f`	ok
+iceberg/v3_all_types `i`	ok
+iceberg/v3_all_types `id`	ok
+iceberg/v3_all_types `mp`	ok
+iceberg/v3_all_types `s`	ok
+iceberg/v3_all_types `st`	ok
+iceberg/v3_all_types `st`.`x`	ok
+iceberg/v3_all_types `st`.`y`	ok
+iceberg/v3_all_types `ts_ntz`	ok
+iceberg/v3_all_types `ts`	ok
+iceberg/v3_all_types content	30	ok
+iceberg/v3_all_types count()	ok
+iceberg/v3_all_types types	Nullable(Int64), Nullable(Int32), Nullable(Float32), Nullable(Float64), Nullable(Decimal(10, 2)), Nullable(Decimal(38, 5)), Nullable(String), Nullable(String), Nullable(Bool), Nullable(Date32), Nullable(DateTime64(6, \'UTC\')), Nullable(DateTime64(6)), Tuple(x Nullable(Int32), y Nullable(String)), Array(Nullable(Int32)), Map(String, Nullable(Int32))
+iceberg/v3_deletion_vectors WHERE `id` < 10	ok
+iceberg/v3_deletion_vectors WHERE `id` = 7	ok
+iceberg/v3_deletion_vectors WHERE `id` >= 25	ok
+iceberg/v3_deletion_vectors WHERE `p` = 2	ok
+iceberg/v3_deletion_vectors `id`	ok
+iceberg/v3_deletion_vectors `p`	ok
+iceberg/v3_deletion_vectors `s`	ok
+iceberg/v3_deletion_vectors `ts`	ok
+iceberg/v3_deletion_vectors content	32	ok
+iceberg/v3_deletion_vectors content snapshot 1 append	60	ok
+iceberg/v3_deletion_vectors content snapshot 2 delete	40	ok
+iceberg/v3_deletion_vectors content snapshot 3 delete	32	ok
+iceberg/v3_deletion_vectors count()	ok
+iceberg/v3_deletion_vectors count() snapshot 1 append	ok
+iceberg/v3_deletion_vectors count() snapshot 2 delete	ok
+iceberg/v3_deletion_vectors count() snapshot 3 delete	ok
+iceberg/v3_deletion_vectors types	Nullable(Int64), Nullable(String), Nullable(Int32), Nullable(DateTime64(6, \'UTC\'))
