@@ -132,6 +132,12 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & original_function, const DataTypes &, const Array &, const AggregateFunctionProperties &) const override
+    {
+        return original_function;
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];

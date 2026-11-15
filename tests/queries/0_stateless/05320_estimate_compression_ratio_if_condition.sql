@@ -23,10 +23,7 @@ SELECT 'String';
 SELECT estimateCompressionRatioIf('NONE')(toString(number), number % 7 = 3) = (SELECT estimateCompressionRatio('NONE')(toString(number)) FROM numbers(1000) WHERE number % 7 = 3) FROM numbers(1000);
 
 SELECT 'Nullable argument';
--- `optimize_rewrite_aggregate_function_with_if` would turn `estimateCompressionRatio(if(c, x, NULL))` into `estimateCompressionRatioIf(x, c)`.
-SET optimize_rewrite_aggregate_function_with_if = 0;
 SELECT estimateCompressionRatioIf('NONE')(if(number < 20, number, NULL), number % 2 = 0) = (SELECT estimateCompressionRatio('NONE')(if(number < 20, number, NULL)) FROM numbers(1000) WHERE number % 2 = 0) FROM numbers(1000);
-SET optimize_rewrite_aggregate_function_with_if = 1;
 
 SELECT 'IfOrNullIf';
 SELECT estimateCompressionRatioIfOrNullIf('NONE')(number, number < 10, 1) FROM numbers(1000);
