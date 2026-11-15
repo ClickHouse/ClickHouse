@@ -17,7 +17,8 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 }
 
-Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context, ContextPtr context)
+Array getAggregateFunctionParametersArray(
+    const ASTPtr & expression_list, const std::string & error_context, ContextPtr context, bool * parameters_are_deterministic)
 {
     const ASTs & parameters = expression_list->children;
     if (parameters.empty())
@@ -30,7 +31,7 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
         ASTPtr literal;
         try
         {
-            literal = evaluateConstantExpressionAsLiteral(parameters[i], context);
+            literal = evaluateConstantExpressionAsLiteral(parameters[i], context, parameters_are_deterministic);
         }
         catch (Exception & e)
         {
@@ -57,7 +58,8 @@ void getAggregateFunctionNameAndParametersArray(
     std::string & aggregate_function_name,
     Array & aggregate_function_parameters,
     const std::string & error_context,
-    ContextPtr context)
+    ContextPtr context,
+    bool * parameters_are_deterministic)
 {
     if (aggregate_function_name_with_params.back() != ')')
     {
@@ -88,7 +90,7 @@ void getAggregateFunctionNameAndParametersArray(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect list of parameters to aggregate function {}",
             aggregate_function_name);
 
-    aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast, error_context, context);
+    aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast, error_context, context, parameters_are_deterministic);
 }
 
 }

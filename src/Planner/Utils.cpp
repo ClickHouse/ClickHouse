@@ -27,10 +27,13 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <Analyzer/Utils.h>
@@ -1011,6 +1014,69 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
     step->setStepDescription("Project only used columns");
     return step;
+}
+
+/// The parser keeps the right-hand side of `IN some_table` as an `ASTIdentifier` (an `ASTFunction` for a table
+/// function), never an `ASTSubquery`, but the analyzer reads that table exactly like a subquery.
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (ast->as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsSubquery(child))
+            return true;
+    }
+    return false;
+}
+
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (!constant_node->isDeterministic())
+            return true;
+
+        /// A folded call is marked with the determinism of its overload resolver; the built function may differ.
+        if (constant_node->hasSourceExpression() && containsNonDeterministicFunction(constant_node->getSourceExpression()))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsNonDeterministicFunction(child))
+            return true;
+    }
+    return false;
 }
 
 }

@@ -226,44 +226,6 @@ QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const Sto
     return nullptr;
 }
 
-/// Returns true if `node` contains any function whose IFunctionBase::isDeterministic() is false.
-/// Used by the view-pushdown gate: the optimization rewrites the outer query so its expressions
-/// run on shards instead of the coordinator, which changes results for functions like hostName,
-/// serverUUID, nowInBlock, blockNumber, rand, now etc. Aggregate and window functions are not
-/// flagged here — FunctionNode::getFunction() only returns the resolved IFunctionBase for
-/// ordinary functions, returning nullptr otherwise.
-///
-/// ConstantNode is also inspected because the analyzer constant-folds suitable function calls
-/// (server-local constants such as hostName, serverUUID, version) into ConstantNodes that carry
-/// is_deterministic = false (see resolveFunction.cpp:1766). Without this branch the visitor
-/// would miss folded calls — only functions that vary per row (rand, now, ...) stay as
-/// FunctionNodes after analysis. Plain literals (SELECT 1) use the default-deterministic
-/// ConstantNode constructor and are not flagged.
-bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
-            return true;
-    }
-
-    if (const auto * constant_node = node->as<ConstantNode>())
-    {
-        if (!constant_node->isDeterministic())
-            return true;
-    }
-
-    for (const auto & child : node->getChildren())
-    {
-        if (containsNonDeterministicFunction(child))
-            return true;
-    }
-    return false;
-}
-
 /// Whether the `LATERAL` subquery contains a function whose value may differ between two evaluations
 /// within one query (`rand`, `generateUUIDv4`, `rowNumberInAllBlocks`, ...). Decorrelation evaluates the
 /// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows
@@ -382,51 +344,6 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
         if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
             return true;
         if (containsSubqueryNode(child))
-            return true;
-    }
-    return false;
-}
-
-/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
-/// pushdown injects as shard-side filters (the view's row policy and view-keyed
-/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
-/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
-/// the optimization fires, with the same divergence risk described above, so suppress the
-/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
-///
-/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
-/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
-/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
-/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
-/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
-/// into the shipped query. Only the right-hand side of an IN is inspected.
-bool astContainsSubquery(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-
-    if (ast->as<ASTSubquery>())
-        return true;
-
-    if (const auto * function = ast->as<ASTFunction>();
-        function && function->arguments && isNameOfInFunction(function->name))
-    {
-        const auto & arguments = function->arguments->children;
-        if (arguments.size() >= 2)
-        {
-            const auto & right = arguments[1];
-            if (right->as<ASTIdentifier>())
-                return true;
-
-            if (const auto * right_function = right->as<ASTFunction>();
-                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
-                return true;
-        }
-    }
-
-    for (const auto & child : ast->children)
-    {
-        if (astContainsSubquery(child))
             return true;
     }
     return false;

@@ -86,7 +86,8 @@ static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(AS
 /// column only to discard it.
 static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExpressionAsColumnImpl(
     const ASTPtr & node, const ContextPtr & context,
-    std::optional<EvaluateConstantExpressionResult> * literal_out = nullptr)
+    std::optional<EvaluateConstantExpressionResult> * literal_out = nullptr,
+    bool * is_deterministic = nullptr)
 {
     auto from_literal = [&](ASTLiteral * literal) -> std::optional<EvaluateConstantExpressionColumnResult>
     {
@@ -138,6 +139,10 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+
+        /// A scalar subquery is folded into a constant marked deterministic, so it is found in the AST.
+        if (is_deterministic && (astContainsSubquery(ast) || containsNonDeterministicFunction(expression)))
+            *is_deterministic = false;
 
         GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -232,12 +237,12 @@ std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(co
     return materializeToField(std::move(column_result));
 }
 
-EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
+EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context, bool * is_deterministic)
 {
     /// Bridge B1: a (possibly rewrite-folded) literal comes back through `literal_result` as a
     /// tag-preserving `Field`; otherwise materialize the column result.
     std::optional<EvaluateConstantExpressionResult> literal_result;
-    auto column_result = evaluateConstantExpressionAsColumnImpl(node, context, &literal_result);
+    auto column_result = evaluateConstantExpressionAsColumnImpl(node, context, &literal_result, is_deterministic);
     if (literal_result)
         return std::move(*literal_result);
     auto res = materializeToField(std::move(column_result));
@@ -246,12 +251,12 @@ EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node,
     return *res;
 }
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context, bool * is_deterministic)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    return make_intrusive<ASTLiteral>(evaluateConstantExpression(node, context, is_deterministic).first);
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)

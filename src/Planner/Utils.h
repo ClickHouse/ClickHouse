@@ -156,4 +156,12 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
 
+/// Whether the expression contains a subquery or reads a table: a bare `IN some_table` or `IN some_table_function(...)`
+/// is read like a subquery. Only the right-hand side of an IN is inspected.
+bool astContainsSubquery(const ASTPtr & ast);
+
+/// Whether the resolved expression calls a non-deterministic ordinary function; aggregate and window functions are not inspected.
+/// A call the analyzer folded into a constant is found through the constant's source expression.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node);
+
 }
