@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/NullTableSubscribers.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -11,6 +12,8 @@ namespace DB
 
 /** When writing, does nothing.
   * When reading, returns nothing.
+  * A streaming query (`SELECT ... FROM null_table STREAM`) receives every block inserted into the table while it runs,
+  * so the table is an ephemeral queue with many producers and many consumers.
   */
 class StorageNull final : public IStorage
 {
@@ -31,15 +34,13 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /*context*/,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        return Pipe(
-            std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-    }
+        size_t /*num_streams*/) override;
+
+    bool supportsStreaming() const override { return true; }
 
     /// A read always produces exactly one `NullSource`.
     size_t getMaxReadStreams(size_t /*num_streams*/, ContextPtr) override { return 1; }
@@ -54,10 +55,7 @@ public:
 
     bool supportsTruncate() const override { return false; }
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
-    {
-        return std::make_shared<NullSinkToStorage>(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
-    }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -72,6 +70,9 @@ public:
         return {0};
     }
 
+private:
+    /// The streaming queries that receive the inserted blocks.
+    const std::shared_ptr<NullTableSubscribers> subscribers = std::make_shared<NullTableSubscribers>();
 };
 
 }

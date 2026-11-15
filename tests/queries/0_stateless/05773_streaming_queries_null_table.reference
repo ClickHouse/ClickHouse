@@ -1,0 +1,22 @@
+--- not supported
+BAD_ARGUMENTS
+--- bounded
+0
+--- two subscribers receive every block
+first
+a 1
+b 2
+b 3
+end 4
+second
+b 2
+b 3
+b 100
+--- the materialized view still gets the data
+a	1
+b	2
+b	3
+b	100
+end	4
+--- a subscriber that falls behind fails instead of blocking the inserts
+TOO_SLOW
