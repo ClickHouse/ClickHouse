@@ -18,7 +18,6 @@ namespace DB
 /// definitions and fill logic in one place instead of duplicating them in both storages.
 
 DataTypeEnum8::Values getSessionAuthTypeEnumValues();
-DataTypeEnum8::Values getSessionInterfaceEnumValues();
 
 /// An array of Tuple(name, value), e.g. for "settings" or "quotas" columns.
 DataTypePtr getNameValueArrayType(const DataTypePtr & name_type, const DataTypePtr & value_type);

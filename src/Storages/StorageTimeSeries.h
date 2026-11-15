@@ -1,15 +1,18 @@
 #pragma once
 
-#include <Access/Common/AccessType.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <base/defines.h>
 #include <array>
+#include <mutex>
 
 
 namespace DB
 {
+class TimeSeriesDeduplicationCache;
+using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -18,9 +21,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 TIME RANGES [db].table3 METRIC FAMILIES [db].table4
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree TIME RANGES ENGINE = AggregatingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
@@ -53,22 +56,28 @@ public:
     StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
-    /// The identity a target is configured with, resolved to a database and a name but not looked up in the
-    /// catalog. Empty for an inner target, which has no name of its own, and for an absent optional target.
-    StorageID tryGetConfiguredExternalTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
-
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
+    /// Whether this table has a target of the given kind (the recent samples and time ranges targets are optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// Returns all possible target kinds: Samples, RecentSamples, Tags, TimeRanges, and MetricFamilies.
+    /// A concrete table can have no recent samples or time ranges target (see hasTarget).
+    static constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
     }
+
+    /// Return the caches used to skip the rows already written to the "tags" and "metric families" tables,
+    /// or null if the cache is disabled by the settings (see `tags_deduplication_cache_size_bytes`
+    /// and `metric_families_deduplication_cache_size_bytes`).
+    TimeSeriesDeduplicationCachePtr getTagsDeduplicationCache() const;
+    TimeSeriesDeduplicationCachePtr getMetricFamiliesDeduplicationCache() const;
+
+    /// Clears the caches used by inserts, so that the next insert writes all its rows to the target tables.
+    /// It's called by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`.
+    void clearCaches();
 
     void readImpl(
         QueryPlan & query_plan,
@@ -110,7 +119,7 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -144,34 +153,28 @@ private:
     /// Returns the target of the given kind or null if this table has no such target.
     const Target * tryGetTarget(ViewTarget::Kind target_kind) const;
 
+    /// Auxiliary recent samples and time ranges targets do not count as owned data targets.
+    bool hasInnerRequiredTables() const;
+
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
+
+    /// Creates a cache from the current settings, replacing the old one, or drops it when the settings disable it.
+    /// The running inserts continue with the old cache.
+    void createOrDropTagsDeduplicationCache();
+    void createOrDropMetricFamiliesDeduplicationCache();
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+
+    mutable std::mutex caches_mutex;
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache TSA_GUARDED_BY(caches_mutex);
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache TSA_GUARDED_BY(caches_mutex);
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
-
-/// Checks that the current user is allowed to reach a TimeSeries table through a table function.
-/// A row policy on a TimeSeries table is not enforceable on the rows such a function returns, so in the
-/// read direction this fails closed instead of silently returning rows the policy hides.
-void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, const ContextPtr & context, AccessType access_type);
-
-/// Checks that the current user is allowed to reach a target table of a TimeSeries table through a table
-/// function. An `Alias` target exposes the data and metadata of another table, which a grant on the alias
-/// itself does not cover.
-/// An empty `column` checks the target as a whole, naming one checks that column alone.
-void checkAccessToTimeSeriesTargetTable(
-    const StoragePtr & target_table, const ContextPtr & context, AccessType access_type, const String & column = {});
-
-/// Checks a target's configured identity before the catalog is consulted, so that whether that target exists
-/// is itself covered by the grant on it. Grant-only: the `Alias` leg needs the resolved storage and stays in
-/// checkAccessToTimeSeriesTargetTable, which authorizes the identity the name resolved to.
-void checkAccessToTimeSeriesTargetTableID(
-    const StorageID & target_table_id, const ContextPtr & context, AccessType access_type, const String & column = {});
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: enables the `write_buffer_valid_utf8_finalize_throw` fail point, which affects
 # the whole server (it fires on the next `WriteBufferValidUTF8` flush anywhere), so a concurrent
 # query from another test could consume the injected fault.
@@ -25,8 +25,9 @@ echo "$RESPONSE" | grep -q -F 'FAULT_INJECTED' && echo 'the real error is report
 echo "$RESPONSE" | grep -q -i 'logical error\|out_of_range' && echo "MISMATCH: the failure degraded into a logical error: $RESPONSE" || echo 'no out-of-range error: OK'
 
 echo '--- the same for the BSON name sanitizer'
+# A non-ASCII name: an ASCII name without a zero byte is returned as is, without the sanitizer.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT write_buffer_valid_utf8_finalize_throw"
-RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}" -d "SELECT 1 AS x FORMAT BSONEachRow")
+RESPONSE=$(${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}" -d "SELECT 1 AS \`é\` FORMAT BSONEachRow")
 echo "$RESPONSE" | grep -q -F 'FAULT_INJECTED' && echo 'the real error is reported: OK' || echo "MISMATCH: $RESPONSE"
 echo "$RESPONSE" | grep -q -i 'logical error\|out_of_range' && echo "MISMATCH: the failure degraded into a logical error: $RESPONSE" || echo 'no out-of-range error: OK'
 

@@ -4,8 +4,8 @@ CREATE TABLE test_03562 (id UInt32) ENGINE = Memory;
 
 insert into test_03562 select number from numbers(10000);
 
-set enable_analyzer = 1;
 set enable_function_early_short_circuit = 1;
+set optimize_trivial_count_query = 0; -- The test asserts on `read_rows` of count subqueries; the trivial count optimization on `Memory` tables would serve them from metadata.
 
 SELECT 'Test OR short circuit with 1 (true) first operand';
 SELECT 1 OR (SELECT count(*) FROM test_03562) > 1 AS bool; -- 1
@@ -49,6 +49,12 @@ SELECT 0 AND sum(number) FROM numbers(10);
 SELECT 1 OR count() FROM numbers(10);
 SELECT 0 AND count() FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
+
+SELECT 'Test IN subqueries in discarded logical branches fall back to normal analysis';
+SELECT 1 OR (1 IN (SELECT count() FROM test_03562));
+SELECT 0 AND (1 IN (SELECT count() FROM test_03562));
+SELECT 1 OR (1 NOT IN (SELECT count() FROM test_03562));
+SELECT 1 OR (1 GLOBAL IN (SELECT count() FROM test_03562));
 
 SELECT 'Test JOIN ON scalar subqueries remain planner-safe';
 SELECT *

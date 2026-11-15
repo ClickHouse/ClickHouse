@@ -18,7 +18,6 @@ namespace DB
 namespace
 {
     using AuthType = AuthenticationType;
-    using Interface = ClientInfo::Interface;
 }
 
 DataTypeEnum8::Values getSessionAuthTypeEnumValues()
@@ -42,25 +41,6 @@ DataTypeEnum8::Values getSessionAuthTypeEnumValues()
     };
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
-    return values;
-}
-
-DataTypeEnum8::Values getSessionInterfaceEnumValues()
-{
-    DataTypeEnum8::Values values
-    {
-        {"TCP",             static_cast<Int8>(Interface::TCP)},
-        {"HTTP",            static_cast<Int8>(Interface::HTTP)},
-        {"gRPC",            static_cast<Int8>(Interface::GRPC)},
-        {"MySQL",           static_cast<Int8>(Interface::MYSQL)},
-        {"PostgreSQL",      static_cast<Int8>(Interface::POSTGRESQL)},
-        {"Local",           static_cast<Int8>(Interface::LOCAL)},
-        {"TCP_Interserver", static_cast<Int8>(Interface::TCP_INTERSERVER)},
-        {"Prometheus",      static_cast<Int8>(Interface::PROMETHEUS)},
-        {"Background",      static_cast<Int8>(Interface::BACKGROUND)},
-        {"ArrowFlight",     static_cast<Int8>(Interface::ARROW_FLIGHT)},
-    };
-    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
     return values;
 }
 

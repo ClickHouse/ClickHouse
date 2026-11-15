@@ -17,8 +17,9 @@ uint32_t BlobLinkCounts::get(const std::string & blob_key) const
     return it == counts.end() ? 1 : it->second;
 }
 
-void BlobLinkCounts::apply(const std::unordered_map<std::string, int64_t> & deltas)
+std::vector<std::string> BlobLinkCounts::apply(const std::unordered_map<std::string, int64_t> & deltas)
 {
+    std::vector<std::string> unlinked_blob_keys;
     std::lock_guard lock(mutex);
     for (const auto & [blob_key, delta] : deltas)
     {
@@ -37,6 +38,8 @@ void BlobLinkCounts::apply(const std::unordered_map<std::string, int64_t> & delt
         {
             if (it != counts.end())
                 counts.erase(it);
+            if (updated == 0)
+                unlinked_blob_keys.push_back(blob_key);
         }
         else if (it == counts.end())
         {
@@ -47,6 +50,7 @@ void BlobLinkCounts::apply(const std::unordered_map<std::string, int64_t> & delt
             it->second = static_cast<uint32_t>(updated);
         }
     }
+    return unlinked_blob_keys;
 }
 
 void BlobLinkCounts::replace(const std::unordered_map<std::string, uint32_t> & new_counts)

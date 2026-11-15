@@ -16,6 +16,7 @@
 
 #include <base/getFQDNOrHostName.h>
 
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/SessionColumnsCommon.h>
@@ -75,7 +76,7 @@ ColumnsDescription StorageSystemSessions::getColumnsDescription()
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that is used to log in."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that is used to log in."},
-        {"interface", std::make_shared<DataTypeEnum8>(getSessionInterfaceEnumValues()), "The interface from which the login is initiated."},
+        {"interface", getClientInterfaceEnum(), "The interface from which the login is initiated."},
         {"http_user_agent", std::make_shared<DataTypeString>(), "The HTTP User-Agent header, if the session is established over HTTP."},
         {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},

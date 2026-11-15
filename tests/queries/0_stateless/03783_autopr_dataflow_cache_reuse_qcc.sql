@@ -3,6 +3,7 @@
 -- long: for flaky check
 -- no-parallel: Depends on the query condition cache content (queries executed in parallel may overflow the cache size or straight away call "clear cache")
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading
@@ -12,7 +13,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 -- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
 SET max_threads=4, max_block_size=128;

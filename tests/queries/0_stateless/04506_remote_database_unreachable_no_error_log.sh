@@ -55,15 +55,15 @@ done
 # The no-error assertions are query_id-wide on purpose: no logger on the tolerated path may write an
 # Error-level line. The warning-seen ones pin each downgraded site, so the no-error checks are not vacuous.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT 'mysql_attach_no_error', count() = 0 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND level = 'Error';
-    SELECT 'mysql_attach_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'DatabaseMySQL' AND level = 'Warning';
-    SELECT 'mysql_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'mysqlxx::Pool' AND level = 'Warning';
-    SELECT 'mysql_failover_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'Application' AND level = 'Warning' AND message LIKE 'Connection to%mysql%failed%times';
-    SELECT 'pg_scan_no_error', count() = 0 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND level = 'Error';
-    SELECT 'pg_scan_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabasePostgreSQL::getTablesIterator%' AND level = 'Warning';
-    SELECT 'pg_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name = 'PostgreSQLConnectionPool' AND level = 'Warning';
-    SELECT 'pg_cleaner_no_error', count() = 0 FROM system.text_log WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND (logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' OR logger_name = 'PostgreSQLConnectionPool') AND level = 'Error';
-    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning' AND message LIKE '%127.0.0.1:1%';
+    SELECT 'mysql_attach_no_error', count() = 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${MYSQL_ATTACH_QUERY_ID}' AND level = 'Error';
+    SELECT 'mysql_attach_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'DatabaseMySQL' AND level = 'Warning';
+    SELECT 'mysql_pool_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'mysqlxx::Pool' AND level = 'Warning';
+    SELECT 'mysql_failover_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'Application' AND level = 'Warning' AND message LIKE 'Connection to%mysql%failed%times';
+    SELECT 'pg_scan_no_error', count() = 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${PG_SCAN_QUERY_ID}' AND level = 'Error';
+    SELECT 'pg_scan_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${PG_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabasePostgreSQL::getTablesIterator%' AND level = 'Warning';
+    SELECT 'pg_pool_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${PG_SCAN_QUERY_ID}' AND logger_name = 'PostgreSQLConnectionPool' AND level = 'Warning';
+    SELECT 'pg_cleaner_no_error', count() = 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND (logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' OR logger_name = 'PostgreSQLConnectionPool') AND level = 'Error';
+    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND toUnixTimestamp64Micro(event_time_microseconds) > ${RUN_START} AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning' AND message LIKE '%127.0.0.1:1%';
 "
 
 ${CLICKHOUSE_CLIENT_QUIET} -q "DROP DATABASE ${PG_DB}"

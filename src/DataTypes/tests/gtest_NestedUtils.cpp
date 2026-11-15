@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_context.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -52,12 +53,13 @@ GTEST_TEST(NestedUtils, collect)
     ASSERT_EQ(Nested::collect(source_columns).toString(), columns_with_nested.toString());
 }
 
-/// An EMPTY sample block (no rows, so no nulls) is what schema planning uses, e.g.
-/// `StorageHive::read`, so the type it yields must equal the one a null-carrying data block yields.
-/// The gtest has no global context, so `allow_nullable_tuple_in_extracted_subcolumns` reads as its
-/// default off: a TUPLE element stays plain, a deeper SCALAR leaf is `Nullable`.
+/// Schema planning and data extraction must give a tuple subcolumn the same nullable type,
+/// including when the parent column has no rows. `allow_nullable_tuple_in_extracted_subcolumns` is
+/// read from the global context, so the test needs one; its shipped default is what is asserted.
 GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlock)
 {
+    getContext();
+
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
     DataTypePtr string_type = std::make_shared<DataTypeString>();
 
@@ -74,11 +76,10 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
 
     NestedColumnExtractHelper extractor(block, /*case_insentive_=*/false);
 
-    /// Extracting the TUPLE element t.a stays plain Tuple(x UInt32, y String) with the setting off,
-    /// NOT nullable leaves.
+    /// The tuple subcolumn inherits its parent's nullability without changing its field types.
     auto col_a = extractor.extractColumn("t.a");
     ASSERT_TRUE(col_a.has_value());
-    ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
+    ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(x UInt32, y String))");
 
     /// Directly extracting the deeper SCALAR leaf t.a.x must be Nullable(UInt32), not UInt32.
     auto col_ax = extractor.extractColumn("t.a.x");
@@ -100,6 +101,8 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
 /// an empty one gives a type: a null map in the data cannot change the shape of the result.
 GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlannedType)
 {
+    getContext();
+
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
     DataTypePtr string_type = std::make_shared<DataTypeString>();
 
@@ -121,18 +124,12 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlanned
 
     auto col_a = extractor.extractColumn("t.a");
     ASSERT_TRUE(col_a.has_value());
-    ASSERT_EQ(col_a->type->getName(), "Tuple(x UInt32, y String)");
+    ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(x UInt32, y String))");
     ASSERT_EQ(col_a->column->size(), 2u);
     Field row0;
-    Field row1;
     col_a->column->get(0, row0);
-    col_a->column->get(1, row1);
     ASSERT_EQ(applyVisitor(FieldVisitorToString(), row0), "(10, 'aa')");
-    /// A `Tuple` cannot represent NULL itself, so what the parent-NULL row carries is decided by the
-    /// subcolumn path, not by this class: compare it with that path instead of pinning a value.
-    Field direct_row1;
-    nullable_tuple->getSubcolumn("a", block.getByName("t").column)->get(1, direct_row1);
-    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), applyVisitor(FieldVisitorToString(), direct_row1));
+    ASSERT_TRUE(col_a->column->isNullAt(1));
 
     /// The parent NULL reaches a scalar leaf as a real NULL.
     auto col_ax = extractor.extractColumn("t.a.x");
@@ -142,9 +139,7 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlanned
     ASSERT_TRUE(col_ax->column->isNullAt(1));
 }
 
-/// An element DECLARED `Nullable(Tuple(...))` is genuinely nullable, so its real NULL rows must
-/// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` off (its default
-/// here), unlike a wrapping synthesized from an outer struct null map, which the setting governs.
+/// Elements declared as `Nullable(Tuple(...))` retain their NULL rows during extraction.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();

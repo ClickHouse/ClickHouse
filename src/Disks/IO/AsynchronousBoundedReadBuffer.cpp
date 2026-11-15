@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     {
         use_page_cache = true;
         buffer_size = page_cache_block_size;
+        clearBufferPadding();
     }
     LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 
@@ -256,6 +258,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (prefetch_future.valid())
     {
         {
+            /// Park the CPU lease while waiting for the prefetch
+            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
@@ -281,6 +285,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
             memory.resize(buffer_size);
 
         {
+            /// Park the CPU lease during the remote read
+            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
             result = readSync(memory.data(), buffer_size);
         }
@@ -312,7 +318,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (bytes_read)
     {
         page_cache_cell = result.page_cache_cell;
-        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
+        working_buffer = use_page_cache ? WorkingBuffer(result.buf + result.offset, result.buf + result.size)
+                                        : WorkingBuffer::fromPaddedStorage(memory, result.offset, bytes_read);
         pos = working_buffer.begin();
     }
 
@@ -446,7 +453,9 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// A killed query's prefetch fails with the query's own cancellation, which the query reports itself.
+        const bool query_killed = CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled();
+        tryLogCurrentException(log, "", query_killed ? LogsLevel::debug : LogsLevel::error);
     }
 }
 

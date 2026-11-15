@@ -54,7 +54,6 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
         });
 
     auto identified_with_column = std::make_shared<DataTypeEnum8>(getSessionAuthTypeEnumValues());
-    auto interface_type_column = std::make_shared<DataTypeEnum8>(getSessionInterfaceEnumValues());
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -86,7 +85,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
-        {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
+        {"interface", getClientInterfaceEnum(), "The interface from which the login was initiated."},
         {"http_user_agent", std::make_shared<DataTypeString>(), "The HTTP User-Agent header, if the session was established over HTTP."},
 
         {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},

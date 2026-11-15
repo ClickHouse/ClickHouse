@@ -6,8 +6,6 @@
 -- The initiator cannot tell the difference on its own: `buildQueryTreeDistributed` replaces the source
 -- with a dummy built from the `Distributed` table's own columns, so the key does look resolvable there.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS shard_using_alias;
 DROP TABLE IF EXISTS dist_using_alias;
 DROP TABLE IF EXISTS other_using_alias;

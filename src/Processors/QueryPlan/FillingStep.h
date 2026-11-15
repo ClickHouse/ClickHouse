@@ -21,11 +21,19 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     const SortDescription & getSortDescription() const override { return sort_description; }
     const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    QueryPlanStepPtr clone() const override;
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;
