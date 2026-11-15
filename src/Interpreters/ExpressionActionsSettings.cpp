@@ -9,6 +9,7 @@ namespace Setting
 {
     extern const SettingsBool compile_expressions;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
     extern const SettingsUInt64 max_temporary_columns;
     extern const SettingsUInt64 max_temporary_non_const_columns;
     extern const SettingsUInt64 min_count_to_compile_expression;
@@ -23,6 +24,7 @@ ExpressionActionsSettings::ExpressionActionsSettings(const Settings & from, Comp
     max_temporary_non_const_columns = from[Setting::max_temporary_non_const_columns];
     compile_expressions = compile_expressions_;
     short_circuit_function_evaluation = from[Setting::short_circuit_function_evaluation];
+    short_circuit_function_evaluation_reorder_arguments = from[Setting::short_circuit_function_evaluation_reorder_arguments];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
 }
 

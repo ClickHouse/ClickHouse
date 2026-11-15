@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS nested_m_t1;
 DROP TABLE IF EXISTS nested_m_t2a;

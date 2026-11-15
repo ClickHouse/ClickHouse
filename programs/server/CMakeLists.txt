@@ -1,4 +1,5 @@
 set(CLICKHOUSE_SERVER_SOURCES
+    FilesystemIsolationPaths.cpp
     MetricsTransmitter.cpp
     Server.cpp
 )
@@ -32,7 +33,3 @@ set_source_files_properties(Server.cpp PROPERTIES OBJECT_DEPENDS
 clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
-
-if (ENABLE_FUZZING)
-    add_subdirectory(fuzzers)
-endif()

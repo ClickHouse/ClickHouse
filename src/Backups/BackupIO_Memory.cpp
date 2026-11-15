@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -83,6 +84,12 @@ void BackupWriterMemory::removeEmptyDirectories()
         backup_in_memory->drop();
 }
 
+void BackupWriterMemory::removeEmptyRootDirectory()
+{
+    if (backup_in_memory->isEmpty())
+        backup_in_memory->drop();
+}
+
 
 void registerBackupEngineMemory(BackupFactory & factory);
 
@@ -112,7 +119,16 @@ void registerBackupEngineMemory(BackupFactory & factory)
         }
     };
 
-    factory.registerBackupEngine("Memory", creator_fn);
+    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Memory backup destinations do not have a persistent identity");
+    };
+
+    /// No external location: nothing to authorize against the SOURCES grant model.
+    auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
+        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+
+    factory.registerBackupEngine("Memory", creator_fn, destination_identity_fn, source_access_fn, credentialFreeBackupSecretArguments(1));
 }
 
 }

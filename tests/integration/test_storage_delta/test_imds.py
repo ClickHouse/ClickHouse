@@ -47,6 +47,9 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/use_environment_credentials.xml",
             ],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
+            ],
             env_variables={
                 "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
             },

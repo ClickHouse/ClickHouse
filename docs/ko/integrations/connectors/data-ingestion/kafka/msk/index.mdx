@@ -1,0 +1,193 @@
+---
+sidebarTitle: 'Amazon MSK와 Kafka Connector 싱크'
+slug: /integrations/kafka/cloud/amazon-msk/
+description: 'Amazon MSK용 ClickHouse 공식 Kafka Connector'
+keywords: ['통합', 'Kafka', 'amazon msk', '싱크', 'connector']
+title: 'Amazon MSK와 ClickHouse 통합'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/6lKI_WlQ3-s"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+> 참고: 동영상에 나온 정책은 권한 범위가 넓으며 Quick Start 용도로만 사용하기 위한 것입니다. 아래의 최소 권한 IAM 지침을 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+다음에 익숙하다고 가정합니다:
+
+* [ClickHouse Connector Sink](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)를 잘 알고 있습니다.
+* Amazon MSK 및 MSK Connectors를 잘 알고 있습니다. Amazon MSK [시작하기 가이드](https://docs.aws.amazon.com/msk/latest/developerguide/getting-started.html)와 [MSK Connect 가이드](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect.html)를 참고하는 것을 권장합니다.
+
+<div id="the-official-kafka-connector-from-clickhouse-with-amazon-msk">
+  ## Amazon MSK용 ClickHouse 공식 Kafka Connector
+</div>
+
+<div id="gather-your-connection-details">
+  ### 연결 정보 확인
+</div>
+
+<ConnectionDetails />
+
+<div id="steps">
+  ### 단계
+</div>
+
+1. [ClickHouse Connector Sink](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)를 숙지하십시오.
+2. [MSK 인스턴스를 생성](https://docs.aws.amazon.com/msk/latest/developerguide/create-cluster.html)하십시오.
+3. [IAM role을 생성하고 할당](https://docs.aws.amazon.com/msk/latest/developerguide/create-client-iam-role.html)하십시오.
+4. ClickHouse Connect Sink의 [릴리스 페이지](https://github.com/ClickHouse/clickhouse-kafka-connect/releases)에서 `jar` 파일을 다운로드하십시오.
+5. 다운로드한 `jar` 파일을 Amazon MSK 콘솔의 [사용자 지정 플러그인 페이지](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-plugins.html)에 설치하십시오.
+6. connector가 퍼블릭 ClickHouse 인스턴스와 통신하는 경우 [인터넷 액세스를 활성화](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html)하십시오.
+7. config에 토픽 이름, ClickHouse 인스턴스 호스트명, 비밀번호를 지정하십시오.
+
+```yml
+connector.class=com.clickhouse.kafka.connect.ClickHouseSinkConnector
+tasks.max=1
+topics=<topic_name>
+ssl=true
+security.protocol=SSL
+hostname=<hostname>
+database=<database_name>
+password=<password>
+ssl.truststore.location=/tmp/kafka.client.truststore.jks
+port=8443
+value.converter.schemas.enable=false
+value.converter=org.apache.kafka.connect.json.JsonConverter
+exactlyOnce=true
+username=default
+schemas.enable=false
+```
+
+<div id="iam-least-privilege">
+  ## 권장 IAM 권한(최소 권한 원칙)
+</div>
+
+구성에 필요한 최소한의 권한만 사용하십시오. 아래의 기본 권한부터 시작하고, 실제로 사용하는 경우에만 선택적 서비스를 추가하십시오.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MSKClusterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kafka:DescribeCluster",
+        "kafka:GetBootstrapBrokers",
+        "kafka:DescribeClusterV2",
+        "kafka:ListClusters",
+        "kafka:ListClustersV2"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KafkaAuthorization",
+      "Effect": "Allow",
+      "Action": [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeCluster",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:ReadData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalGlueSchemaRegistry",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetSchema*",
+        "glue:ListSchemas",
+        "glue:ListSchemaVersions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalSecretsManager",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:<region>:<account-id>:secret:<your-secret-name>*"
+      ]
+    },
+    {
+      "Sid": "OptionalS3Read",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::<your-bucket>/<optional-prefix>/*"
+    }
+  ]
+}
+```
+
+* AWS Glue Schema Registry를 사용할 때만 Glue 블록을 사용하세요.
+* Secrets Manager에서 자격 증명/트러스트스토어를 가져올 때만 Secrets Manager 블록을 사용하세요. ARN 범위를 필요한 리소스로 한정하세요.
+* S3에서 아티팩트(예: 트러스트스토어)를 로드할 때만 S3 블록을 사용하세요. 버킷/프리픽스로 범위를 한정하세요.
+
+관련 항목: [Kafka 모범 사례 – IAM](/ko/integrations/clickpipes/kafka/best-practices#iam).
+
+<div id="performance-tuning">
+  ## 성능 튜닝
+</div>
+
+성능을 향상하는 방법 중 하나는 다음 내용을 **worker** 구성에 추가하여 배치 크기와 Kafka에서 가져올 레코드 수를 조정하는 것입니다:
+
+```yml
+consumer.max.poll.records=[NUMBER OF RECORDS]
+consumer.max.partition.fetch.bytes=[NUMBER OF RECORDS * RECORD SIZE IN BYTES]
+```
+
+사용할 값은 원하는 레코드 수와 레코드 크기에 따라 달라집니다. 예를 들어, 기본값은 다음과 같습니다:
+
+```yml
+consumer.max.poll.records=500
+consumer.max.partition.fetch.bytes=1048576
+```
+
+자세한 내용(구현 세부 사항과 기타 고려 사항 포함)은 공식 [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) 및
+[Amazon MSK](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-workers.html#msk-connect-create-custom-worker-config) 문서에서 확인할 수 있습니다.
+
+<div id="notes-on-networking-for-msk-connect">
+  ## MSK Connect용 네트워킹 관련 참고 사항
+</div>
+
+MSK Connect가 ClickHouse에 연결할 수 있도록, 인터넷 액세스를 위해 Private NAT가 연결된 프라이빗 서브넷에 MSK 클러스터를 배치하는 것을 권장합니다. 설정 방법은 아래에 설명되어 있습니다. 퍼블릭 서브넷도 지원되지만, ENI에 Elastic IP 주소를 지속적으로 할당해야 하므로 권장하지 않습니다. 자세한 내용은 [AWS 문서](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html)를 참조하십시오.
+
+1. **프라이빗 서브넷 생성:** VPC 내에 새 서브넷을 생성하고 프라이빗 서브넷으로 지정합니다. 이 서브넷은 인터넷에 직접 액세스할 수 없어야 합니다.
+2. **NAT 게이트웨이 생성:** VPC의 퍼블릭 서브넷에 NAT gateway를 생성합니다. NAT gateway를 사용하면 프라이빗 서브넷의 인스턴스가 인터넷이나 다른 AWS 서비스에 연결할 수 있지만, 인터넷에서 해당 인스턴스로 연결을 시작하는 것은 차단됩니다.
+3. **라우팅 테이블 업데이트:** 인터넷으로 향하는 트래픽이 NAT gateway로 전달되도록 경로를 추가합니다.
+4. **Security Group 및 네트워크 ACL 구성 확인:** 관련 트래픽이 허용되도록 [security groups](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html) 및 [network ACLs (Access Control Lists)](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html)를 구성합니다.
+   1. MSK Connect worker ENI에서 MSK brokers의 TLS 포트(일반적으로 9094)로 가는 트래픽.
+   2. MSK Connect worker ENI에서 ClickHouse endpoint의 9440(네이티브 TLS) 또는 8443(HTTPS)으로 가는 트래픽.
+   3. broker SG에서 MSK Connect worker SG의 인바운드 트래픽을 허용합니다.
+   4. 자체 호스팅 ClickHouse를 사용하는 경우 server에 구성된 포트(기본값: HTTP용 8123)를 엽니다.
+5. **MSK에 Security Group 연결:** 이러한 security groups가 MSK 클러스터와 MSK Connect workers에 연결되어 있는지 확인합니다.
+6. **ClickHouse Cloud 연결성:**
+   1. 퍼블릭 endpoint + IP 허용 목록: 프라이빗 서브넷에서의 NAT 이그레스가 필요합니다.
+   2. 지원되는 경우 프라이빗 연결(예: VPC peering/PrivateLink/VPN)을 사용합니다. VPC DNS 호스트명/해상도가 활성화되어 있고 DNS가 프라이빗 endpoint를 확인할 수 있는지 점검하십시오.
+7. **연결성 검증(빠른 체크리스트):**
+   1. connector 환경에서 MSK bootstrap DNS를 확인하고 TLS를 통해 broker 포트에 연결합니다.
+   2. 9440 포트(또는 HTTPS의 경우 8443 포트)에서 ClickHouse에 대한 TLS connection을 설정합니다.
+   3. AWS 서비스(Glue/Secrets Manager)를 사용하는 경우 해당 endpoints로의 이그레스를 허용합니다.
