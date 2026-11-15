@@ -184,7 +184,10 @@ TEST(SerializationIsColumnCompatible, TupleChecksNestedElements)
         SerializationNamed::create(SerializationSparse::create(SerializationString::create()), "s", ISerialization::Substream::TupleElement)));
     element_serializations.push_back(std::static_pointer_cast<const SerializationNamed>(
         SerializationNamed::create(SerializationString::create(), "t", ISerialization::Substream::TupleElement)));
-    const auto serialization = SerializationTuple::create(std::move(element_serializations), /*has_explicit_names=*/true);
+    const auto serialization = SerializationTuple::create(
+        std::move(element_serializations),
+        DataTypes{DataTypeFactory::instance().get("String"), DataTypeFactory::instance().get("String")},
+        /*has_explicit_names=*/true);
 
     const auto plain_tuple = ColumnTuple::create(Columns{ColumnString::create(), ColumnString::create()});
     EXPECT_FALSE(serialization->isColumnCompatible(*plain_tuple));

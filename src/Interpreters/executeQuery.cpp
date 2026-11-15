@@ -310,6 +310,8 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char segfault_read_access[];
+    extern const char segfault_write_access[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -3208,6 +3210,9 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Before the workload classifier is acquired in insert: metadata queries are exempt from workload scheduling.
+            if (out_ast && isMetadataQuery(*out_ast))
+                context->setMetadataQuery();
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -4337,6 +4342,16 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         fiu_do_on(FailPoints::trigger_sanitizer_error,
         {
             triggerSanitizerError();
+        });
+
+        fiu_do_on(FailPoints::segfault_read_access,
+        {
+            [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16);
+        });
+
+        fiu_do_on(FailPoints::segfault_write_access,
+        {
+            *reinterpret_cast<volatile int *>(16) = 1;
         });
     }
 

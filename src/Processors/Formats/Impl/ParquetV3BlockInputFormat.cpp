@@ -1,4 +1,5 @@
 #include <memory>
+#include <numeric>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <optional>
@@ -534,6 +535,12 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
         && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
 }
 
+bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
+{
+    return reader
+        && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
+}
+
 Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
 {
     if (!buckets_to_read)
@@ -847,11 +854,35 @@ VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitForParal
         bucket->is_split_for_parallel_reading = true;
         bucket->row_group_ids.reserve(row_groups.size() / num_buckets + 1);
     }
+    VectorWithMemoryTracking<double> bucket_rows(num_buckets);
+    VectorWithMemoryTracking<double> bucket_bytes(num_buckets);
+    double total_rows = 0;
+    double total_bytes = 0;
     for (size_t i = 0; i < row_groups.size(); ++i)
+    {
+        const auto & row_group = metadata.row_groups[row_groups[i]];
+        const double rows = static_cast<double>(row_group.num_rows);
+        const double bytes = static_cast<double>(std::max<Int64>(row_group.total_byte_size, 0));
         buckets[i % num_buckets]->row_group_ids.push_back(row_groups[i]);
-    buckets.front()->keeps_filter_column_statistics = true;
+        bucket_rows[i % num_buckets] += rows;
+        bucket_bytes[i % num_buckets] += bytes;
+        total_rows += rows;
+        total_bytes += bytes;
+    }
 
-    return {buckets.begin(), buckets.end()};
+    VectorWithMemoryTracking<double> bucket_sizes(num_buckets);
+    for (size_t b = 0; b < num_buckets; ++b)
+        bucket_sizes[b] = std::max(bucket_rows[b] / total_rows, total_bytes > 0 ? bucket_bytes[b] / total_bytes : 0.0);
+    VectorWithMemoryTracking<size_t> order(num_buckets);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return bucket_sizes[a] > bucket_sizes[b]; });
+
+    VectorWithMemoryTracking<FileBucketInfoPtr> result;
+    result.reserve(num_buckets);
+    for (size_t b : order)
+        result.push_back(buckets[b]);
+    buckets[order.front()]->keeps_filter_column_statistics = true;
+    return result;
 }
 
 VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets_)
@@ -945,7 +976,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::nullopt,
             is_remote_fs
         );
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings &)
     {

@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Se publican wheels del núcleo para CPython 3.10 a 3.14 y para CPython 3.14t free-threaded en Linux, macOS y Windows. En Python free-threaded, importar la extensión del núcleo no vuelve a habilitar el GIL.
+Se publican wheels del núcleo para CPython 3.10 a 3.15 y para CPython 3.14t y 3.15t free-threaded en Linux, macOS y Windows. En Python free-threaded, importar la extensión del núcleo no vuelve a habilitar el GIL.
 
 La salida estándar de NumPy y Pandas en Rust no requiere PyArrow ni ningún otro paquete de Arrow. Esto incluye `query_np`, `query_df`, sus variantes de streaming y `query(..., use_numpy=True)`. Las consultas de NumPy no requieren Pandas. Agregue el extra `async` para usar el Client asíncrono.
 
@@ -81,13 +81,15 @@ Las llamadas a `query()` almacenadas temporalmente en el búfer sobre resultados
 
 Haz un benchmark de tu propia carga de trabajo antes de adoptar el códec. Usa `native_codec="rust_strict"` mientras mides, de modo que una opción no soportada o una dependencia faltante lance un error en lugar de redirigir silenciosamente la consulta a Python.
 
-## Reglas de fallback {#fallback-rules}
+## Reglas de alternativa de respaldo {#fallback-rules}
 
-Las decisiones de fallback se toman antes de leer o enviar ningún byte, por lo que nunca se produce un cambio de códec a mitad del stream. En las queries, la elección ocurre antes de consumir el response body. En los inserts, el codificador de Rust solo se selecciona cuando todos los tipos de columna son compatibles; de lo contrario, todo el insert se ejecuta con el códec de Python.
+Las decisiones de alternativa de respaldo se toman antes de leer o enviar ningún byte, por lo que nunca se produce un cambio de códec a mitad del stream. En las consultas, la elección ocurre antes de consumir el response body. En las inserciones, el codificador de Rust solo se selecciona cuando todos los tipos de columna son compatibles; de lo contrario, toda la inserción se ejecuta con el códec de Python.
 
-Cuando `naive_datetime_insert="server"` está activo, `rust` deriva al códec de Python cualquier insert que contenga alguna columna `DateTime` o `DateTime64`, de modo que se aplique el timezone declarado de la columna o el server timezone. `rust_strict` rechaza esa combinación. El modo predeterminado `naive_datetime_insert="local"` sigue utilizando el codificador de Rust.
+Cuando `naive_datetime_insert="server"` está activo, `rust` deriva al códec de Python cualquier inserción que contenga alguna columna `DateTime` o `DateTime64`, de modo que se aplique la zona horaria declarada de la columna o la zona horaria del servidor. `rust_strict` rechaza esa combinación. El modo predeterminado `naive_datetime_insert="local"` sigue utilizando el codificador de Rust.
 
-Las queries de metadata internas del driver, incluidas las sentencias de reflection del dialect de SQLAlchemy, siempre usan el códec de Python, de forma silenciosa, en todos los modos.
+Las consultas de filas y columnas de Python (`query`, `query_row_block_stream`, `query_column_block_stream` y `query_rows_stream`) cuyas columnas `DateTime` o `DateTime64` sin zona horaria se representan en una zona horaria del entorno distinta de UTC (ya sea la zona horaria del servidor o la local) usan el códec de Rust cuando el core instalado lo admite. Los valores coinciden con los del códec de Python. La zona horaria local solo es válida cuando se resuelve en un nombre IANA, es decir, cuando `TZ` está definida o `tzlocal` está instalado. En caso contrario, se trata de un desplazamiento fijo sin nombre IANA y se dirige al códec de Python. Las consultas de NumPy y Pandas (`query_np`, `query_df` y sus variantes de streaming) con una zona horaria del entorno distinta de UTC, así como las consultas que establecen `query_tz`, `column_tzs` o un `tz_mode` distinto del predeterminado, o que reciben un encabezado de zona horaria del servidor, se siguen dirigiendo al códec de Python. `rust_strict` rechaza esos casos.
+
+Las consultas de metadata internas del driver, incluidas las sentencias de reflection del dialect de SQLAlchemy, siempre usan el códec de Python, de forma silenciosa, en todos los modos.
 
 Los payloads Native malformados que detecta el códec de Rust generan `DataError`.
 
@@ -100,6 +102,8 @@ pip install --upgrade clickhouse-connect-core
 ```
 
 Las correcciones y las mejoras del rendimiento en el códec compilado se publican como versiones de `clickhouse-connect-core` y pueden incorporarse actualizando a un wheel de core compatible. Los cambios en la integración de Rust del driver requieren actualizar `clickhouse-connect`.
+
+La compatibilidad de Rust con las consultas de filas y columnas de Python en zonas horarias del entorno distintas de UTC requiere `clickhouse-connect>=1.11.0` y `clickhouse-connect-core>=0.2.3`. Actualice ambos paquetes para habilitarla. Las versiones anteriores de core compatibles conservan la alternativa de respaldo de Python existente en el modo `rust` y el rechazo en el modo `rust_strict`.
 
 ## Diferencias de comportamiento conocidas {#known-behavior-differences}
 

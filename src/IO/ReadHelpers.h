@@ -152,9 +152,12 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
+/// Appends bytes to `s` until it holds `size` of them, extending it only by what the buffer already has.
+template <typename Allocator>
+void readStringGrowing(std::basic_string<char, std::char_traits<char>, Allocator> & s, size_t size, ReadBuffer & buf);
+
 /// Templated on the allocator so this works with both `std::string` and
-/// `StringWithMemoryTracking` (and any other `std::basic_string<char>` with
-/// a custom allocator).
+/// `StringWithMemoryTracking`.
 template <typename Allocator>
 inline void readStringBinary(std::basic_string<char, std::char_traits<char>, Allocator> & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
@@ -164,8 +167,8 @@ inline void readStringBinary(std::basic_string<char, std::char_traits<char>, All
     if (size > max_string_size)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
 
-    s.resize(size);
-    buf.readStrict(s.data(), size);
+    s.clear();
+    readStringGrowing(s, size, buf);
 }
 
 inline void skipStringBinary(ReadBuffer & buf)
@@ -175,9 +178,8 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
-/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
-/// to the declared size first, so that a size declared by the peer cannot become an allocation on
-/// its own when the payload never follows.
+/// The same as `readStringBinary`, but input that ends before the declared size throws
+/// `ATTEMPT_TO_READ_AFTER_EOF` instead of `CANNOT_READ_ALL_DATA`.
 void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
 
 /// For historical reasons we store IPv6 as a String
@@ -198,8 +200,7 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 
 /// The element count is read from `buf` and the vector is resized to it before the elements are
 /// read, so where the count comes from an untrusted peer, pass a `max_size` that the data can
-/// plausibly have instead of relying on the default. A `String` element is resized to its declared
-/// size before its value arrives in the same way, so `max_element_size` bounds it as well.
+/// plausibly have instead of relying on the default. `max_element_size` bounds the size of a `String` element.
 template <StdVector V>
 void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE, size_t max_element_size = DEFAULT_MAX_STRING_SIZE)
 {
