@@ -131,19 +131,19 @@ Define o modo de correspondência de nomes de colunas ao fazer a ingestão de da
 Modos compatíveis:
 
 * match&#95;case: faz a correspondência com distinção entre maiúsculas e minúsculas
-  * ignore&#95;case: faz a correspondência sem distinção entre maiúsculas e minúsculas
-  * auto: primeiro tenta fazer a correspondência com distinção entre maiúsculas e minúsculas; se falhar, tenta fazer a correspondência sem distinção entre maiúsculas e minúsculas.
+* ignore&#95;case: faz a correspondência sem distinção entre maiúsculas e minúsculas
+* auto: primeiro tenta fazer a correspondência com distinção entre maiúsculas e minúsculas; se falhar, tenta fazer a correspondência sem distinção entre maiúsculas e minúsculas.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nova configuração para permitir a análise e o processamento dos dados restantes no buffer caso a conexão seja fechada inesperadamente"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nova configuração para permitir o parsing e o processamento dos dados restantes no buffer caso a conexão seja fechada inesperadamente"}]}]} />
 
-Quando esta opção está ativada, se a conexão for fechada inesperadamente, quaisquer dados restantes no buffer serão analisados e processados em vez de serem tratados como erro
+Quando esta opção está ativada, se a conexão for fechada inesperadamente, quaisquer dados restantes no buffer passarão por parsing e serão processados em vez de serem tratados como erro
 
 <Note>
-  Ativar esta opção desabilita a análise paralela e torna a desduplicação impossível
+  Ativar esta opção desabilita o parsing paralelo e torna a desduplicação impossível
 </Note>
 
 ## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
@@ -856,7 +856,7 @@ Valores possíveis:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nova configuração para usar colunas geo em um arquivo Parquet"}]}]} />
 
-Usar o parser de colunas geo para converter Array(UInt8) nos tipos Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+Ao ler arquivos Parquet, decodifica colunas de geometria como tipos geográficos do ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). Aplica-se às colunas descritas pelo metadado `geo` do GeoParquet e às colunas anotadas com o tipo lógico `GEOMETRY` ou `GEOGRAPHY` do Parquet. Se desabilitada, essas colunas são lidas como `String` contendo os bytes brutos em WKB (ou WKT), a menos que um tipo geográfico seja solicitado explicitamente.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -879,6 +879,14 @@ Ao ler arquivos Parquet, ignore grupos inteiros de linhas com base nas expressõ
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignora a distinção entre maiúsculas e minúsculas ao corresponder colunas do Parquet com colunas CH.
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para ler colunas variant do Spark, que não têm o tipo lógico `VARIANT`, como `Dynamic` em vez de `Tuple`"}]}]} />
+
+Lê como variant, ou seja, como `Dynamic` em vez de `Tuple`, um grupo Parquet que não tem o tipo lógico `VARIANT`, mas que tem o layout de um variant não fragmentado (um campo `metadata` e um campo `value`, ambos do tipo `BYTE_ARRAY`). O Spark 4.0 grava colunas variant dessa forma. Grupos anotados com o tipo lógico `VARIANT` são sempre lidos como variant.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -914,9 +922,9 @@ Ao ler arquivos Parquet, ignore grupos de linhas inteiros com base nas expressõ
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para substituir o tamanho adaptativo da leitura inicial do rodapé do Parquet por um número fixo de bytes; 0 mantém o comportamento adaptativo."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para o tamanho da leitura inicial do rodapé do Parquet; 0 lê 64 KiB de um arquivo local e dimensiona a leitura de forma adaptativa para outras fontes."}]}]} />
 
-Tamanho (em bytes) da leitura inicial do final do arquivo que obtém o rodapé do Parquet (`FileMetaData`) ao abrir um arquivo com o leitor v3. Com `0` (padrão), a leitura é dimensionada de forma adaptativa conforme o arquivo — 1% do tamanho do arquivo, limitado a `[128 KiB, 2 MiB]` —, de modo que normalmente cobre todo o rodapé em uma única leitura, mesmo em arquivos largos com centenas de colunas. Defina um valor diferente de zero para forçar um tamanho fixo de leitura inicial em vez do adaptativo. Isso é útil em armazenamento de objetos com latência muito alta, no qual ler de antemão um trecho final maior evita uma segunda ida e volta (round trip). O valor é limitado ao tamanho do arquivo.
+Tamanho (em bytes) da leitura inicial do final do arquivo que obtém o rodapé do Parquet (`FileMetaData`) ao abrir um arquivo com o leitor v3. Com `0` (padrão), é lido um trecho final de 64 KiB quando o arquivo é lido diretamente do sistema de arquivos local e, para outras fontes (armazenamento de objetos, URL, HDFS), a leitura é dimensionada de forma adaptativa — 1% do tamanho do arquivo, limitado a `[128 KiB, 2 MiB]` —, de modo que normalmente cobre todo o rodapé em uma única leitura, mesmo em arquivos largos com centenas de colunas. Defina um valor diferente de zero para forçar um tamanho fixo de leitura inicial em vez do adaptativo. Isso é útil em armazenamento de objetos com latência muito alta, no qual ler de antemão um trecho final maior evita uma segunda ida e volta (round trip). O valor é limitado ao tamanho do arquivo.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 

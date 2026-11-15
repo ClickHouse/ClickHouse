@@ -19,20 +19,25 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from test_storage_s3.test_sts import run_s3_mocks
 
 cluster = ClickHouseCluster(__file__)
+
+# Ambient credentials of the server. Only the STS call is signed with them.
+AWS_ENV = {"AWS_ACCESS_KEY_ID": "aws", "AWS_SECRET_ACCESS_KEY": "aws123"}
 
 node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/iceberg_rest_catalog.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
         "configs/ssl_conf.xml",
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
     ],
     user_configs=["configs/users.xml"],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
@@ -43,20 +48,43 @@ node_aux = cluster.add_instance(
     main_configs=[
         "configs/iceberg_rest_catalog_aux.xml",
         "configs/auxiliary_zookeeper.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
     ],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
 )
+
+# Mock STS. It hands out the MinIO credentials when the session name and external id match.
+sts = cluster.add_instance(
+    name="sts.amazonaws.com",
+    hostname="sts.amazonaws.com",
+    image="clickhouse/python-bottle",
+    tag="latest",
+    stay_alive=True,
+)
+sts.stop_clickhouse(kill=True)
 
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
-KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+KEEPER_PARENT = "/clickhouse/iceberg_rest_catalog"
+KEEPER_ROOT = f"{KEEPER_PARENT}/my_warehouse"
+# Incarnation of `my_warehouse` on both nodes.
+WAREHOUSE_UUID = str(uuid.uuid4())
+KEEPER_STORE_ROOT = f"{KEEPER_ROOT}/{WAREHOUSE_UUID}"
+FORMAT_VERSION = 3
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
+ROLE_SESSION_NAME = "miniorole"
+EXTERNAL_ID = "miniexternalid"
+CREDENTIAL = {
+    "type": "aws_role",
+    "role_arn": "arn:aws:iam::123456789012:role/warehouse",
+    "external_id": EXTERNAL_ID,
+    "role_session_name": ROLE_SESSION_NAME,
+}
 
 # Iceberg JSON schema as a client sends it in CreateTableRequest.
 DEFAULT_SCHEMA = {
@@ -84,16 +112,37 @@ def wait_catalog_ready(timeout=60, instance=None):
     raise AssertionError("Catalog port did not start accepting connections")
 
 
+def warehouse_definition(base_location, warehouse_uuid, credential=CREDENTIAL):
+    return {"format_version": FORMAT_VERSION, "uuid": warehouse_uuid, "base_location": base_location, "credential": credential}
+
+
+# TODO: Replace with `POST /management/v1/warehouses` when the management API lands.
+def create_warehouse_in_keeper(name, base_location, keeper_parent=KEEPER_PARENT, credential=CREDENTIAL, warehouse_uuid=None):
+    warehouse_uuid = warehouse_uuid or str(uuid.uuid4())
+    path = f"{keeper_parent}/{name}"
+    zk = get_keeper()
+    zk.create(path, json.dumps(warehouse_definition(base_location, warehouse_uuid, credential)).encode(), makepath=True)
+    zk.create(f"{path}/{warehouse_uuid}/namespaces", makepath=True)
+    zk.create(f"{path}/{warehouse_uuid}/tables_by_uuid")
+    return path
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     global keeper
     try:
         cluster.start()
+        run_s3_mocks(cluster, [ROLE_SESSION_NAME, EXTERNAL_ID])
         # One Keeper session for the whole module. It reconnects on its own if Keeper restarts.
         keeper = cluster.get_kazoo_client("zoo1")
         keeper.ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
+        create_warehouse_in_keeper("my_warehouse", BASE_LOCATION, warehouse_uuid=WAREHOUSE_UUID)
+        # The aux Keeper is chrooted to /aux_root. A bucket root with a trailing slash as the base location.
+        create_warehouse_in_keeper(
+            "my_warehouse", f"s3://{BUCKET}/", keeper_parent=f"/aux_root{KEEPER_PARENT}", warehouse_uuid=WAREHOUSE_UUID
+        )
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
         yield cluster
@@ -210,6 +259,16 @@ def drop_table(ns, table, expected_code=204, auth=None):
     )
 
 
+def rename_table(source_ns, source, dest_ns, dest, expected_code=204, auth=None):
+    body = {
+        "source": {"namespace": source_ns, "name": source},
+        "destination": {"namespace": dest_ns, "name": dest},
+    }
+    return catalog_request(
+        "POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=expected_code, auth=auth
+    )
+
+
 def metadata_key(metadata_location):
     prefix = f"s3://{BUCKET}/"
     assert metadata_location.startswith(prefix), metadata_location
@@ -299,6 +358,7 @@ def test_config(started_cluster):
     assert result["defaults"] == {}
     assert result["endpoints"] == [
         "GET /v1/config",
+        "POST /v1/{prefix}/tables/rename",
         "GET /v1/{prefix}/namespaces",
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
@@ -310,6 +370,7 @@ def test_config(started_cluster):
         "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics",
     ]
 
     response = catalog_request("GET", "/v1/config", expected_code=400)
@@ -317,6 +378,11 @@ def test_config(started_cluster):
 
     response = catalog_request(
         "GET", "/v1/config", params={"warehouse": "unknown"}, expected_code=404
+    )
+    assert_error_shape(response, "NoSuchWarehouseException")
+
+    response = catalog_request(
+        "GET", "/v1/config", params={"warehouse": ""}, expected_code=404
     )
     assert_error_shape(response, "NoSuchWarehouseException")
 
@@ -480,11 +546,6 @@ def test_malformed_create_namespace(started_cluster):
 
 def test_not_implemented(started_cluster):
     response = catalog_request(
-        "POST", "/v1/my_warehouse/tables/rename", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    response = catalog_request(
         "POST", "/v1/my_warehouse/namespaces/sales/register", expected_code=406
     )
     assert_error_shape(response, "UnsupportedOperationException")
@@ -522,7 +583,7 @@ def test_error_response_keeps_connection_usable(started_cluster):
     try:
         for path, expected_code in [
             ("/v1/other_warehouse/namespaces/ns/tables", 404),
-            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+            ("/v1/my_warehouse/namespaces/ns/register", 406),
         ]:
             connection.request(
                 "POST", path, body=body, headers={"Content-Type": "application/json"}
@@ -588,7 +649,7 @@ def test_survives_server_restart(started_cluster):
     assert response.status_code == 204, response.text
 
     zk = get_keeper()
-    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
+    assert zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
 
 
 def test_authentication(started_cluster):
@@ -657,6 +718,8 @@ def test_table_ddl_rejects_readonly(started_cluster):
         response = create_table(ns, "forbidden", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
         response = drop_table(ns, "existing", auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+        response = rename_table([ns], "existing", [ns], "renamed", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
 
     response = commit_table(ns, "existing", [], [], auth=("readonly_user", ""), expected_code=403)
@@ -737,30 +800,139 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
 
+def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
+    # A location is an object key, so it may hold characters that a URI cannot.
+    suffix = uuid.uuid4().hex[:8]
+    directories = {
+        f"client_location_{suffix}": "a b \u00e9#50%",
+        # Readable before with `%41` read literally, so it must stay that way.
+        f"client_location_q_{suffix}": "q?x%41y",
+    }
+    for ns, directory in directories.items():
+        create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
+        create_table(ns, "events")
+    encoded_ns = f"client_location_e_{suffix}"
+    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
+    create_table(encoded_ns, "events")
+
+    node.query(f"""
+        DROP DATABASE IF EXISTS rest_client_location_db;
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE rest_client_location_db
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+    try:
+        for ns in directories:
+            assert node.query(f"SELECT count() FROM rest_client_location_db.`{ns}.events`") == "0\n"
+        # A location the catalog returns already encoded keeps its escape.
+        assert f"/custom/{encoded_ns}/a%20b/events" in node.query(
+            f"SHOW CREATE TABLE rest_client_location_db.`{encoded_ns}.events`"
+        )
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_client_location_db")
+
+
+def test_clickhouse_client_creates_table(started_cluster):
+    """A pathless CREATE TABLE lets the embedded catalog choose the location and write the first metadata file."""
+    ns = f"client_create_{uuid.uuid4().hex[:8]}"
+    db = "rest_client_create_db"
+    node.query(f"""
+        DROP DATABASE IF EXISTS {db};
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE {db}
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+
+    def create_query(table, if_not_exists=False):
+        clause = "IF NOT EXISTS " if if_not_exists else ""
+        return f"CREATE TABLE {clause}{db}.`{ns}.{table}` (id Int64, name String) ENGINE = IcebergS3"
+
+    create_settings = {"allow_experimental_database_iceberg": 1}
+
+    try:
+        # The client creates the namespace on the way.
+        node.query(create_query("events"), settings=create_settings)
+        assert [ns] in list_namespaces()
+
+        result = catalog_request("GET", tables_url(ns, "events")).json()
+        location = result["metadata"]["location"]
+        table_uuid = result["metadata"]["table-uuid"]
+        assert location == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
+        assert result["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
+
+        node.query(create_query("events", if_not_exists=True), settings=create_settings)
+        error = node.query_and_get_error(create_query("events"), settings=create_settings)
+        assert "already exists" in error, error
+
+        # The catalog schema has no column kinds, so a special column cannot be sent.
+        error = node.query_and_get_error(
+            f"CREATE TABLE {db}.`{ns}.special` (id Int64, doubled Int64 MATERIALIZED id * 2) ENGINE = IcebergS3",
+            settings=create_settings,
+        )
+        assert "Special columns" in error, error
+
+        # The server does not implement UpdateTable yet, so the table stays empty.
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.events`") == "0\n"
+
+        # The codec setting reaches the catalog as a table property, so the catalog writes a gzip file.
+        node.query(create_query("zipped"), settings={**create_settings, "iceberg_metadata_compression_method": "gzip"})
+        result = catalog_request("GET", tables_url(ns, "zipped")).json()
+        assert result["metadata"]["properties"] == {"write.metadata.compression-codec": "gzip"}
+        assert result["metadata-location"].endswith(".gz.metadata.json")
+        assert node.query(f"SELECT count() FROM {db}.`{ns}.zipped`") == "0\n"
+
+        # PARTITION BY becomes the partition spec and ORDER BY becomes the sort order of the create request.
+        node.query(
+            f"CREATE TABLE {db}.`{ns}.sorted` (id Int64, name String) ENGINE = IcebergS3 PARTITION BY name ORDER BY id",
+            settings=create_settings,
+        )
+        metadata = catalog_request("GET", tables_url(ns, "sorted")).json()["metadata"]
+        spec_fields = metadata["partition-specs"][0]["fields"]
+        assert [(f["source-id"], f["field-id"], f["transform"]) for f in spec_fields] == [(2, 1000, "identity")]
+        assert metadata["default-spec-id"] == 0
+        order_fields = metadata["sort-orders"][0]["fields"]
+        assert [(f["source-id"], f["transform"], f["direction"]) for f in order_fields] == [(1, "identity", "asc")]
+        assert metadata["default-sort-order-id"] == 1
+
+        # Iceberg has no equivalent of PRIMARY KEY or SAMPLE BY.
+        for clause in ("PRIMARY KEY id", "SAMPLE BY id"):
+            error = node.query_and_get_error(
+                f"CREATE TABLE {db}.`{ns}.unsupported` (id Int64, name String) ENGINE = IcebergS3 ORDER BY id {clause}",
+                settings=create_settings,
+            )
+            assert "PRIMARY KEY and SAMPLE BY clauses are not supported" in error, error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})
     result = create_table(f"{ns}\x1feu-west", "my.table").json()
 
     zk = get_keeper()
-    assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
+    assert json.loads(zk.get(KEEPER_ROOT)[0]) == warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
-    parent_path = f"{KEEPER_ROOT}/namespaces/{escaped}"
+    parent_path = f"{KEEPER_STORE_ROOT}/namespaces/{escaped}"
     child_path = f"{parent_path}/namespaces/eu%2Dwest"
     assert sorted(zk.get_children(parent_path)) == ["namespaces", "tables"]
     assert sorted(zk.get_children(child_path)) == ["namespaces", "tables"]
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
-    # The uuid is in the path, so a commit cannot target a table re-created under the same name.
+    # The guard child binds the name to the uuid, so a drop or rename cannot act on a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
     assert zk.get_children(table_path) == [table_uuid]
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
+    assert zk.get(f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -978,6 +1150,105 @@ def test_malformed_create_table(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
+def test_rename_table(started_cluster):
+    ns = f"rename_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_namespace([ns, "other"])
+    other = f"{ns}\x1fother"
+    created = create_table(ns, "a").json()
+    table_uuid = created["metadata"]["table-uuid"]
+
+    # The uuid and the metadata location do not change. Nothing is written to S3.
+    rename_table([ns], "a", [ns], "b")
+    assert not table_exists(ns, "a")
+    loaded = catalog_request("GET", tables_url(ns, "b")).json()
+    assert loaded["metadata-location"] == created["metadata-location"]
+    assert loaded["metadata"]["table-uuid"] == table_uuid
+    assert list_metadata_files(created["metadata"]["location"]) == [
+        metadata_key(created["metadata-location"])
+    ]
+
+    rename_table([ns], "b", [ns, "other"], "c")
+    assert list_tables(ns) == []
+    assert list_tables(other) == ["c"]
+
+    # The moved table still accepts commits.
+    committed = commit_table(
+        other,
+        "c",
+        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
+        append_updates(fake_snapshot(100, 1)),
+    ).json()
+    assert committed["metadata"]["table-uuid"] == table_uuid
+    assert committed["metadata"]["current-snapshot-id"] == 100
+
+    response = rename_table([ns], "missing", [ns], "x", expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+    response = rename_table([ns, "other"], "c", [ns, "missing"], "c", expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
+    assert table_exists(other, "c")
+
+    create_table(ns, "d")
+    response = rename_table([ns, "other"], "c", [ns], "d", expected_code=409)
+    assert_error_shape(response, "AlreadyExistsException")
+    assert table_exists(other, "c")
+    assert table_exists(ns, "d")
+
+    response = rename_table([ns], "d", [ns], "d", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    bodies = [
+        {"source": {"namespace": [ns], "name": "d"}},  # no destination
+        {"source": {"namespace": ns, "name": "d"}, "destination": {"namespace": [ns], "name": "e"}},
+        {"source": {"namespace": [ns]}, "destination": {"namespace": [ns], "name": "e"}},  # no name
+        {"source": {"namespace": [ns], "name": "d"}, "destination": {"namespace": [ns], "name": ""}},
+    ]
+    for body in bodies:
+        response = catalog_request("POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+    assert list_tables(ns) == ["d"]
+
+    # No nodes are left behind under the old names.
+    zk = get_keeper()
+    assert zk.get_children(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables") == ["d"]
+    assert zk.get_children(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/namespaces/other/tables") == ["c"]
+
+
+def test_rename_keeps_commit_version(started_cluster):
+    ns = f"rename_version_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    table_uuid = create_table(ns, "a").json()["metadata"]["table-uuid"]
+    commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
+
+    # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
+    zk = get_keeper()
+    uuid_path = f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}"
+    assert zk.get(uuid_path)[1].version == 1
+
+    # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
+    rename_table([ns], "a", [ns], "b")
+    rename_table([ns], "b", [ns], "a")
+    assert zk.get(uuid_path)[1].version == 1
+    assert zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+
+    committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
+    assert committed["metadata"]["current-snapshot-id"] == 200
+    assert zk.get(uuid_path)[1].version == 2
+
+
+def test_report_metrics(started_cluster):
+    ns = f"metrics_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "t")
+
+    report = {"report-type": "scan-report", "table-name": "t"}
+    catalog_request("POST", tables_url(ns, "t") + "/metrics", json=report, expected_code=204)
+
+    response = catalog_request("POST", tables_url(ns, "missing") + "/metrics", json=report, expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+
 def pyiceberg_catalog():
     return load_catalog(
         "ch",
@@ -1016,9 +1287,14 @@ def test_pyiceberg_client(started_cluster):
     assert catalog.list_tables(ns) == [(ns, "events")]
     assert catalog.table_exists(f"{ns}.events")
 
-    catalog.drop_table(f"{ns}.events")
+    # PyIceberg loads the table under the new name after the rename.
+    renamed = catalog.rename_table(f"{ns}.events", f"{ns}.renamed")
+    assert renamed.metadata_location == table.metadata_location
+    assert catalog.list_tables(ns) == [(ns, "renamed")]
+
+    catalog.drop_table(f"{ns}.renamed")
     assert catalog.list_tables(ns) == []
-    assert not catalog.table_exists(f"{ns}.events")
+    assert not catalog.table_exists(f"{ns}.renamed")
 
 
 def test_names_with_slash(started_cluster):
@@ -1053,26 +1329,69 @@ def test_slash_at_name_edge_does_not_retarget(started_cluster):
 
 def test_unsupported_format_is_refused(started_cluster):
     zk = get_keeper()
-    zk.set(KEEPER_ROOT, b"IcebergRESTCatalog\nformat_version: 999")
+    definition = warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
+    zk.set(KEEPER_ROOT, json.dumps({**definition, "format_version": 999}).encode())
     try:
-        # The marker is checked when a new Keeper session is opened.
-        restart_node()
         for _ in range(2):
             response = catalog_request(
                 "GET", "/v1/my_warehouse/namespaces", expected_code=500
             )
             assert_error_shape(response, "InternalServerError")
-        assert node.contains_in_log("has an unsupported format")
+        assert node.contains_in_log("has an unsupported format version")
     finally:
-        zk.set(KEEPER_ROOT, FORMAT_MARKER)
-        restart_node()
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
 
     list_namespaces()
 
 
+def test_invalid_definition_is_server_error(started_cluster):
+    # A damaged definition in Keeper is not a client error.
+    zk = get_keeper()
+    definition = warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
+    damaged = {k: v for k, v in definition.items() if k != "base_location"}
+    zk.set(KEEPER_ROOT, json.dumps(damaged).encode())
+    try:
+        response = catalog_request(
+            "GET", "/v1/my_warehouse/namespaces", expected_code=500
+        )
+        assert_error_shape(response, "InternalServerError")
+        assert node.contains_in_log(
+            "is invalid: Missing or empty string 'base_location'"
+        )
+    finally:
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
+
+    list_namespaces()
+
+
+def test_warehouse_discovery(started_cluster):
+    # The server has no fixed list of warehouses. It looks a warehouse up in Keeper on each request.
+    # So a warehouse node created or deleted in Keeper takes effect at once, with no restart.
+    warehouse = f"fresh_{uuid.uuid4().hex[:8]}"
+    config_params = {"warehouse": warehouse}
+    namespaces_url = f"/v1/{warehouse}/namespaces"
+
+    # Before the node exists the warehouse is unknown.
+    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
+
+    # After the node is created the warehouse is served, and tables land under its base location.
+    keeper_path = create_warehouse_in_keeper(warehouse, f"s3://{BUCKET}/{warehouse}")
+    response = catalog_request("GET", "/v1/config", params=config_params)
+    assert response.json()["overrides"]["prefix"] == warehouse
+    catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
+    result = catalog_request("POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}).json()
+    assert result["metadata"]["location"].startswith(f"s3://{BUCKET}/{warehouse}/ns/t-")
+
+    # After the node is deleted the warehouse is unknown again.
+    get_keeper().delete(keeper_path, recursive=True)
+    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
+    response = catalog_request("GET", namespaces_url, expected_code=404)
+    assert_error_shape(response, "NotFoundException")
+
+
 def test_bucket_root_base_location(started_cluster):
-    # node_aux is configured with `s3://warehouse/`, the bucket root with a trailing slash.
-    # The server accepted that config at startup. Tables land directly under the bucket.
+    # The warehouse of node_aux has a base location of `s3://warehouse/`.
+    # Verify that for a bucket root with a trailing slash, tables land directly under the bucket, with no extra slash.
     ns = f"root_{uuid.uuid4().hex[:8]}"
     ns_url = catalog_url("/v1/my_warehouse/namespaces", node_aux)
     assert requests.post(ns_url, json={"namespace": [ns]}).status_code == 200
@@ -1091,8 +1410,8 @@ def test_auxiliary_keeper(started_cluster):
     assert ["aux_ns"] in requests.get(url).json()["namespaces"]
 
     zk = get_keeper()
-    assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
-    assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
+    assert zk.exists(f"/aux_root{KEEPER_STORE_ROOT}/namespaces/aux_ns")
+    assert not zk.exists(f"{KEEPER_STORE_ROOT}/namespaces/aux_ns")
 
 
 def test_commit_append(started_cluster):
@@ -1139,9 +1458,8 @@ def test_commit_append(started_cluster):
     assert len(list_metadata_files(location)) == 3
 
     zk = get_keeper()
-    table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
-    table_uuid = zk.get(table_path)[0].decode()
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
+    table_uuid = zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables/events")[0].decode()
+    assert zk.get(f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}")[0] == second["metadata-location"].encode()
 
 
 def test_commit_empty(started_cluster):

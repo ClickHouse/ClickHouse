@@ -14,19 +14,16 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="iceberg_metadata_compression_method">
-  ## iceberg_metadata_compression_method
-</div>
+## iceberg_metadata_compression_method {#iceberg_metadata_compression_method}
 
 <ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "新しい設定"}]}]} />
 
 `.metadata.json` ファイルを圧縮するための方式。
+空文字列を指定すると、最初のメタデータファイルを書き込む際にカタログがコーデックを選択します。メタデータを非圧縮にする場合は `none` を設定します。
 
-<div id="iceberg_metadata_log_level">
-  ## iceberg_metadata_log_level
-</div>
+## iceberg_metadata_log_level {#iceberg_metadata_log_level}
 
 <SettingsInfoBlock type="IcebergMetadataLogLevel" default_value="none" />
 
@@ -44,9 +41,7 @@ Icebergテーブルのメタデータを `system.iceberg_metadata_log` にどの
 * manifest&#95;file&#95;metadata - 上記すべてに加え、走査対象の avro マニフェストファイルのメタデータ。
 * manifest&#95;file&#95;entry - 上記すべてに加え、走査対象の avro マニフェストファイルのエントリ。
 
-<div id="iceberg_metadata_staleness_ms">
-  ## iceberg_metadata_staleness_ms
-</div>
+## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

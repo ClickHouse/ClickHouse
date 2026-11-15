@@ -20,9 +20,9 @@ FormatParserSharedResources::FormatParserSharedResources(const Settings & settin
 {
 }
 
-FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings)
+FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings, size_t num_streams_)
 {
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, 1);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams_);
     const_cast<size_t &>(parser_shared_resources->max_parsing_threads) = 1;
     return parser_shared_resources;
 }
