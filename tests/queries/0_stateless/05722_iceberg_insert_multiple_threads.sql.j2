@@ -1,0 +1,26 @@
+-- Tags: no-fasttest, need-query-parameters
+
+-- A multi-threaded INSERT (max_insert_threads = 32) into an Iceberg table keeps every row exactly once,
+-- for both format versions and storages.
+
+SET allow_insert_into_iceberg = 1;
+
+{% macro engine(storage, table) -%}
+{% if storage == 'local' -%}
+IcebergLocal({CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- else -%}
+IcebergS3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- endif %}
+{%- endmacro %}
+
+{% for storage in ['local', 's3'] -%}
+{% for fv in [1, 2] -%}
+{% set t = 't_' ~ storage ~ '_v' ~ fv -%}
+DROP TABLE IF EXISTS {{ t }};
+CREATE TABLE {{ t }} (x Int32) ENGINE = {{ engine(storage, t) }} SETTINGS iceberg_format_version = {{ fv }};
+INSERT INTO {{ t }} SELECT number FROM system.numbers_mt LIMIT 4000000 SETTINGS iceberg_insert_max_rows_in_data_file = 4000000, max_insert_threads = 32;
+SELECT count(), sum(x) FROM {{ t }};
+DROP TABLE {{ t }};
+
+{% endfor -%}
+{% endfor -%}
