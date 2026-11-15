@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
 struct Settings;
 
 /// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
@@ -111,6 +114,21 @@ public:
     /// This affects only performance, so it is not serialized.
     void coalesceOutput() { coalesce_output = true; }
 
+    /// The preliminary `DISTINCT` of `SELECT DISTINCT ... ORDER BY ... LIMIT k`: each stream keeps only the `k` keys
+    /// with the best rows in `sort_description`, each with its best row (see `DistinctTopKTransform`). Set by the
+    /// `enable_distinct_top_k_optimization` plan optimization, which checks that a sorting by `sort_description`,
+    /// the final `DISTINCT` and a limit of `k` rows follow. Not serialized: a follower re-optimizes its plan.
+    struct TopK
+    {
+        size_t k = 0;
+        SortDescription sort_description;
+        /// Shared with the reading step, which filters rows and skips granules by the boundary on the first sort column
+        /// the streams publish into it (see `tryAttachTopKDynamicFilter`). May be null.
+        TopKThresholdTrackerPtr threshold_tracker;
+    };
+    void applyTopK(TopK top_k_) { top_k = std::move(top_k_); }
+    const std::optional<TopK> & getTopK() const { return top_k; }
+
 private:
     void updateOutputHeader() override;
 
@@ -127,6 +145,7 @@ private:
     bool parallel_distinct = false;
     bool preserve_input_order = false;
     bool coalesce_output = false;
+    std::optional<TopK> top_k;
 };
 
 }
