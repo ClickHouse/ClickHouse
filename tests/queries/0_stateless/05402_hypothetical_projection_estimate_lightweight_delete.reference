@@ -2,15 +2,16 @@
 status: applicable
 empirical_status: unsupported
 empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
-status: not_applicable
-reason: no selected part has the projection materialized, or its analysis exceeded the read limits
+status: applicable
+reason: 0 marks would be read instead of 10 from the base table
+empirical_status: ok
 --- a part with every row deleted next to a live part ---
 marks: 20
 rows: 2000
-marks: 13
-rows: 1300
+marks: 3
+rows: 300
 verdict: chosen
-real marks: 13
+real marks: 3
 --- a mostly deleted part with a byte-driven granularity ---
 marks: 239
 rows: 10000

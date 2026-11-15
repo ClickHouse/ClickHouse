@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # count() must reach the read step and the real projection must be allowed to win
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
-# the read limit counts the deleted rows the scan reads, and a part with every row deleted gets no projection part
+# the read limit counts the deleted rows the scan reads, and a part with every row deleted gets an empty projection part
 echo "--- a part whose rows are mostly, then all deleted ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_z;
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
 " | grep -E '^\s+(status|reason|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
-# next to a live part, the read takes the parent's ranges of the part with every row deleted
+# next to a live part, the read takes no marks from the empty projection part of the part with every row deleted
 echo "--- a part with every row deleted next to a live part ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;

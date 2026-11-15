@@ -1887,6 +1887,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
             projection_squash_plan.flush(),
             projection_squash_plan.getHeader());
 
+        /// No row passed the projection's filter: write an empty projection part, so the merged part keeps the projection.
+        if (!squashed_chunk && !ctx->projection_parts.contains(projection.name))
+            squashed_chunk = Chunk(projection_squash_plan.getHeader()->cloneEmptyColumns(), 0);
+
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());

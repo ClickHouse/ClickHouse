@@ -3130,12 +3130,12 @@ void PartMergerWriter::prepare()
                 pre_calculate_required_columns.insert(name);
     }
 
-    for (size_t i = 0; i < ctx->projections_to_build.size(); ++i)
+    for (const auto * projection : ctx->projections_to_build)
     {
         /// Post-calculate squash: accumulates calculated projection blocks before
         /// writing temporary projection parts.
         projection_squashes.emplace_back(
-            std::make_shared<const Block>(ctx->updated_header),
+            std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
     }
@@ -3354,6 +3354,11 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
         auto squashed_chunk = Squashing::squash(
             projection_squashes[i].flush(),
             projection_squashes[i].getHeader());
+
+        /// No row passed the projection's filter: write an empty projection part, so the mutated part keeps the projection.
+        if (!squashed_chunk && !projection_parts.contains(ctx->projections_to_build[i]->name))
+            squashed_chunk = Chunk(projection_squashes[i].getHeader()->cloneEmptyColumns(), 0);
+
         if (squashed_chunk)
             writeTempProjectionPart(i, std::move(squashed_chunk));
     }
