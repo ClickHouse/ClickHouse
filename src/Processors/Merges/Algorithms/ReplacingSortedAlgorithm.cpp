@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

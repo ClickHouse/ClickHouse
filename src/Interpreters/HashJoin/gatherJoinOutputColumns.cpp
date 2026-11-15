@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <Common/Exception.h>
 
 namespace DB
 {

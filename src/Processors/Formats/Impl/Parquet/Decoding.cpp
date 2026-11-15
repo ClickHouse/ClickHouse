@@ -13,6 +13,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
 #include <base/unaligned.h>
+#include <IO/VarInt.h>
 
 namespace DB::ErrorCodes
 {

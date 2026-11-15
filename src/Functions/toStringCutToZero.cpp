@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {

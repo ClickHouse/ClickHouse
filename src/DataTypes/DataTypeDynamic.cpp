@@ -22,6 +22,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <base/find_symbols.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

@@ -16,6 +16,8 @@
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
 #include <base/arithmeticOverflow.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -47,6 +49,12 @@ ColumnString::ColumnString(const ColumnString & src)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
             last_offset, chars.size());
+}
+
+void ColumnString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
