@@ -113,7 +113,7 @@ protected:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         std::vector<AssignmentFailure> * assignment_failures = nullptr);
 
-    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * assignment_failures = nullptr);
+    virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper, std::vector<AssignmentFailure> * assignment_failures);
 
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 

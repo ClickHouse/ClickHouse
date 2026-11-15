@@ -230,7 +230,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_distributed_depth;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_fetch_partition_retries_count;
     extern const SettingsUInt64 max_partitions_per_insert_block;
     extern const SettingsBool materialize_ttl_after_modify;

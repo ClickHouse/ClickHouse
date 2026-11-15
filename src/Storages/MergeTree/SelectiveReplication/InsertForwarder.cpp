@@ -57,7 +57,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 distributed_connections_pool_size;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsFloat insert_keeper_fault_injection_probability;
     extern const SettingsUInt64 insert_keeper_fault_injection_seed;
 }
@@ -548,7 +548,7 @@ InsertForwarder::CASFailureResult InsertForwarder::handleCommitCASFailure(
     const String & initial_part_name,
     const String & temporary_part_relative_path,
     const String & replica_name,
-    LoggerPtr logger)
+    LoggerPtr logger) const
 {
     String partition_id = part->info.getPartitionId();
     if (part->info.isPatch())
@@ -636,7 +636,7 @@ void InsertForwarder::handleAssignmentRace(
                 .block_with_partition = std::move(local_block),
                 .deduplication_info = deduplication_info->cloneSelf(),
                 .temp_part = std::move(temp_part),
-                .elapsed_ns = static_cast<UInt64>(phase2_watch.elapsed()),
+                .elapsed_ns = phase2_watch.elapsed(),
                 .part_counters = ProfileEvents::Counters(),
             });
         }

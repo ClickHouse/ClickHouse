@@ -314,7 +314,7 @@ Strings KeeperReplicaAssignment::allocateSinglePartition(
     /// Fast-path: read existing assignment.
     String existing_data;
     Coordination::Stat stat;
-    Coordination::Error get_code;
+    Coordination::Error get_code = Coordination::Error::ZOK;
     bool got = zk->tryGet(assignment_path, existing_data, &stat, nullptr, &get_code);
     if (got)
     {
@@ -330,7 +330,7 @@ Strings KeeperReplicaAssignment::allocateSinglePartition(
     /// Read counts node (a few KB) instead of scanning all assignments.
     String counts_data;
     Coordination::Stat counts_stat;
-    Coordination::Error counts_code;
+    Coordination::Error counts_code = Coordination::Error::ZOK;
     bool counts_ok = zk->tryGet(counts_path, counts_data, &counts_stat, nullptr, &counts_code);
 
     std::unordered_map<String, size_t> partition_counts;
@@ -523,7 +523,7 @@ KeeperReplicaAssignment::BatchAllocationResult KeeperReplicaAssignment::allocate
     String counts_path = fs::path(zookeeper_path) / "selective" / "counts";
     String counts_data;
     Coordination::Stat counts_stat;
-    Coordination::Error counts_code;
+    Coordination::Error counts_code = Coordination::Error::ZOK;
     bool counts_ok = zk->tryGet(counts_path, counts_data, &counts_stat, nullptr, &counts_code);
 
     std::unordered_map<String, size_t> partition_counts;
@@ -822,7 +822,7 @@ Strings KeeperReplicaAssignment::parseAssignment(const String & data)
     ReadBufferFromString in(data);
 
     assertString("format version: ", in);
-    UInt64 version;
+    UInt64 version = 0;
     readText(version, in);
     assertChar('\n', in);
 
@@ -856,7 +856,7 @@ std::unordered_map<String, size_t> KeeperReplicaAssignment::parseCounts(const St
     ReadBufferFromString in(data);
 
     assertString("format version: ", in);
-    UInt64 version;
+    UInt64 version = 0;
     readText(version, in);
     assertChar('\n', in);
 
@@ -908,7 +908,7 @@ std::unordered_map<String, size_t> KeeperReplicaAssignment::readCounts(const zku
     String counts_path = fs::path(zookeeper_path) / "selective" / "counts";
     String data;
     Coordination::Stat stat;
-    Coordination::Error code;
+    Coordination::Error code = Coordination::Error::ZOK;
     bool ok = zk->tryGet(counts_path, data, &stat, nullptr, &code);
     if (ok)
         return parseCounts(data);

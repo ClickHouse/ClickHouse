@@ -2,27 +2,19 @@
 
 import pytest
 import time
-import threading
 
 from .common import (
-    started_cluster,
     node1,
-    node2,
-    node3,
     ALL_NODES,
     ALL_REPLICA_NAMES,
-    REPLICA_TO_NODE,
     NO_FAULT,
-    wait_for_sync,
     sync_all,
     get_assigned,
-    get_row_count,
     get_cluster_rows,
     get_nodes_with_partition,
     create_table,
     drop_table,
     zk_suffix,
-    find_unassigned,
     wait_for_cluster_rows,
     get_node_by_replica,
 )

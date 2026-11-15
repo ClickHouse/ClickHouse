@@ -1,10 +1,7 @@
 """Integration tests for mutations (DELETE, UPDATE, REPLACE PARTITION) under selective replication."""
 
 from .common import (
-    started_cluster,
     node1,
-    node2,
-    node3,
     ALL_NODES,
     NO_FAULT,
     sync_all,

@@ -7,6 +7,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/SelectiveReplication/KeeperAssignment.h>
 #include <Storages/MergeTree/SelectiveReplication/MigrationCoordinator.h>
@@ -52,7 +53,7 @@ void StorageSystemSelectiveAssignments::fillData(
         {
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, it->name()))
                 continue;
-            auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(it->table().get());
+            auto replicated_table = castStorage<StorageReplicatedMergeTree>(it->table(), DeferredTable::Skip);
             if (!replicated_table)
                 continue;
 

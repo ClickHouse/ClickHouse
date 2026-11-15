@@ -118,7 +118,7 @@ public:
         const String & initial_part_name,
         const String & temporary_part_relative_path,
         const String & replica_name,
-        LoggerPtr logger);
+        LoggerPtr logger) const;
 
     /// Phase 2: handle blocks whose local commit failed due to assignment race.
     /// Extracted from ReplicatedMergeTreeSink::handleAssignmentRace.

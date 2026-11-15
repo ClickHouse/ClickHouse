@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsBool optimize_skip_merged_partitions;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsBool skip_unavailable_shards;

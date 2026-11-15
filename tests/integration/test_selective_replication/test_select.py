@@ -7,13 +7,9 @@ from helpers.client import QueryRuntimeException
 
 from .common import (
     cluster,
-    started_cluster,
     node1,
-    node2,
-    node3,
     ALL_NODES,
     ALL_REPLICA_NAMES,
-    REPLICA_TO_NODE,
     NO_FAULT,
     wait_for_sync,
     sync_all,
@@ -354,12 +350,10 @@ def test_read_fallback_on_assignment_change(started_cluster):
         assert len(assigned) == rf, f"Expected {rf} assigned replica, got {assigned}"
 
         original_replica = assigned[0]
-        original_node = get_node_by_replica(original_replica)
 
         # Pick a different replica as migration target.
         other_replicas = ALL_REPLICA_NAMES - {original_replica}
         target_replica = other_replicas.pop()
-        target_node = get_node_by_replica(target_replica)
 
         # Migrate the partition.
         node1.query(

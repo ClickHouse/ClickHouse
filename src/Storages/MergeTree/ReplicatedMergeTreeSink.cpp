@@ -82,7 +82,7 @@ namespace Setting
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
     extern const SettingsUInt64 distributed_connections_pool_size;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
 }
 
 namespace MergeTreeSetting
@@ -485,9 +485,9 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
-            finishDelayed(zookeeper);
+            finishDelayed(zookeeper, nullptr);
             delayed_parts = std::move(current_parts);
-            finishDelayed(zookeeper);
+            finishDelayed(zookeeper, nullptr);
 
             total_streams = 0;
             support_parallel_write = false;
@@ -515,10 +515,10 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
-        finishDelayed(zookeeper);
+        finishDelayed(zookeeper, nullptr);
 
     if (synchronously_commit_part_for_dependent_views)
-        finishDelayed(zookeeper);
+        finishDelayed(zookeeper, nullptr);
 
     if (!assignment_failures.empty())
     {
@@ -1510,7 +1510,7 @@ void ReplicatedMergeTreeSink::onFinish()
     /// AssignmentChangedException propagates as REPLICA_STATUS_CHANGED to the user.
     /// Phase 2 re-forwarding is not possible here because we have no deduplication_info
     /// context for the delayed parts. The user must retry the INSERT.
-    finishDelayed(zookeeper);
+    finishDelayed(zookeeper, nullptr);
     parts_to_sync.syncAll();
 }
 

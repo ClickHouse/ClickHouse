@@ -4,15 +4,9 @@ import time
 
 from .common import (
     cluster,
-    started_cluster,
     node1,
-    node2,
-    node3,
-    ALL_NODES,
     ALL_REPLICA_NAMES,
     REPLICA_TO_NODE,
-    NO_FAULT,
-    wait_for_sync,
     sync_all,
     get_assigned,
     create_table,
@@ -306,7 +300,6 @@ def test_optimize_forwarding_assignment_race(started_cluster):
         unassigned_client = candidates[1]
 
         client_node = REPLICA_TO_NODE[unassigned_client]
-        new_assigned_node = REPLICA_TO_NODE[new_assigned]
 
         # Change assignment in ZK directly
         zk = cluster.get_kazoo_client('zoo1')
@@ -319,8 +312,6 @@ def test_optimize_forwarding_assignment_race(started_cluster):
         # Wait, if we use a client that wasn't touched, it might still have the old cache or no cache.
         # It's better to prime the cache on client_node first.
         client_node.query(f"SELECT count() FROM system.selective_assignments WHERE table = '{table}'")
-
-        metric_before = get_metric(client_node, "SelectiveReplicationOptimizeForwardedPartitions")
 
         # Race condition: cache has old_assigned, but actual is new_assigned.
         # client_node forwards to old_assigned. old_assigned forwards to new_assigned.
@@ -364,7 +355,7 @@ def test_insert_forwarding_depth_limit_regression(started_cluster):
 
         error_msg = ""
         try:
-            unassigned_node.query(f"INSERT INTO dist6 VALUES ('2020-10-01', 2, 'b')")
+            unassigned_node.query("INSERT INTO dist6 VALUES ('2020-10-01', 2, 'b')")
         except Exception as e:
             error_msg = str(e)
 

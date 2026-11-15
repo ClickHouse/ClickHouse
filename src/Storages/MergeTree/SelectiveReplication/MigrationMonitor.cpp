@@ -268,7 +268,7 @@ bool MigrationMonitor::waitForMigrationsComplete(UInt64 timeout_ms)
         auto remaining_ms = timeout_ms - elapsed_since_start;
         auto wait_ms = std::min(remaining_ms, static_cast<UInt64>(2000));
         event->tryWait(wait_ms);
-        event->reset();
+        (*event).reset();
     }
 }
 

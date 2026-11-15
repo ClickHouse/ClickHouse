@@ -1,19 +1,16 @@
 """Integration tests for rebalance, migration, takeover, assignment, and fault
 tolerance under selective replication."""
 
-import pytest
 import time
 import threading
 
 from .common import (
     cluster,
-    started_cluster,
     node1,
     node2,
     node3,
     ALL_NODES,
     ALL_REPLICA_NAMES,
-    REPLICA_TO_NODE,
     NO_FAULT,
     wait_for_sync,
     sync_all,
@@ -26,7 +23,6 @@ from .common import (
     zk_suffix,
     no_orphaned_cloning,
     wait_for_cluster_rows,
-    get_node_by_replica,
 )
 
 

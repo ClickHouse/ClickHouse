@@ -73,7 +73,7 @@ static bool isStorageEligibleForParallelReplicas(const StoragePtr & storage, boo
     /// (replication_factor > 0). Each replica holds only a subset of partitions,
     /// which violates PR's assumption that every replica can read every part.
     /// The query falls through to the table's selective-routing path instead.
-    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+    if (const auto replicated = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
     {
         if (replicated->isSelectiveReplicationEnabled())
             return false;

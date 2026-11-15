@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/SelectiveReplication/Router.h>
 
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageProxy.h>
 #include <Core/Settings.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Storages/RemoteQueryCommon.h>
@@ -1475,14 +1476,13 @@ std::shared_ptr<StorageReplicatedMergeTree> Router::findSiblingStorage(const Str
     {
         for (auto it = db->getTablesIterator(storage.getContext()); it->isValid(); it->next())
         {
-            auto table = it->table();
-            auto * candidate = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+            auto candidate = castStorage<StorageReplicatedMergeTree>(it->table(), DeferredTable::Skip);
             if (candidate
-                && candidate != &storage
+                && candidate.get() != &storage
                 && candidate->zookeeper_path == storage.zookeeper_path
                 && candidate->getReplicaName() == target_replica_name)
             {
-                return std::shared_ptr<StorageReplicatedMergeTree>(table, candidate);
+                return candidate;
             }
         }
     }

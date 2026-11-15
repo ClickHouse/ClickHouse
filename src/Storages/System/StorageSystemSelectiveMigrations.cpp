@@ -8,6 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/SelectiveReplication/MigrationCoordinator.h>
 #include <Storages/MergeTree/SelectiveReplication/Constants.h>
@@ -54,7 +55,7 @@ void StorageSystemSelectiveMigrations::fillData(
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, it->name()))
                 continue;
-            auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(it->table().get());
+            auto replicated_table = castStorage<StorageReplicatedMergeTree>(it->table(), DeferredTable::Skip);
             if (!replicated_table)
                 continue;
 

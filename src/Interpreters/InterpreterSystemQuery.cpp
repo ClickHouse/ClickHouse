@@ -2809,7 +2809,7 @@ void InterpreterSystemQuery::startSelectiveRebalance(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_START_SELECTIVE_REBALANCE, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    auto * replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get();
     if (!replicated)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SYSTEM START SELECTIVE REBALANCE is only supported for ReplicatedMergeTree tables");
@@ -2820,7 +2820,7 @@ void InterpreterSystemQuery::syncSelectiveMigrations(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_SELECTIVE_MIGRATIONS, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    auto * replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get();
     if (!replicated)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SYSTEM SYNC SELECTIVE MIGRATIONS is only supported for ReplicatedMergeTree tables");
@@ -2837,7 +2837,7 @@ void InterpreterSystemQuery::migratePartitionToReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::migratePartitionToReplica");
     getContext()->checkAccess(AccessType::SYSTEM_MIGRATE_PARTITION, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    auto * replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get();
     if (!replicated)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SYSTEM MIGRATE PARTITION is only supported for ReplicatedMergeTree tables");

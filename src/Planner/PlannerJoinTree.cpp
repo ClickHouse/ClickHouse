@@ -1692,7 +1692,7 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     /// Parallel replicas are incompatible with selective replication:
     /// each replica holds only a subset of partitions, so distributing
     /// reads across replicas would produce duplicates or missing data.
-    if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(table_ptr))
+    if (const auto replicated = castStorage<StorageReplicatedMergeTree>(std::const_pointer_cast<IStorage>(table_ptr->shared_from_this()), DeferredTable::Load))
     {
         if (replicated->isSelectiveReplicationEnabled())
             return false;
