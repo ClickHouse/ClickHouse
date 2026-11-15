@@ -12,6 +12,7 @@ namespace DB
 {
 
 class ASTAlterCommand;
+class TableNode;
 class ActionsChain;
 class Context;
 class QueryPlan;
@@ -38,13 +39,15 @@ ColumnDependencies getAllColumnDependencies(
     const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
 
 /// Return false if the data isn't going to be changed by mutations.
+/// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception
 );
 
 /// Build the WHERE-style filter for a mutation command. The parsed
@@ -77,12 +80,12 @@ struct MutationPredicateActions
     const ActionsDAG::Node * predicate = nullptr;
 };
 
-/// Builds the actions computing a mutation `predicate` over `storage`. The DAG inputs carry plain
-/// column names, so a caller can match them against key expressions. The predicate AST is analyzed
-/// in place. Returns `std::nullopt` when the predicate does not resolve into a single filter node.
+/// Builds the actions computing a mutation `predicate` over the storage of `table_expression`. The DAG
+/// inputs carry plain column names, so a caller can match them against key expressions. The predicate
+/// AST is analyzed in place. Returns `std::nullopt` when the predicate does not resolve into a single filter node.
 std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
     ASTPtr predicate,
-    const StoragePtr & storage,
+    const std::shared_ptr<TableNode> & table_expression,
     const ContextMutablePtr & context);
 
 /// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <base/unit.h>
@@ -43,6 +42,7 @@ class SettingsChanges;
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64) \
@@ -70,6 +70,9 @@ Get latest metadata path from version-hint.text file.
 )", 0) \
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
+)", 0) \
+    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
+The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
 )", 0) \
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
@@ -229,6 +232,7 @@ private:
 
 using DataLakeStorageSettingsPtr = std::shared_ptr<DataLakeStorageSettings>;
 
+/// Expanding this list requires <Core/FormatFactorySettings.h>, not included here to keep this widely used header light.
 #define LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
     DATA_LAKE_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     OBSOLETE_SETTINGS(M, ALIAS) \

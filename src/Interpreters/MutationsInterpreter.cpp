@@ -226,7 +226,7 @@ bool mutationPredicateContainsDeferredSet(const ASTPtr & predicate)
 
 std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
     ASTPtr predicate,
-    const StoragePtr & storage,
+    const std::shared_ptr<TableNode> & table_expression,
     const ContextMutablePtr & context)
 {
     auto expression = buildQueryTree(predicate, context);
@@ -234,8 +234,6 @@ std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
     /// Resolve against the storage, so that its columns (including `ALIAS` and `EPHEMERAL`),
     /// subcolumns and virtual columns (e.g. `_part`, `_partition_id`) are visible, just like
     /// during the mutation execution.
-    auto table_expression = std::make_shared<TableNode>(storage, context);
-
     QueryAnalyzer analyzer(false);
     analyzer.resolveConstantExpression(expression, table_expression, context);
 
@@ -426,8 +424,9 @@ bool canExcludePartByIndexAnalysis(
 
         /// Resolve the predicate with the analyzer that will interpret the mutation, so this
         /// shortcut sees every predicate shape the fallback check query resolves.
-        auto actions = buildActionsForMutationPredicate(
-            condition, storage_from_part, Context::createCopy(context));
+        auto predicate_context = Context::createCopy(context);
+        auto table_expression = std::make_shared<TableNode>(storage_from_part, predicate_context);
+        auto actions = buildActionsForMutationPredicate(condition, table_expression, predicate_context);
 
         if (!actions)
             return false;
@@ -461,7 +460,8 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -548,6 +548,7 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
     /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
     executor.setCancelCallback(
         [&executor, &check_operation_is_not_cancelled]
@@ -2055,6 +2056,19 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    /// A mutation that does not rewrite the whole part keeps the lightweight-deleted rows in it,
+    /// so a rebuilt projection needs `_row_exists` to leave them out.
+    const auto & source_part = source.getMergeTreeDataPart();
+    const bool projections_see_deleted_mask = settings.return_all_columns
+        || std::ranges::any_of(stages, [](const Stage & stage)
+            { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
+    if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
+    {
+        auto & stage = stages.emplace_back(context);
+        stage.is_readonly = true;
+        stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
+    }
+
     /// Every column emitted by a non-readonly stage is written into the new part at its current
     /// metadata type, so its statistics have to be recomputed rather than carried over from the
     /// source part. `updated_columns` and `changed_columns` do not cover all emitters: MATERIALIZE
@@ -2652,7 +2666,6 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            /*prefetch_begin_of_range=*/ false,
             /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));

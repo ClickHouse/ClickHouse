@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 set optimize_move_to_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;
@@ -20,7 +21,8 @@ CREATE TABLE test_improve_prewhere (
 ) ENGINE = MergeTree()
 ORDER BY primary_key
 -- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+-- Pin the granularity: inserting 100000 rows into a compact part with a randomized `index_granularity = 1` can take minutes.
+SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000, index_granularity = 8192;
 
 INSERT INTO test_improve_prewhere
 SELECT

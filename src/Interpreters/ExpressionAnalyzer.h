@@ -151,7 +151,6 @@ public:
     void makeWindowDescriptionFromAST(
         const Context & context,
         const WindowDescriptions & existing_descriptions,
-        AggregateFunctionPtr aggregate_function,
         WindowDescription & desc,
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
