@@ -1,6 +1,7 @@
 #include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
@@ -33,6 +34,12 @@ template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
     return is_integer<T> && is_unsigned_v<T>;
+}
+
+template <typename T>
+SerializationPtr DataTypeNumberBase<T>::doGetSerialization(const SerializationInfoSettings &) const
+{
+    return SerializationNumber<T>::create();
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

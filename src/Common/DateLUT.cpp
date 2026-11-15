@@ -309,6 +309,12 @@ std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year,
     return date_lut.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
 }
 
+Int64 makeTime(const DateLUTImpl & date_lut, Int64 hour, UInt8 minute, UInt8 second)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.makeTime(hour, minute, second);
+}
+
 const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut)
 {
     return date_lut.getTimeZone();

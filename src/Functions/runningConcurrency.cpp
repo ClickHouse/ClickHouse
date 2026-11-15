@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <base/defines.h>
 #include <set>
 

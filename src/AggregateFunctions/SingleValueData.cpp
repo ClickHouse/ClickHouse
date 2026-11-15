@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>

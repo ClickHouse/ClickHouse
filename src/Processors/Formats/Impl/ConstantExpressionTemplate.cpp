@@ -24,6 +24,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

@@ -47,6 +47,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/SipHash.h>
+#include <Common/DateLUTImpl.h>
 
 #include <optional>
 #include <unordered_set>

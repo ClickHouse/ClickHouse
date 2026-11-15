@@ -92,6 +92,7 @@ std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int1
 Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
 Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
 std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+Int64 makeTime(const DateLUTImpl & date_lut, Int64 hour, UInt8 minute, UInt8 second);
 
 const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut);
 UInt32 getDayNumOffsetEpoch();

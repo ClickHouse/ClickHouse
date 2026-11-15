@@ -50,6 +50,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

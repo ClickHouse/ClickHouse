@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationArray.h>
 #include <Columns/ColumnArray.h>
 
 

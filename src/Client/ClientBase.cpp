@@ -124,6 +124,7 @@
 
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
+#include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 
 

@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
@@ -34,11 +33,6 @@ public:
     {
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
-    }
-
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
-    {
-        return SerializationNumber<T>::create();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.

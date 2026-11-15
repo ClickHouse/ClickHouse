@@ -3,6 +3,7 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <base/defines.h>
 
 

@@ -22,6 +22,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Processors/Port.h>
 
