@@ -298,7 +298,7 @@ void ExternalAuthenticators::reset()
     resetImpl();
 }
 
-void parseTokenProcessors(std::unordered_map<String, std::unique_ptr<ITokenProcessor>> & token_processors,
+static void parseTokenProcessors(std::unordered_map<String, std::unique_ptr<ITokenProcessor>> & token_processors,
                         const Poco::Util::AbstractConfiguration & config,
                         const String & token_processors_config,
                         LoggerPtr log)

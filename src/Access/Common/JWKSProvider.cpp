@@ -25,7 +25,7 @@ JWKSType JWKSClient::getJWKS()
     auto now = std::chrono::high_resolution_clock::now();
     auto diff = std::chrono::duration<double>(now - last_request_send).count();
 
-    if (diff < refresh_timeout)
+    if (diff < static_cast<double>(refresh_timeout))
     {
         JWKSType result(cached_jwks);
         return result;
