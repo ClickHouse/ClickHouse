@@ -123,7 +123,7 @@ namespace
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
-                    auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
+                    auto time_zone_offset = to_utc ? time_zone.timezoneOffsetAtLocalTime(date_time_val) : time_zone.timezoneOffset(date_time_val);
                     UInt32 abs_offset = static_cast<UInt32>(std::abs(time_zone_offset));
 
                     if (to_utc)
@@ -161,11 +161,11 @@ namespace
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     /// Truncating division rounds toward zero, so a negative sub-second remainder
-                    /// lands on the next second up. Floor it, otherwise timezoneOffset() reads the
-                    /// wrong side of a DST/offset boundary.
+                    /// lands on the next second up. Floor it, otherwise the offset is looked up for the
+                    /// next second, which can be on the other side of an offset change.
                     if (date_time_val.value % scale_multiplier < 0)
                         seconds -= 1;
-                    auto time_zone_offset = time_zone.timezoneOffset(seconds);
+                    auto time_zone_offset = to_utc ? time_zone.timezoneOffsetAtLocalTime(seconds) : time_zone.timezoneOffset(seconds);
                     /// Shifting the floored seconds by the offset and reassembling is the same as
                     /// shifting the underlying value by `offset * scale_multiplier`. That product fits
                     /// Int64 (|offset| < 2^18, scale_multiplier <= 10^9); only the shift can overflow.
@@ -195,6 +195,7 @@ REGISTER_FUNCTION(UTCTimestampTransform)
 {
     FunctionDocumentation::Description description_toUTCTimestamp = R"(
 Converts a date or date with time value from one time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+A local time that happens twice or does not exist because of a daylight saving time change is converted as `toDateTime` does.
     )";
     FunctionDocumentation::Syntax syntax_toUTCTimestamp = R"(
 toUTCTimestamp(datetime, time_zone)

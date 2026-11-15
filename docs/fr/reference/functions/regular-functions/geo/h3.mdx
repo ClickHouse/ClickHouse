@@ -92,7 +92,7 @@ h3EdgeAngle(resolution)
 
 **Paramètre**
 
-* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Plage : `[0, 15]`.
+* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Plage : `[0, 15]`.
 
 **Valeurs renvoyées**
 
@@ -105,8 +105,8 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 ```
 
 ```text title="Response"
-┌───────h3EdgeAngle(10)─┐
-│ 0.0005927224846720883 │
+┌─────────────edgeAngle─┐
+│ 0.0006822586214258879 │
 └───────────────────────┘
 ```
 
@@ -122,7 +122,7 @@ h3EdgeLengthM(resolution)
 
 **Paramètre**
 
-* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Plage : `[0, 15]`.
+* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Plage : `[0, 15]`.
 
 **Valeurs renvoyées**
 
@@ -136,7 +136,7 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 
 ```text title="Response"
 ┌─edgeLengthM─┐
-│ 0.509713273 │
+│  0.58416863 │
 └─────────────┘
 ```
 
@@ -152,7 +152,7 @@ h3EdgeLengthKm(resolution)
 
 **Paramètre**
 
-* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Valeurs possibles : `[0, 15]`.
+* `resolution` — Résolution de l’index. [UInt8](/fr/reference/data-types/int-uint). Plage : `[0, 15]`.
 
 **Valeurs renvoyées**
 
@@ -166,7 +166,7 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 
 ```text title="Response"
 ┌─edgeLengthKm─┐
-│  0.000509713 │
+│  0.000584169 │
 └──────────────┘
 ```
 
@@ -239,7 +239,7 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 
 ## h3ToGeoBoundary {#h3togeoboundary}
 
-Renvoie un Array de paires `(lat, lon)` représentant le contour de l’index H3 fourni.
+Renvoie un tableau de paires `(lat, lon)` représentant le contour de l’index H3 fourni.
 
 **Syntaxe**
 
@@ -262,9 +262,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 ```
 
 ```text title="Response"
-┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─coordinates───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(55.71290022535552,37.79505811173474),(55.71289713485415,37.79506506997184),(55.71289934095484,37.79507312653982),(55.71290463755744,37.79507422487167),(55.71290772805917,37.79506726663346),(55.7129055219579,37.795059210064515)] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## h3kRing {#h3kring}
@@ -1062,7 +1062,7 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 
 ## h3GetRes0Indexes {#h3getres0indexes}
 
-Renvoie un tableau de tous les index H3 de résolution 0.
+Renvoie un tableau de tous les index H3 de résolution 0.
 
 **Syntaxe**
 
@@ -1072,12 +1072,12 @@ h3GetRes0Indexes()
 
 **Valeurs renvoyées**
 
-* Tableau de tous les index H3 de résolution 0. [Array](/fr/reference/data-types/array)([UInt64](/fr/reference/data-types/int-uint)).
+* Tableau de tous les index H3 de résolution 0. [Array](/fr/reference/data-types/array)([UInt64](/fr/reference/data-types/int-uint)).
 
 **Exemple**
 
 ```sql title="Query"
-SELECT h3GetRes0Indexes AS indexes ;
+SELECT h3GetRes0Indexes() AS indexes;
 ```
 
 ```text title="Response"

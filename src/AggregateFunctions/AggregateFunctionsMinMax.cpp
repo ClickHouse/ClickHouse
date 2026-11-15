@@ -179,6 +179,9 @@ public:
         return isMin ? MergedValueBound::Minimum : MergedValueBound::Maximum;
     }
 
+    /// Floating point is excluded: a repeated `NaN` replaces another `NaN` kept as the result.
+    bool ignoresRepeatedValues() const override { return !WhichDataType(removeLowCardinality(this->result_type)).isFloat(); }
+
 #if USE_EMBEDDED_COMPILER
     bool isCompilable() const override
     {

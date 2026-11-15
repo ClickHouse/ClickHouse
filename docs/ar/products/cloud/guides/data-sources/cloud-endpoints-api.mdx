@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'عناوين IP الثابتة', 'نقاط نهاية Cloud', 'API', 'الأمان', 'عناوين IP الصادرة', 'عناوين IP الواردة', 'جدار الحماية']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="static-ips-api">
   ## واجهة برمجة تطبيقات عناوين IP الثابتة
 </div>
@@ -52,8 +50,24 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على سبيل المثال، يجب أن تكون لدى مثيل AWS RDS الذي يعمل في `us-east-2` ويحتاج إلى الاتصال بخدمة ClickHouse Cloud قواعد مجموعة الأمان الواردة التالية:
 
-<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="قواعد مجموعة الأمان في AWS" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![قواعد مجموعة الأمان في AWS](/images/_snippets/aws-rds-mysql.webp)
+
+</Frame>
+
+</div>
 
 وبالنسبة إلى خدمة ClickHouse Cloud نفسها التي تعمل في `us-east-2`، ولكنها هذه المرة متصلة بـ MySQL على GCP، فيجب أن تبدو `Authorized networks` كما يلي:
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP Authorized networks" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)
+
+</Frame>
+
+</div>
