@@ -108,6 +108,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsString namespaces;
     extern const DatabaseDataLakeSettingsString google_project_id;
     extern const DatabaseDataLakeSettingsString google_service_account;
     extern const DatabaseDataLakeSettingsString google_metadata_service;
@@ -352,6 +353,7 @@ void DatabaseDataLake::initialize() const
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
         .region = settings[DatabaseDataLakeSetting::region].value,
+        .namespaces = settings[DatabaseDataLakeSetting::namespaces].value,
         .aws_role_arn = settings[DatabaseDataLakeSetting::aws_role_arn].value,
         .aws_role_session_name = settings[DatabaseDataLakeSetting::aws_role_session_name].value,
         .aws_external_id = settings[DatabaseDataLakeSetting::aws_external_id].value,
@@ -371,6 +373,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::namespaces].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -388,6 +391,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::namespaces].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -406,6 +410,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::namespaces].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -429,6 +434,7 @@ void DatabaseDataLake::initialize() const
                 onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::namespaces].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -463,6 +469,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
                 google_service_account_key,
+                settings[DatabaseDataLakeSetting::namespaces].value,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries,
                 snapshot_loading_mode);
@@ -476,6 +483,7 @@ void DatabaseDataLake::initialize() const
                     settings[DatabaseDataLakeSetting::warehouse].value,
                     url,
                     settings[DatabaseDataLakeSetting::catalog_credential].value,
+                    settings[DatabaseDataLakeSetting::namespaces].value,
                     Context::getGlobalContextInstance());
                 break;
             }
@@ -640,6 +648,9 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 {
     /// TODO: add tests for azure, local storage types.
 
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     auto catalog = getCatalog();
     auto catalog_type = catalog->getCatalogType();
 
@@ -678,24 +689,24 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
                 case DB::DatabaseDataLakeStorageType::Azure:
                 {
-                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #endif
 #if USE_HDFS
                 case DB::DatabaseDataLakeStorageType::HDFS:
                 {
-                    return std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -707,7 +718,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
                 default:
@@ -725,7 +736,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
@@ -736,7 +747,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #endif
                 case DB::DatabaseDataLakeStorageType::Local:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
                 /// Fake storage in case when catalog store not only
                 /// primary-type tables (DeltaLake or Iceberg), but for
@@ -748,7 +759,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                 /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -767,12 +778,12 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 #if USE_AWS_S3
                 case DB::DatabaseDataLakeStorageType::S3:
                 {
-                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageS3IcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
 #endif
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
-                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings, settings[DatabaseDataLakeSetting::namespaces].value);
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2419,6 +2430,7 @@ The following settings are supported:
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 | `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
 | `iceberg_timezone_for_timestamptz` | The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns of the tables in the database are mapped to. Default: `UTC`. |
+| `namespaces`            | Comma-separated list of namespaces, implemented for catalog types: `rest`, `glue` and `unity` |
 
 ## Examples {#examples}
 
@@ -2462,6 +2474,32 @@ SELECT count() from database_name.table_name;
     bearer token (scoped to https://storage.azure.com) instead of
     `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
     database must be recreated after it expires.
+
+## Namespace filter {#namespace}
+
+By default, ClickHouse reads tables from all namespaces available in the catalog. You can limit this behavior using the `namespaces` database setting. The value should be a comma‑separated list of namespaces that are allowed to be read.
+
+Supported catalog types are `rest`, `glue` and `unity`.
+
+For example, if the catalog contains three namespaces - `dev`, `stage`, and `prod` - and you want to read data only from dev and stage, set:
+```
+namespaces='dev,stage'
+```
+
+### Nested namespaces {#namespace-nested}
+
+The Iceberg (`rest`) catalog supports nested namespaces. The `namespaces` filter accepts the following patterns:
+
+- `namespace` - includes tables from the specified namespace, but not from its nested namespaces.
+- `namespace.nested` - includes tables from the nested namespace, but not from the parent.
+- `namespace.*` - includes tables from all nested namespaces, but not from the parent.
+
+If you need to include both a namespace and its nested namespaces, specify both explicitly. For example:
+```
+namespaces='namespace,namespace.*'
+```
+
+The default value is '*', which means all namespaces are included.
 )DOCS_MD",
         .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
         .related = {}});

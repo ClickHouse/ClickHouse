@@ -82,7 +82,11 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
-    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
+    explicit DataLakeConfiguration(
+        DataLakeStorageSettingsPtr settings_,
+        std::optional<std::string> catalog_namespaces_ = std::nullopt)
+        : settings(settings_)
+        , catalog_namespaces(catalog_namespaces_.value_or("*")) {}
 
     bool isDataLakeConfiguration() const override { return true; }
 
@@ -527,6 +531,7 @@ private:
     mutable std::mutex settings_mutex;
     DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
     ObjectStoragePtr ready_object_storage;
+    std::string catalog_namespaces;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
     /// republish in update() cannot destroy the object they are still calling into.

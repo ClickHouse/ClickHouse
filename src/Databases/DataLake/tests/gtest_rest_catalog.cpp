@@ -608,6 +608,7 @@ std::unique_ptr<RestCatalog> makeRestCatalog(
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         snapshot_loading_mode);
@@ -652,6 +653,7 @@ bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         flat_namespaces,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -673,6 +675,7 @@ DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool fl
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         flat_namespaces,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -694,6 +697,7 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -743,6 +747,7 @@ TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
             /* auth_header */"",
             /* oauth_server_uri */"",
             /* oauth_server_use_request_body */true,
+            /* namespaces */"*",
             /* flat_namespaces */false,
             context,
             DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -801,6 +806,7 @@ TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */true,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -823,6 +829,7 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -861,6 +868,7 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1004,6 +1012,7 @@ TEST(RestCatalog, TryGetTableMetadataChecksTheSchemas)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1295,6 +1304,7 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1318,6 +1328,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1361,6 +1372,7 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* auth_header */"Authorization: Bearer token-1",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1395,6 +1407,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1457,6 +1470,7 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 /* auth_scope */ "",
                 /* oauth_server_uri */ "",
                 /* oauth_server_use_request_body */ false,
+                /* namespaces */"*",
                 /* flat_namespaces */ false,
                 context,
                 DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1499,6 +1513,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1542,6 +1557,7 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* auth_scope */"https://storage.azure.com/.default",
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
+            /* namespaces */"*",
             /* flat_namespaces */false,
             context,
             DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1578,6 +1594,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1633,6 +1650,7 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1666,6 +1684,7 @@ TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
                 /* auth_header */"",
                 /* oauth_server_uri */"",
                 /* oauth_server_use_request_body */true,
+                /* namespaces */"*",
                 /* flat_namespaces */false,
                 context,
                 DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
@@ -1687,6 +1706,7 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
+        /* namespaces */"*",
         /* flat_namespaces */false,
         context,
         DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
