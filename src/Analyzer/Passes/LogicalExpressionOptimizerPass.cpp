@@ -178,11 +178,26 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
+/// Keys of one common-expression extraction, each computed once: hashing a column also hashes its whole source.
+class CommonExpressionKeys
 {
-    const auto [_, inserted] = set.emplace(node);
-    if (inserted)
-        nodes.push_back(std::move(node));
+public:
+    const QueryTreeNodePtrWithHash & operator()(const QueryTreeNodePtr & node)
+    {
+        auto it = keys.find(node);
+        if (it == keys.end())
+            it = keys.emplace(node, QueryTreeNodePtrWithHash(node)).first;
+        return it->second;
+    }
+
+private:
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtrWithHash> keys;
+};
+
+static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet & set, QueryTreeNodes & nodes, const QueryTreeNodePtrWithHash & key)
+{
+    if (set.insert(key).second)
+        nodes.push_back(key.node);
 }
 
 static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
@@ -1201,7 +1216,8 @@ static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
-static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
+static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(
+    const QueryTreeNodes & disjuncts, CommonExpressionKeys & keys, const ContextPtr & context)
 {
     std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
@@ -1212,12 +1228,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         auto * disjunct_function = disjunct->as<FunctionNode>();
         if (disjunct_function != nullptr && disjunct_function->getFunctionName() == "and")
         {
-            auto & arguments = disjunct_function->getArguments();
-            std::copy(arguments.begin(), arguments.end(), std::inserter(disjunct_set, disjunct_set.end()));
+            for (const auto & argument : disjunct_function->getArguments())
+                disjunct_set.insert(keys(argument));
         }
         else
         {
-            disjunct_set.insert(disjunct);
+            disjunct_set.insert(keys(disjunct));
         }
         disjunct_sets.emplace_back(std::move(disjunct_set));
     }
@@ -1301,10 +1317,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     if (or_argument_nodes.size() < 2)
         return {};
 
+    CommonExpressionKeys keys;
     bool first_argument = true;
     QueryTreeNodePtrWithHashSet common_exprs_set;
     QueryTreeNodes common_exprs;
-    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> flattened_ands;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> flattened_ands;
 
     for (auto & maybe_and_node : or_argument_nodes)
     {
@@ -1312,7 +1329,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (!and_node || and_node->getFunctionName() != "and")
         {
             // There are no common expressions, but we can try to optimize disjuncts
-            return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+            return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, keys, context);
         }
 
         auto flattened_and_node = getFlattenedLogicalExpression(*and_node, context);
@@ -1328,7 +1345,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             common_exprs.reserve(current_arguments.size());
 
             for (auto & and_argument : current_arguments)
-                insertIfNotPresentInSet(common_exprs_set, common_exprs, and_argument);
+                insertIfNotPresentInSet(common_exprs_set, common_exprs, keys(and_argument));
 
             first_argument = false;
         }
@@ -1339,11 +1356,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
             for (auto & and_argument : and_node->getArguments())
             {
-                auto it = common_exprs_set.find(and_argument);
+                auto it = common_exprs_set.find(keys(and_argument));
                 if (it == common_exprs_set.end())
                     continue;
                 /// A factored hint stays implied only if every copy is, so keep a copy that is not.
-                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, isImpliedIndexHint(and_argument) ? it->node : and_argument);
+                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, keys(isImpliedIndexHint(and_argument) ? it->node : and_argument));
             }
 
             common_exprs_set = std::move(new_common_exprs_set);
@@ -1352,7 +1369,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             if (common_exprs.empty())
             {
                 // There are no common expressions, but we can try to optimize disjuncts
-                return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+                return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, keys, context);
             }
         }
     }
@@ -1378,7 +1395,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             and_arguments.begin(),
             and_arguments.end(),
             std::back_inserter(filtered_and_arguments),
-            [&common_exprs_set](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(ptr); });
+            [&common_exprs_set, &keys](const QueryTreeNodePtr & ptr) { return !common_exprs_set.contains(keys(ptr)); });
 
         if (filtered_and_arguments.empty())
         {
@@ -1387,7 +1404,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         }
         else if (filtered_and_arguments.size() == 1)
         {
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(filtered_and_arguments.front()));
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, keys(filtered_and_arguments.front()));
         }
         else
         {
@@ -1396,7 +1413,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
             new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
             resolveOrdinaryFunctionNodeByName(*new_and_node, "and", context);
 
-            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(new_and_node));
+            insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, keys(new_and_node));
         }
     }
 
@@ -1413,7 +1430,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
 
-    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, context))
+    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, keys, context))
     {
         auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
         return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
@@ -1476,7 +1493,7 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
 
     auto insert_possible_new_top_level_arg = [&new_top_level_arguments_set, &new_top_level_arguments](QueryTreeNodePtr node_to_insert)
     {
-        insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, std::move(node_to_insert));
+        insertIfNotPresentInSet(new_top_level_arguments_set, new_top_level_arguments, QueryTreeNodePtrWithHash(std::move(node_to_insert)));
     };
     auto extracted_something = false;
 
