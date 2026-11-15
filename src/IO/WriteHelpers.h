@@ -9,6 +9,7 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
@@ -36,6 +37,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 class Exception;
 struct FormatSettings;
@@ -1215,17 +1221,6 @@ inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf)
 inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
 inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
 
-[[noreturn]] void throwDecimalFractionalLengthOutOfBound(UInt32 scale, UInt32 fractional_length, size_t max_digits);
-
-/// The scale may come from deserialized data (for example, a `DecimalField` decoded from binary),
-/// so check it in release builds as well.
-inline void checkDecimalFractionalLength(UInt32 scale, UInt32 fractional_length)
-{
-    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    if (unlikely(scale > max_digits || fractional_length > max_digits))
-        throwDecimalFractionalLengthOutOfBound(scale, fractional_length, max_digits);
-}
-
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
                             bool fixed_fractional_length, UInt32 fractional_length)
@@ -1265,8 +1260,13 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    /// The digits are written into a buffer on the stack.
-    checkDecimalFractionalLength(scale, fractional_length);
+    /// The digits go to a buffer on the stack, so this is checked in the release build as well: the scale
+    /// of a `DecimalField` is not tied to a data type, and a value that slipped through a boundary without
+    /// validation must not write past the buffer.
+    if (scale > max_digits || fractional_length > max_digits) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: at most {} digits are supported",
+            scale, fractional_length, max_digits);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
@@ -1308,9 +1308,15 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
-    /// Check before any arithmetic that depends on the scale: a scale of 2^31 or more becomes a negative
-    /// exponent in `scaleMultiplier`, which gives a zero multiplier and a division by zero.
-    checkDecimalFractionalLength(scale, fractional_length);
+    /// The scale of a `DecimalField` is not tied to a data type, so check it in the release build before any
+    /// arithmetic that depends on it: a scale wider than the type overflows `scaleMultiplier` and the rounding
+    /// below, and a scale of 2^31 or more becomes a negative exponent, which gives a division by zero.
+    constexpr size_t max_scale = DecimalUtils::max_precision<Decimal<T>>;
+    constexpr size_t max_fractional_length = std::numeric_limits<UInt256>::digits10;
+    if (scale > max_scale || fractional_length > max_fractional_length) [[unlikely]]
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot write a decimal with scale {} and {} fractional digits: the maximum scale is {} and at most {} fractional digits are supported",
+            scale, fractional_length, max_scale, max_fractional_length);
 
     /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
     /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the

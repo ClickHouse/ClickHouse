@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ru/_intro.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <IntroClickPipe />
 
 ## Предварительные требования {#pre-requisites}
@@ -24,11 +22,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выберите источник данных" id="1-select-the-data-source">
     **1.** В ClickHouse Cloud в главном меню выберите **Источники данных** и нажмите **Создать ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импорта" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Выбор импорта](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** Нажмите на карточку **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Выбор карточки BigQuery" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Выбор карточки BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Настройте соединение ClickPipe" id="2-setup-your-clickpipe-connection">
@@ -36,11 +50,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **1.** Загрузите файл ключа `.json` сервисного аккаунта, созданного для ClickPipes. Убедитесь, что сервисному аккаунту предоставлен минимальный набор необходимых [разрешений](/ru/integrations/clickpipes/bigquery/overview#permissions).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Загрузка ключа сервисного аккаунта" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Загрузка ключа сервисного аккаунта](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** Выберите **режим репликации**: [только первоначальная загрузка](/ru/integrations/clickpipes/bigquery/overview#initial-load), **первоначальная загрузка + CDC** или **только CDC**. Если выбран режим CDC, укажите [метод на основе запросов или событий](/ru/integrations/clickpipes/bigquery/overview#cdc).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="Режимы репликации BigQuery: только первоначальная загрузка, первоначальная загрузка с CDC и только CDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Режимы репликации BigQuery: только первоначальная загрузка, первоначальная загрузка с CDC и только CDC](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+
+    </Frame>
+
+    </div>
 
     **3.** Если вы планируете выполнить первоначальную загрузку, укажите путь к GCS-бакету для промежуточного хранения данных.
 
@@ -50,7 +80,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Настройте ClickPipe" id="3-configure-your-clickpipe">
     Задайте значения для выбранных этапов. Настройки первоначальной загрузки действуют только при импорте существующих данных через ClickPipe, а настройки CDC — только при последующей репликации изменений.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="Настройки BigQuery ClickPipe для интервала синхронизации, первоначальной загрузки и CDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Настройки BigQuery ClickPipe для интервала синхронизации, первоначальной загрузки и CDC](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+
+    </Frame>
+
+    </div>
 
     | Настройка                                                   | Что она определяет                                                                                                                                                                                                                                                                                                                                |
     | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +106,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **2.** Выберите исходные таблицы. Для каждой таблицы можно изменить имя целевой таблицы и указать столбцы для репликации в разделе **Настройки столбцов**. В списке отображаются только датасеты, к которым у сервисного аккаунта есть доступ.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="Выбор исходной таблицы BigQuery и настройка имени целевой таблицы, водяной метки CDC, ключа сортировки и расширенных настроек" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Выбор исходной таблицы BigQuery и настройка имени целевой таблицы, водяной метки CDC, ключа сортировки и расширенных настроек](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+
+    </Frame>
+
+    </div>
 
     **3.** Настройте CDC для каждой таблицы. На снимке экрана показаны настройки репликации на основе запросов. Выберите **столбец водяной метки CDC** типа `TIMESTAMP`, включите его в число реплицируемых столбцов и обновляйте его значение при каждом изменении строки. Для репликации на основе событий вместо этого выберите [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) или [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes). Для [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) в исходной таблице требуется `enable_change_history = TRUE`.
 
@@ -89,6 +135,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Завершите настройку" id="7-complete-setup">
     Нажмите **Create ClickPipe**, чтобы завершить настройку. После этого откроется страница обзора, где можно отслеживать ход первоначальной загрузки и просматривать подробную информацию о ваших BigQuery ClickPipes.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Разрешения" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Разрешения](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>

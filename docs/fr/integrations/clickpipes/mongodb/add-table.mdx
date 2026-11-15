@@ -11,8 +11,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans certains cas, il peut être utile d’ajouter des tables spécifiques à un pipe. Cela devient souvent nécessaire à mesure que votre charge de travail transactionnelle ou analytique prend de l’ampleur.
 
 <div id="add-tables-steps">
@@ -28,7 +26,15 @@ Pour ce faire, suivez les étapes ci-dessous :
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+
+</Frame>
+
+</div>
 
 5. Cliquez sur Update.
 6. Une fois la mise à jour effectuée, le pipe affichera successivement les statuts `Setup`, `Snapshot` et `Running`. Le chargement initial de la table peut être suivi dans l’onglet **Tables**.
