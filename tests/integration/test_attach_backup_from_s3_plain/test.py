@@ -101,7 +101,7 @@ def test_attach_part(
     assert int(node.query(f"select count() from ordinary_db.{table_name}")) == 100
 
     node.query(
-        f"""
+        """
     -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
     set force_remove_data_recursively_on_drop=1;
     drop database ordinary_db sync;

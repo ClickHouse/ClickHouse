@@ -1,0 +1,10 @@
+--- Control: the same single-table TopK + lazy materialization shape populates and reuses the QCC
+1
+--- The join plan carries a runtime filter into the TopK-shaped read
+1
+--- With a join runtime filter no WHERE-side QCC entry is written or reused
+0
+05045_control_cold	0
+05045_control_reuse	1
+05045_join_cold	0
+05045_join_reuse	0

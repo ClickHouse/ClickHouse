@@ -29,6 +29,7 @@
         body {
             background: #000;
             overflow: hidden;
+            overscroll-behavior: contain;
             height: 100vh;
             width: 100vw;
         }
@@ -36,25 +37,27 @@
         #terminal-container {
             height: 100%;
             width: 100%;
+            overscroll-behavior: contain;
         }
 
         /* Dark themed scrollbar */
         .xterm-viewport::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         .xterm-viewport::-webkit-scrollbar-track {
-            background: #1e1e1e;
+            background: #000;
         }
         .xterm-viewport::-webkit-scrollbar-thumb {
-            background: #555;
-            border-radius: 4px;
+            background: #333;
+            border-radius: 999px;
         }
         .xterm-viewport::-webkit-scrollbar-thumb:hover {
-            background: #777;
+            background: #555;
         }
         .xterm-viewport {
             scrollbar-width: thin;
-            scrollbar-color: #555 #1e1e1e;
+            scrollbar-color: #333 #000;
+            overscroll-behavior: contain;
         }
     </style>
 </head>
@@ -69,7 +72,7 @@
     var ws = null;
     var dataHandler = null;
 
-    // State: 'connecting', 'prompt_user', 'prompt_password', 'active', 'closed'
+    // State: 'connecting', 'waiting_credentials', 'prompt_user', 'prompt_password', 'active', 'closed'
     var state = 'connecting';
     var inputBuffer = '';
 
@@ -77,11 +80,42 @@
     // because URLs end up in browser history, referrer headers, server access logs, and proxy logs.
     // The password is collected interactively or, when embedded in an iframe, sent in via postMessage.
     var params = new URLSearchParams(window.location.search);
-    var currentUser = params.get('user') || 'default';
+    /// Empty user means "let the server pick its configured default user", which is not necessarily named "default".
+    var currentUser = params.get('user') || '';
     var currentPassword = '';
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
-    var waitingForCredentials = false;
+
+    // Trusted parent origin learned from the first valid postMessage we receive.
+    // We need this because postMessage's targetOrigin must equal the parent's actual origin,
+    // and cross-origin restrictions prevent reading window.parent.location.
+    var trustedParentOrigin = null;
+
+    /// Tell the embedding page that the user pressed Escape, or that the session ended, so that
+    /// it can close the panel the terminal is embedded in.
+    ///
+    /// These notifications carry no data, so they go to `'*'` when the parent origin is not
+    /// (yet) known to be trusted: an embedder learns only that its own iframe is done, which it
+    /// is entitled to know. Credentials still travel only between the terminal and a trusted
+    /// parent - see `isTrustedParentOrigin`, which gates the inbound direction.
+    function notifyParent(type) {
+        window.parent.postMessage({type: type}, trustedParentOrigin || '*');
+    }
+
+    function isTrustedParentOrigin(origin) {
+        if (origin === window.location.origin) return true;
+        try {
+            var u = new URL(origin);
+            if (u.protocol !== 'https:') return false;
+            var h = u.hostname;
+            return h === 'clickhouse.com'
+                || h === 'clickhouse.cloud'
+                || h.endsWith('.clickhouse.com')
+                || h.endsWith('.clickhouse.cloud');
+        } catch (e) {
+            return false;
+        }
+    }
 
     function getWebSocketURL() {
         var loc = window.location;
@@ -131,7 +165,7 @@
         if (window.parent !== window) {
             term.attachCustomKeyEventHandler(function(e) {
                 if (e.type === 'keydown' && e.key === 'Escape') {
-                    window.parent.postMessage({type: 'webterminal-escape'}, window.location.origin);
+                    notifyParent('webterminal-escape');
                     return false;
                 }
                 return true;
@@ -154,7 +188,15 @@
 
         // Single onData handler that dispatches based on state
         term.onData(function(data) {
-            if (state === 'prompt_user' || state === 'prompt_password') {
+            if (state === 'waiting_credentials') {
+                // The host page owns the credentials, but it may never send them (it does not
+                // implement the protocol, or its origin is not trusted). Enter takes the login
+                // over interactively; a later credentials message is then ignored.
+                if (data.indexOf('\r') >= 0 || data.indexOf('\n') >= 0) {
+                    clearScreen();
+                    promptCredentials();
+                }
+            } else if (state === 'prompt_user' || state === 'prompt_password') {
                 handlePromptInput(data);
             } else if (state === 'active') {
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -192,7 +234,7 @@
                 inputBuffer = '';
 
                 if (state === 'prompt_user') {
-                    currentUser = value || 'default';
+                    currentUser = value;
                     promptPassword();
                 } else if (state === 'prompt_password') {
                     currentPassword = value;
@@ -223,6 +265,12 @@
                 // For password, don't echo
             }
         }
+    }
+
+    // Erase the whole viewport. The notice printed while waiting for the host page's credentials
+    // may have wrapped onto several lines in a narrow terminal, so erasing one line is not enough.
+    function clearScreen() {
+        term.write('\x1b[H\x1b[2J');
     }
 
     function promptUser() {
@@ -274,12 +322,14 @@
 
         ws.onopen = function() {
             opened = true;
-            // Send credentials as the first message (avoids leaking password in URL)
-            ws.send(JSON.stringify({
-                type: 'auth',
-                user: currentUser,
-                password: currentPassword
-            }));
+            // Send credentials as the first message (avoids leaking password in URL).
+            // The "user" field is omitted when empty so the server falls back to
+            // its default user (which is not necessarily named "default").
+            const authMessage = { type: 'auth', password: currentPassword };
+            if (currentUser) {
+                authMessage.user = currentUser;
+            }
+            ws.send(JSON.stringify(authMessage));
             state = 'active';
             // Erase the "Connecting..." message so PTY output starts on a clean line
             term.write('\r\x1b[2K');
@@ -304,7 +354,7 @@
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
                     // Inside an iframe - notify parent to deactivate terminal
-                    window.parent.postMessage({type: 'webterminal-closed'}, window.location.origin);
+                    notifyParent('webterminal-closed');
                 } else {
                     window.location.href = 'https://github.com/ClickHouse/ClickHouse';
                 }
@@ -316,35 +366,55 @@
         };
     }
 
-    // Listen for messages from the parent (credentials, refit requests)
+    // Listen for messages from the parent (credentials, refit requests).
+    // Accepted origins: same-origin, *.clickhouse.com, *.clickhouse.cloud (https only).
+    // A 'webterminal-hello' handshake lets the parent register its origin so the iframe
+    // can post back even when the parent is cross-origin.
     window.addEventListener('message', function(e) {
-        if (e.origin !== window.location.origin) return;
+        // Only accept messages from the embedding parent window. Without this, any window
+        // from an allowed origin that obtains a reference to us (e.g. via window.open)
+        // could drive the credentials/refit handlers.
+        if (e.source !== window.parent) return;
+        if (!isTrustedParentOrigin(e.origin)) return;
         if (!e.data) return;
 
-        if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
-            waitingForCredentials = false;
-            currentUser = e.data.user || 'default';
+        // Remember the parent origin so outbound posts (escape/closed) can reach it.
+        trustedParentOrigin = e.origin;
+
+        if (e.data.type === 'webterminal-hello') {
+            return;
+        } else if (e.data.type === 'webterminal-credentials' && state === 'waiting_credentials') {
+            currentUser = e.data.user || '';
             currentPassword = e.data.password || '';
             userFromURL = true;
+            clearScreen();
             attemptConnect();
         } else if (e.data.type === 'webterminal-refit' && fitAddon && term) {
             // Defer fit until the browser has finished layout after the panel becomes visible,
             // otherwise fitAddon may compute a tiny column count from stale dimensions.
             requestAnimationFrame(function() {
                 fitAddon.fit();
-                term.focus();
+                if (e.data.focus !== false)
+                    term.focus();
             });
         }
     });
 
     // Start
     initTerminal();
-    if (inIframe && !params.has('user')) {
-        // When embedded in an iframe, wait for credentials from the parent via postMessage
-        waitingForCredentials = true;
+    if (inIframe && !userFromURL) {
+        // Embedded without a URL-supplied user: the host page owns the credentials and sends
+        // `webterminal-credentials` once on iframe `load`. Wait for that message instead of
+        // connecting on our own - a connection attempt made here can only authenticate as a
+        // passwordless user, and it would be torn down and replaced by the credentialed one
+        // a moment later, printing `Connecting...` twice.
+        state = 'waiting_credentials';
+        term.write('\x1b[90mWaiting for credentials... (press Enter to log in manually)\x1b[0m');
     } else {
-        // Always start by prompting for the password; never auto-connect with a URL-supplied password
-        promptCredentials();
+        // Try to connect automatically using the URL-supplied user (or the server default user)
+        // with empty password. If the server rejects this, `ws.onclose` falls back to the
+        // interactive prompt.
+        attemptConnect();
     }
     </script>
 </body>

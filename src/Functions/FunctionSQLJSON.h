@@ -10,11 +10,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
@@ -253,7 +255,7 @@ public:
             to->reserve(input_rows_count);
 
             /// Build the execution plan: parse the structure once, collect generators and column pointers.
-            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
+            VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
             PlanNode plan = buildPlan(*to, const_data, path_column.type, 0, parse_depth, parse_backtracks, generators);
 
             JSONParser json_parser;
@@ -276,11 +278,11 @@ public:
 
         struct PlanNode
         {
-            NodeKind kind;
+            NodeKind kind = NodeKind::Leaf;
             IColumn * dest = nullptr;           /// destination column for this node
             size_t array_size = 0;              /// for Array nodes: constant number of elements
             IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
-            std::vector<PlanNode> children;     /// for Tuple: one child per element; for Array: single child (the element plan)
+            VectorWithMemoryTracking<PlanNode> children;     /// for Tuple: one child per element; for Array: single child (the element plan)
         };
 
         static std::shared_ptr<GeneratorJSONPath<JSONParser>> parseJSONPath(
@@ -305,7 +307,7 @@ public:
             size_t index,
             uint32_t parse_depth,
             uint32_t parse_backtracks,
-            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators)
+            VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators)
         {
             if (isString(path_type))
             {
@@ -366,7 +368,7 @@ public:
         static void executePlan(
             const PlanNode & node,
             const Element & document,
-            const std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators,
+            const VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators,
             size_t & gen_idx,
             bool document_ok,
             Impl & impl,
@@ -410,6 +412,14 @@ public:
             }
         }
     };
+
+    /// SQL JSON functions rely on the default Nullable/LowCardinality implementation, but for a
+    /// Dynamic argument that stripping has not happened yet at return-type declaration, so do it here
+    /// (top-level Nullable only, matching what executeImpl receives).
+    static DataTypePtr normalizeDynamicPathArgument(const DataTypePtr & type)
+    {
+        return removeNullable(recursiveRemoveLowCardinality(type));
+    }
 
     /// Build a return type that mirrors the path argument structure,
     /// replacing each String leaf with `leaf_type`.
@@ -462,7 +472,7 @@ public:
 };
 
 template <typename Name, template <typename, typename> typename Impl>
-class FunctionSQLJSON : public IFunction
+class FunctionSQLJSON final : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }
@@ -483,10 +493,41 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — `JSON_*` functions take a JSON `String` plus a
+    /// const-`String` JSONPath; the result-type varies by `Impl` (delegated
+    /// to `Impl::signature`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature; })
+            return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature;
+        else
+            return {};
+    }
+
+    /// The declarative signature above is documentation-only: the multi-path result type
+    /// (a tuple/array of paths mirrored into the result) is not expressible in the DSL, so
+    /// the `ColumnsWithTypeAndName` override below is authoritative. Route the types-only
+    /// path to it as well, so the base `IFunction::getReturnTypeImpl(DataTypes)` never
+    /// applies the documentation string.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnType(
             Name::name, arguments, function_json_value_return_type_allow_nullable);
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override
+    {
+        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnTypeForDynamic(
+            arguments, function_json_value_return_type_allow_nullable);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -535,6 +576,9 @@ class JSONExistsImpl
 public:
     using Element = typename JSONParser::Element;
 
+    /// Documentation-only — `JSON_EXISTS(json, jsonpath, [jsonpath, ...])`.
+    static constexpr auto signature = "(String, const String, ...) -> UInt8";
+
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {
         if (arguments.size() < 2)
@@ -546,12 +590,24 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeUInt8>());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
@@ -593,6 +649,11 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
+    /// Documentation-only — extracts a scalar at the JSON path as `String`
+    /// (or `Nullable(String)` when `function_json_value_return_type_allow_nullable`
+    /// is set; when multiple paths are passed the result becomes a tuple).
+    static constexpr auto signature = "(String, const String, ...) -> String";
+
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
         if (arguments.size() < 2)
@@ -615,12 +676,29 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool function_json_value_return_type_allow_nullable)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+            {
+                DataTypePtr leaf_type = std::make_shared<DataTypeString>();
+                if (function_json_value_return_type_allow_nullable)
+                    leaf_type = makeNullable(leaf_type);
+                return FunctionSQLJSONHelpers::buildReturnType(path, leaf_type);
+            }
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool function_json_value_return_type_allow_complex)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
 
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
@@ -691,6 +769,10 @@ class JSONQueryImpl
 public:
     using Element = typename JSONParser::Element;
 
+    /// Documentation-only — returns the serialised JSON value(s) at the
+    /// JSON path as `String`.
+    static constexpr auto signature = "(String, const String, ...) -> String";
+
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {
         if (arguments.size() < 2)
@@ -702,6 +784,18 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeString>());
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool)
@@ -709,7 +803,7 @@ public:
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
 
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         bool success = false;
         const char * array_begin = "[";
         const char * array_end = "]";

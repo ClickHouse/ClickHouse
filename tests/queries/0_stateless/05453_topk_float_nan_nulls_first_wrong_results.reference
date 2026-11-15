@@ -1,0 +1,66 @@
+c2 index	nan
+c2 index	9999
+c2 all	nan
+c2 all	9999
+c2 off	nan
+c2 off	9999
+c5 f64 on	nan
+c5 f64 on	nan
+c5 f64 on	nan
+c5 f64 on	nan
+c5 f64 on	0
+c5 f64 on	1
+c5 f64 off	nan
+c5 f64 off	nan
+c5 f64 off	nan
+c5 f64 off	nan
+c5 f64 off	0
+c5 f64 off	1
+c5 f32 on	nan
+c5 f32 on	nan
+c5 f32 on	nan
+c5 f32 on	nan
+c5 f32 on	0
+c5 f32 on	1
+c5 f32 off	nan
+c5 f32 off	nan
+c5 f32 off	nan
+c5 f32 off	nan
+c5 f32 off	0
+c5 f32 off	1
+c6 f64 on	nan
+c6 f64 on	nan
+c6 f64 on	nan
+c6 f64 on	nan
+c6 f64 on	9999
+c6 f64 on	9998
+c6 f64 off	nan
+c6 f64 off	nan
+c6 f64 off	nan
+c6 f64 off	nan
+c6 f64 off	9999
+c6 f64 off	9998
+c6 f32 on	nan
+c6 f32 on	nan
+c6 f32 on	nan
+c6 f32 on	nan
+c6 f32 on	9999
+c6 f32 on	9998
+c6 f32 off	nan
+c6 f32 off	nan
+c6 f32 off	nan
+c6 f32 off	nan
+c6 f32 off	9999
+c6 f32 off	9998
+c7 asc on	0.0001
+c7 asc on	0.0002
+c7 asc on	0.00030000000000000003
+c7 asc off	0.0001
+c7 asc off	0.0002
+c7 asc off	0.00030000000000000003
+c7 desc on	2
+c7 desc on	1
+c7 desc on	0.9
+c7 desc off	2
+c7 desc off	1
+c7 desc off	0.9

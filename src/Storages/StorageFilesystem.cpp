@@ -3,8 +3,11 @@
 #include <mutex>
 #include <unordered_set>
 #include <base/types.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
@@ -68,7 +71,7 @@ Int8 fileTypeToEnumValue(fs::file_type type)
 struct QueueEntry
 {
     fs::directory_entry entry;
-    UInt16 depth;
+    UInt16 depth = 0;
     /// If false, the entry is reported as a row but not traversed.
     /// Used for directory symlinks whose canonicalization fails (e.g. cycles).
     bool expand = true;
@@ -375,7 +378,15 @@ private:
             cheap_block.insert(ColumnWithTypeAndName(std::move(column), col_info.type, col_info.name));
         }
 
-        filter_expression->execute(cheap_block);
+        /// `allow_duplicates_in_input`: splitting a filter that contains `indexHint` clones the hint's
+        /// inner DAG, so the same cheap column can appear as two distinct `INPUT` nodes with one name,
+        /// while the block above holds each column exactly once. This is what
+        /// `filterBlockWithExpression` passes for the same reason.
+        /// The row count is passed explicitly: a predicate that reads no cheap column at all, such as
+        /// `indexHint(materialize(1))`, would otherwise be evaluated over an empty block when the table
+        /// exposes no cheap columns, and produce fewer rows than there are entries.
+        size_t num_rows = entries.size();
+        filter_expression->execute(cheap_block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
         const auto & result_name = filter_expression->getSampleBlock().getByPosition(
             filter_expression->getSampleBlock().columns() - 1).name;
@@ -461,10 +472,21 @@ private:
             auto status = file.symlink_status(ec);
             if (!ec && status.type() == fs::file_type::regular)
             {
-                String content;
+                /// Stream the file directly into the destination column's chars buffer.
+                /// Going through a temporary `std::string` would defeat the memory tracker: `operator new`
+                /// is intercepted via `CurrentMemoryTracker::allocNoThrow`, which counts allocations but
+                /// never raises `MEMORY_LIMIT_EXCEEDED`. A single large file (or several read in parallel
+                /// streams) could then grow the per-thread `std::string` past the hard limit and trip the
+                /// OS / cgroup OOM-killer before any check fired. `ColumnString::chars` is a
+                /// `PaddedPODArray` backed by `Allocator`, which goes through `CurrentMemoryTracker::alloc`
+                /// and does throw on the hard limit.
+                auto & nullable = assert_cast<ColumnNullable &>(*columns_map["content"]);
+                auto & col_str = assert_cast<ColumnString &>(nullable.getNestedColumn());
+
                 ReadBufferFromFile in(file.path().string());
-                readStringUntilEOF(content, in);
-                columns_map["content"]->insert(std::move(content));
+                readStringUntilEOFInto(col_str.getChars(), in);
+                col_str.getOffsets().push_back(col_str.getChars().size());
+                nullable.getNullMapData().push_back(UInt8{0});
             }
             else
             {

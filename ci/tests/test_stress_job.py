@@ -1,126 +1,124 @@
 """
-Tests for `ci.jobs.stress_job.read_test_results`.
+Tests for `select_replica_failures` (ci/jobs/stress_job.py).
 
-Regression coverage for the chronic infrastructure failure
-"Cannot parse test_results.tsv (list index out of range)"
-that surfaced on `Stress test (*)` / `Upgrade check (*)` jobs across
-many unrelated PRs (see PR #101039 alexey-milovidov directive).
-
-The unguarded `line[0]` / `line[1]` access in the original parser
-turned three different kinds of well-behaved-but-imperfect TSV files
-into the unhelpful "Unknown job error":
-
-  - a single trailing newline at end-of-file
-  - multiple blank lines between content
-  - a truncated tail row (writer crashed mid-write)
-
-The first two should be silently tolerated. The third should surface
-a useful error that names the offending line number and its content,
-not the opaque `list index out of range`.
+The stress job pairs each replica's server log with its stderr log and must not
+let a failure on one replica hide a (possibly higher-signal) failure on another:
+every pair is scanned, all distinct specific classifications are reported, and a
+generic `<Fatal>` / "Unknown error" is used only when nothing specific was found.
 """
 
 import os
 import sys
-from pathlib import Path
-
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.stress_job import read_test_results, sanitize_test_result_line
+from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.stress_job import select_replica_failures
+
+_ORACLE_MISMATCH_LOG = (
+    "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
+    "AST Fuzzer oracle mismatch detected!\n"
+    "Fuzzed query: SELECT g FROM t GROUP BY g\n"
+    "TLP Aggregate oracle mismatch!\n"
+    "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
+)
+_ASAN_STDERR = (
+    "==1234==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+    "    #0 0x55b9b8db9bc7 in DB::Foo::bar() src/Foo.cpp:10:5\n"
+    "SUMMARY: AddressSanitizer: heap-use-after-free src/Foo.cpp:10:5\n"
+)
+_GENERIC_FATAL_LOG = (
+    "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> SomeComponent: "
+    "transient generic fatal\n"
+    "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
+)
+_UNKNOWN_LOG = (
+    "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: SELECT 1\n"
+    "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n"
+)
 
 
-def _write(tmp_path: Path, content: str) -> Path:
-    path = tmp_path / "test_results.tsv"
-    path.write_text(content, encoding="utf-8")
-    return path
+def _pair(tmp_path, replica, server_text=None, stderr_text=None):
+    # Build one (replica_name, server_log, stderr_log) pair. Missing logs are
+    # non-existent Paths, matching what the job passes when a file is absent.
+    server_log = tmp_path / f"clickhouse-server-{replica}.err.log"
+    stderr_log = tmp_path / f"stderr-{replica}.log"
+    if server_text is not None:
+        server_log.write_text(server_text, encoding="utf-8")
+    if stderr_text is not None:
+        stderr_log.write_text(stderr_text, encoding="utf-8")
+    return (replica, server_log, stderr_log)
 
 
-def test_well_formed_single_row(tmp_path):
-    path = _write(tmp_path, "test1\tOK\t1.0\t\n")
-    results = read_test_results(path)
-    assert len(results) == 1
-    assert results[0].name == "test1"
-    assert results[0].duration == 1.0
+def test_specific_failure_on_second_replica_not_hidden_by_first(tmp_path):
+    # Main replica has an oracle mismatch, sc1 has an ASan report. Both are
+    # specific classifications and must both be reported - crucially the ASan
+    # report on the second replica is not suppressed by the first.
+    pairs = [
+        _pair(tmp_path, "main", server_text=_ORACLE_MISMATCH_LOG),
+        _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
+    ]
 
+    results = select_replica_failures(pairs)
+    names = [name for name, _, _ in results]
 
-def test_well_formed_multiple_rows(tmp_path):
-    path = _write(
-        tmp_path, "test1\tOK\t1.0\t\ntest2\tFAIL\t2.5\t['log.txt']\n"
-    )
-    results = read_test_results(path)
+    assert any(n.startswith("AST Fuzzer oracle mismatch") for n in names), names
+    assert any(n.startswith("AddressSanitizer") for n in names), names
     assert len(results) == 2
-    assert results[0].name == "test1"
-    assert results[1].name == "test2"
-    assert results[1].duration == 2.5
 
 
-def test_empty_file_returns_no_rows(tmp_path):
-    # A fully empty file is not an error at the parser level; the
-    # caller (`process_results`) treats it as "Empty results".
-    path = _write(tmp_path, "")
-    assert read_test_results(path) == []
+def test_generic_fatal_does_not_suppress_sanitizer_on_second_replica(tmp_path):
+    # Main replica has only a generic <Fatal>, sc1 has an ASan report. The
+    # specific sanitizer failure wins; the generic fatal is dropped.
+    pairs = [
+        _pair(tmp_path, "main", server_text=_GENERIC_FATAL_LOG),
+        _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG, stderr_text=_ASAN_STDERR),
+    ]
 
+    results = select_replica_failures(pairs)
+    names = [name for name, _, _ in results]
 
-def test_single_trailing_newline_is_tolerated(tmp_path):
-    """The dominant cause of the chronic "list index out of range" — a
-    file ending with `\\n` makes `csv.reader` emit an empty list for
-    the trailing line. It must not blow up."""
-    path = _write(tmp_path, "test1\tOK\t1.0\t\n\n")
-    results = read_test_results(path)
     assert len(results) == 1
-    assert results[0].name == "test1"
+    assert names[0].startswith("AddressSanitizer")
+    assert "transient generic fatal" not in names[0]
 
 
-def test_multiple_trailing_newlines_are_tolerated(tmp_path):
-    path = _write(tmp_path, "test1\tOK\t1.0\t\n\n\n\n")
-    results = read_test_results(path)
+def test_same_specific_failure_across_replicas_reported_once(tmp_path):
+    # Replicated setups surface the same failure on several replicas; report a
+    # given specific classification only once.
+    pairs = [
+        _pair(tmp_path, "main", server_text=_ORACLE_MISMATCH_LOG),
+        _pair(tmp_path, "sc1", server_text=_ORACLE_MISMATCH_LOG),
+    ]
+
+    results = select_replica_failures(pairs)
+
     assert len(results) == 1
+    assert results[0][0].startswith("AST Fuzzer oracle mismatch")
 
 
-def test_blank_line_only_returns_no_rows(tmp_path):
-    path = _write(tmp_path, "\n")
-    assert read_test_results(path) == []
+def test_generic_fatal_used_when_no_specific_failure(tmp_path):
+    # No replica has a specific classification: the generic <Fatal> is reported
+    # (once) rather than "Unknown error".
+    pairs = [
+        _pair(tmp_path, "main", server_text=_GENERIC_FATAL_LOG),
+        _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
+    ]
 
+    results = select_replica_failures(pairs)
 
-def test_status_only_two_column_row_is_accepted(tmp_path):
-    # Some writers emit only `name<TAB>status<NEWLINE>` (no duration,
-    # no info). The parser must accept that.
-    path = _write(tmp_path, "test1\tOK\n")
-    results = read_test_results(path)
     assert len(results) == 1
-    assert results[0].name == "test1"
+    assert results[0][0] == "SomeComponent: transient generic fatal"
 
 
-def test_truncated_tail_row_surfaces_useful_error(tmp_path):
-    path = _write(tmp_path, "test1\tOK\t1.0\t\ntest2\n")
-    with pytest.raises(ValueError) as exc_info:
-        read_test_results(path)
-    msg = str(exc_info.value)
-    # Investigator-friendly: includes the line number, the file path,
-    # and the offending row content.
-    assert "line 2" in msg
-    assert "test_results.tsv" in msg
-    assert "test2" in msg
+def test_unknown_error_when_nothing_classified(tmp_path):
+    # Neither specific nor generic fatal anywhere: a single "Unknown error".
+    pairs = [
+        _pair(tmp_path, "main", server_text=_UNKNOWN_LOG),
+        _pair(tmp_path, "sc1", server_text=_UNKNOWN_LOG),
+    ]
 
+    results = select_replica_failures(pairs)
 
-def test_malformed_row_in_middle_surfaces_useful_error(tmp_path):
-    path = _write(
-        tmp_path, "test1\tOK\t1.0\t\nbad_row\ntest2\tFAIL\t2.0\t\n"
-    )
-    with pytest.raises(ValueError) as exc_info:
-        read_test_results(path)
-    msg = str(exc_info.value)
-    assert "line 2" in msg
-    assert "bad_row" in msg
-
-
-def test_sanitize_replaces_nul_bytes():
-    # Pre-existing behaviour we don't want to regress: NUL bytes in
-    # log payloads must be escaped before csv parsing.
-    assert sanitize_test_result_line("a\0b") == "a\\0b"
-    assert sanitize_test_result_line("plain\tline\n") == "plain\tline\n"
-
-
-if __name__ == "__main__":
-    sys.exit(pytest.main([__file__, "-v"]))
+    assert len(results) == 1
+    assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR

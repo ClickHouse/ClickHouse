@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ErrnoException.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <thread>
 #include <memory>
@@ -25,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_DLOPEN;
@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction, private WithContext
+class FunctionTrap final : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "trap";
@@ -57,12 +57,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be constant String", getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(const String) -> UInt8";
     }
 
     [[clang::optnone]]
@@ -134,7 +131,7 @@ public:
             }
             else if (mode == "throw exception")
             {
-                std::vector<int>().at(0);
+                VectorWithMemoryTracking<int>().at(0);
             }
             else if (mode == "access context")
             {
@@ -151,7 +148,7 @@ public:
             }
             else if (mode == "mmap many")
             {
-                std::vector<void *> maps;
+                VectorWithMemoryTracking<void *> maps;
                 SCOPE_EXIT(
                 {
                     //for (void * map : maps)

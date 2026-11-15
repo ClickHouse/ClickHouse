@@ -894,10 +894,10 @@ def test_policy_on_distributed_table_via_role():
     node.query("GRANT SELECT ON local_tbl TO 'role1'")
 
     node.query(
-        "CREATE ROW POLICY OR REPLACE 'all_data' ON dist_tbl, local_tbl USING 1 TO ALL EXCEPT 'role1'"
+        "CREATE ROW POLICY OR REPLACE 'all_data' ON local_tbl USING 1 TO ALL EXCEPT 'role1'"
     )
     node.query(
-        "CREATE ROW POLICY OR REPLACE 'role1_data' ON dist_tbl, local_tbl USING number % 2 = 0 TO 'role1'"
+        "CREATE ROW POLICY OR REPLACE 'role1_data' ON local_tbl USING number % 2 = 0 TO 'role1'"
     )
 
     assert node.query(
@@ -906,6 +906,17 @@ def test_policy_on_distributed_table_via_role():
     assert node.query(
         "SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1"
     ) == TSV([[0], [2], [4], [6], [8], [0], [2], [4], [6], [8]])
+
+    # A policy on the Distributed table itself cannot be enforced: read() only ships query text
+    # to the shards and never lowers the filter into it, so the query is refused instead of
+    # silently dropping the filter.
+    node.query(
+        "CREATE ROW POLICY OR REPLACE 'role1_data_dist' ON dist_tbl USING number % 2 = 0 TO 'role1'"
+    )
+    assert "ILLEGAL_PREWHERE" in node.query_and_get_error(
+        "SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1"
+    )
+    node.query("DROP ROW POLICY 'role1_data_dist' ON dist_tbl")
 
 
 def test_row_policy_filter_with_subquery():

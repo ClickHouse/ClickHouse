@@ -86,9 +86,10 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     granted_role_ids.clear();
 
     role_change_subscription = access_control.subscribeForChanges<Role>(
-        [this] (const UUID & id, const AccessEntityPtr & entity)
+        [this] (const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            this->processRoleChange(id, entity);
+            for (const auto & change : changes)
+                this->processRoleChange(change.id, change.entity);
         }
     );
 }

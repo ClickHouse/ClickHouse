@@ -60,7 +60,7 @@ void recvDiagResponse(int nl_fd, std::unordered_map<uint64_t, TCPSocketMemInfo> 
 
         while (remaining >= sizeof(nlmsghdr))
         {
-            nlmsghdr nlh;
+            nlmsghdr nlh = {};
             memcpy(&nlh, ptr, sizeof(nlh));
 
             if (nlh.nlmsg_len < sizeof(nlmsghdr) || nlh.nlmsg_len > remaining)
@@ -81,7 +81,7 @@ void recvDiagResponse(int nl_fd, std::unordered_map<uint64_t, TCPSocketMemInfo> 
                 continue;
             }
 
-            inet_diag_msg diag_msg;
+            inet_diag_msg diag_msg = {};
             memcpy(&diag_msg, ptr + NLMSG_HDRLEN, sizeof(diag_msg));
             uint64_t inode = diag_msg.idiag_inode;
 
@@ -90,7 +90,7 @@ void recvDiagResponse(int nl_fd, std::unordered_map<uint64_t, TCPSocketMemInfo> 
 
             while (attr_len >= sizeof(rtattr))
             {
-                rtattr rta;
+                rtattr rta = {};
                 memcpy(&rta, attr_ptr, sizeof(rta));
 
                 if (rta.rta_len < sizeof(rtattr) || rta.rta_len > attr_len)
@@ -98,7 +98,7 @@ void recvDiagResponse(int nl_fd, std::unordered_map<uint64_t, TCPSocketMemInfo> 
 
                 if (rta.rta_type == INET_DIAG_MEMINFO && rta.rta_len >= RTA_LENGTH(sizeof(inet_diag_meminfo)))
                 {
-                    inet_diag_meminfo mem;
+                    inet_diag_meminfo mem = {};
                     memcpy(&mem, attr_ptr + RTA_LENGTH(0), sizeof(mem));
                     result[inode] = {.rmem = mem.idiag_rmem, .wmem = mem.idiag_wmem};
                 }

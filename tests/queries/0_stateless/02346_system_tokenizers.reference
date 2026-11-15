@@ -1,10 +1,15 @@
 array
 asciiCJK
+icu
+keyValuePairs
+keyword
 ngrambf_v1
 ngrams
 sparseGrams
 sparse_grams
 splitByNonAlpha
+splitByRegexp
 splitByString
 tokenbf_v1
 unicodeWord
+unicode_word

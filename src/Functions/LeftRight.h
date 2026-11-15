@@ -23,7 +23,6 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -34,7 +33,7 @@ enum class SubstringDirection : uint8_t
 };
 
 template <bool is_utf8, SubstringDirection direction>
-class FunctionLeftRight : public IFunction
+class FunctionLeftRight final : public IFunction
 {
 public:
     static constexpr auto name = direction == SubstringDirection::Left
@@ -57,16 +56,12 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                    arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        if constexpr (is_utf8)
+            return "(String, NativeNumber) -> String";
+        else
+            return "(StringOrFixedString, NativeNumber) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -100,7 +95,7 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value;
+                    Int64 abs_length_value = 0;
                     if (common::subOverflow(Int64(0), length_value, abs_length_value))
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                             "Argument of function {} is out of bound: {}", getName(), length_value);
@@ -127,7 +122,7 @@ public:
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        Int64 abs_length;
+                        Int64 abs_length = 0;
                         if (common::subOverflow(Int64(0), length, abs_length))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                 "Argument of function {} is out of bound: {}", getName(), length);
