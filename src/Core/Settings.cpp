@@ -3381,7 +3381,8 @@ Possible values:
 For `ALTER TABLE` on a `Distributed` table, propagates supported metadata changes to the underlying remote table first, then updates the `Distributed` table metadata locally.
 
 Currently supported only for `ADD COLUMN`.
-)", 0) \
+)", 0, \
+        {"26.11", false, false, "New setting to propagate `ALTER` of a `Distributed` table to the underlying remote tables."}) \
     DECLARE(Milliseconds, stream_flush_interval_ms, 7500, R"(
 Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#max_insert_block_size) rows.
 
