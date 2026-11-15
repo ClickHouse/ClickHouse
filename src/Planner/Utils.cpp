@@ -1065,6 +1065,10 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
     {
         if (!constant_node->isDeterministic())
             return true;
+
+        /// A folded call is marked with the determinism of its overload resolver; the built function may differ.
+        if (constant_node->hasSourceExpression() && containsNonDeterministicFunction(constant_node->getSourceExpression()))
+            return true;
     }
 
     for (const auto & child : node->getChildren())

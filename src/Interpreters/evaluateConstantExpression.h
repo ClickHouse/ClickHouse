@@ -37,8 +37,10 @@ using EvaluateConstantExpressionColumnResult = ConstantValue;
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Throws exception if it's not a constant expression.
   * Quite suboptimal.
+  * `is_deterministic`, if passed, is set to false when another evaluation may give another value:
+  * the expression calls a non-deterministic function (`randConstant`, `now`) or reads a table.
   */
-EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
+EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context, bool * is_deterministic = nullptr);
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
@@ -52,7 +54,7 @@ std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpress
 
 /** Evaluate constant expression and returns ASTLiteral with its value.
   */
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context);
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context, bool * is_deterministic = nullptr);
 
 
 /** Evaluate constant expression and returns ASTLiteral with its value.

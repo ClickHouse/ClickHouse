@@ -32,8 +32,8 @@ class FunctionInitializeAggregation final : public IFunction, private WithContex
 public:
     static constexpr auto name = "initializeAggregation";
 
-    FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_)
-        : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
+    FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_, bool parameters_are_deterministic_)
+        : WithContext(context_), aggregate_function(std::move(aggregate_function_)), parameters_are_deterministic(parameters_are_deterministic_) {}
 
     String getName() const override { return name; }
 
@@ -52,7 +52,8 @@ public:
         return aggregate_function->getResultType();
     }
 
-    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    /// Its parameters are evaluated by every build, so a `randConstant()` seed counts too.
+    bool isDeterministic() const override { return aggregate_function->isDeterministic() && parameters_are_deterministic; }
     bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
     bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
@@ -125,6 +126,7 @@ public:
 
 private:
     AggregateFunctionPtr aggregate_function;
+    bool parameters_are_deterministic;
 };
 
 
@@ -172,8 +174,9 @@ public:
             arg.type = recursiveRemoveLowCardinality(arg.type);
             arg.column = recursiveRemoveLowCardinality(arg.column);
         }
-        auto aggregate_function = resolveAggregateFunction(args);
-        auto function = std::make_shared<FunctionInitializeAggregation>(getContext(), std::move(aggregate_function));
+        bool parameters_are_deterministic = true;
+        auto aggregate_function = resolveAggregateFunction(args, &parameters_are_deterministic);
+        auto function = std::make_shared<FunctionInitializeAggregation>(getContext(), std::move(aggregate_function), parameters_are_deterministic);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -183,7 +186,7 @@ public:
     }
 
 private:
-    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
+    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments, bool * parameters_are_deterministic = nullptr) const
     {
         const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!aggregate_function_name_column)
@@ -202,7 +205,8 @@ private:
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext(),
+                                                   parameters_are_deterministic);
 
         auto action = NullsAction::EMPTY; /// It is already embedded in the function name itself
         AggregateFunctionProperties properties;

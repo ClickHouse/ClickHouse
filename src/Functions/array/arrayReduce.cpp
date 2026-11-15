@@ -41,8 +41,8 @@ class FunctionArrayReduce final : public IFunction
 public:
     static constexpr auto name = "arrayReduce";
 
-    explicit FunctionArrayReduce(AggregateFunctionPtr aggregate_function_)
-        : aggregate_function(std::move(aggregate_function_)) {}
+    FunctionArrayReduce(AggregateFunctionPtr aggregate_function_, bool parameters_are_deterministic_)
+        : aggregate_function(std::move(aggregate_function_)), parameters_are_deterministic(parameters_are_deterministic_) {}
 
     String getName() const override { return name; }
 
@@ -77,7 +77,8 @@ public:
     /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
     /// makes the expression non-deterministic, and both the filter push-down and constant folding have
     /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
-    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
+    /// Its parameters are evaluated by every build, so a `randConstant()` seed counts too.
+    bool isDeterministic() const override { return aggregate_function->isDeterministic() && parameters_are_deterministic; }
     bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
     bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
@@ -85,6 +86,7 @@ public:
 
 private:
     AggregateFunctionPtr aggregate_function;
+    bool parameters_are_deterministic;
 };
 
 
@@ -224,8 +226,9 @@ public:
         /// just like getReturnTypeImpl does. Resolve the aggregate function with the original types
         /// so it matches what executeImpl will receive (also Nullable, since the IFunction also
         /// has useDefaultImplementationForNulls() = false).
-        auto aggregate_function = resolveAggregateFunction(arguments);
-        auto function = std::make_shared<FunctionArrayReduce>(std::move(aggregate_function));
+        bool parameters_are_deterministic = true;
+        auto aggregate_function = resolveAggregateFunction(arguments, &parameters_are_deterministic);
+        auto function = std::make_shared<FunctionArrayReduce>(std::move(aggregate_function), parameters_are_deterministic);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -235,7 +238,7 @@ public:
     }
 
 private:
-    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
+    AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments, bool * parameters_are_deterministic = nullptr) const
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -267,7 +270,8 @@ private:
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext(),
+                                                   parameters_are_deterministic);
 
         auto action = NullsAction::EMPTY;
         AggregateFunctionProperties properties;

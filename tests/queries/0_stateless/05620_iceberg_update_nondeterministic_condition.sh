@@ -34,6 +34,14 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduceInRanges('groupArraySample(1)', [(1, 2)], [id, id + 1])[1][1] % 2 = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     ALTER TABLE tp UPDATE p = p + 4 WHERE initializeAggregation('groupArraySampleArray(1)', [id, id + 1])[1] % 2 = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduce('groupArraySample(1, randConstant())', [id, id + 1])[1] % 2 = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduceInRanges('groupArraySample(1, randConstant())', [(1, 2)], [id, id + 1])[1][1] % 2 = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ALTER TABLE tp UPDATE p = p + 4 WHERE initializeAggregation('groupArraySampleArray(1, randConstant())', [id, id + 1])[1] % 2 = 0" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduce('groupArraySample(1, randConstant())', [0, 1])[1] = 1" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(id), max(p), countIf(v = 1) BETWEEN 1 AND 999 FROM tp"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduce('groupArraySample(1, 42)', [id, id + 1])[1] % 2 = 0"
@@ -41,6 +49,9 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(id), countIf(p >= 4), co
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     ALTER TABLE tp UPDATE p = p + 4 WHERE initializeAggregation('groupArraySampleArray(1, 42)', [id, id + 1])[1] % 2 = 0"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(id), countIf(p >= 8), countIf(p % 4 != id % 4) FROM tp"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    ALTER TABLE tp UPDATE p = p + 4 WHERE arrayReduce('groupArraySample(1, 40 + 2)', [id, id + 1])[1] % 2 = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(id), countIf(p >= 12), countIf(p % 4 != id % 4) FROM tp"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE tp"
