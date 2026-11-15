@@ -9,19 +9,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Properties in the `consumer` section of a Kafka named collection and in the `kafka_topic` section of a consumed topic
 # are set for the consumer, properties in the `producer` section are not. No broker is needed: the properties are set
-# when the consumer is created.
+# when the consumer is created. The topic is `topic`, so its legacy section `kafka_topic` has the name of a new syntax section.
 
 collection="${CLICKHOUSE_DATABASE}_kafka"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE NAMED COLLECTION $collection AS
         kafka_broker_list = '127.0.0.1:1',
-        kafka_topic_list = 'football',
+        kafka_topic_list = 'topic',
         kafka_group_name = 'group',
         kafka_format = 'JSONEachRow',
         \`kafka.consumer.fetch_min_bytes\` = '777',
         \`kafka.producer.linger_ms\` = '777',
-        \`kafka.kafka_topic.name\` = 'football',
+        \`kafka.kafka_topic.name\` = 'topic',
         \`kafka.kafka_topic.retry_backoff_ms\` = '777',
         \`kafka.kafka_topic_baseball.name\` = 'baseball',
         \`kafka.kafka_topic_baseball.reconnect_backoff_ms\` = '777';

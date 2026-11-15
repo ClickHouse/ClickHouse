@@ -11,6 +11,8 @@ set -e
 
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 nc_locked="${nc}_locked"
+nc_topic="${nc}_topic"
+nc_topic_locked="${nc}_topic_locked"
 user="${nc}_user"
 table="${nc}_table"
 
@@ -21,6 +23,8 @@ function cleanup()
         DROP USER IF EXISTS $user;
         DROP NAMED COLLECTION IF EXISTS ${nc};
         DROP NAMED COLLECTION IF EXISTS ${nc_locked};
+        DROP NAMED COLLECTION IF EXISTS ${nc_topic};
+        DROP NAMED COLLECTION IF EXISTS ${nc_topic_locked};
     "
 }
 trap cleanup EXIT
@@ -40,6 +44,17 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE NAMED COLLECTION ${nc_locked} AS
         kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
         \`kafka.security_protocol\` = 'SASL_SSL' NOT OVERRIDABLE;
+    CREATE NAMED COLLECTION ${nc_topic} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        \`kafka.kafka_topic.name\` = 'topic',
+        \`kafka.kafka_topic.security_protocol\` = 'SASL_SSL',
+        \`kafka.consumer.kafka_topic.name\` = 'topic',
+        \`kafka.consumer.kafka_topic.sasl_username\` = 'user',
+        \`kafka.kafka_other.compression_codec\` = 'zstd';
+    CREATE NAMED COLLECTION ${nc_topic_locked} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        \`kafka.kafka_topic.name\` = 'topic',
+        \`kafka.kafka_topic.security_protocol\` = 'SASL_SSL' NOT OVERRIDABLE;
 "
 
 function expect_error()
@@ -58,6 +73,11 @@ expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_sasl_username = 'x'"
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_compression_codec = 'gzip'"
 
+# The same for the keys of per-topic sections, new and legacy syntax.
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_sasl_username = 'x'"
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_compression_codec = 'gzip'"
+
 # A flattened setting without a stored nested equivalent is an addition.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
@@ -72,3 +92,5 @@ echo 'granted OK'
 # A grant cannot bypass the explicit lock of a nested key.
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_locked} TO $user"
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_topic_locked} TO $user"
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"

@@ -267,11 +267,17 @@ void loadLegacyTopicConfig(
     const String & collection_name,
     const String & config_prefix)
 {
+    /// For the topic `topic` the legacy section is `kafka_topic`, skip it if it is a new syntax section with `<name>`.
+    const String name_path = config_prefix + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
     if (!collection_name.empty())
     {
-        loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        if (!NamedCollectionFactory::instance().get(collection_name)->has(name_path))
+            loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
         return;
     }
+
+    if (config.has(name_path))
+        return;
 
     Poco::Util::AbstractConfiguration::Keys tags;
     config.keys(config_prefix, tags);

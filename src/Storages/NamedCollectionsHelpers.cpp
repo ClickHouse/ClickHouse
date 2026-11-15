@@ -106,8 +106,9 @@ namespace
     }
 
     /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.
-    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`
-    /// and `kafka.producer.<property>`, with `_` converted to `.`), and the non-empty flat settings overwrite them afterwards.
+    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`,
+    /// `kafka.producer.<property>` and their per-topic sections, with `_` converted to `.`), and the non-empty flat settings
+    /// overwrite them afterwards.
     struct KafkaProperty
     {
         String name;
@@ -138,6 +139,9 @@ namespace
                 continue;
 
             KafkaProperty property{String(key.substr(prefix.size())), false};
+            /// Per-topic sections (`kafka_topic*.<property>` and legacy `kafka_<topic>.<property>`) set the same property.
+            if (const auto dot = property.name.find('.'); dot != String::npos && property.name.starts_with("kafka"))
+                property.name = property.name.substr(dot + 1);
             /// `log_level` is the only librdkafka property with an underscore.
             if (property.name != "log_level")
                 std::ranges::replace(property.name, '_', '.');
