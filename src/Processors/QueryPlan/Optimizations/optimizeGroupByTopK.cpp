@@ -101,8 +101,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     const AggregatingStep & aggregating_step,
     size_t limit,
     size_t num_key_columns,
-    const std::vector<int> & directions, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `Aggregator::Params::TopKParams` holds std::vector
-    const std::vector<int> & nulls_directions, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `Aggregator::Params::TopKParams` holds std::vector
+    const VectorWithMemoryTracking<int> & directions,
+    const VectorWithMemoryTracking<int> & nulls_directions,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
@@ -432,8 +432,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             return 0;
     }
 
-    std::vector<int> directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
-    std::vector<int> nulls_directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
+    VectorWithMemoryTracking<int> directions;
+    VectorWithMemoryTracking<int> nulls_directions;
     size_t num_key_columns = 0;
 
     if (sorting_step)
