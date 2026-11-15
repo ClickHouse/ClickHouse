@@ -526,6 +526,15 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_url_pause_before_handling_option_error) \
     PAUSEABLE_ONCE(http_read_buffer_pause_before_metadata_fallback) \
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
+    REGULAR(dictionary_aggregation_low_backpressure_threshold) \
+    REGULAR(dictionary_aggregation_argument_backpressure_threshold) \
+    PAUSEABLE_ONCE(dictionary_aggregation_before_drain) \
+    ONCE(dictionary_aggregation_throw_before_drain) \
+    PAUSEABLE(dictionary_aggregation_after_merge_task) \
+    PAUSEABLE(dictionary_aggregation_after_normalize_task) \
+    PAUSEABLE(dictionary_aggregation_after_normalize_batch) \
+    REGULAR(dictionary_aggregation_small_normalization_shards) \
+    ONCE(dictionary_aggregation_throw_after_normalization_split) \
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \

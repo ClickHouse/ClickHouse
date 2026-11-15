@@ -1,0 +1,16 @@
+without the spill scheduler
+shared	3	60	[10,20,30]
+Merged 2 single-dictionary variants in 1 dictionary groups by index into 1 variants: 2 rows to 1 rows
+with the spill scheduler
+shared	3	60	[10,20,30]
+ineligible transition without the spill scheduler
+other	1	20
+shared	2	40
+index aggregation
+value aggregation
+index aggregation
+ineligible transition with the spill scheduler
+other	1	20
+shared	2	40
+index aggregation
+value aggregation

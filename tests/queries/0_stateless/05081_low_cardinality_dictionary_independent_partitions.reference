@@ -1,0 +1,14 @@
+ordinary aggregation, two-level threshold 0
+left	3	60	[10,20,30]
+right	3	600	[100,200,300]
+independent partitions, two-level threshold 0
+partition plan	1	1
+left	3	60	[10,20,30]
+right	3	600	[100,200,300]
+ordinary aggregation, two-level threshold 1
+left	3	60	[10,20,30]
+right	3	600	[100,200,300]
+independent partitions, two-level threshold 1
+partition plan	1	1
+left	3	60	[10,20,30]
+right	3	600	[100,200,300]
