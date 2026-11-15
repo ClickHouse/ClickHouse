@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <Core/SortCursor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 
@@ -10,6 +12,17 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+namespace
+{
+/// The column and row holding the value at `row`: a constant holds it once, in its nested column.
+std::pair<const IColumn *, size_t> getValueSource(const IColumn & column, size_t row)
+{
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+        return {&const_column->getDataColumn(), 0};
+    return {&column, row};
+}
 }
 
 DistinctSortedStreamTransform::DistinctSortedStreamTransform(
@@ -45,9 +58,6 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     }
 
     materialized_columns_pos = calculateDistinctKeyColumnsPositions(*header_, {});
-    for (size_t pos : sorted_columns_pos)
-        if (std::find(materialized_columns_pos.begin(), materialized_columns_pos.end(), pos) == materialized_columns_pos.end())
-            materialized_columns_pos.emplace_back(pos);
 
     /// reserve space in auxiliary column vectors for processing
     sorted_columns.reserve(sorted_columns_pos.size());
@@ -106,8 +116,9 @@ void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
     prev_chunk_latest_key.clear();
     for (const auto & col : sorted_columns)
     {
-        prev_chunk_latest_key.emplace_back(col->cloneEmpty());
-        prev_chunk_latest_key.back()->insertFrom(*col, row_pos);
+        const auto [source, source_row] = getValueSource(*col, row_pos);
+        prev_chunk_latest_key.emplace_back(source->cloneEmpty());
+        prev_chunk_latest_key.back()->insertFrom(*source, source_row);
     }
 }
 
@@ -126,7 +137,8 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
                 i,
                 sorted_column.getFamilyName());
 
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
+        const auto [rhs, rhs_row] = getValueSource(sorted_column, row_pos);
+        const int res = prev_chunk_latest_key[i]->compareAt(0, rhs_row, *rhs, sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
     }
@@ -160,7 +172,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         return;
 
     removeSpecialColumnRepresentations(chunk);
-    /// Header constants outside the sorting prefix stay compact, as in DistinctSetFilter.
+    /// Header constants stay compact, as in DistinctSetFilter.
     materializeChunk(chunk, materialized_columns_pos);
 
     Columns input_columns = chunk.detachColumns();
