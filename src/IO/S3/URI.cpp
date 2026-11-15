@@ -81,7 +81,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     else
         uri_str = uri_;
 
-    const String uri_without_archive_path = uri_str;
+    const String uri_with_spaces = uri_str;
 
     /// `Poco::URI` rejects spaces, which are common in object keys. Encode them once, after the archive split,
     /// whose ` :: ` separator holds spaces. `uri_str` is also the source-access URI, so it is encoded as well.
@@ -145,12 +145,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
             has_version_id = true;
         }
     }
-    /// Not `uri_str`: `Poco::URI::encode` also encodes the `%` of its encoded spaces.
-    if (!has_version_id && !looks_like_presigned && uri_without_archive_path.contains('?'))
+    if (const size_t question_mark = uri_with_spaces.find('?');
+        !has_version_id && !looks_like_presigned && question_mark != String::npos)
     {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_without_archive_path, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
+        /// Fold the query into the key: escapes before the first `?` are decoded once, the rest is kept as written.
+        String query_in_key;
+        Poco::URI::encode(uri_with_spaces.substr(question_mark), "?", query_in_key);
+        uri = Poco::URI(encodeSpacesInURI(std::string_view(uri_with_spaces).substr(0, question_mark)) + query_in_key);
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
     }

@@ -1,0 +1,5 @@
+a b%231.csv	2	a b#1.csv
+a b%23*.csv	2	a b#1.csv
+a b%23?.csv	2	a b#1.csv
+a b?.csv	1	a b1.csv
+a%20b?.csv	1	a b1.csv

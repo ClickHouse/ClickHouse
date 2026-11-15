@@ -1499,6 +1499,27 @@ void StorageURLSink::cancelBuffers()
         write_buf->cancel();
 }
 
+namespace
+{
+
+String encodePartitionIDInURL(std::string_view partition_id)
+{
+    String result;
+    result.reserve(partition_id.size());
+    for (char c : partition_id)
+    {
+        if (c == ' ')
+            result += "%20";
+        else if (c == '%')
+            result += "%25";
+        else
+            result += c;
+    }
+    return result;
+}
+
+}
+
 class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
@@ -1528,8 +1549,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        /// The partition ID comes from the data, so it can hold spaces even though `uri` cannot.
-        std::string partition_path = encodeSpacesInURI(partition_strategy->getPathForWrite(uri, partition_id));
+        /// Encode the partition ID as data, so that `a b` and `a%20b` go to different targets.
+        std::string partition_path = partition_strategy->getPathForWrite(uri, encodePartitionIDInURL(partition_id));
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
