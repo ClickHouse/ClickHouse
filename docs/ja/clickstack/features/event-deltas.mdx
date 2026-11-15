@@ -7,15 +7,21 @@ doc_type: 'guide'
 keywords: ['clickstack', 'イベントデルタ', 'ヒートマップ', '属性分布', 'トレース分析', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 イベントデルタでは、レイテンシヒートマップと属性の自動分析を組み合わせることで、クエリを書かなくてもトレースデータの傾向を把握し、遅いスパンがなぜ異なるのかを特定できます。使い方は 3 つあります。
 
 * **分布モード (常時有効)&#x20;**: ヒートマップ上で選択範囲がない場合、現在のスパン集団における各属性の値の分布が表示されます。支配的な値や、異常にまれな値 (カーディナリティの外れ値) を見つけるのに役立ちます。
 * **比較モード**: ヒートマップ上で長方形をドラッグすると、その内側のスパン (Selection) と外側のすべて (Background) を比較できます。偏りや逸脱の切り分けに役立ちます。
 * **反復的ドリルダウン**: 任意のバーをクリックすると、その値で絞り込み (または除外) できます。ヒートマップは絞り込み後の集団に対して再描画されるため、原因が明らかになるまでさらに絞り込めます。
 
-<Image img="/images/clickstack/event-deltas/overview.webp" alt="payment service 上のイベントデルタの概要。ウィンドウ中央で明るい帯が上昇し、表示範囲内では回復していない" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![payment service 上のイベントデルタの概要。ウィンドウ中央で明るい帯が上昇し、表示範囲内では回復していない](/images/clickstack/event-deltas/overview.webp)
+
+</Frame>
+
+</div>
 
 上のスクリーンショットでは、ヒートマップの右端は、午前中ずっと維持されていた 1 ms のベースラインには戻らず、およそ 10 ms に達しています。劣化はまだ進行中で、インシデントのただ中を捉えています。
 
@@ -76,7 +82,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ヒートマップで、時間の経過とともにレイテンシが上方へずれていく様子が見える場合 (遅い帯が厚くなる、明るい帯が上にせり上がる、あるいは正常な期間と劣化した期間の境目に明確な変曲点がある場合) は、その立ち上がりの変曲点から表示範囲の右端まで長方形をドラッグします。比較をより明確にするには、長方形の下端を軸の最下端ではなく正常時のベースラインに合わせてください。こうすることで、劣化した時間帯の中でも、実際に通常より遅いスパンだけを切り出せます。同じ時間範囲に含まれているだけの、まだ正常な高速スパンを拾わずに済みます。
 
-<Image img="/images/clickstack/event-deltas/before-after.webp" alt="payment service の比較モード。立ち上がりの変曲点から右端まで長方形を描き、下端を 1 ms のベースラインに合わせた状態" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![payment service の比較モード。立ち上がりの変曲点から右端まで長方形を描き、下端を 1 ms のベースラインに合わせた状態](/images/clickstack/event-deltas/before-after.webp)
+
+</Frame>
+
+</div>
 
 ヒートマップの下にある属性バーは、差分が大きいものから順にソートされています。この例では、最上段のチャートが最も強いシグナルを示しています。`SpanKind`、`SpanName`、`ScopeName` はいずれも、遅い `Selection` と正常な `Background` の間で、オレンジと緑がくっきり分かれています。これらを合わせて見ると、変曲点で何が変わったのかを特定できます。
 
@@ -88,7 +102,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ヒートマップで、duration 軸上にはっきり分離した 2 つのレイテンシ集団が見えている場合は、時間範囲全体にまたがりつつ、上側の明確に分離された帯だけを含む幅広い長方形をドラッグします。遅い集団が Selection になり、速い大半が Background になります。
 
-<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="frontend-proxy 上の slow と fast の比較。長方形は、密集した大部分から十分に離れた、明確に分離された上側の帯だけを囲っています" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![frontend-proxy 上の slow と fast の比較。長方形は、密集した大部分から十分に離れた、明確に分離された上側の帯だけを囲っています](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</Frame>
+
+</div>
 
 長方形は上側の帯をぴったり囲むように描き、その帯と密集した大部分の間に、水平の隙間がはっきり見えるようにしてください。速い集団にはみ出すような大まかな長方形だと、違いがぼやけてしまいます。
 
@@ -106,7 +128,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * **Exclude**: この値を持つスパンを除外します
 * **Copy**: 値をクリップボードにコピーします
 
-<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="ScopeVersion バーのポップオーバーをクリックすると、Selection と Background の割合、および filter、exclude、copy アクションが表示される" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ScopeVersion バーのポップオーバーをクリックすると、Selection と Background の割合、および filter、exclude、copy アクションが表示される](/images/clickstack/event-deltas/drill-down.webp)
+
+</Frame>
+
+</div>
 
 filter または exclude を適用すると、ヒートマップの選択はクリアされ、ヒートマップは新しい母集団に対して再描画され、分布モードはそのフィルタ済みのセットを対象に再開されます。ヒートマップの形がどう変わるかを確認してください。filter がうまく機能すると、遅い帯域が目に見えて消えたり、二峰性の分離が収束したり、右肩上がりの傾向が平坦になったりします。これを繰り返します。次に疑わしい値を見つけて filter し、新しいヒートマップを見て、新しい分布を確認します。通常は数回繰り返すだけで、リグレッションの原因を 1 つか 2 つの属性に絞り込めます。
 
@@ -122,7 +152,15 @@ filter または exclude を適用すると、ヒートマップの選択はク�
 
 ヒートマップ右上の歯車アイコンをクリックすると、**表示設定**ドロワーが開きます。
 
-<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Scale、Value、Count のフィールドがある表示設定ドロワー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Scale、Value、Count のフィールドがある表示設定ドロワー](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</Frame>
+
+</div>
 
 | パラメーター    | デフォルト            | 説明                                                                                                  |
 | --------- | ---------------- | --------------------------------------------------------------------------------------------------- |

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本页提供规范性指导，帮助你尽可能避免使用 JOIN，并在必须使用 JOIN 时降低其开销。有关语法和语义，请参阅 [`JOIN` 子句参考文档](/zh/reference/statements/select/join)。有关执行算法及如何选择算法，请参阅[表连接](/zh/concepts/features/operations/select/joining-tables)。
 
 ## 尽量避免使用 JOIN {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ ClickHouse 支持多种 JOIN 算法，它们在速度与内存之间各有取舍
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="连接性能优化决策树" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![连接性能优化决策树](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ Grace 哈希连接 是三种不受内存限制的 JOIN 算法中最灵活的一�
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="连接内存优化决策树" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![连接内存优化决策树](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

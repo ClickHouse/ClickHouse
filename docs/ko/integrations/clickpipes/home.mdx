@@ -10,7 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import ClickPipesConnectors from '/snippets/ko/_clickpipes_connectors.mdx';
 
 <div id="overview">
@@ -59,7 +58,15 @@ ClickHouse Cloud는 대부분의 경우에 적절한 기본값을 제공합니�
 1. 사용자 지정 역할 `CREATE ROLE my_clickpipes_role SETTINGS ...`을 생성합니다. 자세한 내용은 [CREATE ROLE](/ko/reference/statements/create/role) 구문을 참조하십시오.
 2. ClickPipes를 생성할 때 `Details and Settings` 단계에서 ClickPipes 사용자에 사용자 지정 역할을 추가합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="사용자 지정 역할 할당" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![사용자 지정 역할 할당](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-advanced-settings">
   ## ClickPipes 고급 설정 조정
@@ -84,7 +91,15 @@ ClickPipes는 대부분의 사용 사례에 적합한 기본 설정을 제공합
 | `Parallel view processing`           | false         | attached 상태인 뷰로 푸시를 [순차가 아닌 동시 방식으로](/ko/reference/settings/session-settings/parallel#parallel_view_processing) 수행할지 여부입니다. |
 | `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                              |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes의 고급 설정" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes의 고급 설정](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="clickpipes-advanced-settings-streaming">
   ### 스트리밍 ClickPipes
