@@ -1,0 +1,3 @@
+another_table: UNKNOWN_TABLE
+no_rows: ALL_CONNECTION_TRIES_FAILED
+some_rows: 1

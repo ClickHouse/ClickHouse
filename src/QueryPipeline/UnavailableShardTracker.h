@@ -8,6 +8,14 @@
 namespace DB
 {
 
+class Exception;
+struct StorageID;
+
+/// Whether the exception received from a shard says that `table` (or its database) is missing there,
+/// as opposed to some other table the query uses. The error code alone does not tell them apart.
+/// `default_database` is where the shard looks for a table without a database, empty if it is not known.
+bool isTableMissingOnShard(const Exception & e, const StorageID & table, const String & default_database);
+
 /// Tracks the number of unavailable shards that were skipped during distributed query execution.
 /// Shared across all RemoteQueryExecutor instances for a single query.
 /// If the number or ratio of skipped shards exceeds the configured thresholds, throws an exception.

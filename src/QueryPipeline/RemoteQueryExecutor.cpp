@@ -76,8 +76,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
 }
@@ -978,7 +976,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
 
-            if (shouldIgnoreShardException(packet.exception->code()))
+            if (shouldIgnoreShardException(*packet.exception))
             {
                 if (log)
                     LOG_ERROR(log,
@@ -1276,7 +1274,7 @@ void RemoteQueryExecutor::finishUnlocked()
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
 
-                if (shouldIgnoreShardException(packet.exception->code()))
+                if (shouldIgnoreShardException(*packet.exception))
                 {
                     if (log)
                         LOG_ERROR(log,
@@ -1494,14 +1492,14 @@ bool RemoteQueryExecutor::hasThrownException() const
     return got_exception_from_replica || got_unknown_packet_from_replica;
 }
 
-bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
+bool RemoteQueryExecutor::shouldIgnoreShardException(const Exception & e) const
 {
     if (!skip_unavailable_shards)
         return false;
 
     /// Never silence `LOGICAL_ERROR` as a shard skip, in any mode: it denotes a programming error
     /// rather than an expected shard failure, so hiding it would mask real bugs (same as for INSERTs).
-    if (exception_code == ErrorCodes::LOGICAL_ERROR)
+    if (e.code() == ErrorCodes::LOGICAL_ERROR)
         return false;
 
     switch (skip_unavailable_shards_mode)
@@ -1511,7 +1509,9 @@ bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
             /// so at this point (a server `Exception` packet) this mode ignores nothing.
             return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
-            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+            /// If another table is missing, the shard is healthy and it is an error in the query.
+            return std::ranges::any_of(
+                shard_tables, [&](const auto & table) { return isTableMissingOnShard(e, table, shard_default_database); });
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             /// Ignore only an exception that arrived before the shard returned any data; once some data
             /// was returned, an exception means partial results and must not be silently accepted.

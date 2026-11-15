@@ -48,20 +48,6 @@ SELECT count() FROM dist_05031_partial SETTINGS skip_unavailable_shards = 1;
 SELECT count() FROM dist_05031_partial SETTINGS skip_unavailable_shards = 1, distributed_group_by_no_merge = 1;
 SELECT sum(c0) FROM dist_05031_partial SETTINGS skip_unavailable_shards = 1;
 
--- A shard that streamed rows and only then failed has answered too, even though it is the sole shard
--- and is skipped. Counting it as having produced nothing would make the query below raise instead of
--- returning what arrived. `max_block_size = 1` sends blocks as they are produced, so the rows precede
--- the exception.
--- How many of them arrive before it is a race between the shard and the initiator tearing the
--- pipeline down, so only the two properties below hold for every outcome: some row arrived, and the
--- row the shard throws on is not among them.
-SELECT count() > 0, max(x) < 999 FROM
-(
-    SELECT number AS x FROM cluster('test_shard_localhost', numbers(1000))
-    WHERE throwIf(number = 999, 'stop here', toInt32(60)) = 0
-)
-SETTINGS skip_unavailable_shards = 1, max_block_size = 1, allow_custom_error_code_in_throwif = 1;
-
 -- The all-skipped check must not depend on the limits, which are off by default.
 SELECT count() FROM dist_05031_all_dead
 SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_num = 0, max_skip_unavailable_shards_ratio = 0; -- { serverError ALL_CONNECTION_TRIES_FAILED }
