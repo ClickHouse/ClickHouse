@@ -31,6 +31,14 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+const SharedHeader & DeserializedInputHeaders::at(size_t i) const
+{
+    if (i >= headers.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A step of the serialized query plan has {} input(s), but the input {} is required", headers.size(), i);
+    return headers[i];
+}
+
 /// The serialized plan may come from an untrusted client connection, so every count read from the
 /// wire must be validated before it sizes an allocation.
 static constexpr size_t MAX_QUERY_PLAN_STEP_CHILDREN = 1'000'000;
