@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/VirtualColumnsDescription.h>
 
@@ -7,7 +6,6 @@ namespace DB
 {
 
 class ICompressionCodec;
-struct StorageID;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
@@ -59,9 +57,6 @@ struct StorageSnapshot
     /// Get column with type according to options for requested name.
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
-
-    /// See `ColumnsDescription::getColumnNamesForSelectAccessCheck`.
-    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;

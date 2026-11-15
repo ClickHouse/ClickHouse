@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -72,7 +71,7 @@ private:
     /// (Nullable/Variant), array and map wrappers so nested records also get ids. No-op without a mapper.
     void setIcebergFieldIds(const avro::NodePtr & node, const String & path);
 
-    VectorWithMemoryTracking<SerializeFn> serialize_fns;
+    std::vector<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
     const FormatSettings & settings;

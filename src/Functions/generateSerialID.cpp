@@ -77,9 +77,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, [const UInt]) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args
+        {
+            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     /// Increments the counter and returns the old counter.

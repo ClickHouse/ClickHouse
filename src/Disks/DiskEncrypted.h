@@ -35,9 +35,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    ReservationPtr reserveAndGetUnreservedSpace(
-        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space) override;
-
     bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
@@ -334,7 +331,6 @@ public:
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
     bool prefersRecursiveRemoval() const override { return delegate->prefersRecursiveRemoval(); }
-    bool supportsAtomicFileCreation() const override { return delegate->supportsAtomicFileCreation(); }
     bool supportsStat() const override { return delegate->supportsStat(); }
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }

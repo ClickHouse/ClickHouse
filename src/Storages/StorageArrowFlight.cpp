@@ -263,7 +263,7 @@ public:
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;
-        Chunks chunks;
+        std::vector<Chunk> chunks;
         chunks.emplace_back(std::move(chunk));
         converter.chChunkToArrowTable(table, chunks, getHeader().columns());
 

@@ -108,10 +108,10 @@ void JSONCompactEachRowFormatReader::skipRow()
     JSONUtils::skipRowForJSONCompactEachRow(*in);
 }
 
-VectorWithMemoryTracking<String> JSONCompactEachRowFormatReader::readHeaderRow()
+std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 {
     skipRowStartDelimiter();
-    VectorWithMemoryTracking<String> fields;
+    std::vector<String> fields;
     String field;
     do
     {

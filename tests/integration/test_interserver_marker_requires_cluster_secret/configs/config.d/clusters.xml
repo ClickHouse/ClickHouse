@@ -11,28 +11,5 @@
                 </replica>
             </shard>
         </no_secret_cluster>
-
-        <!-- Secret-backed cluster: a shard authenticates the initiator by `initial_user`
-             (AlwaysAllowCredentials), so a forged `initial_user` forwarded here would impersonate
-             that user. Self-referential so the test runs on a single instance. -->
-        <secret_cluster>
-            <secret>interserver_secret_for_test</secret>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </secret_cluster>
-
-        <!-- Non-secret cluster, used to build a mixed (non-secret over secret) topology. -->
-        <insecure_cluster>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </insecure_cluster>
     </remote_servers>
 </clickhouse>

@@ -1,6 +1,5 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>

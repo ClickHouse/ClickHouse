@@ -37,14 +37,6 @@
                 </replica>
             </shard>
         </test_cluster_two_shards>
-        <test_cluster_node2>
-            <shard>
-                <replica>
-                    <host>node2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_node2>
     </remote_servers>
 
     <named_collections>

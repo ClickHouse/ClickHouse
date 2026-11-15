@@ -9,7 +9,6 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -69,14 +68,10 @@ ASTPtr CompressionCodecMultiple::getCodecDescription() const
 ASTPtr CompressionCodecMultiple::getFullCodecDescription() const
 {
     auto description = getCodecDescription();
-    boost::intrusive_ptr<ASTFunction> codec;
     /// A single nested `Multiple` still contributes one argument to `CODEC`.
     if (codecs->size() == 1)
-        codec = makeASTFunction("CODEC", description);
-    else
-        codec = makeASTFunction("CODEC", std::move(description->children));
-    codec->setKind(ASTFunction::Kind::CODEC);
-    return codec;
+        return makeASTFunction("CODEC", description);
+    return makeASTFunction("CODEC", std::move(description->children));
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -299,11 +294,6 @@ bool CompressionCodecMultiple::isLossyCompression() const
         if (codec->isLossyCompression())
             return true;
     return false;
-}
-
-bool CompressionCodecMultiple::dependsOnDataType() const
-{
-    return std::ranges::any_of(getCodecs(), [](const auto & codec) { return codec->dependsOnDataType(); });
 }
 
 

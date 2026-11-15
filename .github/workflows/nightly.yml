@@ -51,8 +51,7 @@ jobs:
 
   prepare_changelog:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Prepare changelog"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -85,8 +84,7 @@ jobs:
 
   label_external_contributors:
     runs-on: [self-hosted, arm-tiny]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Label external contributors"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

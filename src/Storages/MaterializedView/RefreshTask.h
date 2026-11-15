@@ -282,9 +282,6 @@ private:
         /// the replicated target table of a non-APPEND view in a Replicated database).
         bool unavailable = false;
 
-        /// ATTACH could not reach Keeper; `doScheduling` creates the missing znodes before its first read.
-        bool znodes_setup_pending = false;
-
         bool read_only = false;
         String path;
         String replica_name;
@@ -467,9 +464,6 @@ private:
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
-
-    /// Creates the coordination znodes of this replica unless its replica znode exists.
-    void createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const;
 
     /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
     static constexpr std::string_view request_znode_prefix = "requested-";

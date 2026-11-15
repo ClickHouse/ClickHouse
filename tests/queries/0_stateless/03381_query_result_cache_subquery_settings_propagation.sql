@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+SET enable_analyzer = 1;
+
 SYSTEM DROP QUERY CACHE;
 
 -- Test 1: No propagation by default

@@ -3,7 +3,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
 {

@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>

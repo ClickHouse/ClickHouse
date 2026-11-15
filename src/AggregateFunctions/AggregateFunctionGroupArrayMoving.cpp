@@ -306,7 +306,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     FunctionDocumentation::Description description_sum = R"(
 Calculates the moving sum of input values.

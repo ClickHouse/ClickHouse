@@ -1,4 +1,0 @@
-{"commitInfo":{"timestamp":1583266094319,"userId":"1720949127822865","userName":"alex.jo@starburstdata.com","operation":"OPTIMIZE","operationParameters":{"predicate":"[]","zOrderBy":"[]","batchId":"0","auto":false},"notebook":{"notebookId":"4318818286716000"},"clusterId":"0218-161001-mars868","readVersion":1,"isolationLevel":"SnapshotIsolation","isBlindAppend":false}}
-{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"43ea07e6-e839-44a4-b9ff-ddb298c4c8f5","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"val\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1583265977017}}
-{"add":{"path":"part-00000.snappy.parquet","partitionValues":{},"size":559,"modificationTime":1579190106000,"dataChange":true,"stats":"{\"numRecords\":2,\"minValues\":{\"val\":\"-Infinity\"},\"maxValues\":{\"val\":\"NaN\"},\"nullCount\":{\"val\":0}}"}}

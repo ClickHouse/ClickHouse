@@ -15,9 +15,9 @@ Two uniqThetaSketch objects to do union calculation(set operation ∪), the resu
     )";
     FunctionDocumentation::Syntax syntax_uniqThetaUnion = "uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)";
     FunctionDocumentation::Arguments arguments_uniqThetaUnion = {
-        {"uniqThetaSketch", "uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction).", {"AggregateFunction(uniqTheta, T)"}}
+        {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaUnion = {"Returns a new uniqThetaSketch containing the union result.", {"AggregateFunction(uniqTheta, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaUnion = {"Returns a new uniqThetaSketch containing the union result.", {"UInt64"}};
     FunctionDocumentation::Examples examples_uniqThetaUnion = {
     {
         "Usage example",
@@ -43,9 +43,9 @@ Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the 
     )";
     FunctionDocumentation::Syntax syntax_uniqThetaIntersect = "uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)";
     FunctionDocumentation::Arguments arguments_uniqThetaIntersect = {
-        {"uniqThetaSketch", "uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction).", {"AggregateFunction(uniqTheta, T)"}}
+        {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaIntersect = {"A new uniqThetaSketch containing the intersect result.", {"AggregateFunction(uniqTheta, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaIntersect = {"A new uniqThetaSketch containing the intersect result.", {"UInt64"}};
     FunctionDocumentation::Examples examples_uniqThetaIntersect = {
     {
         "Usage example",
@@ -71,9 +71,9 @@ Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the res
     )";
     FunctionDocumentation::Syntax syntax_uniqThetaNot = "uniqThetaNot(uniqThetaSketch,uniqThetaSketch)";
     FunctionDocumentation::Arguments arguments_uniqThetaNot = {
-        {"uniqThetaSketch", "uniqThetaSketch object. [`AggregateFunction(uniqTheta, T)`](/reference/data-types/aggregatefunction).", {"AggregateFunction(uniqTheta, T)"}}
+        {"uniqThetaSketch", "uniqThetaSketch object.", {"Tuple", "Array", "Date", "DateTime", "String", "(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_uniqThetaNot = {"Returns a new uniqThetaSketch containing the a_not_b result.", {"AggregateFunction(uniqTheta, T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_uniqThetaNot = {"Returns a new uniqThetaSketch containing the a_not_b result.", {"UInt64"}};
     FunctionDocumentation::Examples examples_uniqThetaNot = {
     {
         "Usage example",

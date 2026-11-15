@@ -11,7 +11,7 @@ from helpers.test_tools import wait_condition
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/named_collections.xml", "configs/http_forbid_headers.xml"],
+    main_configs=["configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_elasticsearch=True,
 )
@@ -675,29 +675,3 @@ def test_pit_closed_after_read():
         )
         == ""
     )
-
-
-FORBID_CONFIG = "/etc/clickhouse-server/config.d/http_forbid_headers.xml"
-FORBID_PLACEHOLDER = "<header>X-Forbidden-Placeholder</header>"
-
-
-def test_basic_auth_with_forbidden_authorization():
-    # `user` and `password` are sent as Basic credentials in the `Authorization` header.
-    create_index_with_documents("forbidden_authorization", [{"id": 1}])
-    node.query("DROP TABLE IF EXISTS es_forbidden_authorization")
-    node.query(f"CREATE TABLE es_forbidden_authorization {elasticsearch_engine('forbidden_authorization')}")
-    try:
-        assert node.query("SELECT count() FROM es_forbidden_authorization") == "1\n"
-        node.replace_in_config(FORBID_CONFIG, FORBID_PLACEHOLDER, FORBID_PLACEHOLDER + "<header>Authorization</header>")
-        node.query("SYSTEM RELOAD CONFIG")
-        try:
-            # The stored table still loads, but its reads do not send the credentials.
-            node.query("DETACH TABLE es_forbidden_authorization")
-            node.query("ATTACH TABLE es_forbidden_authorization")
-            error = node.query_and_get_error("SELECT count() FROM es_forbidden_authorization")
-            assert 'HTTP header "Authorization" is forbidden' in error, error
-        finally:
-            node.replace_in_config(FORBID_CONFIG, "<header>Authorization</header>", "")
-            node.query("SYSTEM RELOAD CONFIG")
-    finally:
-        node.query("DROP TABLE IF EXISTS es_forbidden_authorization")

@@ -195,13 +195,13 @@ See [Writing to data lakes](/guides/use-cases/data-warehousing/getting-started/w
 
 ### Delta Lake {#delta-lake-settings}
 
-ClickHouse reads Delta Lake through the Delta Lake Rust kernel (`delta-kernel-rs`). From version 26.11 it's the only Delta Lake reader, and the setting that selected it is obsolete.
+From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel. The setting is named [`allow_delta_kernel_rs`](/reference/settings/session-settings/allow#allow_delta_kernel_rs) in version 26.8 and later, and `allow_experimental_delta_kernel_rs` in versions 25.5 through 26.7. On Azure Blob Storage, use [deltaLakeAzure()](/reference/functions/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
 
 #### Delta Kernel {#delta-kernel}
 
-In versions before 26.11, the Delta kernel setting must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. Without the kernel, ClickHouse uses a legacy reader that doesn't support these features. When enabling it explicitly, use the name for your ClickHouse version.
+The Delta kernel setting must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. When enabling it explicitly, use the name for your ClickHouse version.
 
-For versions 26.8 through 26.10:
+For version 26.8 and later:
 
 ```sql
 SET allow_delta_kernel_rs = 1;

@@ -14,9 +14,11 @@ namespace DB
     M(UInt8) \
     M(UInt16) \
     M(UInt32) \
+    M(UInt64) \
     M(Int8) \
     M(Int16) \
-    M(Int32)
+    M(Int32) \
+    M(Int64)
 
 /** `NumericIndexedVector` encapsulates the vector (in mathematics) data structure and exposes the following operations.
  * Operations on a single vector:

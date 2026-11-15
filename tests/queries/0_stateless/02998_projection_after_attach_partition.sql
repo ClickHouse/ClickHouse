@@ -32,12 +32,11 @@ OPTIMIZE TABLE visits_order FINAL;
 
 ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
 
-SET enable_parallel_replicas=0;
+SET enable_analyzer=1, enable_parallel_replicas=0;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 
 SET automatic_parallel_replicas_mode = 0;
-SET enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, optimize_aggregation_in_order = 0;
+SET enable_analyzer=1, enable_parallel_replicas=1, parallel_replicas_local_plan=1, parallel_replicas_support_projection=1, optimize_aggregation_in_order = 0;
 
--- Plan-based parallel replicas also print the shipped fragment, which reads the table before the replica applies the projection.
-SELECT countIf(explain LIKE '%ReadFromMergeTree (user_name_projection)%') > 0 AS reads_projection FROM (EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2');
+SELECT trimLeft(*) FROM (EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2') where explain like '%ReadFromPreparedSource%' or explain like '%ReadFromMergeTree%';

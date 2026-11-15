@@ -75,7 +75,7 @@ public:
         rle.next(reinterpret_cast<char *>(data.data()), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -115,7 +115,7 @@ public:
         rle->next(data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -169,7 +169,7 @@ public:
             out[i] = not_null[i] ? out[--next_value] : 0;
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         stream->seek(positions.at(column_id));
@@ -286,7 +286,7 @@ public:
         readIndex(dynamic_cast<EncodedStringVectorBatch &>(batch), num_values, incoming_mask);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -346,7 +346,7 @@ public:
         string_batch.column = readStrings(*length_rle, *blob_stream, num_values, batch.hasNulls ? batch.notNull.data() : nullptr, column_id);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -441,7 +441,7 @@ public:
         }
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -521,7 +521,7 @@ public:
         return num_values;
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -680,7 +680,7 @@ public:
         value_decoder->next(decimal_batch.values.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         value_decoder->seek(positions.at(column_id));
@@ -784,7 +784,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         for (auto & child : children)
@@ -807,7 +807,7 @@ private:
         }
     }
 
-    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
+    std::vector<std::unique_ptr<ColumnReader>> children;
 };
 
 /// Reads the lengths of the lists or maps as the end offsets, returns the total number of the children.
@@ -876,7 +876,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -949,7 +949,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -1038,7 +1038,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(RowGroupPositions & positions) override
+    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -1087,8 +1087,8 @@ private:
 
     ByteRleDecoder rle;
     const size_t num_children;
-    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
-    VectorWithMemoryTracking<UInt64> counts;
+    std::vector<std::unique_ptr<ColumnReader>> children;
+    std::vector<UInt64> counts;
 };
 
 }
@@ -1141,7 +1141,7 @@ size_t ColumnReader::skip(size_t num_values)
     return num_values;
 }
 
-void ColumnReader::seekToRowGroup(RowGroupPositions & positions)
+void ColumnReader::seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions)
 {
     if (not_null_decoder)
     {

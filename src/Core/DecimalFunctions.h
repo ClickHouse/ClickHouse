@@ -90,7 +90,7 @@ struct DataTypeDecimalTrait
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
-ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
 {
     T multiplied = 0;
     if (common::mulOverflow(x, multiplier, multiplied))
@@ -111,7 +111,7 @@ ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T
 }
 
 template <typename T>
-ALWAYS_INLINE inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
 {
     T res;
     multiplyAdd<T, true>(x, multiplier, delta, res);

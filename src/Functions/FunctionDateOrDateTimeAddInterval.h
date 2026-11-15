@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -46,20 +45,6 @@ namespace ErrorCodes
 inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 {
     return static_cast<Int64>(static_cast<UInt64>(whole) * static_cast<UInt64>(multiplier) + static_cast<UInt64>(rem));
-}
-
-/// Split DateTime64/Time64 ticks into whole seconds and the remainder, truncating like `std::div`.
-/// `std::div` is an out-of-line libc call (`ldiv`/`lldiv`) on every element, while `/` and `%` on the
-/// same operands compile to a single inline division.
-struct TicksDivResult
-{
-    Int64 quot;
-    Int64 rem;
-};
-
-ALWAYS_INLINE inline TicksDivResult divTicks(Int64 ticks, Int64 multiplier)
-{
-    return {ticks / multiplier, ticks % multiplier};
 }
 
 /// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
@@ -383,7 +368,7 @@ struct AddDaysImpl
             if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
                 return t + delta * DATE_SECONDS_PER_DAY * multiplier;
         }
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
     }
     template <bool fixed_offset>
@@ -396,7 +381,7 @@ struct AddDaysImpl
             if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
                 return t + delta * DATE_SECONDS_PER_DAY * multiplier;
         }
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
     }
     template <bool fixed_offset>
@@ -483,7 +468,7 @@ struct AddWeeksImpl
         }
         else
             weeksToDays(delta, days);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         /// `days` (= delta * 7) is computed via weeksToDays in the wrapping (UInt64-equivalent) domain
         /// above; rescaleWholeToTicks keeps the final whole * multiplier well-defined for large scales.
         /// WITH FILL passes deltas from the whole Int64 range, so both steps must avoid signed overflow.
@@ -502,7 +487,7 @@ struct AddWeeksImpl
         }
         else
             weeksToDays(delta, days);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addDays(d.quot, days), multiplier, d.rem);
     }
     template <bool fixed_offset>
@@ -575,13 +560,13 @@ struct AddMonthsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
@@ -620,13 +605,13 @@ struct AddQuartersImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
     }
     static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
@@ -665,13 +650,13 @@ struct AddYearsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = divTicks(t, multiplier);
+        auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
@@ -741,13 +726,8 @@ struct SubtractIntervalImpl : public Transform
         UInt16 scale) const
     {
         Int64 negated = 0;
-        if constexpr (fixed_offset)
-        {
-            if (!negate(delta, negated))
-                return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
-        }
-        else
-            negate(delta, negated);
+        if (!negate(delta, negated))
+            return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
@@ -859,21 +839,14 @@ struct Processor
     }
 
 private:
-    /// Called once per row from the loops below. The transforms are small, but whether the inliner takes them
-    /// varied between otherwise identical builds (one left `DecimalUtils::multiplyAdd` as a call in the loop of
-    /// `addSeconds` on `DateTime64`, 40% more instructions), so force it.
     template <typename FromDataType, typename T>
-    ALWAYS_INLINE auto executeTransform(
+    auto executeTransform(
         T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
-        {
-            [[clang::always_inline]] return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
-        }
+            return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
         else
-        {
-            [[clang::always_inline]] return transform.execute(t, delta, time_zone, utc_time_zone, scale);
-        }
+            return transform.execute(t, delta, time_zone, utc_time_zone, scale);
     }
 
     template <typename Value>
@@ -1040,37 +1013,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    /// The default value of a String date, the empty string, is not a valid date.
-    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
-    }
-
-    /// Documentation-only — adds/subtracts the integer/float `delta` of the
-    /// given interval unit (encoded in `Transform`) to/from a date or
-    /// date-time value. The optional 3rd argument is a constant time-zone
-    /// string. The concrete result type depends on the input date type and
-    /// the precision of the interval unit (e.g. `addSeconds(Date, ...)`
-    /// promotes to `DateTime`).
-    String getSignatureString() const override
-    {
-        return "(Date | Date32 | Time | Time64 | DateTime | DateTime64 | String, NativeNumber, [const String]) -> Any";
-    }
-
-    /// The declarative signature above is documentation-only: the exact result type is not
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it as well, so the base
-    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
-    /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

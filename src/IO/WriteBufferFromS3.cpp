@@ -19,7 +19,6 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/HTTPConnectionInfo.h>
 
 #include <utility>
 
@@ -186,14 +185,10 @@ void WriteBufferFromS3::preFinalize()
     }
 
     if (!do_single_part_upload && client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
-    {
-        if (!write_settings.object_storage_write_if_none_match_best_effort)
-            throw S3Exception(
-                Aws::S3::S3Errors::UNKNOWN,
-                "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
-                key);
-        LOG_DEBUG(log, "GCS cannot condition a multipart upload, so {} is written unconditionally", key);
-    }
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
+            key);
 
     if (do_single_part_upload)
     {
@@ -446,7 +441,6 @@ void WriteBufferFromS3::createMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
-    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -496,7 +490,6 @@ void WriteBufferFromS3::abortMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
 
-    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     auto outcome = client_ptr->AbortMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -622,7 +615,6 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
-        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
         auto elapsed = watch.elapsedMicroseconds();
@@ -676,9 +668,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
 
-    /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
-    /// and rejects its `x-goog-if-generation-match` translation.
-    if (!write_settings.object_storage_write_if_none_match.empty() && !client_ptr->isClientForGCS())
+    if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
 
     if (!write_settings.object_storage_write_if_match.empty())
@@ -706,7 +696,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
-        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
         auto elapsed = watch.elapsedMicroseconds();
@@ -814,7 +803,6 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
             CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);
             auto elapsed = watch.elapsedMicroseconds();

@@ -4,6 +4,7 @@
 -- internal variant columns without updating the corresponding DataTypeVariant, creating
 -- column/type position mismatches in KeyCondition::tryPrepareSetColumnsForIndex.
 -- https://github.com/ClickHouse/ClickHouse/issues/97854
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS t_variant_lc;
 CREATE TABLE t_variant_lc (`id` Decimal(76, 70), `value` Int128) ENGINE = MergeTree ORDER BY (id, value);
 INSERT INTO t_variant_lc SELECT number, number FROM numbers(10);

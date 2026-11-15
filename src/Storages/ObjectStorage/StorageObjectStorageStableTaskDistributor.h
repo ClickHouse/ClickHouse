@@ -44,8 +44,6 @@ private:
 
     std::vector<std::string> ids_of_nodes;
     std::vector<bool> replica_seen;
-    /// Replicas that have received an empty task: they will not ask again.
-    std::vector<bool> replica_finished;
     std::optional<std::chrono::steady_clock::time_point> stealing_allowed_since;
 
     std::mutex mutex;

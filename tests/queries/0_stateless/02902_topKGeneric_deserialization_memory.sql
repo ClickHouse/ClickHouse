@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- https://github.com/ClickHouse/ClickHouse/issues/49706
 -- Using format Parquet for convenience so it errors out without output (but still deserializes the output)
 -- Without the fix this would OOM the client when deserializing the state

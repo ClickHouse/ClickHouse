@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <vector>
 
@@ -76,7 +75,7 @@ private:
         /// Positions of the required columns in the source chunk.
         std::vector<size_t> required_column_positions;
         /// Mapping from action inputs to positions in the reduced input header.
-        VectorWithMemoryTracking<ssize_t> action_input_positions;
+        std::vector<ssize_t> action_input_positions;
         /// Positions of the boundary columns in the evaluated result.
         std::optional<size_t> start_position;
         std::optional<size_t> end_position;

@@ -1,4 +1,4 @@
--- Tags: no-flaky-check, no-msan
+-- Tags: no-flaky-check
 -- ^^ The test is large (780 lines) and runs ~190-260s in the flaky check at
 -- 5x; the only change in this PR is pinning `date_time_input_format` and
 -- `cast_string_to_date_time_mode` to `basic` to preserve the existing
@@ -9,7 +9,7 @@
 -- Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 -- Source: test/BabyKusto.Core.Tests/EndToEndTests.cs
 
-set enable_kusto_dialect=1;
+set allow_experimental_kusto_dialect=1;
 set joined_subquery_requires_alias=0;
 set prefer_column_name_to_alias=1;
 set allow_experimental_dynamic_type=1;

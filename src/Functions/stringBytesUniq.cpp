@@ -9,7 +9,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
-#include <array>
+#include <bit>
 #include <cmath>
 
 namespace DB
@@ -19,19 +19,18 @@ struct StringBytesUniqImpl
 {
     using ResultType = UInt16;
 
-    std::array<UInt64, 256> last_seen_row{};
-    UInt64 row = 0;
-
-    ResultType process(const UInt8 * data, size_t size)
+    static ResultType process(const UInt8 * data, size_t size)
     {
-        ++row;
-        ResultType res = 0;
-        for (const UInt8 * end = data + size; data < end; ++data)
+        UInt64 mask[4] = {0};
+        const UInt8 * end = data + size;
+
+        for (; data < end; ++data)
         {
-            res += last_seen_row[*data] < row;
-            last_seen_row[*data] = row;
+            UInt8 byte = *data;
+            mask[byte >> 6] |= (1ULL << (byte & 0x3F));
         }
-        return res;
+
+        return static_cast<ResultType>(std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]));
     }
 };
 

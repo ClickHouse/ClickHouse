@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/CurrentThread.h>
@@ -118,7 +117,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         for (const String & name : projection.sample_block.getNames())
-            preferred_order.push_back(escapeForFileName(name) + getMarksFileExtension());
+            preferred_order.push_back(name + getMarksFileExtension());
     }
 
     return preferred_order;

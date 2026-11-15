@@ -3,6 +3,7 @@
 
 SET allow_experimental_statistics = 1;
 SET use_statistics = 1;
+SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
 
 DROP TABLE IF EXISTS tab;

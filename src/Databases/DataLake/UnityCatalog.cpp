@@ -15,7 +15,7 @@
 #include <IO/Operators.h>
 #include <sstream>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Databases/DataLake/UnityCatalogUtils.h>
 #include <fmt/ranges.h>
@@ -254,12 +254,6 @@ bool UnityCatalog::tryGetTableMetadata(
                     "It means that it's unreadable with Unity catalog in ClickHouse", full_table_name));
             }
 
-#if !USE_DELTA_KERNEL_RS
-            if (result.isDefaultReadableTable())
-                result.setTableIsNotReadable(fmt::format(
-                    "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
-#endif
-
             LOG_DEBUG(log, "Processing table {} is default readable {}", table_name, result.isDefaultReadableTable());
 
             if (result.requiresSchema())
@@ -274,20 +268,21 @@ bool UnityCatalog::tryGetTableMetadata(
                         const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                         std::string name = column_json->getValue<String>("name");
                         auto is_nullable = column_json->getValue<bool>("nullable");
-                        const auto type_json_str = column_json->get("type_json").extract<String>();
+                        auto type_json_str = column_json->get("type_json").extract<String>();
                         DB::DataTypePtr data_type;
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                            auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
+                            type_json_str.pop_back();
+                            String type_name = type_json_str.substr(1);
+                            auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
                         else
                         {
                             Poco::JSON::Parser parser;
                             auto parsed_json_type = parser.parse(type_json_str);
-                            data_type = DB::getDeltaLakeFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                            data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                         }
                         schema.push_back({name, data_type});
                     }

@@ -1479,16 +1479,6 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
     return dest_size;
 }
 
-namespace
-{
-
-bool isApplicableToType(const IDataType & column_type)
-{
-    return WhichDataType(column_type).isNativeFloat();
-}
-
-}
-
 void registerCodecALP(CompressionCodecFactory & factory)
 {
     auto method_code = static_cast<UInt8>(CompressionMethodByte::ALP);
@@ -1503,7 +1493,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
         UInt8 float_width = sizeof(Float64);
         if (column_type)
         {
-            if (!isApplicableToType(*column_type))
+            if (!WhichDataType(column_type).isNativeFloat())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Codec ALP is not applicable for {} because the data type is not Float*",
@@ -1536,7 +1526,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecALP>(float_width, variant);
     };
-    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
+    factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)

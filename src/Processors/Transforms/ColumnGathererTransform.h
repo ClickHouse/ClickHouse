@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
@@ -91,7 +90,7 @@ private:
 
     MutableColumnPtr result_column;
 
-    VectorWithMemoryTracking<Source> sources;
+    std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
 
     const size_t block_preferred_size_rows;

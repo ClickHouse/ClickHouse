@@ -23,9 +23,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> DateTime";
+        return std::make_shared<DataTypeDateTime>();
     }
 
     bool isDeterministic() const override { return false; }

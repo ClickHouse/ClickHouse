@@ -1,0 +1,21 @@
+{
+  "groups": [
+    {
+      "group": "시작하기",
+      "pages": [
+        "ko/products/agentic-data-stack/overview",
+        "ko/products/agentic-data-stack/docker-setup"
+      ]
+    },
+    {
+      "group": "구성 요소",
+      "pages": [
+        "ko/products/agentic-data-stack/components/librechat",
+        "ko/products/agentic-data-stack/components/mcp-server",
+        "ko/products/agentic-data-stack/components/langfuse"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "item": "에이전트형 데이터 스택"
+}

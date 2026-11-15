@@ -1,6 +1,7 @@
 -- The text index is analyzed through a `CAST` that drops `Nullable`, and the preprocessor is applied to the
 -- haystack of the row-level function. The `CAST` stays under the preprocessor, so NULL still throws.
 
+SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 

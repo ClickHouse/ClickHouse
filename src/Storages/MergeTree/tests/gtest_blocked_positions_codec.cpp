@@ -1,13 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
-#include <Compression/PFor.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 
-#include <limits>
 #include <map>
 #include <random>
 #include <vector>
@@ -73,32 +69,6 @@ PerDocPositions randomDocs(size_t num_docs, uint32_t max_freq, size_t seed)
     return docs;
 }
 
-std::string singleBlockStream(UInt64 num_docs, const std::string & payload)
-{
-    DB::WriteBufferFromOwnString blob;
-    DB::writeVarUInt(num_docs, blob);
-    DB::writeVarUInt(1, blob); /// num_blocks
-    DB::writeVarUInt(payload.size(), blob);
-    DB::writeString(payload, blob);
-    return blob.str();
-}
-
-std::string frequencyRun(const std::vector<UInt32> & frequencies_minus_one)
-{
-    std::string run(DB::PFor::maxCompressedBytes<UInt32>(frequencies_minus_one.size()), '\0');
-    run.resize(DB::PFor::encodeBlocks<UInt32>(frequencies_minus_one, DB::PFor::Delta::none, reinterpret_cast<uint8_t *>(run.data())));
-    return run;
-}
-
-void expectDecodeThrows(const std::string & blob, UInt64 num_docs)
-{
-    DB::ReadBufferFromMemory in(blob.data(), blob.size());
-    DB::PaddedPODArray<UInt32> doc_offsets;
-    DB::PaddedPODArray<UInt32> positions;
-    TextIndexBlockedPositionsCodec::DecodeScratch scratch;
-    EXPECT_THROW(TextIndexBlockedPositionsCodec::decodeAll(in, num_docs, blob.size(), doc_offsets, positions, scratch), DB::Exception);
-}
-
 }
 
 TEST(BlockedPositionsCodec, Empty)
@@ -113,7 +83,7 @@ TEST(BlockedPositionsCodec, SingleDocSinglePosition)
 
 TEST(BlockedPositionsCodec, SingleDocManyPositions)
 {
-    /// A document with many positions.
+    /// Produces a multi-byte frequency varint.
     std::vector<uint32_t> positions;
     for (uint32_t k = 0; k < 300; ++k)
         positions.push_back(k * 37);
@@ -132,19 +102,7 @@ TEST(BlockedPositionsCodec, ExactBlockBoundaries)
 TEST(BlockedPositionsCodec, RandomLarge)
 {
     expectRoundTrip(randomDocs(10000, 6, 1));
-    expectRoundTrip(randomDocs(2500, 1, 2)); /// all frequencies 1: every frequency run is a zero block
-}
-
-TEST(BlockedPositionsCodec, MixedFrequencyRuns)
-{
-    /// Blocks of single positions around a block with a repeated token.
-    PerDocPositions docs;
-    for (uint32_t doc = 0; doc < 3 * TextIndexBlockedPositionsCodec::BLOCK_DOCS; ++doc)
-    {
-        const bool repeated = doc / TextIndexBlockedPositionsCodec::BLOCK_DOCS == 1 && doc % 5 == 0;
-        docs[doc] = repeated ? std::vector<uint32_t>{doc % 7, doc % 7 + 3} : std::vector<uint32_t>{doc % 7};
-    }
-    expectRoundTrip(docs);
+    expectRoundTrip(randomDocs(2500, 1, 2)); /// all frequencies 1: no exceptions at all
 }
 
 TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
@@ -230,7 +188,7 @@ TEST(BlockedPositionsCodec, RejectsTruncation)
     }
 }
 
-TEST(BlockedPositionsCodec, SurvivesCorruption)
+TEST(BlockedPositionsCodec, RejectsCorruptedExceptionRank)
 {
     /// Flip bytes across the stream; decode must throw or produce a consistent result, never crash.
     const auto docs = randomDocs(300, 4, 7);
@@ -350,19 +308,33 @@ TEST(BlockedPositionsCodec, RejectsFrequencyAboveUInt32)
 {
     /// The declared ~40 MB payload lifts the payload-derived bound above UInt32 max, so the
     /// frequency slips past it and must be rejected explicitly, not truncated.
-    std::string blob = frequencyRun({std::numeric_limits<UInt32>::max()});
-    blob.resize(40'000'000, '\0');
-    expectDecodeThrows(singleBlockStream(1, blob), 1);
-}
+    std::string blob;
+    auto put_varint = [&](UInt64 v)
+    {
+        while (v >= 0x80)
+        {
+            blob.push_back(static_cast<char>(v | 0x80));
+            v >>= 7;
+        }
+        blob.push_back(static_cast<char>(v));
+    };
 
-TEST(BlockedPositionsCodec, RejectsTruncatedFrequencyRun)
-{
-    const std::string run = frequencyRun({1, 5, 3});
-    expectDecodeThrows(singleBlockStream(3, run.substr(0, 2)), 3);
-}
+    constexpr UInt64 payload_bytes = 40'000'000;
+    put_varint(1); /// num_docs
+    put_varint(1); /// num_blocks
+    put_varint(payload_bytes);
 
-TEST(BlockedPositionsCodec, RejectsPositionsBeyondBlock)
-{
-    /// 300 positions in a stream too short for them.
-    expectDecodeThrows(singleBlockStream(1, frequencyRun({299}) + std::string(8, '\0')), 1);
+    const size_t payload_start = blob.size();
+    put_varint(1); /// num_exceptions
+    put_varint(0); /// local_rank
+    put_varint(5'000'000'000ULL); /// freq: > UInt32 max, < docs + payload_bytes * 128
+    blob.resize(payload_start + payload_bytes, '\0');
+
+    DB::ReadBufferFromMemory in(blob.data(), blob.size());
+    DB::PaddedPODArray<UInt32> doc_offsets;
+    DB::PaddedPODArray<UInt32> positions;
+    TextIndexBlockedPositionsCodec::DecodeScratch scratch;
+    EXPECT_THROW(
+        TextIndexBlockedPositionsCodec::decodeAll(in, 1, blob.size(), doc_offsets, positions, scratch),
+        DB::Exception);
 }

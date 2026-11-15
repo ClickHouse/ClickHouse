@@ -61,7 +61,7 @@ WHERE explain LIKE '%Type: cross%';
 -- A condition over both sides cannot be pushed anywhere and stays above the operator.
 SELECT 'both sides routed', count() FROM (EXPLAIN SELECT l.id, r.id FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y WHERE l.x + r.y > 4)
 WHERE explain LIKE '%BlockNestedLoopJoin%';
-SELECT 'both sides above', count() FROM (EXPLAIN SELECT l.id, r.id FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y WHERE l.x + r.y > 4 SETTINGS enable_parallel_replicas = 0)
+SELECT 'both sides above', count() FROM (EXPLAIN SELECT l.id, r.id FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y WHERE l.x + r.y > 4)
 WHERE explain LIKE '%Filter (WHERE)%';
 
 -- Whichever way the filter goes, the result is the one the unoptimized plan produces.

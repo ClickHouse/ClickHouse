@@ -20,16 +20,17 @@ cp -r "$CUR_DIR"/data_delta_lake/lakehouses/spark_catalog/test/t0/. "$DELTA_DIR/
 
 CREATE="DROP TABLE IF EXISTS ${TABLE};
         CREATE TABLE ${TABLE} ENGINE = DeltaLakeLocal('${DELTA_DIR}')"
-$CLICKHOUSE_CLIENT --multiquery "$CREATE"
+$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery "$CREATE"
 
-# The streams below update the metadata concurrently while reading it. One long-lived client per stream keeps the queries
+# The streams below replace the metadata pointer concurrently while reading it: each one publishes
+# the implementation its own setting selects. One long-lived client per stream keeps the queries
 # back to back. Each iteration ends with a marker: the race is invisible in query output, so
 # without counting the queries a stream really issued, one dying early would still match the
 # reference.
 # Neither stream must run a read pipeline: `createFileIterator` reads the metadata twice, so it can
 # pin no snapshot version from the object the first read saw and then call `iterate` on a
 # replacement that requires one. DESCRIBE reaches `update` without that iterator.
-STREAMS=8
+STREAMS=4
 QUERIES=12
 PROBE="DESCRIBE TABLE ${TABLE} FORMAT Null; SELECT 1 FORMAT TSVRaw;"
 rm -rf "${OUT_DIR:?}"
@@ -37,7 +38,10 @@ mkdir -p "$OUT_DIR"
 pids=()
 for i in $(seq 1 $STREAMS); do
     yes "$PROBE" | head -n $QUERIES |
-        $CLICKHOUSE_CLIENT --multiquery > "$OUT_DIR/stream-$i" 2>/dev/null &
+        $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 --multiquery > "$OUT_DIR/kernel-$i" 2>/dev/null &
+    pids+=($!)
+    yes "$PROBE" | head -n $QUERIES |
+        $CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=0 --multiquery > "$OUT_DIR/no-kernel-$i" 2>/dev/null &
     pids+=($!)
 done
 # Bare `wait` reports success once every child is reaped, whatever they exited with.
@@ -45,6 +49,6 @@ for pid in "${pids[@]}"; do
     wait "$pid" || echo "concurrent stream $pid failed with status $?"
 done
 
-cat "$OUT_DIR"/stream-* | wc -l
+echo "$(cat "$OUT_DIR"/kernel-* | wc -l) $(cat "$OUT_DIR"/no-kernel-* | wc -l)"
 
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM ${TABLE}"
+$CLICKHOUSE_CLIENT --allow_experimental_delta_kernel_rs=1 -q "SELECT count() > 0 FROM ${TABLE}"

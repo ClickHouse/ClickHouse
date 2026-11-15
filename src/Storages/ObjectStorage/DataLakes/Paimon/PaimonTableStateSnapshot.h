@@ -18,7 +18,6 @@ namespace Paimon
 struct TableStateSnapshot
 {
     Int64 snapshot_id{-1};
-    /// Schema to read with: the latest schema for the latest state, the snapshot's own schema for a state loaded by snapshot id.
     Int64 schema_id{-1};
     String base_manifest_list_path;
     String delta_manifest_list_path;
@@ -29,7 +28,6 @@ struct TableStateSnapshot
     std::optional<Int64> delta_record_count;
     std::optional<Int64> changelog_record_count;
     std::optional<Int64> watermark;
-    std::optional<String> index_manifest;
 
     TableStateSnapshot() = default;
 
@@ -43,8 +41,7 @@ struct TableStateSnapshot
         std::optional<Int64> total_record_count_ = std::nullopt,
         std::optional<Int64> delta_record_count_ = std::nullopt,
         std::optional<Int64> changelog_record_count_ = std::nullopt,
-        std::optional<Int64> watermark_ = std::nullopt,
-        std::optional<String> index_manifest_ = std::nullopt)
+        std::optional<Int64> watermark_ = std::nullopt)
         : snapshot_id(snapshot_id_)
         , schema_id(schema_id_)
         , base_manifest_list_path(std::move(base_manifest_list_path_))
@@ -55,14 +52,10 @@ struct TableStateSnapshot
         , delta_record_count(delta_record_count_)
         , changelog_record_count(changelog_record_count_)
         , watermark(watermark_)
-        , index_manifest(std::move(index_manifest_))
     {
     }
 
     bool isCompact() const { return commit_kind == "COMPACT"; }
-    bool isAppend() const { return commit_kind == "APPEND"; }
-    bool isOverwrite() const { return commit_kind == "OVERWRITE"; }
-    bool isAnalyze() const { return commit_kind == "ANALYZE"; }
 
     bool operator==(const TableStateSnapshot & other) const
     {

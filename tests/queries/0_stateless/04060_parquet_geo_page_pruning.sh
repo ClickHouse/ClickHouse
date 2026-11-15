@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 #
 # Test GeoParquet spatial page-level pruning via covering.bbox column index.
 # The test file has 1 row group with 3 pages (6 rows each):
@@ -35,11 +36,10 @@ SELECT count() FROM file('$FILE', Parquet)
 WHERE pointInPolygon(geometry, [(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)])"
 
 echo "=== pruned_pages (south texas filter) ==="
-# The pages may be pruned by different threads, so the profile event can be reported in several increments.
 $CLICKHOUSE_LOCAL --print-profile-events -q "
 SELECT id FROM file('$FILE', Parquet)
 WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 32.5), (-99., 32.5), (-99., 30.)])
-ORDER BY id" 2>&1 | grep 'ParquetPrunedPages' | sed 's/^.*] //' | awk '{ sum += $2 } END { print "ParquetPrunedPages: " sum " (increment)" }'
+ORDER BY id" 2>&1 | grep 'ParquetPrunedPages' | sed 's/^.*] //'
 
 echo "=== pruned_pages (pruning disabled) ==="
 disabled_out=$($CLICKHOUSE_LOCAL --print-profile-events -q "

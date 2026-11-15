@@ -131,10 +131,8 @@ protected:
     virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
-    /// `table_metadata_tmp_path` is empty when nothing has been written yet: then `statement` is written to `table_metadata_path` at the commit.
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                   const String & statement, ContextPtr query_context);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}

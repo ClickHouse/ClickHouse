@@ -52,7 +52,10 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override { return "(T) -> T"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return arguments[0];
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {

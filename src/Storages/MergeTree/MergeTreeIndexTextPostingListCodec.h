@@ -178,8 +178,8 @@ private:
 
     /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which restores the row ids
-    ///   from the stored deltas, starting from `prev_row_id`
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills `out` with delta values
+    /// - inclusive_scan converts deltas to row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 

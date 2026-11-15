@@ -1,4 +1,5 @@
 -- Tags: no-tsan
+SET enable_analyzer = 1;
 
 WITH `cte1` AS (
     SELECT *

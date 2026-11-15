@@ -43,8 +43,7 @@ public:
         /// `GROUP BY c0 + 1`) must therefore stay as it is: unwrapping it to `c0` would ask for a
         /// column that is gone once the rows are aggregated. `GROUP BY` has its own unwrapping pass,
         /// controlled by `optimize_injective_functions_in_group_by`, whose result is visible here.
-        /// A positional argument or a `group_by_use_nulls` copy of a `GROUP BY` key can keep a stale alias.
-        QueryTreeNodePtrWithHashIgnoreAliasesSet group_by_keys;
+        QueryTreeNodePtrWithHashSet group_by_keys;
         if (query->hasGroupBy())
         {
             /// `group_by_use_nulls` makes everything resolved after `GROUP BY` see the grouping keys

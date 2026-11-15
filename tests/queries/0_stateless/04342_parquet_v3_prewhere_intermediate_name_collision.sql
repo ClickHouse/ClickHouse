@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: needs the native Parquet V3 reader.
+
 -- Regression test for a silent wrong-results bug in the ParquetV3 native reader's
 -- preparePrewhere(). When the prewhere splitter promotes a shared intermediate to a
 -- step boundary, the later step references it by its generated result_name. If a real
@@ -23,5 +26,5 @@ SELECT count(), max(`equals(length(a), 3_UInt8)`)
 FROM file(currentDatabase() || '_04342.parquet', Parquet,
     'a String, b Int64, c Int64, `equals(length(a), 3_UInt8)` UInt8')
 PREWHERE (length(a) = 3 AND b > 0) AND (length(a) = 3 AND c > 0)
-SETTINGS input_format_parquet_use_native_reader_v3 = 1,
+SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1,
     optimize_move_to_prewhere = 1;

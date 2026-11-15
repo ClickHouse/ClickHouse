@@ -1,4 +1,4 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-parallel
 
 DROP TABLE IF EXISTS tab_src SYNC;
 DROP TABLE IF EXISTS tab_trigger SYNC;

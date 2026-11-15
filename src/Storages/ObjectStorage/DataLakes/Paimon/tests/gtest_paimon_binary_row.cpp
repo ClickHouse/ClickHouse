@@ -38,44 +38,6 @@ String makeSingleFieldRow(UInt64 raw_value, size_t slot_bytes = 8)
     return bytes;
 }
 
-/// Builds a Paimon BinaryRow blob holding a single non-null non-compact decimal field
-/// (precision > 18). Such a decimal is stored out of line: the 8-byte slot holds
-/// (offset << 32) | size, and the variable-length area holds the unscaled value as a big-endian
-/// two's complement byte array of minimal length, as produced by Java `BigInteger.toByteArray`.
-String makeSingleWideDecimalRow(const String & unscaled_big_endian)
-{
-    constexpr Int32 bit_set_width = 8;
-    /// The variable-length area starts right after the null bitset and the single value slot.
-    constexpr UInt64 sub_offset = bit_set_width + 8;
-    const UInt64 offset_and_size = (sub_offset << 32) | unscaled_big_endian.size();
-
-    String bytes = makeSingleFieldRow(offset_and_size);
-    bytes += unscaled_big_endian;
-    /// Paimon pads the variable-length data to a multiple of 8 bytes.
-    bytes.append((8 - unscaled_big_endian.size() % 8) % 8, '\0');
-    return bytes;
-}
-
-/// Minimal big-endian two's complement representation of `value`, like Java `BigInteger.toByteArray`.
-template <typename T>
-String toMinimalBigEndian(T value)
-{
-    String bytes;
-    for (size_t i = 0; i < sizeof(T); ++i)
-        bytes.insert(bytes.begin(), static_cast<char>(static_cast<UInt8>(value >> (i * 8))));
-    /// Drop redundant leading sign bytes while keeping the sign bit of the next byte intact.
-    while (bytes.size() > 1)
-    {
-        const UInt8 first = static_cast<UInt8>(bytes[0]);
-        const UInt8 second = static_cast<UInt8>(bytes[1]);
-        if ((first == 0x00 && !(second & 0x80)) || (first == 0xFF && (second & 0x80)))
-            bytes.erase(0, 1);
-        else
-            break;
-    }
-    return bytes;
-}
-
 }
 
 /// Paimon stores every fixed-size field in an 8-byte slot, so getLong must read all 64 bits.
@@ -118,24 +80,4 @@ TEST(PaimonBinaryRow, GetIntReadsExactly32Bits)
 {
     BinaryRow row(makeSingleFieldRow(0x89ABCDEFULL, /*slot_bytes=*/4));
     EXPECT_EQ(row.getInt(0), static_cast<Int32>(0x89ABCDEF));
-}
-
-/// Wide decimals (precision > 18) are stored as minimal big-endian two's complement byte arrays.
-/// When the array is shorter than the target integer, it must be sign-extended: zero padding
-/// turned negative values into large positive ones (issue #127544).
-TEST(PaimonBinaryRow, GetDecimalSignExtendsWideValues)
-{
-    for (Int128 value : {Int128(0), Int128(1), Int128(-1), Int128(127), Int128(128), Int128(-128), Int128(-129),
-                         Int128(-12345678901234567LL) * 1000, std::numeric_limits<Int128>::min(), std::numeric_limits<Int128>::max()})
-    {
-        BinaryRow row(makeSingleWideDecimalRow(toMinimalBigEndian(value)));
-        EXPECT_EQ(row.getDecimal<Int128>(0, 38, 2).value, value);
-    }
-
-    for (Int256 value : {Int256(0), Int256(-1), Int256(255), Int256(-256),
-                         Int256(std::numeric_limits<Int128>::min()) * 1000, std::numeric_limits<Int256>::min(), std::numeric_limits<Int256>::max()})
-    {
-        BinaryRow row(makeSingleWideDecimalRow(toMinimalBigEndian(value)));
-        EXPECT_EQ(row.getDecimal<Int256>(0, 76, 2).value, value);
-    }
 }

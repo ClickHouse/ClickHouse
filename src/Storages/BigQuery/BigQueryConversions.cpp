@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/geometryConverters.h>
-#include <Functions/geometryFormatting.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -184,7 +183,6 @@ String geographyWKT(const DataTypePtr & type, const IColumn & column, size_t row
     /// A single row is cut out, because the converters work on whole columns.
     auto value_column = column_variant.getVariantByGlobalDiscriminator(discriminator).cut(column_variant.offsetAt(row), 1);
 
-    static const std::locale locale(std::locale::classic(), new ShortestFloatNumPut);
     String result;
     callOnGeometryDataType<CartesianPoint>(variant_type, [&](const auto & converter_type)
     {
@@ -192,7 +190,6 @@ String geographyWKT(const DataTypePtr & type, const IColumn & column, size_t row
         auto figures = Converter::convert(value_column);
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out.exceptions(std::ios::failbit);
-        out.imbue(locale);
         out << boost::geometry::wkt(figures[0]);
         result = out.str();
     });

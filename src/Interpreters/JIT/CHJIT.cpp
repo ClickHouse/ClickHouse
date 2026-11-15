@@ -35,13 +35,6 @@
 #include <Core/Types.h>
 
 
-#if USE_GPU
-extern "C" void LLVMInitializeNVPTXTargetInfo();
-extern "C" void LLVMInitializeNVPTXTarget();
-extern "C" void LLVMInitializeNVPTXTargetMC();
-extern "C" void LLVMInitializeNVPTXAsmPrinter();
-#endif
-
 namespace DB
 {
 
@@ -464,10 +457,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("bzero", reinterpret_cast<void *>(&bzero));
 #endif
 
-    /// Initialization (not a cast) picks the right overload where libc++ declares an
-    /// overload set for fmod, and stays tidy-clean where musl declares a single C function.
-    double (*fmod_double)(double, double) = &fmod;
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_double));
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
@@ -656,26 +646,15 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.run(module, mam);
 }
 
-void initializeLLVMTargets()
+std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 {
-    static std::once_flag llvm_targets_initialized;
-    std::call_once(llvm_targets_initialized, []()
+    static std::once_flag llvm_target_initialized;
+    std::call_once(llvm_target_initialized, []()
     {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-#if USE_GPU
-        LLVMInitializeNVPTXTargetInfo();
-        LLVMInitializeNVPTXTarget();
-        LLVMInitializeNVPTXTargetMC();
-        LLVMInitializeNVPTXAsmPrinter();
-#endif
     });
-}
-
-std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
-{
-    initializeLLVMTargets();
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();

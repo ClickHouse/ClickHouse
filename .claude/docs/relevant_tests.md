@@ -48,7 +48,7 @@ test_name LowCardinality(String), min_depth UInt8, branch_flag UInt8
 from ci.praktika.cidb import CIDB
 from ci.praktika.settings import Settings
 
-cidb = CIDB(url=CIDB.get_read_url(Info()), user="play", passwd="")
+cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
 result = cidb.query("SELECT count() FROM checks_coverage_lines WHERE ...", log_level="")
 ```
 
@@ -317,7 +317,7 @@ LIMIT {INDIRECT_LIMIT}
 PYTHONPATH=./ci:. python3 - << 'EOF'
 from ci.praktika.cidb import CIDB
 from ci.praktika.settings import Settings
-cidb = CIDB(url=CIDB.get_read_url(Info()), user="play", passwd="")
+cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
 
 # Check freshness and coverage of long tests
 print(cidb.query("""

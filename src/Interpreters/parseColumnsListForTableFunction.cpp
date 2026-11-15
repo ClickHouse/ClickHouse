@@ -11,8 +11,6 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/misc.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
@@ -183,11 +181,10 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns_list = make_intrusive<ASTColumns>();
-    columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
@@ -217,7 +214,8 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     if (!columns_list_raw)
         return false;
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
     {
         error = fmt::format("Invalid columns declaration list: \"{}\"", structure);
         return false;
@@ -225,8 +223,6 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        auto columns_list = make_intrusive<ASTColumns>();
-        columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
@@ -301,57 +297,16 @@ void removeMisboundDefaultsFromStructureHint(
             removed.insert(name);
     }
 
-    for (const auto & name : removed)
-        structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
-}
-
-String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
-{
-    const auto names = columns.getAll().getNameSet();
-    std::unordered_map<String, NameSet> reads;
-    for (const auto & column : columns)
-    {
-        if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
-            || column.default_desc.expression->hasSecretParts())
-            continue;
-        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
-    }
-
-    /// The least fixed point, so cycles and self-reads are never sent.
-    NameSet sent;
-    for (bool changed = true; changed;)
+    for (bool changed = !removed.empty(); changed;)
     {
         changed = false;
         for (const auto & [name, required] : reads)
-        {
-            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
-                    {
-                        if (names.contains(read))
-                            return !columns.hasDefault(read) || sent.contains(read);
-                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
-                        /// this server, as a function, dictionary, table or set.
-                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
-                    }))
-                changed |= sent.insert(name).second;
-        }
+            if (!removed.contains(name) && std::ranges::any_of(required, [&](const String & read) { return removed.contains(read); }))
+                changed |= removed.insert(name).second;
     }
 
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & column : columns)
-    {
-        if (!std::exchange(first, false))
-            writeCString(", ", buf);
-        writeBackQuotedString(column.name, buf);
-        writeChar(' ', buf);
-        writeString(column.type->getName(), buf);
-        if (sent.contains(column.name))
-        {
-            writeCString(" DEFAULT ", buf);
-            writeString(column.default_desc.expression->formatWithSecretsOneLine(), buf);
-        }
-    }
-    return buf.str();
+    for (const auto & name : removed)
+        structure_hint.modify(name, [](ColumnDescription & column) { column.default_desc = {}; });
 }
 
 }

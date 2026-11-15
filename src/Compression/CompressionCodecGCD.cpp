@@ -291,27 +291,20 @@ UInt32 CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_
 namespace
 {
 
-/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
-std::optional<std::pair<UInt8, bool>> getGCDTypeInfo(const IDataType & column_type, bool throw_if_not_applicable)
+std::pair<UInt8, bool> getGCDTypeInfo(const IDataType * column_type)
 {
     WhichDataType which(column_type);
     if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() ||which.isDateTime64()))
-    {
-        if (!throw_if_not_applicable)
-            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD cannot be applied to column {} because it can only be used with Int*, UInt*, Decimal*, Date* or DateTime* types.",
-            column_type.getName());
-    }
+            column_type->getName());
 
-    size_t max_size = column_type.getSizeOfValueInMemory();
+    size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
-        return std::pair<UInt8, bool>{static_cast<UInt8>(max_size), !column_type.isValueRepresentedByUnsignedInteger()};
-    if (!throw_if_not_applicable)
-        return {};
+        return {static_cast<UInt8>(max_size), !column_type->isValueRepresentedByUnsignedInteger()};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
-        column_type.getName());
+        column_type->getName());
 }
 
 }
@@ -330,12 +323,11 @@ void registerCodecGCD(CompressionCodecFactory & factory)
         /// Unlike `T64`, `GCD` intentionally does not throw when type information is missing.
         /// This still preserves correctness, but for signed data it can degrade divisor discovery and therefore compression efficiency.
         if (column_type)
-            std::tie(gcd_bytes_size, is_signed_type) = *getGCDTypeInfo(*column_type, /*throw_if_not_applicable=*/ true);
+            std::tie(gcd_bytes_size, is_signed_type) = getGCDTypeInfo(column_type);
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size, is_signed_type);
     };
-    factory.registerCompressionCodecWithType("GCD", method_code, codec_builder,
-        {.is_applicable_to_type = [](const IDataType & type) { return getGCDTypeInfo(type, /*throw_if_not_applicable=*/ false).has_value(); }});
+    factory.registerCompressionCodecWithType("GCD", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size)

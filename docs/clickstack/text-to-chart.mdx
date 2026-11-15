@@ -27,10 +27,10 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4
 ```
 
 </Tab>
-<Tab title="Docker (ClickStack UI only)">
+<Tab title="Docker (HyperDX Only)">
 
 ```bash
-docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local
+docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
 ```
 
 </Tab>
@@ -64,7 +64,7 @@ helm install my-hyperdx hyperdx/hdx-oss-v2 \
 <Steps>
 <Step title="Navigate to Chart Explorer" id="navigate-chart-explorer">
 
-Select **Chart Explorer** from the left menu in ClickStack UI.
+Select **Chart Explorer** from the left menu in HyperDX.
 </Step>
 <Step title="Select a data source" id="select-data-source">
 

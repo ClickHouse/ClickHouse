@@ -41,7 +41,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return makeNullable(arguments[0]);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

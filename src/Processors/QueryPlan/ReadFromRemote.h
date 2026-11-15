@@ -55,10 +55,6 @@ public:
 
     bool hasSerializedPlan() const;
 
-    bool hasTotals() const;
-
-    void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
-
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -77,7 +73,6 @@ private:
     const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
-    bool allow_reading_shard_from_several_replicas = false;
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(

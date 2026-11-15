@@ -1,4 +1,3 @@
-#include <Formats/FormatSettings.h>
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>

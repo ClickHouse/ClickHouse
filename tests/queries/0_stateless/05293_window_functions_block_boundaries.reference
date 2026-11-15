@@ -1,0 +1,156 @@
+rows 3 preceding 2 following, block size 1: 8831595253069182402
+rows 3 preceding 2 following, block size 2: 8831595253069182402
+rows 3 preceding 2 following, block size 3: 8831595253069182402
+rows 3 preceding 2 following, block size 5: 8831595253069182402
+rows 3 preceding 2 following, block size 8: 8831595253069182402
+rows 3 preceding 2 following, block size 65505: 8831595253069182402
+rows 2 following 5 following, block size 1: 13419831711780384530
+rows 2 following 5 following, block size 2: 13419831711780384530
+rows 2 following 5 following, block size 3: 13419831711780384530
+rows 2 following 5 following, block size 5: 13419831711780384530
+rows 2 following 5 following, block size 8: 13419831711780384530
+rows 2 following 5 following, block size 65505: 13419831711780384530
+rows 5 preceding 2 preceding, block size 1: 5207246358687789363
+rows 5 preceding 2 preceding, block size 2: 5207246358687789363
+rows 5 preceding 2 preceding, block size 3: 5207246358687789363
+rows 5 preceding 2 preceding, block size 5: 5207246358687789363
+rows 5 preceding 2 preceding, block size 8: 5207246358687789363
+rows 5 preceding 2 preceding, block size 65505: 5207246358687789363
+rows unbounded preceding current row, block size 1: 13243618278696722748
+rows unbounded preceding current row, block size 2: 13243618278696722748
+rows unbounded preceding current row, block size 3: 13243618278696722748
+rows unbounded preceding current row, block size 5: 13243618278696722748
+rows unbounded preceding current row, block size 8: 13243618278696722748
+rows unbounded preceding current row, block size 65505: 13243618278696722748
+rows current row unbounded following, block size 1: 1810198792777363012
+rows current row unbounded following, block size 2: 1810198792777363012
+rows current row unbounded following, block size 3: 1810198792777363012
+rows current row unbounded following, block size 5: 1810198792777363012
+rows current row unbounded following, block size 8: 1810198792777363012
+rows current row unbounded following, block size 65505: 1810198792777363012
+rows 100 preceding 100 following, block size 1: 1270428820752031111
+rows 100 preceding 100 following, block size 2: 1270428820752031111
+rows 100 preceding 100 following, block size 3: 1270428820752031111
+rows 100 preceding 100 following, block size 5: 1270428820752031111
+rows 100 preceding 100 following, block size 8: 1270428820752031111
+rows 100 preceding 100 following, block size 65505: 1270428820752031111
+range default frame, block size 1: 13357263743035060102
+range default frame, block size 2: 13357263743035060102
+range default frame, block size 3: 13357263743035060102
+range default frame, block size 5: 13357263743035060102
+range default frame, block size 8: 13357263743035060102
+range default frame, block size 65505: 13357263743035060102
+range 2 preceding 2 following, block size 1: 10688411035020753036
+range 2 preceding 2 following, block size 2: 10688411035020753036
+range 2 preceding 2 following, block size 3: 10688411035020753036
+range 2 preceding 2 following, block size 5: 10688411035020753036
+range 2 preceding 2 following, block size 8: 10688411035020753036
+range 2 preceding 2 following, block size 65505: 10688411035020753036
+range 1 following 3 following, block size 1: 12033996426724338373
+range 1 following 3 following, block size 2: 12033996426724338373
+range 1 following 3 following, block size 3: 12033996426724338373
+range 1 following 3 following, block size 5: 12033996426724338373
+range 1 following 3 following, block size 8: 12033996426724338373
+range 1 following 3 following, block size 65505: 12033996426724338373
+range current row unbounded following, block size 1: 1532669462100361585
+range current row unbounded following, block size 2: 1532669462100361585
+range current row unbounded following, block size 3: 1532669462100361585
+range current row unbounded following, block size 5: 1532669462100361585
+range current row unbounded following, block size 8: 1532669462100361585
+range current row unbounded following, block size 65505: 1532669462100361585
+range desc 2 preceding 1 following, block size 1: 2404716788115669151
+range desc 2 preceding 1 following, block size 2: 2404716788115669151
+range desc 2 preceding 1 following, block size 3: 2404716788115669151
+range desc 2 preceding 1 following, block size 5: 2404716788115669151
+range desc 2 preceding 1 following, block size 8: 2404716788115669151
+range desc 2 preceding 1 following, block size 65505: 2404716788115669151
+range nulls last 1 preceding 1 following, block size 1: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 2: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 3: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 5: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 8: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 65505: 14620615442772582527
+groups 1 preceding 1 following, block size 1: 2987055642492315637
+groups 1 preceding 1 following, block size 2: 2987055642492315637
+groups 1 preceding 1 following, block size 3: 2987055642492315637
+groups 1 preceding 1 following, block size 5: 2987055642492315637
+groups 1 preceding 1 following, block size 8: 2987055642492315637
+groups 1 preceding 1 following, block size 65505: 2987055642492315637
+groups 2 following 3 following, block size 1: 2660136196073589691
+groups 2 following 3 following, block size 2: 2660136196073589691
+groups 2 following 3 following, block size 3: 2660136196073589691
+groups 2 following 3 following, block size 5: 2660136196073589691
+groups 2 following 3 following, block size 8: 2660136196073589691
+groups 2 following 3 following, block size 65505: 2660136196073589691
+groups 3 preceding 1 preceding, block size 1: 7168940024360110138
+groups 3 preceding 1 preceding, block size 2: 7168940024360110138
+groups 3 preceding 1 preceding, block size 3: 7168940024360110138
+groups 3 preceding 1 preceding, block size 5: 7168940024360110138
+groups 3 preceding 1 preceding, block size 8: 7168940024360110138
+groups 3 preceding 1 preceding, block size 65505: 7168940024360110138
+groups unbounded preceding current row, block size 1: 13357263743035060102
+groups unbounded preceding current row, block size 2: 13357263743035060102
+groups unbounded preceding current row, block size 3: 13357263743035060102
+groups unbounded preceding current row, block size 5: 13357263743035060102
+groups unbounded preceding current row, block size 8: 13357263743035060102
+groups unbounded preceding current row, block size 65505: 13357263743035060102
+groups current row unbounded following, block size 1: 1532669462100361585
+groups current row unbounded following, block size 2: 1532669462100361585
+groups current row unbounded following, block size 3: 1532669462100361585
+groups current row unbounded following, block size 5: 1532669462100361585
+groups current row unbounded following, block size 8: 1532669462100361585
+groups current row unbounded following, block size 65505: 1532669462100361585
+ranking over peers, block size 1: 3826202582659227456
+ranking over peers, block size 2: 3826202582659227456
+ranking over peers, block size 3: 3826202582659227456
+ranking over peers, block size 5: 3826202582659227456
+ranking over peers, block size 8: 3826202582659227456
+ranking over peers, block size 65505: 3826202582659227456
+ranking over rows, block size 1: 6694300196082248719
+ranking over rows, block size 2: 6694300196082248719
+ranking over rows, block size 3: 6694300196082248719
+ranking over rows, block size 5: 6694300196082248719
+ranking over rows, block size 8: 6694300196082248719
+ranking over rows, block size 65505: 6694300196082248719
+lag and lead, block size 1: 7766056358284961895
+lag and lead, block size 2: 7766056358284961895
+lag and lead, block size 3: 7766056358284961895
+lag and lead, block size 5: 7766056358284961895
+lag and lead, block size 8: 7766056358284961895
+lag and lead, block size 65505: 7766056358284961895
+nth first last value, block size 1: 16987795982938591059
+nth first last value, block size 2: 16987795982938591059
+nth first last value, block size 3: 16987795982938591059
+nth first last value, block size 5: 16987795982938591059
+nth first last value, block size 8: 16987795982938591059
+nth first last value, block size 65505: 16987795982938591059
+exponential time decayed, block size 1: 4800601066611913513
+exponential time decayed, block size 2: 4800601066611913513
+exponential time decayed, block size 3: 4800601066611913513
+exponential time decayed, block size 5: 4800601066611913513
+exponential time decayed, block size 8: 4800601066611913513
+exponential time decayed, block size 65505: 4800601066611913513
+several aggregates one window, block size 1: 7815462790188342041
+several aggregates one window, block size 2: 7815462790188342041
+several aggregates one window, block size 3: 7815462790188342041
+several aggregates one window, block size 5: 7815462790188342041
+several aggregates one window, block size 8: 7815462790188342041
+several aggregates one window, block size 65505: 7815462790188342041
+no partition by, block size 1: 4738754011334650202
+no partition by, block size 2: 4738754011334650202
+no partition by, block size 3: 4738754011334650202
+no partition by, block size 5: 4738754011334650202
+no partition by, block size 8: 4738754011334650202
+no partition by, block size 65505: 4738754011334650202
+no order by, block size 1: 15790117687148653428
+no order by, block size 2: 15790117687148653428
+no order by, block size 3: 15790117687148653428
+no order by, block size 5: 15790117687148653428
+no order by, block size 8: 15790117687148653428
+no order by, block size 65505: 15790117687148653428
+single row partitions, block size 1: 132818207017526268
+single row partitions, block size 2: 132818207017526268
+single row partitions, block size 3: 132818207017526268
+single row partitions, block size 5: 132818207017526268
+single row partitions, block size 8: 132818207017526268
+single row partitions, block size 65505: 132818207017526268

@@ -109,7 +109,7 @@ private:
     /// capturing or a non-capturing one.
     static bool isInlineFlagGroup(const std::string & regexp, size_t begin, size_t end)
     {
-        if (end - begin < 3 || regexp[begin + 1] != '?')
+        if (end - begin < 4 || regexp[begin + 1] != '?')
             return false;
 
         for (size_t i = begin + 2; i + 1 < end; ++i)

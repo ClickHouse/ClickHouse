@@ -23,13 +23,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
-from ci.jobs.scripts.buildx import (
-    build_rotating_apt_mirrors,
-    buildx_timeout,
-    with_timeout,
-)
 from ci.jobs.scripts.create_release import (
-    PackageDownloader,
     ReleaseContextManager,
     ReleaseInfo,
     ReleaseProgress,
@@ -131,12 +125,6 @@ def parse_args() -> argparse.Namespace:
 
 
 RELEASE_INFO_FILE = "/tmp/release_info.json"
-
-# The `timeout` of the `Create Release` job in `ci/workflows/create_release.py`.
-RELEASE_JOB_TIMEOUT = 2 * 3600
-# Kept back from the job's cap for the steps after the image builds: checking out back,
-# the deferred version bump and recording the result.
-RELEASE_DOCKER_RESERVE = 600
 
 
 def main():
@@ -330,21 +318,15 @@ def main():
             workdir=REPO_PATH,
         )
 
-    def _prepare_release_info():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
-        ) as release_info:
-            release_info.prepare(
-                commit_ref=args.ref,
-                release_type="patch",
-                dry_run=args.dry_run,
-                skip_repo=args.skip_repo,
-                skip_docker=args.skip_docker,
-            )
-
     step(
         name="Prepare Release Info",
-        command=_prepare_release_info,
+        command=[
+            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
+            f" --ref {shlex.quote(args.ref)} --release-type patch"
+            f"{' --skip-repo' if args.skip_repo else ''}"
+            f"{' --skip-docker' if args.skip_docker else ''}"
+            f" {dry_run_flag}".strip()
+        ],
         workdir=REPO_PATH,
     )
 
@@ -365,35 +347,15 @@ def main():
         ) as release_info:
             release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
-    def _download_packages():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            ).run()
-
-    def _create_gh_release():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
-            )
-
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
     if not args.skip_repo:
         step(
             name="Download All Release Artifacts",
-            command=_download_packages,
+            command=[
+                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
+                f" {dry_run_flag}".strip()
+            ],
             workdir=REPO_PATH,
         )
 
@@ -538,7 +500,10 @@ def main():
 
         step(
             name="Create GH Release",
-            command=_create_gh_release,
+            command=[
+                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
+                f" {dry_run_flag}".strip()
+            ],
             workdir=REPO_PATH,
         )
 
@@ -610,45 +575,27 @@ def main():
                     target_arg = (
                         " --target=production" if variant == "distroless" else ""
                     )
-                    log_files.append(build_log)
-                    result = build_rotating_apt_mirrors(
-                        f"{image}:{label_version}",
-                        "us-east-1",
-                        # A mirror that keeps trickling bytes is not bounded by apt's
-                        # inactivity timeout, so bound each build to half of what is left,
-                        # which keeps room for the build against the next mirror. The
-                        # subshell lets `with_timeout`'s `exit` fall through to the tail.
-                        lambda apt_mirror_args: "( "
-                        + with_timeout(
-                            f"docker buildx build"
-                            f" --platform=linux/amd64,linux/arm64"
-                            f" --provenance=true"
-                            # Pinned scanner: the floating stable-1 tag can move to a
-                            # version whose scan exceeds the runner's memory.
-                            f" --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11"
-                            f" --output=type=registry"
-                            f"{target_arg}"
-                            f" --label=com.clickhouse.build.version={label_version}"
-                            f" {' '.join(tags)}"
-                            f" --build-arg=VERSION={version_string}"
-                            f" {' '.join(apt_mirror_args)}"
-                            f" --progress=plain"
-                            f" --file={dockerfile}"
-                            f" {context}"
-                            f" > {build_log} 2>&1",
-                            buildx_timeout(
-                                stopwatch.duration,
-                                RELEASE_JOB_TIMEOUT,
-                                reserve=RELEASE_DOCKER_RESERVE,
-                                attempts=2,
-                            ),
-                        )
-                        + " )"
+                    Shell.check(
+                        f"docker buildx build"
+                        f" --platform=linux/amd64,linux/arm64"
+                        f" --provenance=true"
+                        # Pinned scanner: the floating stable-1 tag can move to a
+                        # version whose scan exceeds the runner's memory.
+                        f" --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11"
+                        f" --output=type=registry"
+                        f"{target_arg}"
+                        f" --label=com.clickhouse.build.version={label_version}"
+                        f" {' '.join(tags)}"
+                        f" --build-arg=VERSION={version_string}"
+                        f" --progress=plain"
+                        f" --file={dockerfile}"
+                        f" {context}"
+                        f" > {build_log} 2>&1"
                         f" || (echo '=== docker buildx build failed for"
                         f" {image}:{label_version}; tail of {build_log}: ==='"
                         f" >&2; tail -n 200 {build_log} >&2; exit 1)",
+                        strict=True,
                     )
-                    assert result.is_ok(), f"got [{result.info[-2000:]}]"
 
                 Shell.check("git checkout -", strict=True)
 

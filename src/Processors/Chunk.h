@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Types_fwd.h>
 
@@ -142,7 +141,7 @@ private:
     void checkNumRowsIsConsistent();
 };
 
-using Chunks = VectorWithMemoryTracking<Chunk>;
+using Chunks = std::vector<Chunk>;
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks

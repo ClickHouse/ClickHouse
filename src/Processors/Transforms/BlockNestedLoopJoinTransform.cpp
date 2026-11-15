@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -675,8 +674,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     /// its own block and the pieces are concatenated. A single group is the common case and needs
     /// no concatenation. The gather indexes of a group are the same for every column of its block,
     /// so they are built once here rather than per column.
-    VectorWithMemoryTracking<BuildRun> emitted_runs;
-    VectorWithMemoryTracking<ColumnPtr> emitted_run_indexes;
+    std::vector<BuildRun> emitted_runs;
+    std::vector<ColumnPtr> emitted_run_indexes;
     for (size_t rest = num_rows, offset = 0; rest != 0;)
     {
         const auto & run = walk.build_runs.at(emitted_runs.size());

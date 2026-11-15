@@ -8,7 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 
-#include <Core/ParallelReplicasProtocolDefines.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 

@@ -11,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int THERE_IS_NO_QUERY;
 }
 
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
@@ -23,11 +22,7 @@ public:
     static constexpr auto name = "timeSeriesStoreTags";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesStoreTags>(context); }
-    /// The creation context may expire before execution; without a query context only the signature is usable.
-    explicit FunctionTimeSeriesStoreTags(const ContextPtr & context)
-        : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
-    {
-    }
+    explicit FunctionTimeSeriesStoreTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
     String getName() const override { return name; }
 
@@ -50,40 +45,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Declarative signature — returns the `id` argument as-is, so the
-    /// result type follows the first argument's type. The mandatory prefix is
-    /// `(id, tags_array)`; the loose `(tag_name, tag_value)` pairs are an
-    /// optional group repeated by the ellipsis. Writing the pair as a bracketed
-    /// `[T1, V1]` group keeps the preceding `tags_array` argument out of the
-    /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
-    /// `Array(...) | Nothing` argument into it), so the accepted arities are
-    /// `2 + 2 * N` and calls like `timeSeriesStoreTags(id, [])` are valid.
-    String getSignatureString() const override
-    {
-        return "(I : Any,"
-               " Array(Tuple(String, String)) | Nothing,"
-               " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
-               " V1 : MaybeNullable(StringOrFixedString | IsNothing)], ...) -> I";
-    }
-
-    /// The declarative signature above is documentation-only — the exact accepted shapes
-    /// aren't expressible in the DSL yet (the `id` capture `I : Any` is looser than the
-    /// helper-accepted set — any comparable non-`Nothing` type except `Variant` and types with
-    /// dynamic subcolumns, plus their `Nullable` / `LowCardinality` wrappers — and the
-    /// `tags_array` matcher is narrower than the helper's `Map` / `FixedString`-element /
-    /// `Nullable` / `LowCardinality` shapes). The
-    /// `ColumnsWithTypeAndName` override below is authoritative (it runs the helpers). Route
-    /// the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
-    /// fallback never applies the approximate signature string as a validator.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
@@ -102,26 +63,15 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
     }
 
-    /// A dry run is used to compute headers / partial results during query planning
-    /// (e.g. constant folding in `tryMergeExpressions`). It must not perform the side effect
-    /// of storing tags. The function returns its `id` argument unchanged, so the dry-run result
-    /// is just that column.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
-    {
-        return arguments[0].column;
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
-        if (!tags_collector)
-            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Function {} can be executed only in a query", name);
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
         tags_collector->storeTags(arguments[0].column, tags_vector);
         return arguments[0].column;
     }
 
 private:
-    const std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 

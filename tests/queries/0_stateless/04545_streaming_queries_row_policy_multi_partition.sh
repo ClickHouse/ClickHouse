@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel-replicas, no-msan
+# Tags: long, no-parallel-replicas
 
 set -e
 

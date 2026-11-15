@@ -84,9 +84,14 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(MaybeNullable(Tuple)) -> Array(String)";
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
+
+        if (!tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override

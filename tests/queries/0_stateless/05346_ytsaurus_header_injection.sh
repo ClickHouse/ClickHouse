@@ -13,7 +13,7 @@ if [ "$($CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name = 
 fi
 
 $CLICKHOUSE_CLIENT -m <<EOS
-SET enable_ytsaurus_table_function = 1, enable_ytsaurus_table_engine = 1;
+SET allow_experimental_ytsaurus_table_function = 1, allow_experimental_ytsaurus_table_engine = 1;
 
 SELECT * FROM ytsaurus('http://127.0.0.1:1', '//tmp/t', 'token\r\nX-Injected: 1', 'x Int64'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM ytsaurus('http://127.0.0.1:1', '//tmp/t', 'token\nX-Injected: 1', 'x Int64'); -- { serverError BAD_ARGUMENTS }

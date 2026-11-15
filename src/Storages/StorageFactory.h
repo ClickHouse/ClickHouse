@@ -99,11 +99,6 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
-
-        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
-        bool stores_data_on_disk = false;
-        /// Whether the engine may back a temporary table (opt-in).
-        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -127,10 +122,6 @@ public:
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
 
-    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
-    void checkEngineFeatures(
-        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
-
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
     void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
@@ -148,8 +139,6 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
-        .stores_data_on_disk = false,
-        .supports_temporary = false,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
@@ -185,9 +174,6 @@ public:
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
-    /// Throws if storage cannot be temporary
-    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
-
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
@@ -207,11 +193,5 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
-
-/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
-/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
-/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
-/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
-void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
 
 }

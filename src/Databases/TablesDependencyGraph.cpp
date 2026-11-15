@@ -117,25 +117,9 @@ void TablesDependencyGraph::addDependencies(const StorageID & table_id, const st
 {
     auto * table_node = addOrUpdateNode(table_id);
 
-    /// Adding a dependency removes a node from the graph if it gives the name of that node to another node.
-    std::vector<NodeSharedPtr> node_holders;
-    node_holders.reserve(dependencies.size() + 1);
-    node_holders.push_back(*nodes.find(table_node));
-    for (const auto & dependency : dependencies)
-    {
-        auto * dependency_node = addOrUpdateNode(dependency);
-        node_holders.push_back(*nodes.find(dependency_node));
-        if (!nodes.contains(table_node))
-            table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
-    }
-
     std::unordered_set<Node *> new_dependency_nodes;
-    for (size_t i = 1; i < node_holders.size(); ++i)
-    {
-        /// A removed node gave its name to the node of a later dependency, which is in the set.
-        if (nodes.contains(node_holders[i].get()))
-            new_dependency_nodes.emplace(node_holders[i].get());
-    }
+    for (const auto & dependency : dependencies)
+        new_dependency_nodes.emplace(addOrUpdateNode(dependency));
 
     if (table_node->dependencies == new_dependency_nodes)
         return;
@@ -414,7 +398,7 @@ void TablesDependencyGraph::removeNode(Node * node)
     chassert(it != nodes.end());
     nodes.erase(it);
 
-    setNeedRecalculateLevels();
+    nodes_sorted_by_level_lazy.clear();
 }
 
 

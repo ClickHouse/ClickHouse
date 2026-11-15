@@ -163,7 +163,7 @@ fi
 # The source must not have taken the partial-result path after the kill: the cancellation error of
 # the killed query is not discarded but fails the query, see above.
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$QUERY_ID' AND message LIKE '%discarding the error%'") == 0 ]]; then
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND message LIKE '%discarding the error%'") == 0 ]]; then
     echo "the cancellation error of the killed query was not discarded"
 else
     echo "FAIL: the killed query discarded the cancellation error as if its result were partial"

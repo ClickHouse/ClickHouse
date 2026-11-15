@@ -8,33 +8,24 @@ keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-import { LogoCard } from "/snippets/components/ClickStackLogoCard.jsx";
 
 <Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="Landing page" size="lg"/>
 
-<div className="grid grid-cols-1" style={{ gap: '16px', margin: '20px 0 28px' }}>
-<LogoCard title="ClickHouse/ClickStack" img="/images/clickstack/clickstack-mark.svg" imgAlt="ClickStack logo" href="https://github.com/ClickHouse/ClickStack" external>
-  Explore the code and contribute on GitHub. <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">     <path fillRule="evenodd" clipRule="evenodd" d="M8 1.75C4.27 1.75 1.25 4.77 1.25 8.5c0 2.99 1.93 5.51 4.62 6.4.34.06.46-.14.46-.32 0-.16-.01-.69-.01-1.26-1.7.32-2.14-.6-2.27-.98-.08-.19-.41-.79-.7-.95-.24-.13-.58-.44-.01-.45.53-.01.91.49 1.04.69.61 1.02 1.58.73 1.97.56.06-.44.24-.74.43-.91-1.5-.17-3.07-.75-3.07-3.33 0-.73.26-1.34.69-1.81-.07-.17-.3-.86.07-1.79 0 0 .57-.18 1.86.69.54-.15 1.11-.23 1.69-.23.57 0 1.14.08 1.68.23 1.29-.88 1.86-.69 1.86-.69.37.93.14 1.62.07 1.79.43.47.69 1.07.69 1.81 0 2.59-1.58 3.16-3.08 3.33.25.21.46.62.46 1.25 0 .9-.01 1.63-.01 1.86 0 .18.13.39.47.32 2.67-.9 4.58-3.41 4.58-6.4 0-3.73-3.02-6.75-6.75-6.75Z" fill="currentColor"/>   </svg>10k</span>
-</LogoCard>
-</div>
+**ClickStack** is a production-grade observability platform built on ClickHouse, unifying logs, traces, metrics and session in a single high-performance solution. Designed for monitoring and debugging complex systems, ClickStack enables developers and SREs to trace issues end-to-end without switching between tools or manually stitching together data using timestamps or correlation IDs.
 
-**ClickStack** is an open-source observability platform for SREs, developers, and their AI agents, built on ClickHouse. Search, query, and correlate logs, traces, and metrics alongside session replays in one place.
+At the core of ClickStack is a simple but powerful idea: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level.
 
-Investigate through the **ClickStack UI** or connect your own agents through the [MCP server](/clickstack/mcp). Agents can search telemetry, follow traces, and run SQL against the same data you explore in the UI, using the development tools your team already works with.
-
-Rich logs and trace spans preserve request details, custom attributes, and business context as wide events. ClickHouse stores these alongside metrics and session data, so engineers and agents can correlate evidence across services and investigate which requests and customers are affected.
-
-<Tip>
-Focus on investigating issues while [ClickHouse Observability](/clickstack/observability) manages the infrastructure. [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-overview-inline) to get started.
-</Tip>
+ClickStack is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture, flexible schema for high-cardinality attributes, and fully parallelized execution engine. This enables sub-second queries across massive datasets, fast aggregations over wide time ranges, and deep inspection of individual traces.
 
 ## Features {#features}
 
-- Connect your own agents through [MCP](/clickstack/mcp) to search telemetry, investigate failures, and manage dashboards and alerts
-- Search and correlate logs, metrics, session replays, and traces in the ClickStack UI
+The stack includes several key features designed for debugging and root cause analysis:
+
+- Correlate/search logs, metrics, session replays, and traces all in one place
 - Schema agnostic, works on top of your existing ClickHouse schema
-- Run fast searches and aggregations across high-cardinality telemetry
-- Use full-text search and Lucene-style filters such as `level:err`, or SQL for deeper analysis
+- Blazing-fast searches & visualizations optimized for ClickHouse
+- Intuitive full-text search and property search syntax (ex. `level:err`), SQL optional.
+- Analyze trends in anomalies with event deltas
 - Set up alerts in just a few clicks
 - Dashboard high cardinality events without a complex query language
 - Native JSON string querying
@@ -49,30 +40,19 @@ Focus on investigating issues while [ClickHouse Observability](/clickstack/obser
 
 ClickStack consists of three core components:
 
-<div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '24px', margin: '24px 0' }}>
-  <img src="/images/clickstack/clickstack-stack.webp" alt="ClickStack's three layers: ClickStack UI on top, ClickHouse for storage and querying in the middle, and OpenTelemetry for collection at the base." width="720" height="957" style={{ width: '260px', maxWidth: '100%', height: 'auto', margin: 0 }} />
-  <div style={{ flex: '1 1 240px' }}>
+1. **ClickStack UI (HyperDX)** – a purpose-built frontend for exploring and visualizing observability data
+2. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
+3. **ClickHouse** – the high-performance analytical database at the heart of the stack
 
-1. **ClickStack UI** – a purpose-built frontend for exploring and visualizing observability data
-2. **ClickHouse** – the high-performance analytical database at the heart of the stack
-3. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
+These components can be deployed together in a fully **self-managed ClickStack Open Source** setup, or split across managed and self-hosted environments. In **Managed ClickStack**, ClickHouse and the HyperDX UI are hosted and operated in [ClickHouse Cloud](/products/cloud/getting-started/cloud-get-started), while users run only the OpenTelemetry Collector. 
 
-  </div>
-</div>
+A browser-hosted version of the HyperDX UI is also available, allowing users to connect directly to existing ClickHouse deployments without deploying additional UI infrastructure.
 
-These components can be deployed together in a fully **self-managed ClickStack Open Source** setup. See the [architecture guide](/clickstack/architecture) for how they fit together and how application state is stored.
-
-A browser-hosted version of the ClickStack UI is also available, allowing users to connect directly to existing ClickHouse deployments without deploying additional UI infrastructure.
-
-To get started, visit the [Getting started guide](/clickstack/getting-started/oss) before loading a [sample dataset](/clickstack/example-datasets/index). You can also explore documentation on [deployment options](/clickstack/deployment/oss) and [production best practices](/clickstack/managing/production).
+To get started, visit the [Getting started guide](/clickstack/getting-started/index) before loading a [sample dataset](/clickstack/example-datasets/index). You can also explore documentation on [deployment options](/clickstack/deployment/overview) and [production best practices](/clickstack/managing/production).
 
 ## Principles {#clickstack-principles}
 
-### Bring your own agents {#bring-your-own-agents}
-
-AI-assisted investigation is a core workflow in ClickStack. Connect your preferred agents through the [MCP server](/clickstack/mcp) to search logs, follow traces, and explore your telemetry without leaving your development environment.
-
-Investigation tools support common tasks, while SQL lets agents correlate evidence and explore questions beyond predefined dashboards. You choose the agents and models; ClickStack provides access to the same telemetry and investigation tools available to your team.
+ClickStack is designed with a set of core principles that prioritize ease of use, performance, and flexibility at every layer of the observability stack:
 
 ### Easy to set up in minutes {#clickstack-easy-to-setup}
 
@@ -80,15 +60,15 @@ ClickStack works out of the box with any ClickHouse instance and schema, requiri
 
 ### User-friendly and purpose-built {#user-friendly-purpose-built}
 
-The ClickStack UI brings search, trace exploration, charts, dashboards, and alerts together. Use Lucene-style filters and visual query builders for everyday questions, then turn to SQL when you need more control over the analysis. Engineers and agents work with the same data, so you can inspect the evidence behind an investigation.
+The HyperDX UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
 
 ### End-to-end observability {#end-to-end-observability}
 
-Connect frontend session replays with application logs, distributed traces, and metrics to follow failures across your system. Wide events keep request details, custom attributes, and business context together in logs and trace spans, helping you identify which requests, services, and customers are affected.
+ClickStack provides full-stack visibility, from front-end user sessions to backend infrastructure metrics, application logs, and distributed traces. This unified view enables deep correlation and analysis across the entire system.
 
 ### Built for ClickHouse {#built-for-clickhouse}
 
-ClickHouse's columnar storage, compression, and parallel query execution support fast searches and aggregations across large volumes of high-cardinality telemetry. Concurrent queries let engineers and agents investigate the same data in parallel.
+Every layer of the stack is designed to make full use of ClickHouse's capabilities. Queries are optimized to leverage ClickHouse's analytical functions and columnar engine, ensuring fast search and aggregation over massive volumes of data.
 
 ### OpenTelemetry-native {#open-telemetry-native}
 
@@ -97,3 +77,69 @@ ClickStack is natively integrated with OpenTelemetry, ingesting all data through
 ### Open source and fully customizable {#open-source-and-customizable}
 
 ClickStack is fully open source and can be deployed anywhere. The schema is flexible and user-modifiable, and the UI is designed to be configurable to custom schemas without requiring changes. All components—including collectors, ClickHouse, and the UI - can be scaled independently to meet ingestion, query, or storage demands.
+
+## Architectural overview {#architectural-overview}
+
+The ClickStack architecture varies depending on how it is deployed. There are important architectural distinctions between **ClickStack Open Source**, where all components are self-managed, and **Managed ClickStack**, where ClickHouse and the HyperDX UI are hosted and operated in ClickHouse Cloud. While the core components remain the same in both models, the responsibility for hosting, scaling, and securing each component differs.
+
+<Tabs>
+<Tab title="Managed ClickStack">
+
+<Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Managed ClickStack architecture" size="md" />
+
+Managed ClickStack runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
+
+In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an OpenTelemetry Collector to send telemetry data into the managed service.
+
+Managed ClickStack consists of the following components:
+
+1. **ClickStack UI (HyperDX)**  
+   The HyperDX UI is fully integrated into ClickHouse Cloud and managed as part of the service. It provides log search, trace exploration, dashboards, alerting, and correlation across telemetry types, with integrated authentication and access control.
+
+2. **OpenTelemetry collector (self-managed)**  
+   Users run an OpenTelemetry Collector that receives telemetry data from their applications and infrastructure. This collector forwards data via OTLP to ClickHouse Cloud. While any standards-compliant OpenTelemetry Collector can be used, we strongly recommend the **ClickStack distribution**, which is preconfigured and optimized for ClickHouse ingestion and works out of the box with ClickStack schemas.
+
+3. **ClickHouse Cloud**  
+   ClickHouse is fully managed in ClickHouse Cloud, serving as the storage and query engine for all observability data. Users don't need to manage clusters, upgrades, or operational concerns.
+
+Managed ClickStack provides several key benefits:
+
+- **Automatic scaling of compute independent of storage**
+- **Low-cost and effectively unlimited retention** backed by object storage
+- **[Independent read and write isolation](/clickstack/managing/isolating-read-write)** using ClickHouse Cloud Warehouses
+- **Integrated authentication and access control**
+- **Automated backups**
+- **Security and compliance features**
+- **Seamless upgrades with no operational downtime**
+
+This deployment model allows teams to focus entirely on observability workflows and instrumentation, without the overhead of operating ClickHouse or the ClickStack UI themselves.
+
+For users deploying ClickStack in production, Managed ClickStack is the recommended option. See the [Getting started guide](/clickstack/getting-started/managed) for instructions on deploying ClickStack with ClickHouse Cloud.
+
+<br/>
+</Tab>
+
+<Tab title="Open Source ClickStack">
+
+<Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS Simple architecture" size="md" />
+
+Open Source ClickStack consists of three core components:
+
+1. **ClickStack UI (HyperDX)**  
+   A user-friendly interface built for observability. It supports both Lucene-style and SQL queries, interactive dashboards, alerting, trace exploration, and more—all optimized for ClickHouse as the backend.
+
+2. **OpenTelemetry collector**  
+   A custom-built collector configured with an opinionated schema optimized for ClickHouse ingestion. It receives logs, metrics, and traces via OpenTelemetry protocols and writes them directly to ClickHouse using efficient batched inserts.
+
+3. **ClickHouse**  
+   The high-performance analytical database that serves as the central data store for wide events. ClickHouse powers fast search, filtering, and aggregation at scale, leveraging its columnar engine and native support for JSON.
+
+In addition to these three components, ClickStack uses a **MongoDB instance** to store application state such as dashboards, user accounts, and configuration settings.
+
+A full architectural diagram and deployment details can be found in the [Architecture section](/clickstack/architecture).
+
+For users interesting in deploying Open Source ClickStack to production, we recommend reading the ["Production"](/clickstack/managing/production) guide.
+
+<br/>
+</Tab>
+</Tabs>

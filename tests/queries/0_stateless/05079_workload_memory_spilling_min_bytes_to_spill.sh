@@ -16,10 +16,8 @@ function cleanup()
 trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
-# Without spilling, the aggregation of these keys peaks at about 220 MiB. The soft limit of 100 MiB stays well
-# below it, so the first query spills.
 # With min_bytes_to_spill above any single aggregation state, nothing is reported as spillable,
-# so the second query runs over the soft limit without spilling and still finishes.
+# so the query runs over the soft limit without spilling and still finishes.
 settings=(
   --workload "$workload"
   --max_rows_to_read 0
@@ -30,7 +28,7 @@ settings=(
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
-CREATE OR REPLACE WORKLOAD $workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '100Mi';
+CREATE OR REPLACE WORKLOAD $workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '200Mi';
 SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS min_bytes_to_spill = 0;
 SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS min_bytes_to_spill = '10Gi';
 "

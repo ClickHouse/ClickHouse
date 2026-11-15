@@ -255,7 +255,7 @@
  * common sequences of mmap()/munmap() calls will cause virtual memory map
  * holes.
  */
-#define JEMALLOC_RETAIN
+/* #undef JEMALLOC_RETAIN */
 
 /* TLS is used to map arenas and magazine caches to threads. */
 /* #undef JEMALLOC_TLS */
@@ -459,9 +459,6 @@
 
 /* Is C++ support being built? */
 /* #undef JEMALLOC_ENABLE_CXX */
-
-/* Are C++ exceptions enabled? */
-#define JEMALLOC_HAVE_CXX_EXCEPTIONS
 
 /* Performs additional size checks when defined. */
 /* #undef JEMALLOC_OPT_SIZE_CHECKS */

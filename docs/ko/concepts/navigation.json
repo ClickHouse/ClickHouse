@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-concepts.svg",
   "item": "개념",
   "pages": [
     "ko/concepts/index",

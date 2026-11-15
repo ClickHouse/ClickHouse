@@ -44,6 +44,7 @@ TIMEOUT_SEC = 20
 
 # Defaults matching ci/settings/settings.py, used if praktika cannot be imported:
 # an alert is more valuable than a perfectly linked one.
+CI_DB_READ_URL = "https://play.clickhouse.com"
 CI_DB_READ_USER = "play"
 CI_DB_NAME = "default"
 CI_DB_TABLE = "checks"
@@ -52,6 +53,7 @@ try:
     from ci.praktika.info import Info
     from ci.praktika.settings import Settings
 
+    CI_DB_READ_URL = Settings.CI_DB_READ_URL or CI_DB_READ_URL
     CI_DB_READ_USER = Settings.CI_DB_READ_USER or CI_DB_READ_USER
     CI_DB_NAME = Settings.CI_DB_DB_NAME or CI_DB_NAME
     CI_DB_TABLE = Settings.CI_DB_TABLE_NAME or CI_DB_TABLE
@@ -94,7 +96,7 @@ def known_fingerprints(job_name):
         f"AND check_start_time > now() - INTERVAL {HISTORY_DAYS} DAY "
         f"AND test_name != ''"
     )
-    url = f"{os.environ['CI_DB_READ_URL']}/?" + urllib.parse.urlencode(
+    url = f"{CI_DB_READ_URL}/?" + urllib.parse.urlencode(
         {"user": CI_DB_READ_USER, "default_format": "TSVRaw"}
     )
     status, body = http_post(url, query.encode("utf-8"))
