@@ -5460,6 +5460,14 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+
+            /// `ExpressionActions` passes the child's column and type through an alias, so the declared type
+            /// must be the child's: the consumers of the DAG check only the declared types of its outputs.
+            const auto & child_type = node.children.front()->result_type;
+            if (!node.result_type->equals(*child_type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized alias {} has invalid type. Expected {}, deserialized {}.",
+                    node.result_name, child_type->getName(), node.result_type->getName());
         }
         else if (node.type == ActionType::FUNCTION)
         {
@@ -5524,6 +5532,21 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+
+            /// `ExpressionActions` replaces the result with the nested column of the argument and its type,
+            /// so the declared type must be that one, the same as in `addArrayJoin`.
+            const auto & child_type = node.children.front()->result_type;
+            const auto array_type = getArrayJoinDataType(child_type);
+            if (!array_type)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized array join {} has argument of type {}, which is not an array nor map",
+                    node.result_name, child_type->getName());
+
+            const auto & nested_type = array_type->getNestedType();
+            if (!node.result_type->equals(*nested_type))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized array join {} has invalid type. Expected {}, deserialized {}.",
+                    node.result_name, nested_type->getName(), node.result_type->getName());
         }
         else
         {
