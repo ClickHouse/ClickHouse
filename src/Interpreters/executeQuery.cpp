@@ -4630,6 +4630,13 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
                 CurrentThread::flushUntrackedMemory();
                 process_list_entry.reset();
             });
+            /// Inline INSERT data is read from this buffer without copying it during execution.
+            /// Own it in the worker's tracker before admission, and release it before the entry.
+            String background_query(query_text);
+            {
+                MemoryTrackerSwitcher global_scope(&total_memory_tracker);
+                String{}.swap(query_text);
+            }
             auto background_context = Context::createCopyForQuery(source->context);
             background_context->makeQueryContext();
             source.reset();
@@ -4638,7 +4645,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
             query_scope.attachToQueryContext(background_context);
             setThreadName(ThreadName::BACKGROUND_QUERY);
 
-            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
+            auto io = executeQuery(background_query, background_context, QueryFlags{ .background = true }).second;
             if (auto process_list_element = background_context->getProcessListElementSafe())
                 process_list_entry = process_list_element->getProcessListEntry();
             background_context->onQueryExecutionStarted();
