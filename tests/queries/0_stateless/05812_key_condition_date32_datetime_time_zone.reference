@@ -7,6 +7,6 @@ mm =	1
 Condition: (toStartOfHour(dt) in [1704153600, 1704153600])
 hash =	1
 hash <=>	1
-hash !=	99
+hex !=	4
 d32 part =	1
 d32 hash =	1
