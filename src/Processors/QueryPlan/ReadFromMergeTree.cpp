@@ -4073,6 +4073,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             && !projection_parts_exist
             /// The replicas analyze the whole filter, which `Graphite` FINAL must not prune by (see `buildIndexes`).
             && !(query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+            /// The replicas' analysis query is not FINAL, so they would use the skip indexes `use_skip_indexes_if_final = 0` disables.
+            && !(query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final] && settings[Setting::use_skip_indexes]
+                && !metadata_snapshot->getSecondaryIndices().empty())
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
