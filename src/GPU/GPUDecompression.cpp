@@ -31,16 +31,17 @@ void checkNvcomp(nvcompStatus_t status, const char * what)
         throw Exception(ErrorCodes::GPU_ERROR, "{}: nvcomp status {}", what, static_cast<int>(status));
 }
 
-nvcompStatus_t decompressTempBytes(GPUCodec codec, size_t num_blocks, size_t max_decompressed, size_t decompressed_total, size_t * temp_bytes)
+nvcompStatus_t decompressTempBytes(
+    GPUCodec codec, size_t num_blocks, size_t max_decompressed, size_t decompressed_total, size_t * temp_bytes, cuda::stream_ref stream)
 {
     switch (codec)
     {
         case GPUCodec::LZ4:
-            return nvcompBatchedLZ4DecompressGetTempSizeAsync(
-                num_blocks, max_decompressed, nvcompBatchedLZ4DecompressDefaultOpts, temp_bytes, decompressed_total);
+            return nvcompBatchedLZ4DecompressGetTempSize(
+                num_blocks, max_decompressed, nvcompBatchedLZ4DecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
         case GPUCodec::ZSTD:
-            return nvcompBatchedZstdDecompressGetTempSizeAsync(
-                num_blocks, max_decompressed, nvcompBatchedZstdDecompressDefaultOpts, temp_bytes, decompressed_total);
+            return nvcompBatchedZstdDecompressGetTempSize(
+                num_blocks, max_decompressed, nvcompBatchedZstdDecompressDefaultOpts, temp_bytes, decompressed_total, stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -56,7 +57,7 @@ nvcompStatus_t decompressAsync(
     size_t temp_bytes,
     void * const * device_value_ptrs,
     nvcompStatus_t * device_statuses,
-    rmm::cuda_stream_view stream)
+    cuda::stream_ref stream)
 {
     switch (codec)
     {
@@ -72,7 +73,7 @@ nvcompStatus_t decompressAsync(
                 device_value_ptrs,
                 nvcompBatchedLZ4DecompressDefaultOpts,
                 device_statuses,
-                stream);
+                stream.get());
         case GPUCodec::ZSTD:
             return nvcompBatchedZstdDecompressAsync(
                 device_compressed_ptrs,
@@ -85,7 +86,7 @@ nvcompStatus_t decompressAsync(
                 device_value_ptrs,
                 nvcompBatchedZstdDecompressDefaultOpts,
                 device_statuses,
-                stream);
+                stream.get());
     }
     throw Exception(ErrorCodes::GPU_ERROR, "Unknown GPU codec {}", static_cast<int>(codec));
 }
@@ -181,11 +182,11 @@ void AsyncDecompressor::wait()
 
 void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination)
 {
-    const rmm::cuda_stream_view stream = GPUResources::get().decompression;
+    const cuda::stream_ref stream = GPUResources::get().decompression;
 
     /// The destination is the caller's, which may have just allocated or written it on the compute stream.
-    checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute), "Cannot mark a point in the compute stream");
-    checkCuda(cudaStreamWaitEvent(stream, destination_ready.get(), 0), "Cannot make the decompression stream wait for the compute stream");
+    checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
+    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready.get(), 0), "Cannot make the decompression stream wait for the compute stream");
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;
@@ -211,7 +212,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
         num_blocks += piece.blocks.size();
 
         if (piece.uploaded)
-            checkCuda(cudaStreamWaitEvent(stream, piece.uploaded, 0), "Cannot make the decompression stream wait for an upload");
+            checkCuda(cudaStreamWaitEvent(stream.get(), piece.uploaded, 0), "Cannot make the decompression stream wait for an upload");
     }
 
     expected_bytes.clear();
@@ -219,7 +220,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
     if (num_blocks == 0)
     {
-        checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
+        checkCuda(cudaEventRecord(expanded.get(), stream.get()), "Cannot mark a point in the decompression stream");
         return;
     }
 
@@ -270,7 +271,7 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
 
         size_t temp_bytes = 0;
         checkNvcomp(
-            decompressTempBytes(codec, num_blocks, max_decompressed, decompressed_total, &temp_bytes),
+            decompressTempBytes(codec, num_blocks, max_decompressed, decompressed_total, &temp_bytes, stream),
             "Cannot size nvcomp's scratch space");
 
         device_temp.clear();
@@ -295,10 +296,10 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
             "Cannot decompress on the device");
 
         checkCuda(
-            cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream),
+            cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream.get()),
             "Cannot copy the decompression statuses back");
 
-        checkCuda(cudaEventRecord(expanded.get(), stream), "Cannot mark a point in the decompression stream");
+        checkCuda(cudaEventRecord(expanded.get(), stream.get()), "Cannot mark a point in the decompression stream");
     });
 }
 

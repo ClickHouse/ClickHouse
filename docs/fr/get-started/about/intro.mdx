@@ -7,8 +7,6 @@ keywords: ['ClickHouse', 'base de données en colonnes', 'base de données OLAP'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse® est un système de gestion de base de données (SGBD) SQL haute performance orienté colonnes pour le traitement analytique en ligne (OLAP). Il est disponible à la fois en tant que [logiciel open source](https://github.com/ClickHouse/ClickHouse) et sous forme d’[offre Cloud](https://clickhouse.com/cloud).
 
 <div id="what-are-analytics">
@@ -51,7 +49,15 @@ LIMIT 8;
 
 Vous pouvez [exécuter cette requête dans le ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true) qui sélectionne et filtre [quelques-unes seulement parmi plus de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) colonnes existantes, et renvoie le résultat en quelques millisecondes :
 
-<Image img="/images/column-oriented-example-query.webp" alt="Exemple de requête dans une base de données orientée colonnes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Exemple de requête dans une base de données orientée colonnes](/images/column-oriented-example-query.webp)
+
+</Frame>
+
+</div>
 
 Comme vous pouvez le voir dans la section des statistiques du schéma ci-dessus, la requête a traité 100 millions de lignes en 92 millisecondes, soit un débit de plus d’un milliard de lignes par seconde, ou un peu moins de 7 Go de données transférées par seconde.
 
@@ -59,14 +65,30 @@ Comme vous pouvez le voir dans la section des statistiques du schéma ci-dessus,
 
 Dans une base de données orientée lignes, même si la requête ci-dessus ne traite que quelques-unes des colonnes existantes, le système doit tout de même charger du disque vers la mémoire les données d’autres colonnes. Cela s’explique par le fait que les données sont stockées sur le disque en fragments appelés [blocs](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (généralement de taille fixe, par exemple 4 Ko ou 8 Ko). Les blocs sont les plus petites unités de données lues du disque vers la mémoire. Lorsqu’une application ou une base de données demande des données, le sous-système d’E/S disque du système d’exploitation lit les blocs nécessaires sur le disque. Même si seule une partie d’un bloc est nécessaire, le bloc entier est chargé en mémoire (en raison de la conception du disque et du système de fichiers) :
 
-<Image img="/images/row-oriented.webp" alt="Structure de base de données orientée lignes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Structure de base de données orientée lignes](/images/row-oriented.webp)
+
+</Frame>
+
+</div>
 
 **SGBD orienté colonnes**
 
 Comme les valeurs de chaque colonne sont stockées séquentiellement, les unes à la suite des autres sur le disque, aucune donnée inutile n&#39;est chargée lorsque la requête ci-dessus est exécutée.
 Comme le stockage et le transfert par blocs du disque vers la mémoire sont alignés sur le mode d&#39;accès aux données des requêtes analytiques, seules les colonnes nécessaires à une requête sont lues sur le disque, ce qui évite des E/S inutiles sur des données non utilisées. C&#39;est [bien plus rapide](https://benchmark.clickhouse.com/) que le stockage par ligne, où des lignes entières (y compris des colonnes non pertinentes) sont lues :
 
-<Image img="/images/column-oriented.webp" alt="Structure d'une base de données orientée colonnes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Structure d'une base de données orientée colonnes](/images/column-oriented.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## Réplication et intégrité des données

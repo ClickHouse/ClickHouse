@@ -14,8 +14,8 @@ INSERT INTO t1 (col, col2, col3) VALUES (0, NULL, 0);
 CREATE TABLE t2 (col Int64) ENGINE = MergeTree() ORDER BY col;
 CREATE VIEW v (col Int64) AS SELECT col FROM t2;
 
-SELECT col FROM t1 JOIN t2 ON (t1.col = t2.col) ORDER BY col SETTINGS enable_analyzer = 1;
-SELECT col FROM t1 JOIN v ON (t1.col = v.col) ORDER BY col SETTINGS enable_analyzer = 1;
+SELECT col FROM t1 JOIN t2 ON (t1.col = t2.col) ORDER BY col;
+SELECT col FROM t1 JOIN v ON (t1.col = v.col) ORDER BY col;
 
 DROP ROW POLICY r_102651 ON t1;
 DROP VIEW v;

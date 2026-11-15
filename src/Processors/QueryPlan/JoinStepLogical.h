@@ -1,6 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -29,7 +32,7 @@ struct StorageID;
 
 struct PreparedJoinStorage
 {
-    std::unordered_map<String, String> column_mapping;
+    UnorderedMapWithMemoryTracking<String, String> column_mapping;
 
     /// At most one of these fields is set
     std::shared_ptr<StorageJoin> storage_join;
@@ -62,7 +65,7 @@ public:
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
         const NameSet & required_output_columns_,
-        const std::unordered_map<String, const ActionsDAG::Node *> & changed_types,
+        const UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & changed_types,
         bool use_nulls_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
@@ -72,7 +75,7 @@ public:
         const SharedHeader & right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
-        std::vector<const ActionsDAG::Node *> actions_after_join_,
+        ActionsDAG::NodeRawConstPtrs actions_after_join_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
 
@@ -97,8 +100,8 @@ public:
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
     const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
-    std::vector<JoinActionRef> getInputActions() const;
-    std::vector<JoinActionRef> getOutputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getInputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
@@ -141,7 +144,7 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         QueryPlan::Nodes & nodes);
 
-    std::unordered_set<JoinTableSide> typeChangingSides() const;
+    UnorderedSetWithMemoryTracking<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
 
@@ -154,12 +157,12 @@ public:
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
-    const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {},
+        UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_ = {},
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
         std::optional<double> estimated_selectivity_ = {},
@@ -201,9 +204,9 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
@@ -219,8 +222,20 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// The algorithm the join order optimizer chose for this join, if any. `join_algorithms` stays the user's list: the
+    /// physical join tries the planned algorithm first and falls back to that list.
+    std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
+    void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
+
     /// Swap left and right sides
     void swapInputs();
+
+    /// The input a hash join builds its table from, and the input it streams through that table. The planner
+    /// builds from the smaller input (`swapInputs`); a sorting join reads both inputs at once.
+    static constexpr JoinTableSide getBuildSide() { return JoinTableSide::Right; }
+    static constexpr JoinTableSide getProbeSide() { return JoinTableSide::Left; }
+    /// The index of the input of `side`, which is also its index in the children of the plan node.
+    static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
@@ -245,7 +260,7 @@ protected:
         /// A dropped output is also erased from `actions_after_join`, the nodes computed on the joined block,
         /// so that the list does not point to a node removed from the DAG.
         /// The dummy column, when one is added, is appended after the outputs that remain.
-        std::vector<size_t> dropped_output_positions;
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
         /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
         /// input per side that would otherwise lose every column.
         ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
@@ -256,9 +271,9 @@ protected:
         bool adds_dummy_output = false;
     };
 
-    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
 
-    std::vector<std::pair<String, String>> describeJoinProperties() const;
+    VectorWithMemoryTracking<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;
 
     JoinExpressionActions expression_actions;
@@ -287,7 +302,7 @@ protected:
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;
-    std::unordered_map<String, ColumnStats> result_column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> result_column_stats = {};
 
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
@@ -308,6 +323,7 @@ protected:
 private:
 
     bool disjunctions_optimization_applied = false;
+    std::optional<JoinAlgorithm> planned_algorithm;
 };
 
 

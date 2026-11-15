@@ -1,5 +1,8 @@
 #pragma once
 
+#include <limits>
+#include <optional>
+
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
@@ -17,12 +20,68 @@ struct MergeJoinEqualRange;
 class RowBitmaps;
 enum class JoinTableSide : uint8_t;
 
+namespace JoinStuff
+{
+class JoinUsedFlags;
+}
+
 class MergeJoin : public IJoin
 {
 public:
     static constexpr Int32 nulls_direction = -1;
 
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
+    /// `size_limits_override` replaces the `max_rows_in_join` / `max_bytes_in_join` limits of the
+    /// TableJoin.
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block, std::optional<SizeLimits> size_limits_override = {});
+
+    /// State of the order-preserving probe of one left block (`keep_left_block_order` mode).
+    /// Filled by `matchInOrder`, drained by `emitInOrder`, and carried across continuation
+    /// chunks inside `NotProcessed`.
+    struct OrderedProbeState
+    {
+        /// `right_block` of a range gathered into `gathered_right_columns`: `right_start` then
+        /// indexes the gathered storage instead of a right block. SIZE_MAX blocks cannot exist,
+        /// so the sentinel needs no reserved-value checks.
+        static constexpr size_t gathered_block = std::numeric_limits<size_t>::max();
+
+        /// `row_groups` value of a left row without matches. Group ids are bounded by the rows
+        /// of one block, so the sentinel is unreachable.
+        static constexpr size_t no_group = std::numeric_limits<size_t>::max();
+
+        struct RightRange
+        {
+            size_t right_block;
+            size_t right_start;
+            size_t right_length;
+        };
+
+        /// Match lists shared by groups of left rows. All rows of one sorted equal-key span
+        /// match the same right ranges, so they share one list instead of each row holding a
+        /// copy - a per-row layout would make L equal-key rows matching ranges in B right blocks
+        /// allocate L * B entries before any output is emitted, while this one stays linear in
+        /// the input sizes. Group g matches `ranges[group_offsets[g] .. group_offsets[g + 1])`,
+        /// ordered by right block and right row; the original left row r belongs to the group
+        /// `row_groups[r]` (`no_group` when the row has no matches).
+        std::vector<RightRange> ranges;
+        std::vector<size_t> group_offsets;
+        std::vector<size_t> row_groups;
+
+        /// When the right side is on disk, `matchInOrder` copies the matched right rows out of
+        /// every block while it is loaded for the matching anyway (within the memory budget), so
+        /// `emitInOrder` does not have to load right blocks at all - the emission order follows
+        /// the original left rows, whose matches can hop between blocks arbitrarily. Holds the
+        /// `right_columns_to_add` columns of the gathered rows, referenced by the ranges with
+        /// `right_block == gathered_block`. Gathering is a storage optimization only: ranges
+        /// that stay block-referenced (past the budget) are emitted through the block cache at
+        /// exactly the same output positions.
+        Columns gathered_right_columns;
+
+        /// Continuation position: the next output row is the original left row `next_row` paired
+        /// with `ranges[next_range]` at `range_offset`.
+        size_t next_row = 0;
+        size_t next_range = 0;
+        size_t range_offset = 0;
+    };
 
     struct NotProcessed
     {
@@ -31,6 +90,8 @@ public:
         size_t left_key_tail{};
         size_t right_position{};
         size_t right_block{};
+        /// Set only by the order-preserving probe.
+        std::shared_ptr<OrderedProbeState> ordered_state{};
 
         bool empty() const { return block.empty(); }
     };
@@ -38,9 +99,13 @@ public:
     std::string getName() const override { return "PartialMergeJoin"; }
 
     std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARTIAL_MERGE); }
-    /// PartialMergeJoin re-sorts left blocks by the join key (once per right block), so it does not
-    /// preserve the left stream's original order. See issues #109216 and #110662.
-    bool preservesLeftBlockOrder() const override { return false; }
+    /// The classic probe re-sorts left blocks by the join key (once per right block), so it does
+    /// not preserve the left stream's original order. The order-preserving probe
+    /// (`keep_left_block_order`) matches on a sorted copy of the keys and emits the output in
+    /// the original row order instead.
+    bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
+    bool canPreserveLeftBlockOrder() const override;
+    void keepLeftPipelineInOrder() override;
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -63,6 +128,11 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+
+    /// Called by `SpillingHashJoin` before draining the collected right blocks into this join:
+    /// the data already exceeds the external-join threshold, so the right side goes to disk right
+    /// away instead of waiting for the size limits to trip.
+    void spillRightBlocksToDisk();
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
     static bool isSupported(JoinKind kind, JoinStrictness strictness);
@@ -113,11 +183,29 @@ private:
     String mask_column_name_left;
     String mask_column_name_right;
 
-    /// Each block stores first and last row from corresponding sorted block on disk
     Blocks min_max_right_blocks;
     std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
     std::shared_ptr<RowBitmaps> used_rows_bitmap;
+    /// INNER ANY must emit one row per KEY, not one row per matching left row - the semantics
+    /// `HashJoin` implements with a claim-once flag per hash-table entry. Here the claim target
+    /// is the key's globally first right row (every probe scans the sorted right blocks in order,
+    /// so all probes resolve one key to the same block and row): per-row atomic flags over the
+    /// final sorted right blocks, shared by all probe streams, one byte per right row. Allocated
+    /// by `runPostBuildPhase` only for INNER ANY; null otherwise.
+    std::shared_ptr<JoinStuff::JoinUsedFlags> inner_any_used_flags;
+    /// Row counts of the final sorted right blocks, recorded while they stream through the merge
+    /// (only for INNER ANY): the spilled blocks are not loaded again before the probe, so this is
+    /// the only place their sizes are visible for sizing `inner_any_used_flags`.
+    std::vector<size_t> right_blocks_row_counts;
     mutable std::unique_ptr<Cache> cached_right_blocks;
+    /// Byte cap of the per-left-block gather buffer of the order-preserving probe, set by
+    /// `mergeFlushedRightBlocks` to half of the probe memory limit (whose full value sizes
+    /// `cached_right_blocks`). A hard bound: every match run is measured before it is copied,
+    /// and a run that would cross the cap stops the gathering (the spilled right blocks are
+    /// row-capped, so a block-granular check could overshoot by one arbitrarily wide block).
+    /// Each probe stream has its own buffer, so the peak is one cap of shrunk data per
+    /// stream - transiently about twice that while the gathered columns grow.
+    size_t gather_max_bytes = 0;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
     /// Set of files with sorted blocks
@@ -130,13 +218,24 @@ private:
     const bool is_left;
     const bool is_right;
     const bool is_full;
-    static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
+    /// Mirror of `HashJoin::canRemoveColumnsFromLeftBlock`: the join emits only the output left
+    /// columns, matching the hash join's layout (and the plan's join output header) exactly -
+    /// required for the `SpillingHashJoin` fallback, whose header the plan computes from the
+    /// hash join. See `removeNonOutputLeftColumns`.
+    const bool prune_left_columns;
+    bool keep_left_block_order = false;
     const size_t max_joined_block_rows;
+    /// Byte cap of one output chunk, honored by the order-preserving probe (the classic probe
+    /// splits by rows only). The hash join it replaces under `SpillingHashJoin` honors it too.
+    const size_t max_joined_block_bytes;
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
 
-    /// Build side is single threaded that is why these variables are non-atomic
+    /// Non-atomic is safe: the standalone build side is single threaded, and `SpillingHashJoin`
+    /// serializes its drain into this join with `merge_join_insert_mutex` (which also provides
+    /// the happens-before ordering for these counters).
     UInt64 build_sort_time_ns = 0;
+    /// Written only by the post-build phase, which runs once.
     UInt64 right_spilled_compressed_bytes = 0;
     std::atomic<UInt64> probe_sort_time_ns{0};
     std::atomic<UInt64> total_left_rows{0};
@@ -147,6 +246,7 @@ private:
     LoggerPtr log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
+    void removeNonOutputLeftColumns(Block & block) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>
@@ -176,6 +276,10 @@ private:
             return rightBlocksCount<true>();
         return rightBlocksCount<false>();
     }
+
+    void joinBlockInOrder(Block & block, std::optional<NotProcessed> & not_processed);
+    std::shared_ptr<OrderedProbeState> matchInOrder(const Block & block);
+    void emitInOrder(Block & block, const std::shared_ptr<OrderedProbeState> & state, std::optional<NotProcessed> & not_processed);
 
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,

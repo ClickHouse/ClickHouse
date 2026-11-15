@@ -367,8 +367,8 @@ local replica state. Only available in ClickHouse Cloud
 If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
 
 ## shared_merge_tree_virtual_parts_discovery_batch {#shared_merge_tree_virtual_parts_discovery_batch}
-<SettingsInfoBlock type="UInt64" default_value="1" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="UInt64" default_value="16" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "Increase the default"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
 How many partition discoveries should be packed into batch
 

@@ -132,8 +132,12 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
-    /// False only for the skip_object_metadata placeholder.
+    /// False for the skip_object_metadata placeholder and for metadata made by `fromTableRecords`.
     bool is_fetched = true;
+    /// Made without a request from the records of a table whose files are never overwritten; a known size is exact.
+    bool is_from_table_records = false;
+    /// Content identity for the caches when `etag` is unusable; set only if every reader may share the cached bytes.
+    String immutable_content_id{};
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -157,6 +161,17 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    std::optional<String> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (!immutable_content_id.empty())
+            return immutable_content_id;
+        return std::nullopt;
+    }
+
+    static ObjectMetadata fromTableRecords(std::optional<UInt64> size, String immutable_content_id = {});
 };
 
 struct DataLakeObjectMetadata;
@@ -403,6 +418,10 @@ public:
         /// server-internal table whose client was built restricted at metadata load) without detaching the table,
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
+
+        /// Request settings given as explicit arguments of the storage definition, by name. They take priority over the
+        /// server config and the endpoint settings, which are re-applied on every call.
+        std::map<String, String> explicit_request_settings = {};
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,
@@ -425,6 +444,11 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
+    /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves
+    /// the previous object intact. Storages that create or truncate the destination before uploading the data do not.
+    virtual bool supportsAtomicWrite() const { return false; }
 
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches

@@ -28,6 +28,8 @@ namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+extern const SettingsBool adaptive_aggregator_disable_thaw;
+extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
 extern const SettingsBool use_aggregation_memory_tracker;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
@@ -291,6 +293,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*enable_adaptive_aggregator_=*/settings[Setting::enable_adaptive_aggregator],
             /*adaptive_aggregator_freeze_threshold_=*/settings[Setting::adaptive_aggregator_freeze_threshold],
             /*adaptive_aggregator_freeze_threshold_bytes_=*/settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+            /*adaptive_aggregator_disable_thaw_=*/settings[Setting::adaptive_aggregator_disable_thaw],
             /*use_aggregation_memory_tracker_=*/settings[Setting::use_aggregation_memory_tracker]);
 
         auto merge_threads = settings[Setting::max_threads];
@@ -304,7 +307,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*grouping_sets_params_=*/GroupingSetsParamsList{},
             /*final_=*/true,
             /*max_block_size_=*/settings[Setting::max_block_size],
-            /*aggregation_in_order_max_block_bytes_=*/size_t(0),
+            /*aggregation_in_order_max_block_bytes_=*/settings[Setting::aggregation_in_order_max_block_bytes],
             /*merge_threads_=*/merge_threads,
             /*temporary_data_merge_threads_=*/temporary_data_merge_threads,
             /*storage_has_evenly_distributed_read_=*/false,

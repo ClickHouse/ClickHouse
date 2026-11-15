@@ -9,6 +9,9 @@ DROP TABLE IF EXISTS t_pos_m1;
 DROP TABLE IF EXISTS t_pos_d;
 DROP TABLE IF EXISTS t_pos_merge;
 DROP TABLE IF EXISTS t_pos_idx;
+DROP TABLE IF EXISTS t_pos_buffer;
+DROP TABLE IF EXISTS t_pos_buffer_dist;
+DROP TABLE IF EXISTS t_pos_buffer_src;
 DROP VIEW IF EXISTS v_pos;
 
 CREATE TABLE t_pos (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
@@ -83,6 +86,35 @@ SELECT 'merge constant out of projection range';
 SELECT 5, k FROM t_pos_merge ORDER BY ALL
 SETTINGS enable_positional_arguments = 1;
 
+-- A `Buffer` over `Distributed` read through the local replica in a view: both the `Buffer` re-analysis and
+-- the local plan of the `Distributed` read keep the constant.
+CREATE TABLE t_pos_buffer_src (k UInt64) ENGINE = Memory;
+CREATE TABLE t_pos_buffer_dist AS t_pos_buffer_src ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_pos_buffer_src);
+CREATE TABLE t_pos_buffer AS t_pos_buffer_src ENGINE = Buffer(currentDatabase(), t_pos_buffer_dist, 1, 1000, 10000, 1000, 10000, 1000000, 10000000);
+INSERT INTO t_pos_buffer VALUES (1);
+
+SELECT 'buffer over distributed';
+SELECT * FROM view(SELECT 5, k FROM remote('127.0.0.1', currentDatabase(), t_pos_buffer) ORDER BY ALL)
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
+
+-- Automatic parallel replicas re-analyzes a recursive CTE member from the AST printed from its query tree; the
+-- candidate plan must be built for the case to test that.
+SELECT 'recursive cte with automatic parallel replicas';
+WITH RECURSIVE r AS ((SELECT 5 AS c, k FROM t_pos ORDER BY ALL LIMIT 1) UNION ALL (SELECT c, k + 1 FROM r WHERE k < 2))
+SELECT * FROM r ORDER BY k
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
+    parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
+    automatic_parallel_replicas_min_bytes_per_replica = 0, enable_positional_arguments = 1,
+    automatic_parallel_replicas_remember_boundary = 0, log_comment = '05340_recursive_cte_auto_parallel_replicas';
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment = '05340_recursive_cte_auto_parallel_replicas';
+
+DROP TABLE t_pos_buffer;
+DROP TABLE t_pos_buffer_dist;
+DROP TABLE t_pos_buffer_src;
 DROP TABLE t_pos_merge;
 DROP TABLE t_pos_d;
 DROP TABLE t_pos_m1;

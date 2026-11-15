@@ -61,11 +61,13 @@ DiskPtr DiskFactory::create(
 
     /// A disk defined in a query (`disk(type = ..., name = ...)`) has its own configuration,
     /// in which these elements are read by the caller and not by the disk itself:
-    /// `name` in `getOrCreateCustomDisk` and `_server_credentials_allowed` in `getDiskConfigurationFromAST`.
+    /// `name` in `getOrCreateCustomDisk`, and `_server_credentials_allowed` and `_azure_server_credentials_allowed`
+    /// in `getDiskConfigurationFromAST`.
     if (custom_disk)
     {
         tracked_config->markAsUsed(config_prefix + ".name");
         tracked_config->markAsUsed(config_prefix + "._server_credentials_allowed");
+        tracked_config->markAsUsed(config_prefix + "._azure_server_credentials_allowed");
     }
 
     const auto disk_type = tracked_config->getString(config_prefix + ".type", "local");
@@ -92,7 +94,25 @@ DiskPtr DiskFactory::create(
     /// A disk of a table that is being attached has been accepted by an older version of the server
     /// already, and its data has to be read even if the definition contains something we do not know.
     if (!attach)
-        checkForUnknownKeys(tracked_config->getUnusedKeys(config_prefix), name, disk_type, context);
+    {
+        auto unused_keys = tracked_config->getUnusedKeys(config_prefix);
+        if (custom_disk)
+        {
+            /// A dynamic disk definition stored by an older version may repeat a key, which is not allowed in a new one
+            /// (see `getDiskConfigurationFromASTImpl`). The configuration has its later occurrences as `key[1]`, ...,
+            /// and the disk reads only the first one, so they are not unknown keys if the first one was read.
+            const auto usage = tracked_config->getUsage();
+            std::erase_if(unused_keys, [&](const String & key)
+            {
+                const size_t bracket = key.rfind('[');
+                if (bracket == String::npos || bracket == 0 || !key.ends_with(']'))
+                    return false;
+                const String first_occurrence = key.substr(0, bracket);
+                return usage.used.contains(config_prefix.empty() ? first_occurrence : config_prefix + "." + first_occurrence);
+            });
+        }
+        checkForUnknownKeys(unused_keys, name, disk_type, context);
+    }
 
     return disk;
 }

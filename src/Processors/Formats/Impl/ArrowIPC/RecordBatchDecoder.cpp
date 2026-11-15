@@ -31,6 +31,8 @@
 #include <Common/DateLUTImpl.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
+#include <base/scope_guard.h>
+#include <base/unaligned.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <algorithm>
@@ -88,6 +90,24 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
 }
 
+void declareNullable(ArrowField & copy, const ArrowField & original, const UnorderedSetWithMemoryTracking<const ArrowField *> & fields)
+{
+    if (fields.contains(&original))
+        copy.nullable = true;
+    /// Promotion depends on each batch's nulls, and a `Variant` type can't be converted to another one.
+    if (original.type.kind == TypeKind::Union)
+        return;
+    for (size_t i = 0; i < original.type.children.size(); ++i)
+        declareNullable(copy.type.children[i], original.type.children[i], fields);
+    /// The map entries and keys stay non-nullable, as `parseSchema` requires, so their nulls are rejected.
+    if (original.type.kind == TypeKind::Map)
+    {
+        ArrowField & entries = copy.type.children.at(0);
+        entries.nullable = false;
+        entries.type.children.at(0).nullable = false;
+    }
+}
+
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
 /// flipped, turning the validity bitmap (1 = valid) into a ClickHouse null map (1 = null). Unpacks 8 bits
 /// at a time via SWAR (the same trick as the Parquet decoder), scalar for the trailing < 8 bits.
@@ -141,7 +161,13 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
             return tuple->getElements()[*position];
         return nullptr;
     }
-    if (pos < tuple->getElements().size())
+    return tupleElementHintByPosition(hint, pos);
+}
+
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
 }
@@ -617,6 +643,69 @@ size_t requiredBytes(size_t count, size_t elem_size)
     return bytes;
 }
 
+/// How `convertBuffersFromBigEndian` turns the elements of a big-endian buffer into the little-endian
+/// layout the decoder reads.
+enum class ByteSwap
+{
+    /// Bytes rather than numbers: fixed-size binary values.
+    None,
+    /// Each element is one integer or floating-point value; decimals are reversed whole as well.
+    Elements,
+    /// Each element is a sequence of 32-bit integers: day-time intervals.
+    Int32Elements,
+    /// A 32-bit month count, a 32-bit day count and a 64-bit nanosecond count.
+    MonthDayNano,
+    /// A 32-bit length, then either up to 12 inline bytes or a 4-byte prefix, a 32-bit buffer index and a
+    /// 32-bit offset.
+    BinaryView,
+};
+
+void reverseBytes(char * value, size_t size)
+{
+    std::reverse(value, value + size);
+}
+
+/// Byte-swaps every complete `width`-byte element of `slice` in place. A big-endian batch's buffers live in
+/// the decoder's `decompressed_body` (see `prepareBuffers`), so the slice is writable.
+void swapFromBigEndian(const RecordBatchDecoder::Slice & slice, size_t width, ByteSwap swap)
+{
+    if (swap == ByteSwap::None || width <= 1 || slice.length <= 0)
+        return;
+    char * data = const_cast<char *>(slice.ptr);
+    const size_t size = static_cast<size_t>(slice.length) / width * width;
+    for (size_t pos = 0; pos < size; pos += width)
+    {
+        char * value = data + pos;
+        switch (swap)
+        {
+            case ByteSwap::None:
+                break;
+            case ByteSwap::Elements:
+                reverseBytes(value, width);
+                break;
+            case ByteSwap::Int32Elements:
+                for (size_t part = 0; part + sizeof(Int32) <= width; part += sizeof(Int32))
+                    reverseBytes(value + part, sizeof(Int32));
+                break;
+            case ByteSwap::MonthDayNano:
+                reverseBytes(value, sizeof(Int32));
+                reverseBytes(value + 4, sizeof(Int32));
+                reverseBytes(value + 8, sizeof(Int64));
+                break;
+            case ByteSwap::BinaryView:
+                reverseBytes(value, sizeof(Int32));
+                /// Longer values are stored out of line: the prefix stays as bytes, the buffer index and
+                /// the offset are integers.
+                if (unalignedLoadLittleEndian<Int32>(value) > 12)
+                {
+                    reverseBytes(value + 8, sizeof(Int32));
+                    reverseBytes(value + 12, sizeof(Int32));
+                }
+                break;
+        }
+    }
+}
+
 size_t dictionaryIndexByteWidth(int bits)
 {
     if (bits != 8 && bits != 16 && bits != 32 && bits != 64)
@@ -936,6 +1025,57 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             fillFixed<ColumnInt64>(*column, rows, values, 8, invisible_rows);
             break;
         }
+        case TypeKind::Interval:
+        {
+            /// Each value is one count (YEAR_MONTH: Int32 months) or a packed struct of counts (DAY_TIME: Int32
+            /// days, Int32 milliseconds; MONTH_DAY_NANO: Int32 months, Int32 days, Int64 nanoseconds), read into
+            /// the Int64 interval columns of the type from `fieldToCHType`. Invisible slots are zero.
+            const Slice values = nextBuffer();
+            auto fill_count = [&](IColumn & dst, size_t value_width, size_t offset, bool is_int64)
+            {
+                auto & data = assert_cast<ColumnInt64 &>(dst).getData();
+                data.resize(rows);
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (isInvisible(invisible_rows, i))
+                    {
+                        data[i] = 0;
+                        continue;
+                    }
+                    const char * src = values.ptr + i * value_width + offset;
+                    if (is_int64)
+                    {
+                        Int64 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                    else
+                    {
+                        Int32 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                }
+            };
+            if (type.unit == flatbuf::IntervalUnit_YEAR_MONTH)
+            {
+                fill_count(*column, 4, 0, false);
+            }
+            else if (type.unit == flatbuf::IntervalUnit_DAY_TIME)
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 8, 0, false);
+                fill_count(tuple.getColumn(1), 8, 4, false);
+            }
+            else
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 16, 0, false);
+                fill_count(tuple.getColumn(1), 16, 4, false);
+                fill_count(tuple.getColumn(2), 16, 8, true);
+            }
+            break;
+        }
         case TypeKind::Utf8:
         case TypeKind::Binary:
         case TypeKind::LargeUtf8:
@@ -1086,6 +1226,11 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             return readOffsetsAndChild(
                 field, rows, /*large=*/type.kind == TypeKind::LargeList, arrayElementHint(effective_hint), path,
                 list_depth, invisible_rows);
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+            return readListViewAndChild(
+                field, rows, /*large=*/type.kind == TypeKind::LargeListView, arrayElementHint(effective_hint), path,
+                list_depth, invisible_rows);
         case TypeKind::FixedSizeList:
         {
             /// Each row owns `list_size` child elements; the layout pass validates their total count.
@@ -1147,9 +1292,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false,
-                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, invisible_rows);
+                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1179,9 +1323,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             ColumnPtr entries = decodeField(
                 entries_field, /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path, list_depth + 1,
                 maskPtr(entries_invisible));
-            const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
-            if (entries_tuple.tupleSize() != 2)
+            const auto * entries_tuple_ptr = typeid_cast<const ColumnTuple *>(entries.get());
+            if (!entries_tuple_ptr || entries_tuple_ptr->tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
+            const auto & entries_tuple = *entries_tuple_ptr;
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
             /// referenced. Slice the key/value columns to that range so their size matches the base-relative
             /// offsets (matching the Apache Arrow library reader).
@@ -1303,6 +1448,133 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     return ColumnArray::create(child_slice, std::move(offsets_col));
 }
 
+ColumnPtr RecordBatchDecoder::readListViewAndChild(
+    const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
+    size_t list_depth, const InvisibleRowsMask * invisible_rows)
+{
+    const Slice offsets_slice = nextBuffer();
+    const Slice sizes_slice = nextBuffer();
+    auto read_value = [&](const Slice & slice, size_t i) -> Int64
+    {
+        if (large)
+            return reinterpret_cast<const Int64 *>(slice.ptr)[i];
+        return reinterpret_cast<const Int32 *>(slice.ptr)[i];
+    };
+
+    const ArrowField & child_field = field.type.children.at(0);
+    const size_t child_rows = peekNodeRows();
+
+    /// Read the range of every visible row and build the ClickHouse array offsets (cumulative sizes). The
+    /// offset and size of an invisible row are undefined, so it is an empty array.
+    auto offsets_col = ColumnUInt64::create(rows);
+    auto & offs = offsets_col->getData();
+    PaddedPODArray<UInt64> starts(rows);
+    UInt64 total = 0;
+    /// Whether the ranges are laid out like a List (each one starting where the previous one ended), so that
+    /// the child can be used as is instead of gathering the ranges.
+    bool contiguous = true;
+    std::optional<UInt64> first_start;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        UInt64 size = 0;
+        if (!isInvisible(invisible_rows, i))
+        {
+            const Int64 offset = read_value(offsets_slice, i);
+            const Int64 view_size = read_value(sizes_slice, i);
+            if (offset < 0 || view_size < 0 || static_cast<UInt64>(view_size) > child_rows
+                || static_cast<UInt64>(offset) > child_rows - static_cast<UInt64>(view_size))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC list view field '{}' row {} references child rows from {} of size {}, but the child has {} rows",
+                    field.name, i, offset, view_size, child_rows);
+            starts[i] = static_cast<UInt64>(offset);
+            size = static_cast<UInt64>(view_size);
+            if (size != 0)
+            {
+                if (!first_start)
+                    first_start = starts[i];
+                else if (starts[i] != *first_start + total)
+                    contiguous = false;
+            }
+        }
+        if (__builtin_add_overflow(total, size, &total))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list view of field '{}' references too many child rows", field.name);
+        offs[i] = total;
+    }
+
+    /// A child determined by its size alone is built for the referenced rows only (see `readOffsetsAndChild`).
+    if (isSizeDeterminedSubtree(child_field))
+    {
+        ColumnPtr child = buildSizeDeterminedColumn(child_field, total, target_hint, path, list_depth + 1);
+        return ColumnArray::create(child, std::move(offsets_col));
+    }
+
+    if (hasRowsBackedByBuffers(child_field))
+        checkRowCountWithinBody(child_rows, "list view child");
+
+    /// Child rows that no visible row references hold undefined bytes and must not be value-validated. Contiguous
+    /// ranges cover exactly `total` rows from `first_start`; otherwise the coverage of the (possibly overlapping)
+    /// ranges is counted with a difference array.
+    std::optional<InvisibleRowsMask> child_invisible;
+    if (contiguous)
+    {
+        const UInt64 begin = first_start.value_or(0);
+        if (!(begin == 0 && total == child_rows))
+        {
+            InvisibleRowsMask mask;
+            mask.resize_fill(child_rows, 1);
+            if (total)
+                memset(mask.data() + begin, 0, total);
+            child_invisible = std::move(mask);
+        }
+    }
+    else
+    {
+        PaddedPODArray<Int64> coverage(child_rows + 1, 0);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const UInt64 size = offs[i] - (i == 0 ? 0 : offs[i - 1]);
+            if (size == 0)
+                continue;
+            ++coverage[starts[i]];
+            --coverage[starts[i] + size];
+        }
+        InvisibleRowsMask mask(child_rows);
+        Int64 covered = 0;
+        bool any_invisible = false;
+        for (size_t row = 0; row < child_rows; ++row)
+        {
+            covered += coverage[row];
+            mask[row] = covered == 0;
+            any_invisible |= covered == 0;
+        }
+        if (any_invisible)
+            child_invisible = std::move(mask);
+    }
+
+    ColumnPtr child = decodeField(
+        child_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth + 1, maskPtr(child_invisible));
+
+    if (contiguous)
+    {
+        const size_t begin = first_start.value_or(0);
+        if (!(begin == 0 && total == child->size()))
+            child = child->cut(begin, total);
+        return ColumnArray::create(child, std::move(offsets_col));
+    }
+
+    /// Copy each row's range directly: an index column would take 8 bytes per copied element on top of the copy.
+    auto gathered = child->cloneEmpty();
+    gathered->reserve(total);
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const UInt64 size = offs[i] - (i == 0 ? 0 : offs[i - 1]);
+        if (size)
+            gathered->insertRangeFrom(*child, starts[i], size);
+    }
+    return ColumnArray::create(std::move(gathered), std::move(offsets_col));
+}
+
 bool RecordBatchDecoder::isSizeDeterminedSubtree(const ArrowField & field) const
 {
     size_t node_offset = 0;
@@ -1360,8 +1632,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                childPath(path, child.name), list_depth));
+                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -1839,8 +2110,10 @@ bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn
     const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))));
-    return field.nullable && inner.canBeInsideNullable()
-        && (field.type.kind != TypeKind::Struct || preserve_struct_nulls);
+    /// A DAY_TIME or MONTH_DAY_NANO interval is also a `Tuple` (see `fieldToCHType`), with the same rule.
+    const bool is_tuple = field.type.kind == TypeKind::Struct
+        || (field.type.kind == TypeKind::Interval && field.type.unit != flatbuf::IntervalUnit_YEAR_MONTH);
+    return field.nullable && inner.canBeInsideNullable() && (!is_tuple || preserve_struct_nulls);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -1848,13 +2121,19 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     const auto & node = nextNode();
     if (validate_lengths && node.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node.length());
+    /// Unions and run-end-encoded fields have no validity bitmap: `decodeField` rejects their nulls.
+    if (validate_lengths && !field.nullable && node.null_count() != 0
+        && (field.dictionary || (field.type.kind != TypeKind::Union && field.type.kind != TypeKind::RunEndEncoded)))
+        undeclared_null_fields.insert(&field);
     const size_t rows = validate_lengths ? static_cast<size_t>(node.length()) : 0;
 
-    auto consume_buffer = [&](size_t count, size_t width, const char * what)
+    auto consume_buffer = [&](size_t count, size_t width, const char * what, ByteSwap swap = ByteSwap::Elements)
     {
         const Slice buffer = nextBuffer();
         if (validate_lengths)
             checkBufferSize(buffer, requiredBytes(count, width), what);
+        if (swap_from_big_endian)
+            swapFromBigEndian(buffer, width, swap);
     };
     auto consume_validity = [&]
     {
@@ -1873,7 +2152,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     if (field.dictionary)
     {
         consume_validity();
-        const size_t width = validate_lengths ? dictionaryIndexByteWidth(field.dictionary->index_bit_width) : 0;
+        const size_t width = validate_lengths || swap_from_big_endian ? dictionaryIndexByteWidth(field.dictionary->index_bit_width) : 0;
         consume_buffer(rows, width, "dictionary indices");
         return;
     }
@@ -1943,11 +2222,13 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         {
             const size_t width = type.unit == flatbuf::IntervalUnit_YEAR_MONTH ? 4
                 : type.unit == flatbuf::IntervalUnit_DAY_TIME ? 8 : 16;
-            consume_buffer(rows, width, "interval");
+            const ByteSwap swap = type.unit == flatbuf::IntervalUnit_YEAR_MONTH ? ByteSwap::Elements
+                : type.unit == flatbuf::IntervalUnit_DAY_TIME ? ByteSwap::Int32Elements : ByteSwap::MonthDayNano;
+            consume_buffer(rows, width, "interval", swap);
             break;
         }
         case TypeKind::FixedSizeBinary:
-            consume_buffer(rows, type.byte_width, "fixed_size_binary");
+            consume_buffer(rows, type.byte_width, "fixed_size_binary", ByteSwap::None);
             break;
         case TypeKind::Utf8:
         case TypeKind::LargeUtf8:
@@ -1962,7 +2243,7 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         case TypeKind::BinaryView:
         case TypeKind::Utf8View:
         {
-            consume_buffer(rows, 16, "binary view");
+            consume_buffer(rows, 16, "binary view", ByteSwap::BinaryView);
             const Int64 num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
             if (validate_lengths && static_cast<size_t>(num_data) > buffer_slices.size() - buffer_index)
@@ -1985,6 +2266,17 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
                 expectNextNodeLength(fixedSizeListChildRows(type, rows), "fixed-size-list child");
             advanceField(type.children.at(0), validate_lengths);
             break;
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+        {
+            /// One offset and one size per row (no trailing offset); the child length is checked against the
+            /// referenced ranges when the column is decoded.
+            const size_t width = type.kind == TypeKind::LargeListView ? sizeof(Int64) : sizeof(Int32);
+            consume_buffer(rows, width, "list view offsets");
+            consume_buffer(rows, width, "list view sizes");
+            advanceField(type.children.at(0), validate_lengths);
+            break;
+        }
         case TypeKind::Struct:
             for (const ArrowField & child : type.children)
             {
@@ -1998,19 +2290,22 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
         case TypeKind::RunEndEncoded:
             break; /// These layouts are handled before the validity buffer.
         case TypeKind::Unsupported:
-            /// List views can be skipped when unrequested; their values are not supported by the decoder.
-            if (type.skip_layout == ArrowType::SkipLayout::ListView)
-            {
-                nextBuffer();
-                nextBuffer();
-                advanceField(type.children.at(0), validate_lengths);
-                break;
-            }
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC reader cannot skip the unsupported Arrow type {} of field '{}'",
                 type.unsupported_type_name, field.name);
     }
+}
+
+void RecordBatchDecoder::convertBuffersFromBigEndian(const ArrowField * fields, size_t count)
+{
+    swap_from_big_endian = true;
+    SCOPE_EXIT({ swap_from_big_endian = false; });
+    for (size_t i = 0; i < count; ++i)
+        advanceField(fields[i]);
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
 }
 
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
@@ -2020,6 +2315,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     const VectorWithMemoryTracking<char> * reachable_buffers)
 {
     beginBatch(batch, body, reachable_buffers, target_types_);
+    if (!schema.little_endian)
+        convertBuffersFromBigEndian(schema.fields.data(), schema.fields.size());
 
     DecodedColumns result;
     result.reserve(schema.fields.size());
@@ -2035,7 +2332,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
         }
         /// `normalized_name` seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
-        result.push_back(decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0));
+        result.push_back(
+            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2047,9 +2345,13 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
 {
     beginBatch(batch, body, /*reachable_buffers=*/nullptr, target_types_);
+    if (!schema.little_endian)
+        convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
     ColumnUInt8::Ptr null_map;
-    DecodedColumn values = decodeBatchColumn(value_field, use.hint, use.position.path, use.position.list_depth, &null_map);
+    /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
+    DecodedColumn values = decodeBatchColumn(
+        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false, &null_map);
     finishBatch();
     ColumnPtr dictionary_null_map = std::move(null_map);
     if (dictionary_null_map && isColumnConst(*values.column))
@@ -2087,7 +2389,7 @@ void RecordBatchDecoder::beginBatch(
 }
 
 RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
     const size_t batch_rows = static_cast<size_t>(current_batch->length());
@@ -2095,28 +2397,13 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     DecodedColumn decoded;
     decoded.name = field.name;
     decoded.field = &field;
-    /// Dictionary values retain the type produced by their requested hints. The referencing field
-    /// determines whether that type keeps its outer `Nullable` wrapper.
-    if (field.dictionary)
-    {
-        const auto & dictionary = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
-        const DataTypePtr & value_type = dictionary.segments.front().type;
-        decoded.type = field.nullable ? value_type : removeNullable(value_type);
-        if (decoded.type->canBeInsideLowCardinality())
-            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-    }
-    else
-        decoded.type = fieldToCHType(field, settings, isNullableField(field), /*allow_null_type=*/true);
     /// Bufferless roots store one physical value. The reader chooses the output row count before
     /// expanding it, and dictionaries retain its compact representation across deltas.
     const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);
-    if (constant)
-    {
-        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
-        if (decoded_null_map && field.type.kind == TypeKind::Null)
-            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
-    }
-    else
+    /// Nulls in fields declared non-nullable are read as NULL, as the Apache Arrow library did. Decoding a
+    /// nullable copy of the field keeps the types derived from the schema consistent with the decoded columns.
+    std::optional<ArrowField> nullable_copy;
+    if (!constant)
     {
         if (hasRowsBackedByBuffers(field))
             checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
@@ -2125,12 +2412,41 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
         const size_t first_node = node_index;
         const size_t first_buffer = buffer_index;
         const size_t first_variadic = variadic_index;
+        undeclared_null_fields.clear();
         advanceField(field, /*validate_lengths=*/true);
         node_index = first_node;
         buffer_index = first_buffer;
         variadic_index = first_variadic;
+        if (read_undeclared_nulls && !undeclared_null_fields.empty())
+        {
+            nullable_copy = field;
+            declareNullable(*nullable_copy, field, undeclared_null_fields);
+        }
+    }
+    const ArrowField & effective_field = nullable_copy ? *nullable_copy : field;
+
+    /// Dictionary values retain the type produced by their requested hints. The referencing field
+    /// determines whether that type keeps its outer `Nullable` wrapper.
+    if (effective_field.dictionary)
+    {
+        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
+        const DataTypePtr & value_type = dictionary.segments.front().type;
+        decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
+        if (decoded.type->canBeInsideLowCardinality())
+            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
+    }
+    else
+        decoded.type = fieldToCHType(effective_field, settings, isNullableField(effective_field), /*allow_null_type=*/true);
+    if (constant)
+    {
+        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
+        if (decoded_null_map && field.type.kind == TypeKind::Null)
+            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
+    }
+    else
+    {
         decoded.column = decodeField(
-            field,
+            effective_field,
             /*allow_low_cardinality=*/true,
             target_hint,
             path,
@@ -2174,6 +2490,18 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
 {
     const String seg = normalizedName(child_name);
     return path.empty() ? seg : path + "." + seg;
+}
+
+DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+{
+    if (type.positional_fields)
+        return tupleElementHintByPosition(hint, i);
+    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+}
+
+String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
+{
+    return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
 }
 
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
@@ -2222,6 +2550,16 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
             const char * ptr = buffer->length() > 0 ? body.data() + buffer->offset() : nullptr;
             buffer_slices.push_back(Slice{ptr, buffer->length()});
             total_buffer_bytes += static_cast<size_t>(buffer->length());
+        }
+        /// `convertBuffersFromBigEndian` byte-swaps a big-endian batch in place, and the body belongs to the
+        /// caller. Copy the whole body once (copying each buffer could multiply the size when malformed
+        /// buffers overlap) and point the slices into the copy; offsets keep their 8-byte alignment.
+        if (!schema.little_endian)
+        {
+            decompressed_body.assign(body.begin(), body.end());
+            for (Slice & slice : buffer_slices)
+                if (slice.ptr)
+                    slice.ptr = decompressed_body.data() + (slice.ptr - body.data());
         }
         return;
     }
@@ -2513,6 +2851,8 @@ void RecordBatchDecoder::collectDictionaryUses(
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
             collectDictionaryUses(
                 type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, lookup_types, uses);
             break;
@@ -2525,8 +2865,8 @@ void RecordBatchDecoder::collectDictionaryUses(
             {
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, lookup_types, uses);
+                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:
