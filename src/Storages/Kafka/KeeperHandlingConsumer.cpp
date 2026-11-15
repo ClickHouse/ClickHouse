@@ -863,9 +863,9 @@ StorageKafkaUtils::ConsumerStatistics KeeperHandlingConsumer::getStat() const
 {
     struct TopPartInfo
     {
-        int64_t committed_offset;
+        int64_t committed_offset = 0;
         std::optional<uint64_t> intent_size;
-        UInt64 timestamp;
+        UInt64 timestamp = 0;
     };
     using TopPartInfos = std::unordered_map<
         KafkaConsumer2::TopicPartition,
