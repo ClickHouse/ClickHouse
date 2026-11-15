@@ -53,14 +53,15 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 set_hash="0102030405060708090a0b0c0d0e0f10"
 set_record_prefix="0101017321000101${set_hash}00010001${set_hash}"
 
+# `base64Encode` is not in every build, so the bytes are encoded by `base64`.
 storage_set_filter()
 {
     ${CLICKHOUSE_CLIENT} --query "
         WITH concat(currentDatabase(), '.', '$1') AS table_name
-        SELECT base64Encode(concat(unhex('${set_record_prefix}01'), char(length(table_name)), table_name))"
+        SELECT concat(unhex('${set_record_prefix}01'), char(length(table_name)), table_name) FORMAT RawBLOB" | base64 -w0
 }
 
 # The hidden table and a missing one are rejected the same way, before either is looked up.
 send_filter "$(storage_set_filter "${hidden_table}")" "${reader}" 'hello'
 send_filter "$(storage_set_filter "filecluster_untrusted_filter_missing")" "${reader}" 'hello'
-send_filter "$(${CLICKHOUSE_CLIENT} --query "SELECT base64Encode(unhex('${set_record_prefix}03'))")" default ''
+send_filter "$(${CLICKHOUSE_CLIENT} --query "SELECT unhex('${set_record_prefix}03') FORMAT RawBLOB" | base64 -w0)" default ''
