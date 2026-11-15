@@ -6,13 +6,19 @@ keywords: ['refreshable materialized view', 'обновление', 'materialize
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 [refreshable materialized views](/ru/reference/statements/create/view#refreshable-materialized-view) концептуально схожи с materialized view в традиционных OLTP-базах данных: они сохраняют результат указанного запроса для быстрого доступа и снижают необходимость многократно выполнять ресурсоемкие запросы. В отличие от [incremental materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view) в ClickHouse, здесь запрос нужно периодически выполнять по всему набору данных, а его результаты сохраняются в целевой таблице для дальнейших запросов. Теоретически этот результирующий набор должен быть меньше исходного набора данных, что позволяет последующим запросам выполняться быстрее.
 
 На диаграмме показано, как работают Refreshable Materialized Views:
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Диаграмма refreshable materialized view" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Диаграмма refreshable materialized view](/images/materialized-view/refreshable-materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 Вы также можете посмотреть следующее видео:
 

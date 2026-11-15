@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Inserting into ClickHouse vs. OLTP databases {#inserting-into-clickhouse-vs-oltp-databases}
 
 As an OLAP (Online Analytical Processing) database, ClickHouse is optimized for high performance and scalability, allowing potentially millions of rows to be inserted per second.
@@ -64,7 +62,15 @@ If large batches can't be inserted, you can delegate batching to ClickHouse usin
 
 With asynchronous inserts, data is inserted into a buffer first and then written to the database storage later in 3 steps, as illustrated by the diagram below:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</Frame>
+
+</div>
 
 With asynchronous inserts enabled, ClickHouse:
 

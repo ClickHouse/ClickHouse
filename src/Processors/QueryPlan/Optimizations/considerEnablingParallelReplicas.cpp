@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
@@ -36,6 +39,8 @@
 #include <set>
 #include <tuple>
 #include <unordered_set>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 using namespace DB::QueryPlanOptimizations;
 
@@ -226,9 +231,9 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 
 /// `calculateHashTableCacheKeys` keys by plan node; `ExplainPlanOptions` keys by step, so that it
 /// does not have to know about `QueryPlan::Node`. One node owns one step, so this is a rekeying.
-std::unordered_map<const IQueryPlanStep *, UInt64> hashesByStep(const std::unordered_map<const QueryPlan::Node *, UInt64> & by_node)
+UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> hashesByStep(const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & by_node)
 {
-    std::unordered_map<const IQueryPlanStep *, UInt64> by_step;
+    UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt64> by_step;
     by_step.reserve(by_node.size());
     for (const auto & [node, hash] : by_node)
         by_step.emplace(node->step.get(), hash);
@@ -239,7 +244,7 @@ std::unordered_map<const IQueryPlanStep *, UInt64> hashesByStep(const std::unord
 /// when two plans that should match do not, the deepest level at which the two dumps stop agreeing
 /// is where they actually diverge - the one thing a failed match needs that a single line cannot
 /// carry, which is why this sits at the test level and the summary stays at trace.
-String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+String explainWithHashes(const QueryPlan & plan, const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & hashes)
 {
     const auto by_step = hashesByStep(hashes);
     ExplainPlanOptions options;
@@ -249,7 +254,7 @@ String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const 
     return buffer.str();
 }
 
-using NodeHashes = std::unordered_map<const QueryPlan::Node *, UInt64>;
+using NodeHashes = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64>;
 
 template <typename... Args>
 UInt64 sipHash64Of(const Args &... args)
@@ -366,7 +371,7 @@ struct CoordinatedReads
 /// rather than silently missed.
 void collectLazyReads(const QueryPlan::Node & branch_root, CoordinatedReads & reads)
 {
-    std::vector<const QueryPlan::Node *> to_visit{&branch_root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> to_visit{&branch_root};
     while (!to_visit.empty())
     {
         const auto * node = to_visit.back();
@@ -567,10 +572,10 @@ ReadFromMergeTree * findCoordinatedReadByHash(QueryPlan::Node & boundary, UInt64
 
 /// Unlike `collectReadingSteps` it also returns `LazilyReadFromMergeTree`: a lazy half reads as much as the
 /// step it belongs to, often more, and under parallel replicas every replica performs it.
-std::vector<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
+VectorWithMemoryTracking<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
 {
     Stack stack;
-    std::vector<IQueryPlanStep *> read_steps;
+    VectorWithMemoryTracking<IQueryPlanStep *> read_steps;
     traverseQueryPlan(
         stack,
         root,
@@ -583,10 +588,10 @@ std::vector<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
     return read_steps;
 }
 
-std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
     Stack stack;
-    std::vector<ReadFromMergeTree *> reading_steps;
+    VectorWithMemoryTracking<ReadFromMergeTree *> reading_steps;
     traverseQueryPlan(
         stack,
         root,
@@ -609,6 +614,42 @@ struct ReadIdentity
         return std::tie(table, table_expression_name) < std::tie(other.table, other.table_expression_name);
     }
 };
+
+/// Identify a read by the table expression it reads rather than by where it sits in the plan. The
+/// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
+/// both plans are built from the same query, so the names agree across them and tell two reads of one
+/// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
+/// trusted for this: the two plans are optimized differently and may order a join's sides differently.
+std::optional<ReadIdentity> identifyRead(const ReadFromMergeTree * read)
+{
+    const auto & table_expression = read->getQueryInfo().table_expression;
+    if (!table_expression || table_expression->getAlias().empty())
+        return {};
+    return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
+}
+
+/// Pairs a read of the probe plan with the read of the single-node plan it stands for, the way
+/// `transplantAnalysisToAllReads` pairs them, while the probe plan is still being optimized. A read with no
+/// unique counterpart gets none.
+FindSingleNodeRead makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
+{
+    MapWithMemoryTracking<ReadIdentity, const ReadFromMergeTree *> single_node_by_identity;
+    SetWithMemoryTracking<ReadIdentity> ambiguous;
+    for (const auto * read : collectReadingSteps(single_node_root))
+    {
+        if (auto identity = identifyRead(read); identity && !single_node_by_identity.emplace(*identity, read).second)
+            ambiguous.insert(*identity);
+    }
+    for (const auto & identity : ambiguous)
+        single_node_by_identity.erase(identity);
+
+    return [paired = std::move(single_node_by_identity)](const ReadFromMergeTree & read) -> const ReadFromMergeTree *
+    {
+        auto identity = identifyRead(&read);
+        auto it = identity ? paired.find(*identity) : paired.end();
+        return it != paired.end() ? it->second : nullptr;
+    };
+}
 
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
@@ -638,23 +679,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return false;
     }
 
-    /// Identify a read by the table expression it reads rather than by where it sits in the plan. The
-    /// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
-    /// both plans are built from the same query, so the names agree across them and tell two reads of one
-    /// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
-    /// trusted for this: the two plans are optimized differently and may order a join's sides differently.
-    auto identify = [](const ReadFromMergeTree * read) -> std::optional<ReadIdentity>
-    {
-        const auto & table_expression = read->getQueryInfo().table_expression;
-        if (!table_expression || table_expression->getAlias().empty())
-            return {};
-        return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
-    };
-
-    std::map<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
+    MapWithMemoryTracking<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
     for (auto * read : single_node_reads)
     {
-        auto identity = identify(read);
+        auto identity = identifyRead(read);
         if (!identity || !single_node_by_identity.emplace(*identity, read).second)
         {
             LOG_TRACE(
@@ -666,11 +694,11 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         }
     }
 
-    std::vector<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
-    std::unordered_set<const ReadFromMergeTree *> claimed_single_node_reads;
+    VectorWithMemoryTracking<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
+    UnorderedSetWithMemoryTracking<const ReadFromMergeTree *> claimed_single_node_reads;
     for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
-        auto identity = identify(replicas_reads[i]);
+        auto identity = identifyRead(replicas_reads[i]);
         auto it = identity ? single_node_by_identity.find(*identity) : single_node_by_identity.end();
         if (it == single_node_by_identity.end())
         {
@@ -754,7 +782,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 /// counterpart; the caller then keeps the single-replica plan.
 bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    std::set<FutureSet::Hash> single_replica_hashes;
+    SetWithMemoryTracking<FutureSet::Hash> single_replica_hashes;
     forEachSubquerySet(
         &single_replica_plan,
         [&](FutureSetFromSubquery & future_set)
@@ -778,7 +806,7 @@ bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
     if (!all_sets_paired)
         return false;
 
-    std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
+    MapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
     forEachSubquerySet(
@@ -1065,7 +1093,8 @@ void considerEnablingParallelReplicas(
     /// adds no set that collecting later would catch.
     auto built_sets = collectBuiltSets(query_plan);
     Stopwatch plan_build_watch;
-    auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, getLogger("AutoParallelReplicas"));
+    auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(
+        built_sets, makeSingleNodeReadFinder(root), getLogger("AutoParallelReplicas"));
 
     /// The builder checks what it can before it builds anything, and logs the specific reason when it
     /// stops there. Those are skips, like the ones above, not plans that could not be compared.
