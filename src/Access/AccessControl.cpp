@@ -671,10 +671,12 @@ bool AccessControl::insertUnlocked(
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    if (storage && !replace_if_exists && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
+    auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
+
+    /// The same name must not refer to entities in different storages, whether the storage is specified explicitly or not.
+    if (!replace_if_exists && checkNameCollisionInOtherStorage(*storage_for_insertion, entity, throw_if_exists, conflicting_id))
         return false;
 
-    auto storage_for_insertion = storage ? storage : getStorageForInsertion(entity);
     auto existing_id = storage_for_insertion->find(entity->getType(), entity->getName());
 
     /// A name collision, and in particular a no-op `CREATE ... IF NOT EXISTS`, is not validated as an insertion.

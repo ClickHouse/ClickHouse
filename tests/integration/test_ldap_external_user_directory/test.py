@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import pytest
 
@@ -251,3 +252,109 @@ def test_remote_query_user_does_not_exist_locally(ldap_cluster):
 
     instance2.query("DROP USER IF EXISTS non_local", user="common_user", password="qwerty")
     instance2.query("DROP TABLE IF EXISTS test_table SYNC", user="common_user", password="qwerty")
+
+
+def add_ldap_user(ldap_cluster, user_cn, password):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={user_cn},ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: {user_cn}
+sn: {user_cn}
+userPassword: {password}" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+                password=password,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def delete_ldap_user(ldap_cluster, user_cn):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """ldapdelete 'cn={user_cn},ou=users,dc=example,dc=org' \
+-H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+            """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def test_same_name_user_in_other_directory(ldap_cluster):
+    """
+    A user authenticated by LDAP must not share its name with a user from another user directory.
+    """
+    # A unique name, so that the LDAP user is not yet known to the server even if the test is retried.
+    name = f"same_name_{uuid.uuid4().hex[:8]}"
+    add_ldap_user(ldap_cluster, name, "ldap_password")
+
+    try:
+        instance1.query(
+            f"CREATE USER {name} IDENTIFIED WITH plaintext_password BY 'local_password' IN local_directory",
+            user="common_user",
+            password="qwerty",
+        )
+
+        # The LDAP user is not known yet, so there is no conflict.
+        assert instance1.query(
+            "SELECT currentUser()", user=name, password="local_password"
+        ) == TSV([[name]])
+
+        # The LDAP directory recognizes the user, but the name is already used in the local directory.
+        assert f"{name}: Authentication failed" in instance1.query_and_get_error(
+            "SELECT currentUser()", user=name, password="ldap_password"
+        )
+
+        # Now both directories have a user with this name, so neither can log in.
+        assert f"{name}: Authentication failed" in instance1.query_and_get_error(
+            "SELECT currentUser()", user=name, password="local_password"
+        )
+
+        instance1.query(
+            f"DROP USER {name} FROM local_directory",
+            user="common_user",
+            password="qwerty",
+        )
+
+        # The LDAP user remains alone and can log in.
+        assert instance1.query(
+            "SELECT currentUser()", user=name, password="ldap_password"
+        ) == TSV([[name]])
+
+        # A new user with the same name cannot be created in another directory, whether it is specified or not.
+        for query in [f"CREATE USER {name}", f"CREATE USER {name} IN local_directory"]:
+            assert "ACCESS_ENTITY_ALREADY_EXISTS" in instance1.query_and_get_error(
+                query, user="common_user", password="qwerty"
+            )
+    finally:
+        instance1.query(
+            f"DROP USER IF EXISTS {name} FROM local_directory",
+            user="common_user",
+            password="qwerty",
+        )
+        delete_ldap_user(ldap_cluster, name)

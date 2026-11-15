@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
     extern const int ACCESS_ENTITY_NOT_FOUND;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 using Storage = IAccessStorage;
@@ -530,6 +531,20 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
                                         allow_no_password, allow_plaintext_password);
         if (auth_result)
         {
+            /// Users from different user directories are distinct entities, but some code identifies users by name,
+            /// so the same name must not refer to more than one user. An external directory (e.g. LDAP) can introduce a user
+            /// whose name already exists in another directory, and such a user is not allowed to log in.
+            for (size_t j = 0; j != storages->size(); ++j)
+            {
+                if (j == i)
+                    continue;
+                const auto & other_storage = (*storages)[j];
+                if (other_storage->find(AccessEntityType::USER, auth_result->user_name))
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                        "User {} is authenticated by {}, but a user with the same name also exists in {}",
+                        backQuote(auth_result->user_name), storage->getStorageName(), other_storage->getStorageName());
+            }
+
             std::lock_guard lock{mutex};
             ids_cache.set(auth_result->user_id, storage);
             return auth_result;
