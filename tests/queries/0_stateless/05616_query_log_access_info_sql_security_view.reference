@@ -23,6 +23,11 @@ param	SELECT name, sum(id) AS s FROM t_private WHERE id > _CAST(1, \'UInt64\') G
 resolve	SELECT _CAST(1, \'UInt64\') AS p, number FROM numbers(assumeNotNull((SELECT min(id) FROM t_private)))	definer	1	0	1
 sealed	SELECT name, sum(id) AS s FROM t_private GROUP BY name	definer	1	1	1
 sealed_twice	SELECT name, sum(id) AS s FROM t_private GROUP BY name	definer	1	1	1
+distinct child ids
+1	1
+one child row per view
+sealed_twice	1
+two_views	2
 user_query_log
 before_start	0	0	1
 definer	1	1	0

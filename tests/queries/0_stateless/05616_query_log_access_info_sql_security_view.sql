@@ -12,6 +12,7 @@ INSERT INTO t_private VALUES (1, 'a'), (2, 'b'), (3, 'a');
 CREATE VIEW v_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id, name FROM t_private;
 CREATE VIEW v_invoker SQL SECURITY INVOKER AS SELECT id, name FROM t_private;
 CREATE VIEW v_sealed DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name, sum(id) AS s FROM t_private GROUP BY name;
+CREATE VIEW v_sealed_copy DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name, sum(id) AS s FROM t_private GROUP BY name;
 CREATE VIEW v_none SQL SECURITY NONE AS SELECT name, sum(id) AS s FROM t_private GROUP BY name;
 CREATE VIEW v_nested DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name FROM v_sealed WHERE s > 0;
 CREATE VIEW v_param DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT name, sum(id) AS s FROM t_private WHERE id > {p:UInt64} GROUP BY name;
@@ -30,6 +31,7 @@ SELECT name FROM v_sealed ORDER BY name SETTINGS log_comment = 'sealed' FORMAT N
 SELECT name FROM v_none ORDER BY name SETTINGS log_comment = 'none' FORMAT Null;
 SELECT name FROM v_nested ORDER BY name SETTINGS log_comment = 'nested' FORMAT Null;
 SELECT a.name FROM v_sealed AS a JOIN v_sealed AS b USING name ORDER BY a.name SETTINGS log_comment = 'sealed_twice' FORMAT Null;
+SELECT a.name FROM v_sealed AS a JOIN v_sealed_copy AS b USING name ORDER BY a.name SETTINGS log_comment = 'two_views' FORMAT Null;
 
 SET force_optimize_projection = 0, force_optimize_projection_name = '';
 
@@ -59,20 +61,33 @@ ORDER BY log_comment;
 
 SELECT 'child rows';
 SELECT
-    log_comment,
-    replaceAll(query, currentDatabase() || '.', '') AS body,
-    multiIf(user = currentUser(), 'definer', user = '', 'none', 'other') AS identity,
-    has(tables, currentDatabase() || '.t_private') AS reads_table,
-    has(projections, currentDatabase() || '.t_private.p_by_name') AS uses_projection,
-    initial_query_id IN (
-        SELECT query_id FROM system.query_log
-        WHERE current_database = currentDatabase() AND is_initial_query AND type IN ('QueryFinish', 'ExceptionBeforeStart')
-            AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve', 'before_start')
-    ) AS of_caller
+    c.log_comment,
+    replaceAll(c.query, currentDatabase() || '.', '') AS body,
+    multiIf(c.user = currentUser(), 'definer', c.user = '', 'none', 'other') AS identity,
+    has(c.tables, currentDatabase() || '.t_private') AS reads_table,
+    has(c.projections, currentDatabase() || '.t_private.p_by_name') AS uses_projection,
+    c.query_id != c.initial_query_id AND p.log_comment = c.log_comment AS of_caller
+FROM system.query_log AS c
+LEFT JOIN
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE current_database = currentDatabase() AND is_initial_query AND type IN ('QueryFinish', 'ExceptionBeforeStart')
+) AS p ON c.initial_query_id = p.query_id
+WHERE c.current_database = currentDatabase() AND NOT c.is_initial_query AND c.type = 'QueryFinish'
+    AND c.log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve')
+ORDER BY c.log_comment, body;
+
+SELECT 'distinct child ids';
+SELECT count() > 1, count() = uniqExact(query_id)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND NOT is_initial_query AND type = 'QueryFinish'
-    AND log_comment IN ('direct', 'definer', 'definer_inlined', 'invoker', 'sealed', 'none', 'nested', 'sealed_twice', 'param', 'describe', 'resolve')
-ORDER BY log_comment, body;
+WHERE current_database = currentDatabase() AND NOT is_initial_query;
+
+SELECT 'one child row per view';
+SELECT log_comment, count()
+FROM system.query_log
+WHERE current_database = currentDatabase() AND NOT is_initial_query AND type = 'QueryFinish' AND log_comment IN ('sealed_twice', 'two_views')
+GROUP BY log_comment
+ORDER BY log_comment;
 
 SELECT 'user_query_log';
 SELECT log_comment, countIf(type = 'QueryStart'), countIf(type = 'QueryFinish'), countIf(type = 'ExceptionBeforeStart')

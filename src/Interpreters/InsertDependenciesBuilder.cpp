@@ -1343,12 +1343,7 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     const auto & metadata = metadata_snapshots.at(current);
     auto parent_select_context = select_contexts.at(path.parent(2));
     auto select_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-    if (metadata->sql_security_type == SQLSecurityType::DEFINER || metadata->sql_security_type == SQLSecurityType::NONE)
-    {
-        if (parent_select_context->hasQueryContext())
-            parent_select_context->getQueryContext()->addSQLSecurityOverriddenBody(current, select_context, metadata->getSelectQuery().inner_query);
-    }
-    else
+    if (metadata->sql_security_type != SQLSecurityType::DEFINER && metadata->sql_security_type != SQLSecurityType::NONE)
         select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
@@ -1920,6 +1915,14 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 
         chain = Chain::concat(std::move(chain), createSelect(child_view_id));
         chain = Chain::concat(std::move(chain), createSink(child_view_id));
+
+        /// Only a view that is pushed to has a child row.
+        const auto sql_security = metadata_snapshots.at(child_view_id)->sql_security_type;
+        const auto & parent_select_context = select_contexts.at(view_id);
+        if ((sql_security == SQLSecurityType::DEFINER || sql_security == SQLSecurityType::NONE) && parent_select_context->hasQueryContext())
+            parent_select_context->getQueryContext()->addSQLSecurityOverriddenBody(
+                child_view_id, select_contexts.at(child_view_id), select_queries.at(child_view_id));
+
         chain = Chain::concat(std::move(chain), createPostSink(child_view_id));
 
         output_view_chains_headers.push_back(chain.getOutputHeader());
