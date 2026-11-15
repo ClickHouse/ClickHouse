@@ -1,2 +1,3 @@
-enable_analyzer=0 rows counted by the view:	15
-enable_analyzer=1 rows counted by the view:	15
+rows counted by the view:	15
+sparsity filter plan:	1
+sparsity filter rows counted by the view:	14

@@ -5,9 +5,9 @@
 #pragma once
 
 #define RMM_VERSION_MAJOR 26
-#define RMM_VERSION_MINOR 8
+#define RMM_VERSION_MINOR 12
 #define RMM_VERSION_PATCH 0
-#define RMM_VERSION "26.8.0"
+#define RMM_VERSION "26.12.0"
 #ifndef RMM_VERSION_GT
 #define RMM_VERSION_GT(maj, min, pat) \
   ((RMM_VERSION_MAJOR > (maj)) || \

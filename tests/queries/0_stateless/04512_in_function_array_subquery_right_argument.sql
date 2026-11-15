@@ -7,8 +7,6 @@
 -- like `x IN (SELECT arrayJoin(groupArray(x)) ...)`.
 -- https://github.com/ClickHouse/ClickHouse/issues/37066
 
-SET enable_analyzer = 1;
-
 -- The two cases from the issue: scalar IN (subquery returning Array of the scalar type).
 SELECT count() FROM numbers(10) WHERE number IN (SELECT groupArray(number) FROM numbers(10));
 SELECT count() FROM numbers(10) WHERE toString(number) IN (SELECT groupArray(toString(number)) FROM numbers(10));

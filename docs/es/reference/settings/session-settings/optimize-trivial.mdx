@@ -22,8 +22,8 @@ Usa un valor aproximado para la optimización de recuento trivial en motores de 
 
 Valores posibles:
 
-* 0 — Optimización deshabilitada.
-  * 1 — Optimización habilitada.
+* 0 — deshabilitado.
+* 1 — habilitado.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -33,8 +33,8 @@ Activa o desactiva la optimización de la consulta trivial `SELECT count() FROM 
 
 Valores posibles:
 
-* 0 — Optimización desactivada.
-  * 1 — Optimización activada.
+* 0 — deshabilitado.
+* 1 — habilitado.
 
 Véase también:
 
@@ -64,7 +64,7 @@ Patrones reconocidos:
 * `col > 0`, `col >= 1`, `col < 1`, `col <= 0` en columnas enteras sin signo.
 * `col` / `NOT col` directos en columnas `Int*`, `UInt*`, `Bool` (prueba de veracidad).
 
-Los patrones de igualdad no se aplican a `Float*`, `Enum*`, `Nullable`, `LowCardinality`
+Los patrones de igualdad no se aplican a `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`
 ni a tipos compuestos (`Tuple`, `Array`, `Map`, ...) — para estos, el conteo se resuelve mediante la
 ruta de escaneo normal.
 
@@ -79,10 +79,10 @@ tener una entrada `num_defaults` en `serialization.json`, lo que solo ocurre cua
 fusión. Con el valor predeterminado `basic`, las columnas `Nullable` no obtienen ninguna entrada por columna, por lo que
 la optimización simplemente no se aplica.
 
-Posibles valores:
+Valores posibles:
 
-* 0 — Optimización deshabilitada.
-  * 1 — Optimización habilitada.
+* 0 — deshabilitado.
+* 1 — habilitado.
 
 Véase también:
 

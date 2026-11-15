@@ -1,5 +1,4 @@
 -- The composition and the placeholders are resolved only in the analyzer.
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 -- A column exposed by a subquery in the join tree binds the name in the query that selects from

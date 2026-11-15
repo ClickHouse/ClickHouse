@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include <Storages/StorageProxy.h>
@@ -83,10 +84,36 @@ public:
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
+        is_loaded.store(true, std::memory_order_release);
         return nested;
     }
 
+    /// The loaded storage, or nullptr if the table has not been loaded yet. Unlike `tryGetNested`,
+    /// never waits for a load in progress: the database calls this with its own mutex held, see
+    /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    StoragePtr getLoadedTable() const
+    {
+        if (!is_loaded.load(std::memory_order_acquire))
+            return nullptr;
+        /// Assigned once, before `is_loaded` is set, and never changed after that.
+        return nested;
+    }
+
+    /// `SYSTEM START ...` addressed to the proxy has to wake up the background work of the loaded storage.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        if (auto loaded = getLoadedTable())
+            loaded->onActionLockRemove(action_type);
+    }
+
+    /// Only asked about a table that is about to be read or written inside a transaction, or written
+    /// to on a read-only disk, so loading it costs nothing.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
+
     bool storesDataOnDisk() const override { return true; }
+    /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
+    bool hasUnreplicatedTableDataOnDisk() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 
@@ -229,6 +256,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see `getLoadedTable`.
     LoggerPtr log;
 };
 

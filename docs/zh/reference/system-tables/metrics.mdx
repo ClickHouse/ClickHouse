@@ -30,6 +30,14 @@ QueryProfiler 中处于活动状态的线程局部计时器数量
 
 因故障而被连接池禁止用于创建连接的地址总数
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+用于堆栈跟踪符号化的已解析源代码位置 (file:line:column) 缓存所占用的近似内存量，单位为字节。
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+已解析源代码位置 (file:line:column) 缓存中的代码地址数量。该缓存用于对 system.trace&#95;log、system.errors 和 system.error&#95;log 中的堆栈跟踪进行符号化。
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Aggregator 线程池中的线程数量。
@@ -357,6 +365,10 @@ JIT 编译机器代码缓存中的总条目数。
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 已获取且不被视为竞争性 CPU 插槽的总数 (如果使用 fair&#95;round&#95;robin 调度器，则指第一个线程)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+当前因非 CPU 等待 (例如阻塞式 I/O 或没有可运行的任务) 而挂起 (释放) 其 CPU 插槽的线程数
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -710,6 +722,14 @@ ZooKeeper 中持有的临时节点数。
 
 分布式 exchange 服务器握手线程池中正在排队或处于活动状态的作业数量。
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+外部内存中 `IN` 集合缓存所保存的块的总大小 (以字节为单位)
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+外部内存中 `IN` 集合缓存所保存的块总数
+
 ### FiberStackBytes {#fiberstackbytes}
 
 当前已分配的纤程栈总大小。
@@ -833,6 +853,14 @@ ZooKeeper 中持有的临时节点数。
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 全局线程池中排队中或正在运行的作业数。
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Glue 目录中当前 Iceberg schema 字段类型缓存的大小 (字节)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Glue 目录中当前 Iceberg schema 字段类型缓存的条目数
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1098,6 +1126,10 @@ Keeper 更新日志并行启动读取所用线程池中排队或活跃的作业�
 
 待处理请求数
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+启动后等待本地日志条目完成预处理的 Raft 事件循环线程数。Raft 事件循环还负责运行监听器、选举定时器、心跳定时器以及所有 RPC 完成回调，因此该值应保持为 0 或 1。
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Keeper server 读取线程池中的线程数量。
@@ -1169,6 +1201,10 @@ DDLWorker 推送到 ZooKeeper 的最大 DDL 条目 ID。
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 内存预留中待处理的增量请求总字节数
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+可回收内存总量
 
 ### MemoryTracking {#memorytracking}
 
@@ -1362,6 +1398,10 @@ AzureObjectStorage 线程池中正在执行任务的线程数。
 
 AzureObjectStorage 线程池中处于排队或活动状态的作业数量。
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+该服务器当前在对象存储中持有的排他租约数量 (例如 Iceberg 表合并整理操作所持有的租约) 。
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 ObjectStorageQueue 元数据缓存大小 (以字节为单位) 。
@@ -1398,6 +1438,10 @@ S3ObjectStorage 线程池中正在执行任务的线程数。
 
 S3ObjectStorage 线程池中处于排队或运行中的作业数量。
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+此服务器上的查询当前在对象存储中租用的键数量，例如正在读取的 Iceberg 快照。
+
 ### OpenFileForRead {#openfileforread}
 
 打开用于读取的文件数
@@ -1429,6 +1473,10 @@ S3ObjectStorage 线程池中处于排队或运行中的作业数量。
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 用于加载过期数据分区 parts 的线程池中，处于排队或运行状态的作业数量。
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+为正在写入的打包式数据分区片段中已缓冲数据分配的内存量 (字节) ，不包括已移至临时 File 的数据。
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1962,6 +2010,14 @@ StartupSystemTables 线程池中处于排队中或正在运行状态的作业数
 
 无状态工作线程池中已排队或正在执行的作业数。
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+统计信息缓存的总大小 (字节) 。用于存放 MergeTree 表各数据分区片段的列统计信息，每个数据分区片段的每一列对应一个条目。
+
+### StatisticsCacheCells {#statisticscachecells}
+
+统计信息缓存中的条目总数 (每个数据分区片段的每一列对应一个条目)
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Buffer 表缓冲区中的字节数
@@ -2126,6 +2182,14 @@ JOIN 期间创建的临时 File 数量
 
 垂直合并的临时 File 数量
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+用于存放正在写入的打包式数据分区片段的已缓冲数据的临时 File 数量
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+在外部内存中为 `IN` 集合创建的临时 File 数量
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 外部排序过程中创建的临时 File 数量
@@ -2245,6 +2309,10 @@ UNIQUE KEY 索引缓存总大小 (字节)
 ### VersionInteger {#versioninteger}
 
 以 1000 为基数、用单个整数表示的 server 版本。例如，版本 11.22.33 会转换为 11022033。
+
+### WaitingQuery {#waitingquery}
+
+正在等待异步加载或启动完成的查询数，其上限由服务器设置 &#39;max&#95;waiting&#95;queries&#39; 控制
 
 ### 写入 {#write}
 

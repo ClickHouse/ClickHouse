@@ -127,8 +127,13 @@ T fieldToNumberSettingValue(const Field & f)
         }
     }
     else
+    {
+        /// Format the type name, not the value: some Field types reachable here from untrusted input
+        /// (e.g. `AggregateFunctionStateData`) throw `LOGICAL_ERROR` when formatted as text.
         throw Exception(
-            ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
+            ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value of type {} of the setting, which needs {}",
+            f.getTypeName(), demangle(typeid(T).name()));
+    }
 }
 
 template void validateFloatingPointSettingValue<UInt64>(UInt64);

@@ -42,16 +42,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeUUID>();
-    }
+    String getSignatureString() const override { return "(DateTime) -> UUID"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override
     {
@@ -94,6 +85,7 @@ public:
     }
 };
 
+}
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
@@ -142,6 +134,5 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 
     factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation);
 
-}
 }
 }

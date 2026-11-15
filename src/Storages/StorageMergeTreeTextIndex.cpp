@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -135,11 +136,24 @@ private:
     {
         static constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
 
+        const bool embedded = token_info.header & PostingsSerialization::Flags::EmbeddedPositions;
+        std::optional<ReadBufferFromMemory> embedded_in;
+        if (embedded)
+            embedded_in.emplace(token_info.embedded_positions.data(), token_info.position_bytes);
+        SeekableReadBuffer & in = embedded ? static_cast<SeekableReadBuffer &>(*embedded_in) : *positions_buf;
+
         if (first_rank == 0)
         {
-            validateTokenPositions(token_info, positions_file_size);
-            positions_buf->seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
-            positions_directory = TextIndexBlockedPositionsCodec::readDirectory(*positions_buf, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+            if (embedded)
+            {
+                positions_directory = TextIndexBlockedPositionsCodec::readDirectory(in, 0, token_info.cardinality, token_info.position_bytes);
+            }
+            else
+            {
+                validateTokenPositions(token_info, positions_file_size);
+                in.seek(static_cast<off_t>(token_info.position_offset), SEEK_SET);
+                positions_directory = TextIndexBlockedPositionsCodec::readDirectory(in, token_info.position_offset, token_info.cardinality, token_info.position_bytes);
+            }
         }
 
         const size_t end_rank = first_rank + num_ranks;
@@ -157,8 +171,8 @@ private:
             block_local_ranks.resize(block_end - rank);
             std::iota(block_local_ranks.begin(), block_local_ranks.end(), static_cast<UInt32>(rank % block_docs));
 
-            positions_buf->seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
-            TextIndexBlockedPositionsCodec::decodeBlock(*positions_buf, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
+            in.seek(static_cast<off_t>(positions_directory.block_offsets[block_idx]), SEEK_SET);
+            TextIndexBlockedPositionsCodec::decodeBlock(in, positions_directory, block_idx, block_local_ranks, position_offsets, positions, positions_scratch);
             rank = block_end;
         }
     }
@@ -566,7 +580,7 @@ private:
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
         /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{index_header.sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{index_header.sparse_index.getTokensColumn(), string_type, ""}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -724,10 +738,12 @@ const ColumnWithTypeAndName StorageMergeTreeTextIndex::part_name_column{std::mak
 StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
+    StorageMetadataPtr source_metadata_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
     : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
+    , source_metadata(std::move(source_metadata_))
     , text_index(std::move(text_index_))
 {
     if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
@@ -759,7 +775,8 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals(const MergeT
     return desc;
 }
 
-void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IStorage & source_table, const IMergeTreeIndex & index)
+void StorageMergeTreeTextIndex::checkAccess(
+    const ContextPtr & context, const IStorage & source_table, const StorageInMemoryMetadata & source_metadata, const IMergeTreeIndex & index)
 {
     const auto source_storage_id = source_table.getStorageID();
     /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
@@ -774,7 +791,13 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IS
             "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
             "or through `remote` with the credentials of that user");
 
-    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+    /// Column-level grants are tracked against top-level storage columns only, so map any subcolumns
+    /// required for the index (e.g. `json.a.b`) to their parent storage column (e.g. `json`). Resolve them against the
+    /// metadata the index was built from, not the current one, which a concurrent `ALTER` may have changed since.
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        source_metadata.getColumns().getColumnNamesForSelectAccessCheck(index.getColumnsRequiredForIndexCalc(), context, source_storage_id));
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
@@ -795,7 +818,7 @@ void StorageMergeTreeTextIndex::readImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    checkAccess(context, *source_table, *text_index);
+    checkAccess(context, *source_table, *source_metadata, *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

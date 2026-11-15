@@ -1,0 +1,28 @@
+-- The left read must be in order (LEFT and INNER, hash and parallel_hash)
+['ReadType: InOrder','ReadType: Default']
+['ReadType: InOrder','ReadType: Default']
+['ReadType: InOrder','ReadType: Default']
+-- LIMIT over the spilled join reads only a prefix of the left table
+0	1
+0	1
+1	0
+-- Full results: correct multisets, emitted in the left order
+50000	25000
+1
+125000	75000	1
+100000	75000	1
+25000	25000	1
+-- Concurrent build: parallel_hash switches to MergeJoin from multiple threads
+50000	25000	1
+-- The spilled results match the non-spilled hash join (INNER/LEFT x ALL/ANY)
+1
+1
+1
+1
+-- DISTINCT in order over the spilled join
+25000
+-- The join did spill through MergeJoin, and the read was short
+OK	OK	OK
+-- Left order uncorrelated with the join key: matches hop between the spilled right blocks
+50000	25000	1
+1

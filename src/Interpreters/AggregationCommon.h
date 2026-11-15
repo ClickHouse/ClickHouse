@@ -183,6 +183,46 @@ void packFixedBatchRange(
     fillFixedBatchRange<UInt8>(keys_size, key_columns, key_sizes, begin, end, out, offset);
 }
 
+template <size_t size, typename Key>
+void fillFixedBatchOrdered(size_t num_rows, const char * source, char * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        memcpy(dest, source, size);
+        source += size;
+        dest += sizeof(Key);
+    }
+}
+
+/// Packs rows [begin, end) in clause order after `offset` zero bytes, which is the layout of the nullable
+/// `packFixed` for a row without NULLs. Element `i` of `out` is row `begin + i`.
+template <typename Key>
+void packFixedBatchOrdered(
+    size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t offset,
+    PaddedPODArray<Key> & out, size_t begin, size_t end)
+{
+    const size_t num_rows = end - begin;
+    out.resize_fill(num_rows);
+
+    char * dest = reinterpret_cast<char *>(out.data()) + offset;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        const size_t size = key_sizes[j];
+        const char * source = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + begin * size;
+        switch (size)
+        {
+            case 1: fillFixedBatchOrdered<1, Key>(num_rows, source, dest); break;
+            case 2: fillFixedBatchOrdered<2, Key>(num_rows, source, dest); break;
+            case 4: fillFixedBatchOrdered<4, Key>(num_rows, source, dest); break;
+            case 8: fillFixedBatchOrdered<8, Key>(num_rows, source, dest); break;
+            case 16: fillFixedBatchOrdered<16, Key>(num_rows, source, dest); break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected key size {} for batch packing", size);
+        }
+        dest += size;
+    }
+}
+
 template <typename Key, size_t ELEMENT_SIZE>
 static inline void ALWAYS_INLINE fillFixedLongestFirst(
     size_t row, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, char * bytes, size_t & offset)

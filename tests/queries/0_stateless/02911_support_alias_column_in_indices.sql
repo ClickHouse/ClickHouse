@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- add_minmax_index_for_numeric_columns=0: Different plan
 -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET use_statistics_for_part_pruning = 0;
@@ -19,7 +21,7 @@ settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_gra
 insert into test1 select * from numbers(10);
 insert into test1 select * from numbers(11, 20);
 
-explain indexes = 1 select * from test1 where a > 10 settings enable_analyzer = 1;
+explain indexes = 1 select * from test1 where a > 10;
 
 create table test2
 (
@@ -35,4 +37,4 @@ settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_gra
 insert into test2 select * from numbers(10);
 insert into test2 select * from numbers(11, 20);
 
-explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 1;
+explain indexes = 1 select * from test2 where a2 > 15;

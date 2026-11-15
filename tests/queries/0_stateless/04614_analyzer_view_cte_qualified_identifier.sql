@@ -5,8 +5,6 @@
 
 DROP TABLE IF EXISTS v_cte_new, v_cte_both, v_cte_noalias, v_cte_union, v_cte_double, mv_cte, t_mv_src;
 
-SET enable_analyzer = 1;
-
 SELECT '-- aliased CTE reference';
 CREATE VIEW v_cte_new AS WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s;
 SELECT * FROM v_cte_new;
