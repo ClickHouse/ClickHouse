@@ -677,15 +677,10 @@ try
     RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
+    const char * begin = regexp_.data(); // NOLINT(bugprone-suspicious-stringview-data-usage)
     const size_t last_posix_close = regexp_.rfind(":]");
-    analyzeImpl( // NOLINT
-        regexp_,
-        regexp_.data(),
-        required_literal,
-        r.is_trivial,
-        r.has_capture,
-        alternative_literals,
-        last_posix_close == std::string_view::npos ? nullptr : regexp_.data() + last_posix_close);
+    const char * last_close = last_posix_close == std::string_view::npos ? nullptr : begin + last_posix_close;
+    analyzeImpl(regexp_, begin, required_literal, r.is_trivial, r.has_capture, alternative_literals, last_close);
     r.required_substring = std::move(required_literal.literal);
     r.required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
