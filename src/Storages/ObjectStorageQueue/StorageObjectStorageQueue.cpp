@@ -1242,6 +1242,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         if (stream_control.isBlocked())
             break;
+
+        /// This task acquired no files, although the iterator is not finished: e.g. in ordered mode
+        /// the remaining files belong to buckets held by other tasks. End the cycle, so that the task
+        /// backs off instead of building empty insert pipelines in a loop until the others are done.
+        if (processing_progress->processed_files.load() == 0)
+            break;
     }
 
     LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());
