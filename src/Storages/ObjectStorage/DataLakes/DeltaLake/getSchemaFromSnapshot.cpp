@@ -616,7 +616,9 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
             result.timestamp_writer_paths.insert(field_writer_path);
-        if (parent_logical_path.empty() && field.type == DB::TypeIndex::DateTime64 && !field.has_type_changes)
+        /// delta-kernel splits a column name on dots: https://github.com/ClickHouse/ClickHouse/issues/118775
+        if (parent_logical_path.empty() && field.type == DB::TypeIndex::DateTime64 && !field.has_type_changes
+            && field.name.find('.') == std::string::npos)
             result.timestamp_columns.emplace(
                 field.name,
                 DeltaTimestampColumn{

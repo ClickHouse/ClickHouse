@@ -396,6 +396,27 @@ WIDENED="SELECT arraySort(groupArray(toString(date_timestamp_ntz, 'UTC')))
 compare "widened: date_timestamp_ntz >= '2024-09-09 00:00:00'" \
     "${WIDENED}, delta_lake_enable_engine_predicate = 0;" "${WIDENED};"
 
+# A top-level column named `a.b` stays untranslated: delta-kernel reads the name as the field `b` of a struct `a`
+# (https://github.com/ClickHouse/ClickHouse/issues/118775), so the scan fails without that field and is pruned by
+# its statistics with it. Column mapping lets the Parquet file hold both columns.
+field() { printf '{\\"name\\":\\"%s\\",\\"type\\":%s,\\"nullable\\":false,\\"metadata\\":{\\"delta.columnMapping.id\\":%s,\\"delta.columnMapping.physicalName\\":\\"c%s\\"}}' "$1" "$2" "$3" "$3"; }
+NESTED_STATS='{\"c2\":{\"c3\":\"2027-01-01T00:00:00.000000Z\"}}'
+for table in dotted dotted_nested; do
+    mkdir -p "${ROOT}/${table}/_delta_log"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${ROOT}/${table}/f1.parquet', Parquet)
+        SELECT toDateTime64('2026-01-01', 6, 'UTC') AS c1, tuple(toDateTime64('2027-01-01', 6, 'UTC'))::Tuple(c3 DateTime64(6, 'UTC')) AS c2"
+    fields=$(field a.b '\"timestamp\"' 1)
+    [[ "${table}" == dotted_nested ]] && fields+=",$(field a "{\\\"type\\\":\\\"struct\\\",\\\"fields\\\":[$(field b '\"timestamp\"' 3)]}" 2)"
+    cat > "${ROOT}/${table}/_delta_log/00000000000000000000.json" <<EOF
+{"protocol":{"minReaderVersion":2,"minWriterVersion":5}}
+{"metaData":{"id":"${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[${fields}]}","partitionColumns":[],"configuration":{"delta.columnMapping.mode":"name","delta.columnMapping.maxColumnId":"3"}}}
+{"add":{"path":"f1.parquet","partitionValues":{},"size":$(wc -c < "${ROOT}/${table}/f1.parquet"),"modificationTime":1700000000000,"dataChange":true,"stats":"{\"numRecords\":1,\"minValues\":${NESTED_STATS},\"maxValues\":${NESTED_STATS}}"}}
+EOF
+    DOTTED_QUERY="SELECT groupArray(toString(\`a.b\`)) FROM deltaLakeLocal('${ROOT}/${table}') WHERE \`a.b\` = '2026-01-01 00:00:00'"
+    compare "${table}: \`a.b\` = '2026-01-01 00:00:00'" \
+        "${DOTTED_QUERY} SETTINGS delta_lake_enable_engine_predicate = 0;" "${DOTTED_QUERY};"
+done
+
 run_batch 1 --query "
     SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor;
     $(data_query ts "NOT (ts >= '2026-01-01 00:00:01')")" 2>&1 | grep -c "FAULT_INJECTED"
