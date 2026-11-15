@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS t_big_int_datetime;
 SET session_timezone = 'UTC';
 
 -- A 128- or 256-bit integer source converts to `DateTime`, `DateTime64` and `Time64` with the same
@@ -5,6 +6,9 @@ SET session_timezone = 'UTC';
 
 SELECT toDateTime(toUInt128(4294967301)), toDateTime(toUInt64(4294967301));
 SELECT toDateTime(toUInt256(4294967301)), toDateTime(toInt128(-1)), toDateTime(toInt64(-1)), toDateTime(toInt256(-1));
+
+-- A value beyond 64 bits saturates as well: its low 64 bits are a small timestamp.
+SELECT toDateTime(toInt128('18446744073709551621')), toDateTime(materialize(toInt256('18446744073709551621')));
 
 SELECT toInt64(toDateTime64(toUInt128(99999999999999), 0)), toInt64(toDateTime64(toUInt64(99999999999999), 0));
 SELECT toInt64(toDateTime64(toInt128(-99999999999999), 0)), toInt64(toDateTime64(toInt64(-99999999999999), 0));
@@ -18,11 +22,18 @@ SELECT toInt64(toDateTime64(toUInt32(4000000), 0)), toInt64(toDateTime64(toUInt6
 -- In-range values are unaffected.
 SELECT toDateTime(toUInt128(1000000)), toDateTime64(toInt256(1000000), 3), toTime64(toUInt128(3600), 0);
 
--- The behaviour agrees with the 64-bit source in every overflow mode, including `throw`, which these
--- numeric conversions do not consult (a separate, pre-existing gap).
-SELECT toDateTime(toUInt128(4294967301)), toDateTime(toUInt64(4294967301)) SETTINGS date_time_overflow_behavior = 'throw';
-SELECT toDateTime64(toUInt128(99999999999999), 0), toDateTime64(toUInt64(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw';
-SELECT toTime64(toUInt128(99999999999999), 0), toTime64(toUInt64(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw';
+-- The behaviour agrees with the 64-bit source in every overflow mode, including `throw`.
+SELECT toDateTime(toUInt128(4294967301)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(toUInt64(4294967301)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(toUInt256(4294967301)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(toInt128(-1)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(toUInt128(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(toUInt64(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(toInt256(-99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toTime64(toUInt128(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toTime64(toUInt64(99999999999999), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toTime64(toUInt32(4000000), 0) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(toUInt128(1000000)), toDateTime64(toInt256(1000000), 3), toTime64(toUInt128(3600), 0) SETTINGS date_time_overflow_behavior = 'throw';
 
 -- The conversion is used for primary-key analysis, and a wrapped part boundary discarded the part.
 

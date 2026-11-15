@@ -1,12 +1,14 @@
---- the table has four inner tables ---
+--- the table has five inner tables ---
+1
 1
 1
 1
 1
 --- the restored table has the same definition ---
-version = 4
+1
 definitions are equal
 --- the restored table has its own inner tables ---
+2
 2
 2
 2

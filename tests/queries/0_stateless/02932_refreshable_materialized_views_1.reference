@@ -8,7 +8,7 @@ CREATE MATERIALIZED VIEW default.rmv_a\nREFRESH EVERY 2 YEAR\n(\n    `x` UInt64\
 <5: no refresh>	3
 <6: refreshed>	2
 <7: refreshed>	Scheduled	2052-02-03 04:05:06	2054-01-01 00:00:00
-CREATE MATERIALIZED VIEW default.rmv_b\nREFRESH EVERY 2 YEAR DEPENDS ON default.rmv_a\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x * 10 AS y\nFROM default.rmv_a
+CREATE MATERIALIZED VIEW default.rmv_b\nREFRESH EVERY 2 YEAR DEPENDS ON default.rmv_a\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x * 10 AS y\nFROM default.rmv_a\nSETTINGS force_write_through_distributed_cache = 0
 <7.5: created dependent>	2052-11-11 11:11:11
 <8: refreshed>	20
 <9: refreshed>	rmv_a	Scheduled	2054-01-01 00:00:00
@@ -26,4 +26,5 @@ CREATE MATERIALIZED VIEW default.rmv_b\nREFRESH EVERY 2 YEAR DEPENDS ON default.
 <17: chain-refreshed>	rmv_a	Scheduled	2062-01-01 00:00:00
 <17: chain-refreshed>	rmv_b	Scheduled	2062-01-01 00:00:00
 <18: removed dependency>	rmv_b	Scheduled	2062-03-03 03:03:03	2062-03-03 03:03:03	2064-01-01 00:00:00
-CREATE MATERIALIZED VIEW default.rmv_b\nREFRESH EVERY 2 YEAR\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x * 10 AS y\nFROM default.rmv_a
+CREATE MATERIALIZED VIEW default.rmv_b\nREFRESH EVERY 2 YEAR\n(\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY y\nSETTINGS index_granularity = 8192\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x * 10 AS y\nFROM default.rmv_a\nSETTINGS force_write_through_distributed_cache = 0
+<19: pin reached the refresh>	['0']

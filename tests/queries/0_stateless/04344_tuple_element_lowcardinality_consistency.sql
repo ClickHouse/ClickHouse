@@ -6,7 +6,7 @@
 -- `Nullable(String)` while `t.a` returned `LowCardinality(String)` / `LowCardinality(Nullable(String))`.
 -- `materialize(...)` forces the non-optimized function path (the subcolumn optimization cannot fire).
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_04344;
 CREATE TABLE t_04344
@@ -53,7 +53,7 @@ FROM (
     FROM (SELECT arrayJoin([tuple('a', map('k1', 'v1'))::Tuple(a String, m Map(String, String)),
                             tuple('b', map('k2', 'v2'))::Tuple(a String, m Map(String, String))]) AS t)
 )
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;
 
 SELECT n, tupleElement(materialize(n), 'arr') AS via_function
 FROM (
@@ -61,4 +61,4 @@ FROM (
     FROM (SELECT arrayJoin([tuple('a', [1, 2])::Tuple(a String, arr Array(UInt32)),
                             tuple('b', [3, 4])::Tuple(a String, arr Array(UInt32))]) AS t)
 )
-SETTINGS allow_experimental_nullable_tuple_type = 1;
+SETTINGS enable_nullable_tuple_type = 1;

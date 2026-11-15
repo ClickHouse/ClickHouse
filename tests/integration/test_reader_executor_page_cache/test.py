@@ -36,7 +36,8 @@ READER_EXECUTOR_PAGE_CACHE_SETTINGS = (
     "remote_filesystem_read_method='read', "
     "use_page_cache_for_disks_without_file_cache=1, "
     "page_cache_inject_eviction=0, "
-    "read_from_page_cache_if_exists_otherwise_bypass_cache=0"
+    "read_from_page_cache_if_exists_otherwise_bypass_cache=0, "
+    "use_statistics_for_sum_avg_aggregation=0"
 )
 
 

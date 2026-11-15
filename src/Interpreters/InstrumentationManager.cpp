@@ -445,8 +445,15 @@ void InstrumentationManager::parseInstrumentationMap()
         const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr));
         if (symbol)
         {
-            const auto symbol_demangled = demangle(symbol->name);
-            functions_container.emplace(func_id, symbol_demangled);
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+            {
+                const auto symbol_demangled = demangle(symbol_name);
+                functions_container.emplace(func_id, symbol_demangled);
+            }
+            else
+            {
+                errors++;
+            }
         }
         else
         {

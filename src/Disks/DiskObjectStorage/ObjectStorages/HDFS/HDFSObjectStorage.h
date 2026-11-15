@@ -24,6 +24,7 @@ struct HDFSObjectStorageSettings
 
     size_t min_bytes_for_seek;
     int replication;
+    bool read_only = false;
 };
 
 
@@ -101,7 +102,7 @@ public:
     /// `static`) so this contract can be unit-tested without a live NameNode.
     static ObjectMetadata makeObjectMetadata(Int64 last_modified, Int64 size);
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -115,6 +116,8 @@ public:
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return true; }
+
+    bool isReadOnly() const override { return settings->read_only; }
 
     void startup() override { }
 
@@ -130,6 +133,8 @@ private:
     void removeObject(const StoredObject & object);
 
     void removeObjects(const StoredObjects & objects);
+
+    void throwIfReadonly() const;
 
     const Poco::Util::AbstractConfiguration & config;
 

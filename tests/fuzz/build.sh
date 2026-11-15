@@ -1,8 +1,22 @@
 #!/bin/bash -eu
 
 # copy fuzzer options and dictionaries
+#
+# all.dict is not committed: the fuzzing configure step generates a
+# source-derived fallback into tests/fuzz/, and the nightly libFuzzer job
+# overwrites it with the authoritative binary-derived one (update_dict.sh).
+# Either way it is present here, so copy whichever is current instead of
+# generating a second one.
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
+
+# Preserve committed target-specific seeds before adding generated SQL corpora.
+mkdir -p "$BIN/tests/fuzz"
+for corpus in "$SRC"/tests/fuzz/*_fuzzer.in; do
+    if [ -d "$corpus" ]; then
+        cp -r "$corpus" "$BIN/tests/fuzz/"
+    fi
+done
 
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/

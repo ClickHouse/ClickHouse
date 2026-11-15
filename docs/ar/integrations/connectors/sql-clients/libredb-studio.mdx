@@ -1,0 +1,176 @@
+---
+slug: /integrations/libredb-studio
+sidebarTitle: 'LibreDB Studio'
+description: 'اربط LibreDB Studio، وهي بيئة تطوير SQL متكاملة مفتوحة المصدر تعمل عبر الويب، بخادم ClickHouse مستضاف ذاتيًا عبر واجهة HTTP.'
+title: 'ربط LibreDB Studio بـ ClickHouse'
+doc_type: 'guide'
+keywords: ['libredb studio', 'sql client', 'sql ide', 'web', 'open source', 'self-hosted', 'monitoring']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) هي بيئة تطوير متكاملة (IDE) لـ SQL، مفتوحة المصدر (MIT) ومستضافة ذاتيًا،
+تعمل داخل المتصفح. تتصل بـ ClickHouse عبر واجهة HTTP دون الحاجة إلى JDBC أو مشغّل أصلي،
+وتوفّر محرر SQL، ومستعرضًا لقواعد البيانات، وخطط `EXPLAIN`، ولوحة معلومات للمراقبة
+مبنية على جداول `system`.
+
+## قبل أن تبدأ {#before-you-begin}
+
+* شغّل LibreDB Studio باستخدام Docker (`docker run -p 3000:3000 ghcr.io/libredb/libredb-studio:latest`)
+  أو باستخدام Node.js 24 أو أحدث (`npx @libredb/studio`)، ثم افتح `http://localhost:3000`. عند
+  التشغيل لأول مرة، تُطبع كلمة مرور المسؤول في السجل.
+* تأكد من أن الجهاز الذي يعمل عليه LibreDB Studio يستطيع الوصول إلى منفذ HTTP أو HTTPS في ClickHouse.
+* أنشئ مستخدم ClickHouse يملك صلاحية الوصول إلى قواعد البيانات التي تريد الاستعلام عنها. يحتاج مستعرض قاعدة البيانات
+  أيضًا إلى صلاحية `SELECT` على `system.dictionaries` و`system.data_skipping_indices`، وصلاحية `dictGet` على
+  كل قاعدة بيانات تحتوي على قواميس. أما لوحة المعلومات، فامنح لها صلاحية `SELECT` على جداول `system`
+  المدرجة في قسم [مراقبة ClickHouse](#monitor-clickhouse).
+
+على سبيل المثال، لمستخدم باسم `reader` يستعلم عن قاعدة البيانات `uk`:
+
+```sql
+GRANT SELECT ON uk.* TO reader;
+GRANT dictGet ON uk.* TO reader;
+GRANT SELECT ON system.dictionaries TO reader;
+GRANT SELECT ON system.data_skipping_indices TO reader;
+```
+
+| النشر                    | الإصدار المُختبَر | ملاحظات                                             |
+| ------------------------ | ----------------- | --------------------------------------------------- |
+| ClickHouse مستضاف ذاتيًا | 26.7              | يستخدم واجهة HTTP(S) ‏(`8123`، أو `8443` مع HTTPS). |
+
+## آلية العمل {#how-it-works}
+
+1. يرسل المتصفح العبارة إلى خادم LibreDB Studio.
+2. يرسلها الخادم إلى ClickHouse في متن طلب HTTP `POST /`، مع تمرير
+   `default_format=JSONCompact` وقاعدة البيانات المحددة بوصفهما معلمات URL، وتمرير بيانات الاعتماد عبر
+   المصادقة الأساسية في HTTP.
+3. يُعيد الخادم الصفوف، وأنواع الأعمدة التي صرّح بها ClickHouse، والوقت المنقضي الذي
+   أبلغ عنه ClickHouse. تُنفَّذ كل عبارة في طلب مستقل عديم الحالة، دون تثبيت أي session.
+
+## الاتصال بـ ClickHouse مستضاف ذاتيًا {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+  <Step title="اجمع بيانات الاتصال" id="gather-your-connection-details">
+    ستحتاج إلى المضيف، ومنفذ HTTP (`8123` افتراضيًا، أو منفذ HTTPS الذي يستخدمه الخادم، وغالبًا ما يكون
+    `8443`)، واسم المستخدم وكلمة المرور، واسم قاعدة البيانات اختياريًا. إذا لم يُحدَّد اسم
+    قاعدة بيانات في الاتصال، فستُستخدم `default`.
+  </Step>
+
+  <Step title="أنشئ الاتصال" id="create-the-connection">
+    1. في الشريط الجانبي، اختر **+** (**New connection**).
+    2. اختر **ClickHouse** نوعًا لقاعدة البيانات. ستُملأ خانة المنفذ تلقائيًا بالقيمة `8123`.
+    3. أدخل اسم الاتصال، والمضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات
+       اختياريًا.
+    4. لاستخدام HTTPS، افتح **SSL / TLS**، واختر أي وضع SSL غير `disable`، وغيّر قيمة **Port** إلى
+       منفذ HTTPS الخاص بالخادم (غالبًا `8443`). تتحقق جميع الأوضاع باستثناء `disable` من شهادة الخادم
+       بالاستناد إلى جهات CA التي يثق بها خادم LibreDB Studio، وهو ما يصفه الوضع `verify-system`.
+       ينجح ذلك مع ClickHouse Cloud ومع الخوادم التي تحمل شهادات صادرة عن CA موثوقة
+       للعموم. أما إذا كانت الشهادة موقّعة ذاتيًا أو صادرة عن CA خاصة، فراجع قسم
+       [استكشاف الأخطاء وإصلاحها](#troubleshooting).
+    5. اختر **Test Connection**، ثم **Establish Connection**.
+
+    يمكنك أيضًا لصق عنوان URL عبر **Paste URL** بدلًا من ملء الحقول، مثل
+    `clickhouse://localhost:8123/default` أو `https://reader:secret@ch.example.com:8443/analytics`.
+    ويُفعَّل TLS تلقائيًا عند استخدام عنوان URL يبدأ بـ `https://`.
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="مربع حوار New Connection في LibreDB Studio مع اختيار ClickHouse وملء المضيف والمنفذ 8123 واسم المستخدم وقاعدة البيانات، ونجاح اختبار الاتصال" />
+  </Step>
+
+  <Step title="شغّل استعلامًا" id="run-a-query">
+    افتح الاتصال، واكتب عبارة في المحرر ثم شغّلها. يعرض مستعرض قواعد البيانات لكل
+    قاعدة بيانات جداولها وطرق العرض وطرق العرض المُجسَّدة والقواميس والدوال المعرّفة من قِبل المستخدم، إلى جانب
+    الأعمدة وأعمدة المفتاح الأساسي وفهارس تخطي البيانات وتعريفات الكائنات.
+
+    يستخدم هذا المثال [مجموعة بيانات UK Property Price](/ar/get-started/sample-datasets/uk-price-paid).
+    حمّلها إلى `uk.uk_price_paid` باتباع الخطوات الموضحة في ذلك الدليل، واضبط قاعدة بيانات الاتصال على `uk`،
+    ثم شغّل الاستعلام التالي:
+
+    ```sql
+    SELECT
+        town,
+        count() AS sales,
+        round(avg(price)) AS average_price
+    FROM uk_price_paid
+    GROUP BY town
+    ORDER BY sales DESC
+    LIMIT 10
+    ```
+
+    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="محرر SQL في LibreDB Studio يعرض استعلام uk_price_paid وشبكة نتائج بأنواع الأعمدة المعرّفة في ClickHouse" />
+  </Step>
+</Steps>
+
+## مراقبة ClickHouse {#monitor-clickhouse}
+
+تقرأ لوحة معلومات المراقبة هذه المصادر باستخدام المستخدم المحدد في الاتصال:
+
+| المجال                                                                  | مصدر ClickHouse                                                     |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| الإصدار، ومدة التشغيل، والاتصالات                                       | `version()`، `uptime()`، `system.metrics`، `system.server_settings` |
+| نسبة إصابات ذاكرة التخزين المؤقت، وعدد الاستعلامات في الثانية، والذاكرة | `system.events`، `system.asynchronous_metrics`                      |
+| الاستعلامات البطيئة، مجمّعةً حسب الاستعلام المُطبَّع                    | `system.query_log`                                                  |
+| الاستعلامات قيد التنفيذ                                                 | `system.processes`                                                  |
+| الجداول، وأجزاء الجدول، والصفوف والحجم                                  | `system.tables`، `system.parts`                                     |
+| فهارس تخطي البيانات                                                     | `system.data_skipping_indices`                                      |
+| الأقراص                                                                 | `system.disks`                                                      |
+
+إذا لم يكن لدى المستخدم أذونات على أحد هذه الجداول، أو كان `query_log` معطّلًا، فستبقى اللوحة المعنية
+فارغة دون أن يتسبب ذلك في تعطّل لوحة المعلومات بأكملها. يُفرَّغ `system.query_log` بشكل غير متزامن، لذا قد
+يستغرق ظهور العبارة التي انتهى تنفيذها للتو بضع ثوانٍ.
+
+يمكن لـ LibreDB Studio أيضًا تشغيل `OPTIMIZE TABLE ... FINAL` على جدول، وعرض ملخص `system.parts`
+لجدول أو قاعدة بيانات، وإيقاف استعلام قيد التنفيذ باستخدام `KILL QUERY ... SYNC`. وتتطلب هذه العمليات
+الأذونات المناسبة.
+
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="نظرة عامة على المراقبة في LibreDB Studio لاتصال ClickHouse، تعرض إصدار الخادم، ومدة التشغيل، والاتصالات، وحجم التخزين، ونسبة إصابات ذاكرة التخزين المؤقت، وعدد الجداول" />
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+<Accordion title="رُفض الاتصال أو انتهت مهلته">
+  خادم LibreDB Studio هو الذي يُرسل الطلبات، وليس متصفحك، لذا يجب أن يكون المضيف قابلاً للوصول إليه من
+  الجهاز أو الحاوية التي تُشغّله. عند تشغيل LibreDB Studio داخل Docker وتشغيل ClickHouse على
+  الجهاز نفسه، يشير `localhost` إلى الحاوية لا إلى المضيف. تحقّق من أنك أدخلت
+  منفذ HTTP، وليس منفذ البروتوكول الأصلي `9000`.
+</Accordion>
+
+<Accordion title="يفشل HTTPS مع شهادة ذاتية التوقيع أو صادرة عن سلطة تصديق خاصة">
+  يعمل خادم LibreDB Studio على Node.js، الذي يتحقق من شهادة الخادم بالاستناد إلى قائمته المضمّنة
+  بالمراجع المصدقة العامة. لذا فهو يتجاهل شهادة المرجع المصدق الملصقة ضمن **SSL / TLS**، كما أن إضافة
+  المرجع المصدق إلى مخزن الشهادات في نظام التشغيل لا تكفي وحدها. شغّل خادم LibreDB Studio
+  بعد ضبط متغير البيئة `NODE_EXTRA_CA_CERTS` على مسار ملف PEM
+  يحتوي على شهادة المرجع المصدق الخاصة بك، أو على شهادة الخادم نفسه إن كانت ذاتية التوقيع. عند استخدام Docker، اربط
+  الملف داخل الحاوية ومرّر مثلًا `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`.
+</Accordion>
+
+<Accordion title="لا يعرض مستعرض قواعد البيانات أي كائنات، أو يُدرج قاموسًا على أنه جدول">
+  يقرأ مستعرض قواعد البيانات `system.dictionaries` لتصنيف كائنات كل قاعدة بيانات حسب نوعها، و
+  `system.data_skipping_indices` لعرض تفاصيل الجدول. فبدون صلاحية `SELECT` على `system.dictionaries`
+  لن تُحمَّل أي قائمة كائنات، وبدون صلاحية `SELECT` على `system.data_skipping_indices` لن تُفتح تفاصيل
+  الجدول. ويظل القاموس مُدرجًا ضمن الجداول إلى أن يحصل المستخدم على صلاحية `dictGet` على قاعدة البيانات التي ينتمي إليها.
+  امنح هذه الأذونات كما هو موضح في [قبل أن تبدأ](#before-you-begin)، ثم حدّث المستعرض.
+</Accordion>
+
+<Accordion title="بعض لوحات لوحة المعلومات فارغة">
+  لا يستطيع مستخدم ClickHouse قراءة جدول واحد أو أكثر من جداول `system` المدرجة ضمن
+  [مراقبة ClickHouse](#monitor-clickhouse). امنح صلاحية `SELECT` على الجداول التي تحتاجها ثم أعد الاتصال.
+</Accordion>
+
+<Accordion title="عرض الاستعلامات البطيئة فارغ">
+  يقرأ عرض الاستعلامات البطيئة `system.query_log`، الذي لا يسجّل شيئًا ما دام تسجيل الاستعلامات متوقفًا.
+  فعّل الإعداد `log_queries` للمستخدم، في ملف تعريف الإعدادات الخاص به مثلًا، ثم شغّل بضعة
+  استعلامات. تظهر الإدخالات الجديدة فور تفريغ السجل، وقد يستغرق ذلك بضع ثوانٍ.
+  إذا ظل العرض فارغًا، فقد يكون تسجيل الاستعلامات معطّلًا على مستوى الخادم بأكمله لا على مستوى
+  المستخدم فقط. تحقّق من وجود القسم `query_log` في تكوين الخادم، كما هو موضح في
+  [system.query&#95;log](/ar/operations/system-tables/query_log).
+</Accordion>
+
+## الخطوات التالية {#next-steps}
+
+* راجع [وثائق مزوّد ClickHouse في LibreDB Studio](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md) للاطلاع على تفاصيل السلوك كاملةً.
+* راجع [وثائق واجهة HTTP في ClickHouse](/ar/concepts/features/interfaces/http) للاطلاع على تكوين الخادم.

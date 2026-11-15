@@ -1,9 +1,13 @@
 #pragma once
 
+#include <Formats/NativeWriterTypeCache.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
+
+class ICompressionCodec;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 /// Serializes and compresses data chunks into exchange packets. The send steps put one on every
 /// pipeline stream in front of a sink, so this CPU work runs on all streams in parallel and the
@@ -12,12 +16,17 @@ namespace DB
 class StreamingExchangeSerializingTransform final : public ISimpleTransform
 {
 public:
-    explicit StreamingExchangeSerializingTransform(SharedHeader input_header);
+    StreamingExchangeSerializingTransform(SharedHeader input_header, CompressionCodecPtr codec_);
 
     String getName() const override { return "StreamingExchangeSerializingTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;
+
+private:
+    const CompressionCodecPtr codec;
+    /// What the writer derived from the column types of this transform, for all its packets.
+    NativeWriterTypeCache type_cache;
 };
 
 }

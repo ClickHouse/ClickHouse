@@ -16,8 +16,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <optional>
 
@@ -165,7 +163,7 @@ boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & 
 }
 
 
-bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
+bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expected)
 {
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_select(Keyword::SELECT);
@@ -576,14 +574,11 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserPipeOperators::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementPipeOperators(StatementFactory & factory)
-{
-    factory.registerStatement("PIPE OPERATORS",
+    documentation["PIPE OPERATORS"] =
     {
         .description = R"DOCS_MD(
 Pipe operators allow writing queries as a linear chain of transformations that reads from top to bottom, similar to the [pipe syntax of GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
@@ -628,6 +623,8 @@ FROM orders |> WHERE amount > 100;
 ```
 
 Table aliases can be written with or without the `AS` keyword, as in the `FROM` clause of an ordinary `SELECT` query: `FROM orders o WHERE o.amount > 100`. The only exception is an alias written as the bare word `select`: after the tables it starts the explicit `SELECT` clause instead of being treated as an alias. A table named `select` is unaffected and keeps its own alias: `FROM select s WHERE s.id = 1`.
+
+A subquery in parentheses can also start with the `FROM` clause, which makes `(from IN ('a'))` ambiguous: it reads either as the expression `from IN ('a')` over a column named `from`, or as the subquery `SELECT * FROM IN('a')` over a table function named `IN`. The column reading is the older one and wins - parentheses whose contents read as an expression starting with the word `from` followed by an operator are that expression, never a subquery. Write the `SELECT` clause explicitly to get the other reading: `1 IN (SELECT * FROM in)`.
 
 The `SELECT` clause cannot be omitted when the sample offset of the last table could also be read as a query-level `OFFSET`, because in `FROM t SAMPLE 1/10 OFFSET 5` the `OFFSET` belongs to `SAMPLE`, while in `FROM t SAMPLE 1/10 SELECT * OFFSET 5` it is a query-level `OFFSET` - the explicit `SELECT` is required to disambiguate the two. When the query continues with a clause that a query-level `OFFSET` cannot precede, there is no ambiguity and the `SELECT` clause is optional as usual: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
@@ -766,7 +763,9 @@ FROM table
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT"},
-    });
+    };
+
+    return documentation;
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Functions/UTMCoordinates.h>
 
 #include <Common/Exception.h>
+#include <Common/sinCos.h>
 
 #include <algorithm>
 #include <cctype>
@@ -208,7 +209,18 @@ char utmLatitudeBand(Float64 latitude)
     if (latitude >= 72.0 && latitude <= 84.0)
         return 'X';
     if (latitude >= -80.0 && latitude < 72.0)
-        return BAND_LETTERS[static_cast<size_t>(std::floor((latitude + 80.0) / 8.0))];
+    {
+        /// Divide by 8 before adding the 80-degree offset: the division is by a power of two and the
+        /// offset is an integer, so both are exact. Adding 80 to the latitude first would round a tiny
+        /// negative value back to 80.0 and put it into band 'N' instead of 'M', disagreeing with the
+        /// southern false northing and with the MGRS row.
+        Float64 index = std::floor(latitude / 8.0);
+        /// Dividing the smallest negative subnormals by 8 underflows to negative zero. They are still
+        /// below the equator, so they belong to the band immediately below it.
+        if (latitude < 0.0 && index == 0.0)
+            index = -1.0;
+        return BAND_LETTERS[static_cast<size_t>(index + 10.0)];
+    }
     return 0;
 }
 
@@ -249,8 +261,7 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
     const Float64 lon_origin_rad = ((zone - 1) * 6.0 - 180.0 + 3.0) * DEG_TO_RAD;
     const Float64 ecc_prime_sq = WGS84_ECC_SQ / (1.0 - WGS84_ECC_SQ);
 
-    const Float64 sin_lat = std::sin(lat_rad);
-    const Float64 cos_lat = std::cos(lat_rad);
+    const auto [sin_lat, cos_lat] = sinCos(lat_rad);
     const Float64 tan_lat = std::tan(lat_rad);
 
     const Float64 n = WGS84_A / std::sqrt(1.0 - WGS84_ECC_SQ * sin_lat * sin_lat);
@@ -280,7 +291,10 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
                * (a * a / 2.0 + (5.0 - t + 9.0 * c + 4.0 * c * c) * a * a * a * a / 24.0
                   + (61.0 - 58.0 * t + t * t + 600.0 * c - 330.0 * ecc_prime_sq) * a * a * a * a * a * a / 720.0));
 
-    if (latitude < 0.0)
+    /// Decide the false northing from the band letter, so it can never disagree with the band that
+    /// `UTMToGeo` turns back into a hemisphere. Bands 'C'..'M' are the southern hemisphere; 'N'
+    /// and above are northern. (Equivalent to `result.band < 'N'`, written explicitly for clarity.)
+    if (result.band <= 'M')
         result.northing += FALSE_NORTHING;
 
     return result;
@@ -306,8 +320,7 @@ void utmToWGS84(Float64 easting, Float64 northing, UInt8 zone, bool is_north, Fl
         + (21.0 * e1 * e1 / 16.0 - 55.0 * e1 * e1 * e1 * e1 / 32.0) * std::sin(4.0 * mu)
         + (151.0 * e1 * e1 * e1 / 96.0) * std::sin(6.0 * mu);
 
-    const Float64 sin_phi1 = std::sin(phi1);
-    const Float64 cos_phi1 = std::cos(phi1);
+    const auto [sin_phi1, cos_phi1] = sinCos(phi1);
     const Float64 tan_phi1 = std::tan(phi1);
 
     const Float64 n1 = WGS84_A / std::sqrt(1.0 - e2 * sin_phi1 * sin_phi1);
@@ -337,7 +350,14 @@ std::string mgrsEncode(Float64 longitude, Float64 latitude, UInt8 precision)
     const UTMCoordinate utm = wgs84ToUTM(longitude, latitude);
 
     const Int64 easting_int = static_cast<Int64>(std::floor(utm.easting));
-    const Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+    Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+
+    /// A latitude just below the equator has a southern false northing that is a tiny negative distance
+    /// from 10,000,000 m. That distance is below the resolution of the double, so the northing rounds up
+    /// to exactly 10,000,000 and would select the northern equatorial square (row 'F'). Take the floor of
+    /// the true value instead, so the row letter stays in the southern hemisphere (row 'E' in set 6).
+    if (latitude < 0.0 && northing_int == static_cast<Int64>(FALSE_NORTHING))
+        --northing_int;
 
     std::string result = std::to_string(utm.zone);
     result += utm.band;
