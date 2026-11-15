@@ -273,7 +273,7 @@ size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
 /// reads the blocks that the table has at the start of the query.
 ///
 /// The blocks are numbered within a generation of the data, see `StorageMemory::BlocksWithCounts`. If the data is replaced
-/// (by `TRUNCATE`, a mutation or a restore), the stream fails rather than read the replaced rows again. If the blocks that
+/// (by a mutation or a restore), the stream fails rather than read the replaced rows again. If the blocks that
 /// the stream has not read yet are removed (by `max_rows_to_keep` or `max_bytes_to_keep`), the stream fails as well.
 class MemoryStreamingSource final : public ISource
 {
@@ -335,7 +335,7 @@ protected:
 
         if (snapshot->generation != generation)
             throw Exception(ErrorCodes::ABORTED,
-                "The data of the Memory table {} was replaced (by TRUNCATE, a mutation or a restore) during the streaming query",
+                "The data of the Memory table {} was replaced (by a mutation or a restore) during the streaming query",
                 storage->getStorageID().getNameForLogs());
 
         if (next_block_number < snapshot->first_block_number)
