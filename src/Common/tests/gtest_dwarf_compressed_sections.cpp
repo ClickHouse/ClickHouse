@@ -2,11 +2,13 @@
 
 #if defined(__ELF__) && !defined(OS_FREEBSD) && !USE_FUZZING_MODE
 
+#include <Common/CurrentThread.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
 
 #include <zlib.h>
@@ -270,6 +272,27 @@ TEST(DwarfCompressedSections, UnreadableSections)
     EXPECT_FALSE(elf.getSectionsData(both));
     EXPECT_FALSE(elf.getSectionsData(valid));
     EXPECT_TRUE(Elf(image.data(), image.size(), "<test>").getSectionsData(valid));
+}
+
+TEST(DwarfCompressedSections, NotChargedToReader)
+{
+    const std::string raw = sampleData(1 << 20);
+    const auto image = makeElf({section(".section", raw, Codec::Zstd)});
+    static constexpr const char * names[] = {".section"};
+    Elf elf(image.data(), image.size(), "<test>");
+
+    /// The sections outlive whoever reads them first, so that thread is not charged for them.
+    Int64 charged = 0;
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        CurrentThread::flushUntrackedMemory();
+        const Int64 before = CurrentThread::get().memory_tracker.get();
+        EXPECT_TRUE(elf.getSectionsData(names));
+        CurrentThread::flushUntrackedMemory();
+        charged = CurrentThread::get().memory_tracker.get() - before;
+    }).join();
+    EXPECT_LT(charged, static_cast<Int64>(raw.size() / 16));
 }
 
 #endif
