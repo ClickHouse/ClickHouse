@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
 from threading import Event, Thread
@@ -298,22 +298,21 @@ class Shell:
             print("Process already terminated.")
             return
 
-        time_wait = 0
-        wait_interval = 5
+        # Grace period keyed on the readers finishing (`finished`), not on the
+        # leader's own exit. The leader may already be dead while a backgrounded
+        # descendant keeps stdout/stderr open; polling process.poll() here would
+        # return immediately and skip the SIGKILL, leaving a SIGTERM-ignoring
+        # descendant to block the reader threads forever.
+        if finished.wait(100):
+            return
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
-            print("Waiting for process to exit...")
-            time.sleep(wait_interval)
-            time_wait += wait_interval
-
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        # Still not done after the grace period: escalate to SIGKILL on the whole
+        # group, even when the leader itself has already exited.
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def run(
@@ -627,8 +626,19 @@ class Utils:
         return datetime.now().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    def to_datetime(value, input_format="unix"):
+        if input_format == "unix":
+            return datetime.fromtimestamp(value, timezone.utc)
+        if input_format == "iso":
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Unsupported datetime input format [{input_format}]")
+
+    @staticmethod
+    def timestamp_to_str(timestamp, input_format="unix"):
+        dt = Utils.to_datetime(timestamp, input_format=input_format)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:
@@ -802,7 +812,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"cd {parent} && tar -cf - {name} | zstd -c > {quote(path_out)}",
+                    f"cd {parent} && tar -cf - {name} | zstd -c -T0 > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -820,7 +830,7 @@ class Utils:
                         path_out = str(dest_path)
 
                 Shell.check(
-                    f"rm -f {quote(path_out)} && zstd -c {quote(path)} > {quote(path_out)}",
+                    f"rm -f {quote(path_out)} && zstd -c -T0 {quote(path)} > {quote(path_out)}",
                     verbose=True,
                     strict=True,
                 )
@@ -830,10 +840,12 @@ class Utils:
     def fix_ownership_after_docker(path, docker_image: str) -> None:
         uid = os.getuid()
         gid = os.getgid()
-        Shell.run(
+        if Shell.run(
             f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
             verbose=True,
-        )
+        ) != 0:
+            # The docker daemon can go away together with the job container.
+            Shell.run(f"sudo -n chown -R {uid}:{gid} {quote(str(path))}", verbose=True)
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:

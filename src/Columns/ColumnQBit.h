@@ -92,6 +92,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
+    bool supportsGetDataAt() const override { return tuple->supportsGetDataAt(); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }
@@ -132,7 +133,6 @@ public:
     {
         tuple->deserializeAndInsertFromArena(in, settings);
     }
-    void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override

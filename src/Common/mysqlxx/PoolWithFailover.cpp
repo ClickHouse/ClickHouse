@@ -177,6 +177,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     , wait_timeout(other.wait_timeout)
     , bg_reconnect(other.bg_reconnect)
 {
+    std::lock_guard lock(other.replicas_order_mutex);
     if (shareable)
     {
         replicas_by_priority = other.replicas_by_priority;
@@ -237,7 +238,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     {
                         /// Move all traversed replicas to the end of queue.
                         /// (No need to move replicas with another priority)
-                        std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+                        {
+                            std::lock_guard order_lock(replicas_order_mutex);
+                            std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+                        }
 
                         return entry;
                     }

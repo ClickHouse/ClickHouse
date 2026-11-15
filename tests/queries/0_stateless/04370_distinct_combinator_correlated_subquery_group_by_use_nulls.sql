@@ -6,7 +6,6 @@
 
 -- Correlated subqueries are an analyzer feature; force it so the old-analyzer CI job
 -- does not fail with UNKNOWN_IDENTIFIER instead of exercising the fix.
-SET enable_analyzer = 1;
 
 SELECT number, (SELECT sumDistinct(number)) AS s FROM numbers(1) GROUP BY number WITH ROLLUP ORDER BY number NULLS LAST SETTINGS group_by_use_nulls = 1;
 

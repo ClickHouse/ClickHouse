@@ -294,7 +294,7 @@ def test_cmd_conf(started_cluster):
     assert result["log_readahead_pool_threads"] == "0"
     assert result["log_readahead_serve_wait_timeout_ms"] == "200"
     assert result["log_readahead_chunk_size"] == "16"
-    assert result["log_readahead_commit_window_bytes"] == "524288000"
+    assert result["log_readahead_commit_window_bytes"] == "16777216"
 
     assert result["log_startup_read_max_streams"] == "0"
     assert result["log_startup_read_buffer_size"] == "8388608"

@@ -43,7 +43,7 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+    std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;

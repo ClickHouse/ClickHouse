@@ -9,16 +9,15 @@ keywords: ['Amazonレビュー', '顧客レビュー データセット', 'eコ�
 
 import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
-このデータセットには、Amazon 製品に関する 1 億 5,000 万件超のカスタマーレビューが含まれています。データは AWS S3 上の snappy 圧縮された Parquet ファイルとして保存されており、圧縮後の合計サイズは 49GB です。これを ClickHouse に挿入する手順を見ていきましょう。
+このデータセットには、Amazon 製品に関する 1 億 5,000 万件超の顧客レビューが含まれています。データは AWS S3 上の snappy 圧縮された Parquet ファイルとして保存されており、圧縮後の合計サイズは 49GB です。
 
 <Note>
-  以下のクエリは、ClickHouse Cloud の **Production** インスタンスで実行しています。詳細は
-  [&quot;Playground の仕様&quot;](/ja/get-started/sample-datasets/playground#specifications) を参照してください。
+  セルフホストの ClickHouse と ClickHouse Cloud のどちらでもお試しいただけます。まだアカウントをお持ちでない場合は、[ClickHouse Cloud の無料トライアル](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews)を開始できます。
 </Note>
 
-<div id="loading-the-dataset">
-  ## データセットの読み込み
-</div>
+このデータを ClickHouse に挿入する手順を見ていきましょう。
+
+## データセットの読み込み {#loading-the-dataset}
 
 1. データを ClickHouse に挿入しなくても、その場で直接クエリできます。どのようなデータか確認するために、まずはいくつかの行を取得してみましょう:
 
@@ -118,17 +117,17 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. 次の `INSERT` コマンドでは `s3Cluster` テーブル関数を使用します。これにより、クラスター内のすべてのノードを使って複数の S3 ファイルを並列に処理できます。また、ワイルドカードを使用して、`https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet` で始まるファイルをすべて挿入します:
+3. 次の `INSERT` コマンドでは [`s3Cluster`](/ja/reference/functions/table-functions/s3Cluster) テーブル関数を使用します。これにより、S3 ファイルがクラスター内のノードに分散され、並列に読み込まれます。
+
+ClickHouse Cloud ではクラスター名が `default` であるため、上記のとおりそのまま実行できます。セルフマネージドのサーバーでは、`default` をご使用のクラスター名に置き換えてください。単一サーバーで運用している場合は、代わりに [`s3`](/ja/reference/functions/table-functions/s3) テーブル関数を使用し、最初の引数を省いて URL を先頭の引数としてください。
+
+URL にワイルドカードを使用して、一致するレビューファイルをすべて挿入します。
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
-
-<Tip>
-  ClickHouse Cloud では、クラスター名は `default` です。`default` をお使いのクラスター名に変更してください。クラスターがない場合は、`s3Cluster` の代わりに `s3` テーブル関数を使用してください。
-</Tip>
 
 5. このクエリの実行にはそれほど時間はかからず、平均で毎秒約300,000行を処理します。5分ほどで、すべての行が挿入されたことを確認できるはずです。
 
@@ -159,9 +158,7 @@ FROM s3Cluster('default',
 
 元のデータは約70Gでしたが、ClickHouse で圧縮すると約30Gになります。
 
-<div id="example-queries">
-  ## クエリ例
-</div>
+## クエリ例 {#example-queries}
 
 7. いくつかクエリを実行してみましょう。データセット内で「参考になった」票が最も多いレビューの上位 10 件は次のとおりです。
 

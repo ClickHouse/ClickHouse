@@ -118,7 +118,9 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
     if (kron_m)
         HadamardTransform::buildHmMasks<float>(hm, kron_m);
 #if defined(__aarch64__)
-    const bool neon = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Neon;
+    const bool is_optimized = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Neon;
+#elif defined(__AVX2__)
+    const bool is_optimized = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Avx2;
 #endif
 
     for (int round = 0; round < PROJECTION_ROUNDS; ++round)
@@ -130,8 +132,13 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
         if (kron_m)
         {
 #if defined(__aarch64__)
-            if (neon)
+            if (is_optimized)
                 HadamardTransform::kroneckerNeon(work, kron_blocks, kron_m, hm);
+            else
+                HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
+#elif defined(__AVX2__)
+            if (is_optimized)
+                HadamardTransform::kroneckerAvx2(work, kron_blocks, kron_m, hm);
             else
                 HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
 #else
@@ -141,8 +148,13 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
         else
         {
 #if defined(__aarch64__)
-            if (neon)
+            if (is_optimized)
                 HadamardTransform::fwhtNeon(work, working_dim);
+            else
+                HadamardTransform::fwhtScalar(work, working_dim);
+#elif defined(__AVX2__)
+            if (is_optimized)
+                HadamardTransform::fwhtAvx2(work, working_dim);
             else
                 HadamardTransform::fwhtScalar(work, working_dim);
 #else

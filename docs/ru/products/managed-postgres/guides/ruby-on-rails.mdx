@@ -1,0 +1,206 @@
+---
+slug: /cloud/managed-postgres/guides/ruby-on-rails
+sidebarTitle: 'Ruby on Rails'
+title: 'Использование Ruby on Rails с ClickHouse Managed Postgres'
+description: 'Подключите приложение Ruby on Rails к ClickHouse Managed Postgres с проверкой сертификата TLS, выполните миграции Active Record и запустите сгенерированный scaffold'
+keywords: ['managed postgres', 'ruby on rails', 'rails', 'active record', 'ruby', 'database.yml', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-ruby-on-rails-beta" />
+
+[Ruby on Rails](https://rubyonrails.org/) — это full-stack веб-фреймворк, ORM которого (Active Record) поддерживает PostgreSQL через gem `pg`.
+В этом руководстве вы создадите новое приложение Rails, подключите его к ClickHouse Managed Postgres по TLS с проверкой сертификата, выполните миграцию и запустите ресурс `Post`, сгенерированный с помощью scaffold.
+
+## Предварительные требования {#prerequisites}
+
+* Ruby 3.2 или новее. Это руководство протестировано с Ruby 4.0.7, Rails 8.1.4 и `pg` 1.6.3.
+* Аккаунт ClickHouse Cloud.
+
+Gem `pg` поставляется с предкомпилированными сборками для Linux, macOS и Windows, в которые входит `libpq`, поэтому устанавливать PostgreSQL локально не нужно.
+
+## Создание сервиса ClickHouse Managed Postgres {#create-service}
+
+В консоли ClickHouse Cloud нажмите **New service** и выберите **Postgres**. Инстанс будет готов через несколько минут. Пошаговые инструкции см. в [кратком руководстве по началу работы](/ru/products/managed-postgres/quickstart).
+
+## Получение сведений о подключении {#connection-details}
+
+Откройте свой сервис и нажмите **Connect** на левой боковой панели. Оставьте выбранным вариант **Directly** и включите **Use SSL**.
+Скопируйте пароль и имя хоста сервера, затем нажмите **Download CA certificate**.
+
+CA‑сертификат уникален для каждого сервиса. Его также можно скачать позже в разделе **Settings → CA Certificate**.
+
+**Прямое подключение или PgBouncer?** Сервер Rails — это долгоживущий процесс со своим пулом соединений (`max_connections` в `config/database.yml`, по умолчанию пять на процесс), поэтому в этом руководстве используется прямое подключение к Postgres через порт `5432`.
+Если вы запускаете много процессов и упираетесь в лимит соединений, см. раздел [Использование PgBouncer](#pgbouncer).
+
+## Создание приложения Rails {#create-app}
+
+Установите Rails и создайте приложение с PostgreSQL в качестве базы данных:
+
+```bash
+gem install rails
+rails new blog --database=postgresql
+cd blog
+```
+
+<Tip>
+  **Добавляете в существующее приложение?**
+
+  Пропустите `gem install rails` и `rails new`. В каталоге приложения выполните `bundle add pg`, а затем переходите к разделу [Настройка соединения с базой данных](#configure-connection): там новая секция `development` заменит секцию для SQLite.
+</Tip>
+
+## Настройка соединения с базой данных {#configure-connection}
+
+Переместите загруженный CA‑сертификат в каталог `config` приложения и переименуйте его в `ca-certificate.pem`.
+Имя загруженного файла совпадает с названием вашего сервиса, например `your-service-ca-certificate.pem`:
+
+```bash
+mv ~/Downloads/your-service-ca-certificate.pem config/ca-certificate.pem
+```
+
+CA‑сертификат не является секретной информацией, поэтому его можно закоммитить вместе с приложением.
+
+В файле `config/database.yml` замените раздел `development` следующим содержимым:
+
+```yaml
+development:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
+  sslmode: verify-full
+  sslrootcert: <%= Rails.root.join("config/ca-certificate.pem") %>
+```
+
+`sslmode: verify-full` заставляет `libpq` проверять, что сертификат сервера подписан CA вашего сервиса и соответствует имени хоста. `Rails.root.join` возвращает абсолютный путь, поэтому настройка работает независимо от того, из какого каталога запускается Rails.
+
+Укажите в `DATABASE_URL` адрес вашего сервиса и новое имя базы данных. В этом руководстве используется `guide_rails`:
+
+```bash
+export DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rails"
+```
+
+<Note>
+  Не указывайте строку запроса в `DATABASE_URL`. Параметры в URL переопределяют ключи в `database.yml`, поэтому скопированный параметр `sslrootcert=your-service-ca-certificate.pem` заменит вашу настройку путём относительно текущего каталога.
+</Note>
+
+Создайте базу данных:
+
+```bash
+bin/rails db:create
+```
+
+```text
+Created database 'guide_rails'
+```
+
+`db:create` создаёт только базу данных, указанную в `DATABASE_URL`. Для выполнения `CREATE DATABASE` команда подключается к стандартной базе данных `postgres`, но не вносит в неё изменений. Если задана переменная `DATABASE_URL`, Rails также пропускает создание локальной тестовой базы данных.
+
+## Создание модели и выполнение миграции {#migrations}
+
+Сгенерируйте каркас (scaffold) для ресурса `Post` и примените его миграцию. В уже существующем приложении команда `bin/rails db:migrate` также создаст в новой базе данных все имеющиеся таблицы приложения. Изначально они будут пустыми, поскольку данные из SQLite не переносятся:
+
+```bash
+bin/rails generate scaffold Post title:string body:text
+bin/rails db:migrate
+```
+
+```text
+== 20260930165011 CreatePosts: migrating ======================================
+-- create_table(:posts)
+   -> 0.0973s
+== 20260930165011 CreatePosts: migrated (0.0973s) =============================
+```
+
+## Выполнение запросов к базе данных {#query}
+
+Создайте файл `script/posts_demo.rb` с несколькими вызовами Active Record:
+
+```ruby
+post = Post.create!(title: "Hello from Rails", body: "Stored in ClickHouse Managed Postgres.")
+Post.create!(title: "Second post", body: "Created with Active Record.")
+post.update!(body: "Updated with Active Record.")
+Post.create!(title: "Temporary post", body: "Deleted right away.").destroy
+
+Post.order(:id).each { |p| puts "#{p.id}: #{p.title} - #{p.body}" }
+
+tls = ActiveRecord::Base.connection.select_one(
+  "SELECT version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()"
+)
+puts "Connected with #{tls["version"]} (#{tls["cipher"]})"
+```
+
+Запустите его с помощью `bin/rails runner`:
+
+```bash
+bin/rails runner script/posts_demo.rb
+```
+
+```text
+1: Hello from Rails - Updated with Active Record.
+2: Second post - Created with Active Record.
+Connected with TLSv1.3 (TLS_AES_256_GCM_SHA384)
+```
+
+Последняя строка запрашивает `pg_stat_ssl` для текущего соединения и подтверждает, что сеанс зашифрован.
+
+## Запуск приложения {#verify}
+
+Запустите сервер для разработки:
+
+```bash
+bin/rails server
+```
+
+Откройте [http://localhost:3000/posts](http://localhost:3000/posts), чтобы просматривать, создавать, редактировать и удалять посты. Каждый запрос читает данные из ClickHouse Managed Postgres и записывает их туда же.
+
+На странице отображается список постов с заголовком, текстом и ссылкой **Show this post** для каждого, а под списком — ссылка **New post**. Ссылки для редактирования и удаления находятся на странице самого поста.
+
+Чтобы просмотреть таблицу в консоли, откройте **SQL console** на левой боковой панели, разверните базу данных `guide_rails` и выберите таблицу `posts`.
+Rails также создаёт таблицы `schema_migrations` и `ar_internal_metadata` для отслеживания миграций.
+
+Таблица `posts` содержит две строки, созданные скриптом `script/posts_demo.rb`:
+
+| id | title            | body                        | created&#95;at             | updated&#95;at             |
+| -- | ---------------- | --------------------------- | -------------------------- | -------------------------- |
+| 1  | Hello from Rails | Updated with Active Record. | 2026-09-30 16:50:15.862005 | 2026-09-30 16:50:16.150928 |
+| 2  | Second post      | Created with Active Record. | 2026-09-30 16:50:16.010488 | 2026-09-30 16:50:16.010488 |
+
+## Использование PgBouncer {#pgbouncer}
+
+Каждый процесс Rails открывает до `max_connections` прямых соединений. Если в совокупности процессы приближаются к лимиту соединений Postgres, подключайтесь через встроенный [PgBouncer](/ru/products/managed-postgres/connection#pgbouncer): выберите **via PgBouncer** в модальном окне **Connect** и укажите порт `6432` в `DATABASE_URL`.
+
+PgBouncer работает в режиме пулинга транзакций:
+
+* **Подготовленные операторы** работают с настройками Rails по умолчанию, если используется gem `pg` версии 1.6 или новее с `libpq` 17 или новее. Предкомпилированные gem-пакеты `pg` 1.6 поставляются с `libpq` 18. С этими версиями Rails, вытесняя оператор из своего кэша, освобождает его сообщением `Close` на уровне протокола, и встроенный PgBouncer корректно его обрабатывает. Более старые версии `pg` или `libpq` вместо этого отправляют SQL-команду `DEALLOCATE`, которая при работе через PgBouncer завершается ошибкой `prepared statement "a1" does not exist`. Если это происходит внутри транзакции, транзакция прерывается (`PG::InFailedSqlTransaction`). Чтобы проверить версии, выполните:
+
+  ```bash
+  bin/rails runner 'puts PG::VERSION, PG.library_version'
+  ```
+
+  Требуются версии не ниже `1.6.0` и `170000` соответственно. Если обновиться невозможно, добавьте `prepared_statements: false` в раздел `development`. В `production` Rails включает подготовленные операторы, а в `development` они по умолчанию отключены, поскольку включён параметр `query_log_tags_enabled`.
+* **Миграции** захватывают advisory-блокировку уровня сеанса (`pg_try_advisory_lock`), чтобы исключить одновременный запуск. При пулинге транзакций запрос на снятие блокировки может попасть в другое соединение Postgres: он завершается ошибкой `Failed to release advisory lock`, а блокировка остаётся удерживаемой, поэтому последующие запуски завершаются ошибкой `Cannot run migrations because another migration process is currently running`. Либо запускайте `bin/rails db:migrate` с прямым `DATABASE_URL` на порту `5432`, либо отключите блокировку:
+
+```yaml
+development:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>
+  sslmode: verify-full
+  sslrootcert: <%= Rails.root.join("config/ca-certificate.pem") %>
+  advisory_locks: false
+```
+
+При `advisory_locks: false` следите за тем, чтобы миграции одновременно запускались только в одном развёртывании.
+
+## Устранение неполадок {#troubleshooting}
+
+* **`SSL error: certificate verify failed`**: параметр `sslrootcert` не указывает на CA‑сертификат вашего сервиса. Скачайте его заново в разделе **Settings → CA Certificate**. У каждого сервиса собственный CA, поэтому публичные наборы CA не подойдут.
+* **`root certificate file "..." does not exist`**: в `sslrootcert` указан неверный путь. Проверьте, что файл `config/ca-certificate.pem` существует.
+
+## Дальнейшие шаги {#next-steps}
+
+* Используйте те же параметры `sslmode` и `sslrootcert` в конфигурации `production`.
+* [Подключение](/ru/products/managed-postgres/connection): строки подключения, PgBouncer и TLS.
+* [Настройки](/ru/products/managed-postgres/settings): изменение параметров Postgres и PgBouncer, например `max_connections`.
+* [Реплики для чтения](/ru/products/managed-postgres/read-replicas): масштабирование нагрузки на чтение, например с помощью [нескольких баз данных](https://guides.rubyonrails.org/active_record_multiple_databases.html) в Rails.
+* [Sync to ClickHouse](/ru/products/managed-postgres/sync-to-clickhouse/clickpipes): репликация таблиц Rails в ClickHouse для аналитики.

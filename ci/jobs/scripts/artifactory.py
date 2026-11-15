@@ -81,7 +81,6 @@ class R2MountPoint:
 
     def init(self):
         print(f"Mount bucket [{self.bucket_name}] to [{self.MOUNT_POINT}]")
-        _CLEAN_LOG_FILE_CMD = f"tail -n 1000 {self.LOG_FILE} > {self.LOG_FILE}_tmp && mv {self.LOG_FILE}_tmp {self.LOG_FILE} ||:"
         _MKDIR_CMD = f"mkdir -p {self.MOUNT_POINT}"
         _MKDIR_FOR_CACHE = f"mkdir -p {self.cache_dir}"
         _UNMOUNT_CMD = (
@@ -89,7 +88,6 @@ class R2MountPoint:
         )
 
         _TEST_MOUNT_CMD = f"mount | grep -q {self.MOUNT_POINT}"
-        Shell.check(_CLEAN_LOG_FILE_CMD, verbose=True)
         Shell.check(_UNMOUNT_CMD, verbose=True)
         Shell.check(_MKDIR_CMD, verbose=True)
         Shell.check(_MKDIR_FOR_CACHE, verbose=True)
@@ -137,9 +135,30 @@ class DebianArtifactory:
             self.pd.LOCAL_DIR + "/" + file for file in self.pd.get_deb_packages_files()
         ]
         REPREPRO_CMD_PREFIX = f"reprepro --ignore=unknownfield --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
-        cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)} >> /tmp/reprepro.log 2>&1"
+
+        def reprepro(args):
+            ok = Shell.check(f"{REPREPRO_CMD_PREFIX} {args} >> /tmp/reprepro.log 2>&1", verbose=True)
+            Shell.check("tail -n 100 /tmp/reprepro.log", verbose=True)
+            assert ok, f"reprepro failed: [{args[:100]}]"
+
+        # CreateRelease runs are serialized, so a lock here was left by a killed run
+        db = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db"
+        lockfile, exporting = db / "lockfile", db / "exporting_version"
+        # exporting_version outlives the lock until copy succeeds, so a failed repair is retried
+        if lockfile.exists() or exporting.exists():
+            left_by = exporting.read_text() if exporting.exists() else "unknown"
+            assert left_by == self.version, f"unfinished reprepro export of [{left_by}]: recover that release first"
+            print(f"WARNING: repairing the unfinished export, removing reprepro lock [{lockfile}] if present")
+            lockfile.unlink(missing_ok=True)
+            # A killed run can leave references no package owns, which stop removefilter from deleting files
+            reprepro("rereference")
+            # The killed run may have registered this version without its files, so includedeb would skip it
+            for codename in {self.codename, RepoCodenames.STABLE}:
+                reprepro(f"removefilter {codename} 'Version (== {self.version})'")
+
+        exporting.write_text(self.version)
         print("Running export commands:")
-        Shell.check(cmd, strict=True, verbose=True)
+        reprepro(f"includedeb {self.codename} {' '.join(paths)}")
         Shell.check("sync")
 
         codenames_to_check = [self.codename]
@@ -150,12 +169,11 @@ class DebianArtifactory:
             print(
                 f"Copy packages from {RepoCodenames.LTS} to {RepoCodenames.STABLE} repository"
             )
-            cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)} >> /tmp/reprepro.log 2>&1"
             print("Running copy command:")
-            print(f"  {cmd}")
-            Shell.check(cmd, strict=True, verbose=True)
+            reprepro(f"copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}")
             Shell.check("sync")
             codenames_to_check.append(RepoCodenames.STABLE)
+        exporting.unlink()
 
         # Verify that reprepro signed the InRelease files. An unsigned repo would
         # silently break installation for all clients; catch it here rather than

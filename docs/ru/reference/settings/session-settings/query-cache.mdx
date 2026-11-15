@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_cache_compress_entries">
-  ## query_cache_compress_entries
-</div>
+## query_cache_compress_entries {#query_cache_compress_entries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="query_cache_for_subqueries">
-  ## query_cache_for_subqueries
-</div>
+## query_cache_for_subqueries {#query_cache_for_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -41,33 +37,31 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="query_cache_max_entries">
-  ## query_cache_max_entries
-</div>
+## query_cache_max_entries {#query_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Максимальное количество результатов запросов, которые текущий пользователь может хранить в [кэше запросов](/ru/concepts/features/performance/caches/query-cache). 0 означает отсутствие ограничений.
+Максимальное количество результатов запросов, которые текущий пользователь может хранить в [кэше запросов](/ru/concepts/features/performance/caches/query-cache) в памяти. 0 означает отсутствие ограничений.
+
+Это ограничение не распространяется на кэш запросов на диске (настройка `query_cache_on_disk_cache_name`): количество его записей ограничивается размером базового файлового кэша.
 
 Возможные значения:
 
 * Неотрицательное целое число &gt;= 0.
 
-<div id="query_cache_max_size_in_bytes">
-  ## query_cache_max_size_in_bytes
-</div>
+## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Максимальный объём памяти (в байтах), который текущий пользователь может выделить для [кэша запросов](/ru/concepts/features/performance/caches/query-cache). 0 означает отсутствие ограничений.
+Максимальный объём памяти (в байтах), который текущий пользователь может выделить для [кэша запросов](/ru/concepts/features/performance/caches/query-cache) в памяти. 0 означает отсутствие ограничений.
+
+Это ограничение не распространяется на кэш запросов на диске (настройка `query_cache_on_disk_cache_name`): общий объём его записей ограничивается размером базового файлового кэша.
 
 Возможные значения:
 
 * Положительное целое число &gt;= 0.
 
-<div id="query_cache_min_query_duration">
-  ## query_cache_min_query_duration
-</div>
+## query_cache_min_query_duration {#query_cache_min_query_duration}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -77,9 +71,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Неотрицательное целое число &gt;= 0.
 
-<div id="query_cache_min_query_runs">
-  ## query_cache_min_query_runs
-</div>
+## query_cache_min_query_runs {#query_cache_min_query_runs}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -89,9 +81,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Целое число &gt;= 0.
 
-<div id="query_cache_nondeterministic_function_handling">
-  ## query_cache_nondeterministic_function_handling
-</div>
+## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling}
 
 <SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
 
@@ -103,9 +93,26 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `'save'` - кэшировать результат запроса.
 * `'ignore'` - не кэшировать результат запроса и не генерировать исключение.
 
-<div id="query_cache_share_between_users">
-  ## query_cache_share_between_users
-</div>
+## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Новая настройка для хранения записей кэша запросов на диске в именованном файловом кэше."}]}]} />
+
+Имя файлового кэша (записи в разделе `filesystem_caches` конфигурации сервера), в котором хранятся на диске записи [кэша запросов](/ru/concepts/features/performance/caches/query-cache). Если имя задано (и включена настройка [use&#95;query&#95;cache](/ru/reference/settings/session-settings/use-query#use_query_cache)), результаты запросов дополнительно кэшируются в указанном файловом кэше и отдаются из него. Кэш запросов на диске вмещает больше данных, чем кэш запросов в памяти, сохраняется после перезапуска сервера и работает независимо от кэша запросов в памяти: настройки [enable&#95;reads&#95;from&#95;query&#95;cache&#95;on&#95;disk](/ru/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) и [enable&#95;writes&#95;to&#95;query&#95;cache&#95;on&#95;disk](/ru/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) управляют им отдельно от кэша запросов в памяти. Эти записи — обычные записи файлового кэша: они не защищены от удаления и вытесняются по тем же правилам, что и любые другие данные в нём. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` удаляет их вместе со всем остальным содержимым файлового кэша, а `SYSTEM CLEAR QUERY CACHE` удаляет записи кэша запросов на диске из файлового кэша, заданного этой настройкой, не затрагивая остальные данные. Для результатов запросов рекомендуется использовать отдельный файловый кэш.
+
+Возможные значения:
+
+* Пустая строка — кэш запросов на диске отключён
+* Имя заранее настроенного файлового кэша
+
+## query_cache_on_disk_codec {#query_cache_on_disk_codec}
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "Новая настройка, задающая кодек сжатия записей кэша запросов на диске."}]}]} />
+
+Кодек сжатия записей [кэша запросов](/ru/concepts/features/performance/caches/query-cache), хранящихся на диске (см. [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ru/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)). Влияет только на запись: чтение от этой настройки не зависит, поскольку сжатые данные являются самоописывающимися.
+
+## query_cache_share_between_users {#query_cache_share_between_users}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -117,9 +124,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="query_cache_squash_partial_results">
-  ## query_cache_squash_partial_results
-</div>
+## query_cache_squash_partial_results {#query_cache_squash_partial_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -130,9 +135,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="query_cache_system_table_handling">
-  ## query_cache_system_table_handling
-</div>
+## query_cache_system_table_handling {#query_cache_system_table_handling}
 
 <SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
 
@@ -146,9 +149,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `'save'` — Кэшировать результат запроса.
 * `'ignore'` — Не кэшировать результат запроса и не генерировать исключение.
 
-<div id="query_cache_tag">
-  ## query_cache_tag
-</div>
+## query_cache_tag {#query_cache_tag}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "Новая настройка для назначения меток записям кэша запросов."}]}]} />
 
@@ -159,9 +160,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Любая строка
 
-<div id="query_cache_ttl">
-  ## query_cache_ttl
-</div>
+## query_cache_ttl {#query_cache_ttl}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
