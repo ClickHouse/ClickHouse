@@ -87,6 +87,15 @@ Chunk IRowInputFormat::read()
 
     size_t num_rows = 0;
     size_t total_rows_before_read = total_rows;
+
+    /// A row can be consumed without being emitted to the chunk: a parse error
+    /// tolerated by `input_format_allow_errors_*` is rolled back, and e.g.
+    /// `format_regexp_skip_unmatched` makes `readRow` consume an unmatched line
+    /// without inserting it. Remember which of the consumed rows were emitted, so
+    /// that `_row_number` keeps the physical row numbers of the emitted rows (see
+    /// `ChunkInfoRowNumbers`). Stays empty while no row is skipped - the common case.
+    IColumnFilter emitted_row_mask;
+
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
@@ -150,6 +159,7 @@ Chunk IRowInputFormat::read()
             try
             {
                 info.read_columns.clear();
+                size_t first_column_size_before = columns.empty() ? 0 : columns.front()->size();
                 continue_reading = readRow(columns, info);
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -159,6 +169,22 @@ Chunk IRowInputFormat::read()
                         if (column_size == 0)
                             throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Unexpected empty column");
                         block_missing_values.setBit(column_idx, column_size - 1);
+                    }
+                }
+
+                /// A consumed row that was not emitted: `readRow` returned true (the line
+                /// was consumed) but inserted nothing into `columns`, e.g. because
+                /// `format_regexp_skip_unmatched` skipped an unmatched line.
+                bool row_emitted = columns.empty() ? continue_reading : columns.front()->size() > first_column_size_before;
+                if (continue_reading || row_emitted)
+                {
+                    size_t row_idx = total_rows - total_rows_before_read;
+                    if (!emitted_row_mask.empty() || !row_emitted)
+                    {
+                        /// `resize_fill` pads the rows before the first skipped one with `1`s,
+                        /// and is a no-op once the mask is being maintained.
+                        emitted_row_mask.resize_fill(row_idx, 1);
+                        emitted_row_mask.push_back(row_emitted);
                     }
                 }
 
@@ -221,6 +247,12 @@ Chunk IRowInputFormat::read()
                     e.addMessage("(Input format doesn't allow to skip errors)");
                     throw;
                 }
+
+                /// The bad row is consumed (counted in `total_rows` above) but, after the
+                /// rollback below, is not emitted to the chunk. Remember it in the mask of
+                /// emitted rows, so that `_row_number` skips it (see `ChunkInfoRowNumbers`).
+                emitted_row_mask.resize_fill(total_rows - total_rows_before_read - 1, 1);
+                emitted_row_mask.push_back(0);
 
                 syncAfterError();
 
@@ -292,7 +324,10 @@ Chunk IRowInputFormat::read()
         column->finalize();
 
     Chunk chunk(std::move(columns), num_rows);
-    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
+    std::optional<IColumnFilter> applied_filter;
+    if (!emitted_row_mask.empty())
+        applied_filter = std::move(emitted_row_mask);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read, std::move(applied_filter)));
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
 
 
