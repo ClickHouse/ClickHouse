@@ -2000,26 +2000,43 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
-/// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
-/// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
-/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
-static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+/// The result of the sub-DAG on the default value of its single input column, i.e. for a row with a missing map key
+/// or JSON path. Unknown (null) if it throws on the default value, e.g. `toUInt64(m['key'])` on an empty string,
+/// as in `filterResultForNotMatchedRows` for JOIN.
+static ColumnPtr evaluateSubDAGOnDefaultValue(const ActionsDAG & subdag)
 {
     const auto * input = subdag.getInputs().front();
     ActionsDAG::IntermediateExecutionResult default_input;
     default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 
-    ColumnsWithTypeAndName result;
     try
     {
-        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+        return ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1).front().column;
     }
     catch (const Exception &)
     {
-        return true;
+        return nullptr;
     }
+}
 
-    return !result.front().column || result.front().column->getBool(0);
+/// Whether the predicate of the sub-DAG may be true on the default value of its single input column.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+{
+    auto result = evaluateSubDAGOnDefaultValue(subdag);
+    return !result || result->getBool(0);
+}
+
+std::optional<Field> MergeTreeIndexConditionText::evaluateOnDefaultValue(const ActionsDAG::Node & node) const
+{
+    auto subdag = ActionsDAG::cloneSubDAG({&node}, true);
+    if (subdag.getRequiredColumns().size() != 1 || !prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return std::nullopt;
+
+    auto result = evaluateSubDAGOnDefaultValue(subdag);
+    if (!result)
+        return std::nullopt;
+
+    return (*result)[0];
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const

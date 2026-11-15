@@ -183,6 +183,9 @@ public:
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
+    /// The value of the node for a row with a missing map key or JSON path, i.e. on the default value of its single input.
+    /// Nothing if it cannot be evaluated.
+    std::optional<Field> evaluateOnDefaultValue(const ActionsDAG::Node & node) const;
 
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
