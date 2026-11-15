@@ -790,14 +790,30 @@ ExpireSnapshotsResult expireSnapshots(
 
         Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        /// The files of the expired snapshots that none of `retained_snapshots` references.
+        auto expired_statistics_files = collectExpiredStatisticsFiles(metadata, partition.expired_snapshot_ids);
+
+        /// The files of the expired snapshots that none of `retained_snapshots` references. Also drops from
+        /// `expired_statistics_files` the Puffin files that a retained snapshot uses or that the result already lists.
         auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots)
         {
             auto retained = collectSnapshotReferencedFiles(
                 retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
-            return collectExpiredFiles(
+            auto files = collectExpiredFiles(
                 partition.expired_manifest_list_paths, retained, object_storage, persistent_table_components, context, log,
                 current_schema_id);
+            /// A Puffin file can also hold deletion vectors: kept while a retained snapshot uses them, otherwise
+            /// listed once, as a delete file.
+            if (!expired_statistics_files.empty())
+            {
+                std::unordered_set<Iceberg::IcebergPathFromMetadata> file_paths;
+                for (const auto & file : files)
+                    file_paths.insert(file.path);
+                std::erase_if(expired_statistics_files, [&](const ExpiredFile & file)
+                {
+                    return retained.data_file_paths.contains(file.path) || file_paths.contains(file.path);
+                });
+            }
+            return files;
         };
 
         /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.
@@ -805,7 +821,6 @@ ExpireSnapshotsResult expireSnapshots(
         ExpiredFiles expired_files;
         if (!catalog_commits_metadata || options.dry_run)
             expired_files = collect_expired_files(partition.retained_snapshots);
-        auto expired_statistics_files = collectExpiredStatisticsFiles(metadata, partition.expired_snapshot_ids);
 
         if (options.dry_run)
         {

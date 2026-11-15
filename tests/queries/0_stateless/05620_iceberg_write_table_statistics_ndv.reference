@@ -21,3 +21,9 @@ deleted_statistics_files_count	2
 statistics entries: 1
 statistics files: 1
 id:1 s:151/151 d:76/76 n:31/31 dec:301/301 ts:602/602 f:753/753 b:2/2
+expire_snapshots keeps a statistics file that holds the deletion vectors of a retained snapshot, deletes one of an expired snapshot once
+injected statistics entries: 2
+deleted_position_delete_files_count	1
+deleted_statistics_files_count	0
+failed_deletions_count	0
+32

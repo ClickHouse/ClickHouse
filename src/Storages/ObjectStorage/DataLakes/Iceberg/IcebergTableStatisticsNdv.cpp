@@ -62,13 +62,13 @@ class SnapshotStatisticsNdv
 {
 public:
     SnapshotStatisticsNdv(
-        Poco::JSON::Object::Ptr metadata_,
-        Poco::JSON::Object::Ptr snapshot_,
+        const Poco::JSON::Object::Ptr & metadata_,
+        const Poco::JSON::Object::Ptr & snapshot_,
         const Iceberg::IcebergPathResolver & resolver_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_)
-        : metadata(std::move(metadata_))
-        , snapshot(std::move(snapshot_))
+        : metadata(metadata_)
+        , snapshot(snapshot_)
         , resolver(resolver_)
         , object_storage(std::move(object_storage_))
         , context(std::move(context_))
@@ -389,6 +389,8 @@ void IcebergColumnSketches::update(const Columns & columns)
         runner.waitForAllToFinishAndRethrowFirstError();
         if (failed)
             return;
+        /// Makes the append in `enqueueAndKeepTrack` non-allocating, so a scheduled task is always tracked.
+        runner.reserve(sketches.size());
         for (auto & column_sketch : sketches)
         {
             runner.enqueueAndKeepTrack([&column_sketch, column = columns[column_sketch.position]]
