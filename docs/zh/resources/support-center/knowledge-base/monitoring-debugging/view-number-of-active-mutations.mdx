@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: 如何查看正在进行或排队中的变更数量？
+description: 监控 ClickHouse 中正在进行或排队中的变更数量，尤其是在执行 `ALTER` 或 `UPDATE` 操作时。使用 `system.mutations` 表跟踪变更。
+tags: ['系统表']
+keywords: ['进行中的变更', '排队中的变更']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何查看正在执行或排队等待的变更数量？
+
+<div id="answer">
+  ## 答案
+</div>
+
+如果你对表执行了大量 `ALTER` 或 `UPDATE` 语句，监控正在执行或排队中的变更数量就很重要。这些查询会重写数据分区片段，而且不是原子操作——它们会按各自创建时对应的分区片段排序，并按该顺序应用到每个分区片段上。有关变更的更多详细信息，请参阅[文档](/zh/reference/statements/alter/index#mutations)。
+
+每个变更都会在 `system.mutations` 表中生成一条记录。执行大量变更时，你可以通过以下方式监控正在运行和排队中的变更数量：
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  这条查询语句假设您正在使用一个名为 `default` 的集群，这也是您在 ClickHouse Cloud 中的集群名称。请将 `default` 替换为您的集群名称。
+
+  如果您没有集群，请使用以下命令：
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+我们也建议阅读这篇最近发布的[关于更新和删除的博客文章](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)。

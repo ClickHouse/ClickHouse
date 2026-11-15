@@ -1,0 +1,47 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'groupArrayDistinct combinator를 사용하는 예시'
+keywords: ['groupArray', 'Distinct', 'combinator', '예시', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: '참고'
+---
+
+import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 설명
+</div>
+
+[`groupArrayDistinct`](/ko/reference/functions/aggregate-functions/combinators#-foreach) combinator는 [`groupArray`](/ko/reference/functions/aggregate-functions/sum) 집계 함수에 적용하여 중복되지 않는 인수 값으로 이루어진 배열을 생성할 수 있습니다.
+
+<div id="example-usage">
+  ## 예시 사용법
+</div>
+
+이 예시에서는 [SQL playground](https://sql.clickhouse.com/)에서 사용할 수 있는 `hits` 데이터셋을 활용합니다.
+
+웹사이트의 각 고유한 랜딩 페이지 도메인(`URLDomain`)마다
+해당 도메인으로 유입된 방문자에게서 기록된 고유한 user agent OS 코드(`OS`)를
+모두 확인하려는 상황을 가정해 보겠습니다. 이렇게 하면 사이트의 각 영역과 상호작용하는
+운영 체제의 다양성을 파악하는 데 도움이 됩니다.
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- 기록된 도메인이 있는 hits만 고려
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`groupArray`](/ko/reference/functions/aggregate-functions/groupArray)
+* [`Distinct combinator`](/ko/reference/functions/aggregate-functions/combinators#-distinct)

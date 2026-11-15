@@ -11,6 +11,7 @@
 #include <base/defines.h>
 #include <rapidjson/document.h>
 #include <Common/JSONParsers/ElementTypes.h>
+#include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
 #include <Common/StringUtils.h>
 
 namespace DB
@@ -18,8 +19,23 @@ namespace DB
 
 /// This class can be used as an argument for the template class FunctionJSON.
 /// It provides ability to parse JSONs using rapidjson library.
-struct RapidJSONParser
+struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - value_pool_buffer is arena storage, written before read
 {
+    RapidJSONParser() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    /// `document` points to `value_pool`, whose bookkeeping lives inside `value_pool_buffer`, so a
+    /// copy or a move would leave one of the three aiming into the other object.
+    RapidJSONParser(const RapidJSONParser &) = delete;
+    RapidJSONParser & operator=(const RapidJSONParser &) = delete;
+    RapidJSONParser(RapidJSONParser &&) = delete;
+    RapidJSONParser & operator=(RapidJSONParser &&) = delete;
+
+    /// Allocations past the small inline pool buffer go through the memory tracker, so a huge or
+    /// deeply nested untrusted document is rejected with MEMORY_LIMIT_EXCEEDED instead of allocating
+    /// without bound (see RapidJSONMemoryTrackerAllocator).
+    using PoolAllocator = rapidjson::MemoryPoolAllocator<RapidJSONMemoryTrackerAllocator>;
+    using Value = rapidjson::GenericValue<rapidjson::UTF8<>, PoolAllocator>;
+    using Document = rapidjson::GenericDocument<rapidjson::UTF8<>, PoolAllocator, RapidJSONMemoryTrackerAllocator>;
+
     class Array;
     class Object;
 
@@ -29,7 +45,7 @@ struct RapidJSONParser
     {
     public:
         ALWAYS_INLINE Element() = default;
-        ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
+        ALWAYS_INLINE Element(const Value & value_) : ptr(&value_) {} /// NOLINT
 
         ALWAYS_INLINE ElementType type() const
         {
@@ -63,7 +79,7 @@ struct RapidJSONParser
         Object getObject() const;
 
     private:
-        const rapidjson::Value * ptr = nullptr;
+        const Value * ptr = nullptr;
     };
 
     /// References an array in a JSON document.
@@ -73,24 +89,24 @@ struct RapidJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstValueIterator & it_) : it(it_) {} /// NOLINT
+            ALWAYS_INLINE Iterator(const Value::ConstValueIterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE Element operator*() const { return *it; } /// NOLINT
             ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
             ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
             ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
         private:
-            rapidjson::Value::ConstValueIterator it;
+            Value::ConstValueIterator it;
         };
 
-        ALWAYS_INLINE Array(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
+        ALWAYS_INLINE Array(const Value & value_) : ptr(&value_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->End(); }
         ALWAYS_INLINE size_t size() const { return ptr->Size(); }
         ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return *(ptr->Begin() + index); }
 
     private:
-        const rapidjson::Value * ptr = nullptr;
+        const Value * ptr = nullptr;
     };
 
     using KeyValuePair = std::pair<std::string_view, Element>;
@@ -102,17 +118,17 @@ struct RapidJSONParser
         class Iterator
         {
         public:
-            ALWAYS_INLINE Iterator(const rapidjson::Value::ConstMemberIterator & it_) : it(it_) {} /// NOLINT
+            ALWAYS_INLINE Iterator(const Value::ConstMemberIterator & it_) : it(it_) {} /// NOLINT
             ALWAYS_INLINE KeyValuePair operator *() const { std::string_view key{it->name.GetString(), it->name.GetStringLength()}; return {key, it->value}; }
             ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
             ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; } /// NOLINT
             ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return left.it == right.it; }
             ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return !(left == right); }
         private:
-            rapidjson::Value::ConstMemberIterator it;
+            Value::ConstMemberIterator it;
         };
 
-        ALWAYS_INLINE Object(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
+        ALWAYS_INLINE Object(const Value & value_) : ptr(&value_) {} /// NOLINT
         ALWAYS_INLINE Iterator begin() const { return ptr->MemberBegin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
@@ -167,12 +183,14 @@ struct RapidJSONParser
         }
 
     private:
-        const rapidjson::Value * ptr = nullptr;
+        const Value * ptr = nullptr;
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
+    /// Every `Element` obtained earlier from this parser is invalidated: the memory is reused.
     bool parse(std::string_view json, Element & result)
     {
+        value_pool.Clear();
         rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
         document.ParseStream(is);
@@ -188,7 +206,14 @@ struct RapidJSONParser
 #endif
 
 private:
-    rapidjson::Document document;
+    /// The pool serves allocations from this buffer first, with 8-byte alignment as rapidjson
+    /// requires, and falls back to memory-tracked chunks that `Clear` releases while keeping the
+    /// buffer. Declared before `value_pool` and `document` so both are destroyed while the storage
+    /// they point into is still alive.
+    static constexpr size_t value_pool_buffer_size = 8192;
+    alignas(8) char value_pool_buffer[value_pool_buffer_size];
+    PoolAllocator value_pool{value_pool_buffer, value_pool_buffer_size};
+    Document document{&value_pool};
 };
 
 inline ALWAYS_INLINE RapidJSONParser::Array RapidJSONParser::Element::getArray() const

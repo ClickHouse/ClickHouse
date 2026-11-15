@@ -22,8 +22,8 @@ protobuf_generate_grpc_cpp(<SRCS> <HDRS>
 # This function is a modified version of the function PROTOBUF_GENERATE_CPP() copied from https://github.com/Kitware/CMake/blob/master/Modules/FindProtobuf.cmake.
 function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
 
-  # ClickHouse build: Use the native plugins when cross-compiling
-  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+  # ClickHouse build: Use the native plugins when cross-compiling or using musl
+  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
     set(NATIVE_gRPC_CPP_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
     set(NATIVE_gRPC_PYTHON_PLUGIN "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_python_plugin")
     set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
@@ -204,8 +204,11 @@ function(protobuf_generate_grpc)
     endif()
     list(APPEND _generated_srcs_all ${_generated_srcs})
 
+    # protoc does not create the output directory, and the Makefiles generator
+    # (unlike Ninja) does not create directories of custom command outputs.
     add_custom_command(
       OUTPUT ${_generated_srcs}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${protobuf_generate_grpc_PROTOC_OUT_DIR}
       COMMAND ${NATIVE_protoc}
       ARGS --${protobuf_generate_grpc_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}
            --grpc_out ${_dll_export_decl}${protobuf_generate_grpc_PROTOC_OUT_DIR}

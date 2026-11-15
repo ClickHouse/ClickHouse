@@ -1,6 +1,8 @@
 #include <Columns/ColumnSparse.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
@@ -32,7 +34,7 @@ UInt64 computeWindowSize(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
@@ -178,7 +180,17 @@ void NegativeLimitByTransform::appendRun(const ChunkSlice::ColumnsPtr & columns_
     dropExcessRows(window);
 }
 
+/// Stores a group index in the cell's mapped slot, so a set method cannot be used (and is never selected
+/// here); this overload exists only because the dispatch macro covers every variant.
 template <typename Method>
+requires SetAggregationMethod<Method>
+void NegativeLimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, const ChunkSlice::ColumnsPtr &, UInt64)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitByTransform does not support void-mapped aggregation methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 void NegativeLimitByTransform::consumeImpl(
     Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows)
 {
@@ -189,8 +201,14 @@ void NegativeLimitByTransform::consumeImpl(
     for (UInt64 row = 0; row < num_rows; ++row)
     {
         auto emplace_result = state.emplaceKey(method.data, row, *data.aggregates_pool);
+        /// A key is given its group index only after `emplace_back` succeeds. If it throws, the key stays in the hash
+        /// table with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform,
+        /// the key gets its group the next time it is seen.
+        if (emplace_result.isInserted())
+            emplace_result.setMapped(nullptr);
+
         size_t group_idx = 0;
-        if (emplace_result.isInserted()) /// New grouping key
+        if (!emplace_result.getMapped()) /// New grouping key
         {
             group_idx = group_windows.size();
             group_windows.emplace_back();
@@ -266,7 +284,7 @@ Chunk NegativeLimitByTransform::generate()
         offset_rows_dropped = true;
         releaseHashTable(data);
         hash_method_context.reset();
-        std::vector<GroupWindow>{}.swap(group_windows);
+        VectorWithMemoryTracking<GroupWindow>{}.swap(group_windows);
     }
 
     if (candidate_list.empty())
@@ -340,12 +358,17 @@ Chunk NegativeLimitByTransform::generate()
 
 
 NegativeLimitBySortedStreamTransform::NegativeLimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
     : IInflatingTransform(header, header)
-    , key_positions(filterNonConstKeys(header, column_names).positions)
     , group_offset(group_offset_)
     , group_window_size(computeWindowSize(group_length_, group_offset_))
 {
+    Names key_names;
+    key_names.reserve(sorted_columns_descr.size());
+    for (const auto & column_description : sorted_columns_descr)
+        key_names.push_back(column_description.column_name);
+    key_positions = filterNonConstKeys(header, key_names).positions;
+
     prev_key_columns.reserve(key_positions.size());
     for (size_t position : key_positions)
         prev_key_columns.push_back(header->getByPosition(position).type->createColumn());
@@ -356,16 +379,6 @@ bool NegativeLimitBySortedStreamTransform::sameAsPrevChunkKey(const Columns & co
     for (size_t i = 0; i < cols.size(); ++i)
     {
         if (cols[i]->compareAt(row, 0, *prev_key_columns[i], 1) != 0)
-            return false;
-    }
-    return true;
-}
-
-bool NegativeLimitBySortedStreamTransform::sameAsRowBefore(const Columns & cols, UInt64 row) const
-{
-    for (const auto & col : cols)
-    {
-        if (col->compareAt(row, row - 1, *col, 1) != 0)
             return false;
     }
     return true;
@@ -429,13 +442,27 @@ void NegativeLimitBySortedStreamTransform::dropOffsetRows(GroupWindow & window) 
     }
 }
 
+void NegativeLimitBySortedStreamTransform::appendToPending(const ChunkSlice::ColumnsPtr & columns, UInt64 start, UInt64 length)
+{
+    if (!pending.empty())
+    {
+        auto & last = pending.back();
+        if (last.columns == columns && last.start + last.length == start)
+        {
+            last.length += length;
+            return;
+        }
+    }
+    pending.push_back({columns, start, length});
+}
+
 void NegativeLimitBySortedStreamTransform::finalizeWindow(GroupWindow & window)
 {
     dropOffsetRows(window);
     for (const auto & slice : window.slices)
     {
         chassert(slice.length > 0);
-        pending.push_back(slice);
+        appendToPending(slice.columns, slice.start, slice.length);
     }
     window = {};
 }
@@ -471,18 +498,32 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     if (have_previous_chunk_key && !sameAsPrevChunkKey(normalized_keys, 0))
         finalizeWindow(current_group_window);
 
-    for (UInt64 row = 1; row < num_rows; ++row)
+    /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
+    /// one group.
+    SortedKeyRuns key_runs(normalized_keys.size());
+    while (run_start < num_rows)
     {
-        if (sameAsRowBefore(normalized_keys, row))
-            continue;
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
-        /// Group boundary: close the current run, finalize, start a new run.
-        append_run(run_start, row - run_start);
-        finalizeWindow(current_group_window);
-        run_start = row;
+        if (run_end != num_rows && current_group_window.slices.empty())
+        {
+            /// The whole group is in this chunk: its last `group_window_size` rows without the trailing `group_offset` ones.
+            const UInt64 kept = std::min(run_end - run_start, group_window_size);
+            const UInt64 dropped = std::min(group_offset, kept);
+            if (kept > dropped)
+                appendToPending(columns_ptr, run_end - kept, kept - dropped);
+        }
+        else
+        {
+            append_run(run_start, run_end - run_start);
+
+            /// Group boundary: close the current run, finalize, start a new run.
+            if (run_end != num_rows)
+                finalizeWindow(current_group_window);
+        }
+
+        run_start = run_end;
     }
-
-    append_run(run_start, num_rows - run_start);
 
     /// Remember this chunk's last row for the next chunk's boundary check. With no non-constant
     /// grouping keys this is a no-op (nothing to remember).
