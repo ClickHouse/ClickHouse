@@ -2028,7 +2028,7 @@ ASTPtr DatabaseDataLake::makeViewCreateQuery(
                         table += '.';
                     table += parts[i];
                 }
-                if (parts.size() == 2 && table.find('.') == String::npos && !default_namespace.empty())
+                if (parts.size() == 2 && !table.contains('.') && !default_namespace.empty())
                     table = default_namespace + '.' + table;
             }
             else
