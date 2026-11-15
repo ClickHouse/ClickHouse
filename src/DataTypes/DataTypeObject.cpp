@@ -309,7 +309,7 @@ String DataTypeObject::doGetName() const
         if (upper_path == "SKIP" || upper_path == "SHARED")
             out << backQuote(path) << " " << type->getName();
         else
-            out << backQuoteIfNeed(path) << " " << type->getName();
+            out << backQuoteIfNeedInTypeName(path) << " " << type->getName();
     }
 
     std::vector<String> sorted_skip_paths;
@@ -320,7 +320,7 @@ String DataTypeObject::doGetName() const
     for (const auto & skip_path : sorted_skip_paths)
     {
         write_separator();
-        out << "SKIP " << backQuoteIfNeed(skip_path);
+        out << "SKIP " << backQuoteIfNeedInTypeName(skip_path);
     }
 
     for (const auto & skip_regexp : path_regexps_to_skip)

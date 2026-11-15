@@ -1,0 +1,10 @@
+Tuple(not UInt8, as UInt8, interval UInt8, strict UInt8)
+Tuple(`table` UInt8, `top` UInt8)
+Tuple(\n    interval UInt8,\n    `table` UInt8)
+JSON(interval UInt32, SKIP not)
+Variant(Tuple(a String), Tuple(interval UInt32))	Enum8(\'None\' = -1, \'Tuple(a String)\' = 0, \'Tuple(interval UInt32)\' = 1)
+d	Dynamic
+n	Nested(not UInt8)
+v	Variant(String, Tuple(interval UInt64))
+v	['v.Tuple%28interval%20UInt64%29%2Einterval']
+[(1)]	(42)	(42)	(7)	Tuple(strict UInt64)

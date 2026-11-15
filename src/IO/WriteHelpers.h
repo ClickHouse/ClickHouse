@@ -638,6 +638,10 @@ void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer &
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf);
 
+/// Write with backquotes a name inside a data type name (an element of `Tuple` or `Nested`, a path of `JSON`), if required.
+/// Data type names are persisted, so unlike `writeProbablyBackQuotedString` the set of quoted names never changes.
+void writeProbablyBackQuotedStringInTypeName(std::string_view s, WriteBuffer & buf);
+
 
 /** Outputs the string in for the CSV format.
   * Rules:

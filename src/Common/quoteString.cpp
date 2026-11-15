@@ -80,6 +80,17 @@ String backQuoteIfNeed(std::string_view x)
 }
 
 
+String backQuoteIfNeedInTypeName(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeProbablyBackQuotedStringInTypeName(x, wb);
+    }
+    return res;
+}
+
+
 String backQuoteMySQL(std::string_view x)
 {
     String res(2 + x.size(), '\0');

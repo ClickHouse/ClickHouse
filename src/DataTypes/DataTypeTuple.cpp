@@ -96,7 +96,7 @@ std::string DataTypeTuple::doGetName() const
             s << ", ";
 
         if (has_explicit_names)
-            s << backQuoteIfNeed(names[i]) << ' ';
+            s << backQuoteIfNeedInTypeName(names[i]) << ' ';
 
         s << elems[i]->getName();
     }
@@ -121,7 +121,7 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
                 s << ",\n";
 
             s << fourSpaceIndent(indent + 1)
-                << backQuoteIfNeed(names[i]) << ' '
+                << backQuoteIfNeedInTypeName(names[i]) << ' '
                 << elems[i]->getPrettyName(indent + 1);
         }
 
