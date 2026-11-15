@@ -8,15 +8,6 @@ PIGZ = Path("/usr/bin/pigz")
 SUFFIX = ".zst"
 
 
-def compress_file_fast(path: Path, archive_path: Path) -> None:
-    if archive_path.suffix == SUFFIX:
-        subprocess.check_call(f"zstd < {path} > {archive_path}", shell=True)
-    elif PIGZ.exists():
-        subprocess.check_call(f"pigz < {path} > {archive_path}", shell=True)
-    else:
-        subprocess.check_call(f"gzip < {path} > {archive_path}", shell=True)
-
-
 def compress_fast(
     path: Path, archive_path: Path, exclude: Optional[Path] = None
 ) -> None:

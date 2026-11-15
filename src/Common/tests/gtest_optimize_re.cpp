@@ -69,6 +69,8 @@ TEST(OptimizeRE, analyze)
     test_f(R"(\\A(?:(?:[-0-9_a-z]+(?:\\.[-0-9_a-z]+)*)/k8s1)\\z)", R"(/k8s1\z)");
     test_f("[a-zA-Z]+(?P<num>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?<num>\\d+)", "", {}, false, true, false);
+    test_f("[a-zA-Z]+(?P<user_id>\\d+)", "", {}, false, true, false);
+    test_f("[a-zA-Z]+(?<имя>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?'num'\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?x<num>\\d+)", "x<num>", {}, false, true, false);
     /// Escapes that encode a byte through trailing argument characters must not leak those

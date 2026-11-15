@@ -37,8 +37,10 @@ SELECT count() FROM t_dedup_log_alter_window;
 -- table UUID, so the check is scoped to this table only.
 SYSTEM FLUSH LOGS text_log;
 SELECT count() FROM system.text_log
-WHERE level = 'Error'
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND level = 'Error'
     AND message LIKE '%Error while loading MergeTree deduplication log%'
-    AND message LIKE '%' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 't_dedup_log_alter_window') || '%';
+    AND message LIKE '%' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 't_dedup_log_alter_window') || '%'
+SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
 DROP TABLE t_dedup_log_alter_window;

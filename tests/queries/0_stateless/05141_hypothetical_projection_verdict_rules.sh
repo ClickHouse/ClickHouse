@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-msan, no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # what EXPLAIN WHATIF refuses to estimate, and which settings it follows; the mark counts live in 05076
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -6,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # count() must reach the read step and the real projection must be allowed to win
-PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1"
+PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimize_read_in_order = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real;
@@ -119,9 +121,9 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
 " | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
 
-# the chooser replays the filters and expressions above the read on the projection and refuses a slice
-# it cannot replay, so an array join inside that slice takes the projection out of the running, while the
-# same array join above the slice leaves it in
+# the chooser replays the filters and expressions above the read on the projection; an array join is
+# planned as its own step above the read in both forms, so the slice stays replayable and the projection
+# stays in the running
 echo "--- an array join decides by where it sits relative to the read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_aj; DROP TABLE IF EXISTS t_real_aj;

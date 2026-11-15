@@ -8,6 +8,7 @@ node = cluster.add_instance(
     "node",
     with_minio=True,
     main_configs=["configs/s3.xml"],
+    user_configs=["configs/users.xml"],
     env_variables={
         "AWS_ACCESS_KEY_ID": minio_access_key,
         "AWS_SECRET_ACCESS_KEY": minio_secret_key,

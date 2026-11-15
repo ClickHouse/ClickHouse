@@ -197,7 +197,7 @@ def create_table(
         hive_partitioning_columns = f", {hive_partitioning_columns}"
         if not partitioning_mode:  # Backward compatibility
             settings["use_hive_partitioning"] = True
-        settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
+        settings["enable_object_storage_queue_hive_partitioning"] = True
 
     # Add regex partitioning settings
     if partitioning_mode:

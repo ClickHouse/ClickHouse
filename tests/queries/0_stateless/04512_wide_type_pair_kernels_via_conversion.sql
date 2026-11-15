@@ -78,3 +78,10 @@ SELECT intDivOrNull(materialize(CAST('-170141183460469231731687303715884105728',
 SELECT '-- unsigned wrap quirks of the compute type are preserved';
 SELECT modulo(materialize(toUInt256(100)), materialize(toInt8(-3))) AS x, toTypeName(x);
 SELECT intDiv(materialize(CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256')), materialize(toUInt8(1))) AS x, toTypeName(x);
+
+SELECT '-- two unsigned operands are computed in the wider unsigned type, exact at the type maximum';
+SELECT modulo(materialize(CAST('340282366920938463463374607431768211455', 'UInt128')), 1000) AS x, toTypeName(x);
+SELECT modulo(materialize(toUInt64(18446744073709551615)), materialize(CAST('340282366920938463463374607431768211455', 'UInt128'))) AS x, toTypeName(x);
+SELECT modulo(materialize(CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256')), 1000000000000000000) AS x, toTypeName(x);
+SELECT modulo(materialize(CAST('340282366920938463463374607431768211455', 'UInt128')), materialize(CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256'))) AS x, toTypeName(x);
+SELECT moduloOrNull(materialize(CAST('340282366920938463463374607431768211455', 'UInt128')), materialize(toUInt8(7))), moduloOrNull(materialize(CAST('340282366920938463463374607431768211455', 'UInt128')), materialize(toUInt8(0)));

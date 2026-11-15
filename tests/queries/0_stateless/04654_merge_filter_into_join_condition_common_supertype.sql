@@ -1,7 +1,6 @@
 -- A `WHERE` equality is merged into the JOIN condition when its operands have differing
 -- types but a common supertype, e.g. `Int32` and `Nullable(Int32)`.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET allow_correlated_subqueries = 1;
 SET query_plan_merge_filter_into_join_condition = 1;

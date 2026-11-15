@@ -1,5 +1,7 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
@@ -21,6 +23,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
@@ -38,6 +41,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
@@ -273,9 +277,26 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+
+        /// A special storage replaces the right-side plan, and with it the `FilterStep` carrying the
+        /// table's row policy, so such a table has to be joined as an ordinary stream. A `Join` table
+        /// is a prebuilt hash table read as is, so it cannot be filtered at all.
         if (storage)
         {
-            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+            auto row_policy_filter = context->getRowPolicyFilter(
+                joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            {
+                if (castStorage<StorageJoin>(storage, DeferredTable::Load))
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
+                storage = nullptr;
+            }
+        }
+
+        if (storage)
+        {
+            if (auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load); storage_join)
             {
                 table_join->setStorageJoin(storage_join);
             }
@@ -298,11 +319,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                     return nullptr;
                 }
 
+                /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
                 auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
+            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }

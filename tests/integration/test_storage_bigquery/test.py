@@ -1063,6 +1063,37 @@ def test_geography_read_and_write():
     )
 
 
+@pytest.mark.parametrize(
+    "geometry_type,wkt",
+    [
+        ("Point", "POINT(139.699325900317 35.67639759983872)"),
+        (
+            "Polygon",
+            "POLYGON((139.6 35.69451,139.60001 35.69452,139.6 35.69453,139.6 35.69451))",
+        ),
+    ],
+)
+def test_geography_write_preserves_precision(geometry_type, wkt):
+    mock_reset()
+    geometry = f"readWKT{geometry_type}({sql_str(wkt)})::Geometry"
+    node.query(
+        f"INSERT INTO FUNCTION {bq('test_geo')} (i, g, garr) "
+        f"SELECT 11, {geometry}, [{geometry}]"
+    )
+
+    rows = [row for req in mock_stats()["insert_requests"] for row in req["raw_rows"]]
+    assert len(rows) == 1
+    assert rows[0]["g"] == wkt
+    assert rows[0]["garr"] == [wkt]
+    assert (
+        node.query(
+            f"SELECT wkt(g), arrayMap(x -> wkt(x), garr) "
+            f"FROM {bq('test_geo')} WHERE i = 11"
+        )
+        == f"{wkt}\t['{wkt}']\n"
+    )
+
+
 def test_geography_null_rejected_where_bigquery_forbids_it():
     # `Geometry` is a `Variant` that carries its own NULL, so a NULL value can reach the write path even
     # for a REQUIRED field and for an element of a REPEATED field, where BigQuery accepts no NULL. Such a

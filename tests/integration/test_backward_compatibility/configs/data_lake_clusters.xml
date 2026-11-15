@@ -1,0 +1,49 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One shard with an old and a new replica: the topology of a rolling upgrade, for parallel replicas and `*Cluster` functions. -->
+        <mixed_replicas>
+            <shard>
+                <replica>
+                    <host>node_old</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_new</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </mixed_replicas>
+        <!-- The same two servers as two shards, for a `Distributed` destination. -->
+        <mixed_shards>
+            <shard>
+                <replica>
+                    <host>node_old</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node_new</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </mixed_shards>
+        <!-- A single node, so that a query initiated on the other version is executed only by this one. -->
+        <only_old>
+            <shard>
+                <replica>
+                    <host>node_old</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </only_old>
+        <only_new>
+            <shard>
+                <replica>
+                    <host>node_new</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </only_new>
+    </remote_servers>
+</clickhouse>
