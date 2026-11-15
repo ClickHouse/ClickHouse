@@ -22,7 +22,8 @@ $STREAMING_CLIENT -q "
 echo "--- positions on r1"
 $STREAMING_CLIENT -q "SELECT _partition_id, a, _block_number, _block_offset FROM r1 STREAM BOUNDED ORDER BY ALL"
 
-CURSOR="{'0': {'block_number': 1, 'block_offset': 0}, '1': {'block_number': 1, 'block_offset': 0}}"
+# The block numbers of a replicated table start at 0.
+CURSOR="{'0': {'block_number': 0, 'block_offset': 0}, '1': {'block_number': 0, 'block_offset': 0}}"
 
 echo "--- resume on r1"
 $STREAMING_CLIENT -q "SELECT a FROM r1 STREAM BOUNDED CURSOR $CURSOR ORDER BY ALL"
@@ -30,7 +31,7 @@ echo "--- resume on r2"
 $STREAMING_CLIENT -q "SELECT a FROM r2 STREAM BOUNDED CURSOR $CURSOR ORDER BY ALL"
 
 echo "--- unbounded on r2, inserts on r1"
-read -r fifo pid < <(spawn $STREAMING_CLIENT -q "SELECT a FROM r2 STREAM CURSOR {'0': {'block_number': 2, 'block_offset': 0}, '1': {'block_number': 2, 'block_offset': 0}}")
+read -r fifo pid < <(spawn $STREAMING_CLIENT -q "SELECT a FROM r2 STREAM CURSOR {'0': {'block_number': 1, 'block_offset': 0}, '1': {'block_number': 1, 'block_offset': 0}}")
 $STREAMING_CLIENT -q "INSERT INTO r1 VALUES (0, 4)"
 read_until "$fifo" "4"
 $STREAMING_CLIENT -q "INSERT INTO r1 VALUES (1, 30)"

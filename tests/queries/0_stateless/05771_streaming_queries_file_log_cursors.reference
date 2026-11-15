@@ -1,0 +1,16 @@
+--- bounded, no cursor
+a.log	0	1	a
+a.log	4	2	b
+a.log	8	3	c
+b.log	0	10	x
+b.log	5	20	y
+--- bounded, with cursor
+a.log	3
+--- the STREAM does not consume the records
+5
+--- a cursor outside a file
+BAD_ARGUMENTS
+--- unbounded, with cursor
+a.log 4
+c.log 30
+a.log 5

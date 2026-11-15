@@ -15,7 +15,7 @@ import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from . import poll_direct_select_result
 
 pytestmark = pytest.mark.timeout(1200)
@@ -4137,3 +4137,63 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
     # waited longer than 5 s.
     assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"
+
+
+def test_rabbitmq_stream_cursor(rabbitmq_cluster, db, unique):
+    """`STREAM` reads a stream queue with its own connection, starting after the offset of the cursor
+    {queue: offset}. The messages stay in the queue."""
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{unique}_stream',
+                     rabbitmq_queue_base = '{unique}_stream',
+                     rabbitmq_queue_settings_list = 'x-queue-type=stream',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+
+    def publish(keys):
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        for key in keys:
+            channel.basic_publish(exchange=f"{unique}_stream", routing_key="", body=json.dumps({"key": key, "value": key}))
+        connection.close()
+
+    def query(q):
+        return instance.query(q, settings={"enable_streaming_queries": 1, "stream_poll_timeout_ms": 1000})
+
+    publish(range(3))
+
+    everything = "0\t0\n1\t1\n2\t2\n"
+    select_everything = f"SELECT _offset, key FROM {db}.rabbitmq STREAM BOUNDED ORDER BY ALL"
+    assert_eq_with_retry(instance, select_everything, everything, settings={"enable_streaming_queries": 1, "stream_poll_timeout_ms": 1000})
+    # The messages of a stream queue are not removed by reading.
+    assert query(select_everything) == everything
+
+    queue = query(f"SELECT DISTINCT _queue FROM {db}.rabbitmq STREAM BOUNDED").strip()
+    assert query(f"SELECT key FROM {db}.rabbitmq STREAM BOUNDED CURSOR {{'{queue}': 0}} ORDER BY ALL") == "1\n2\n"
+
+    # An unbounded stream waits for new messages.
+    publish([3])
+    assert query(f"SELECT key FROM {db}.rabbitmq STREAM CURSOR {{'{queue}': 2}} LIMIT 1") == "3\n"
+
+    # A classic queue has nothing to stream from.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_classic (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_exchange_name = '{unique}_classic',
+                     rabbitmq_format = 'JSONEachRow';
+        """
+    )
+    assert "ILLEGAL_STREAM" in instance.query_and_get_error(
+        f"SELECT key FROM {db}.rabbitmq_classic STREAM", settings={"enable_streaming_queries": 1}
+    )
