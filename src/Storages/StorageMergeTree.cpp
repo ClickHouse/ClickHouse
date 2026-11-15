@@ -4078,8 +4078,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    /// A detached part can be written by another table.
-    checkNoUncompressedFixedArrayColumns(*metadata_snapshot, "ATTACH from the detached directory");
+    checkNoUncompressedFixedArrayColumns(metadata_snapshot->getColumns(), "ATTACH from the detached directory");
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);

@@ -10615,11 +10615,9 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    /// Otherwise the definition of the table in the backup is the same, and the parts were written with the same settings.
-    if (restorer.getRestoreSettings().allow_different_table_def)
     {
         const auto metadata_for_restore = getInMemoryMetadataPtr(getContext(), false);
-        checkNoUncompressedFixedArrayColumns(*metadata_for_restore, "RESTORE with `allow_different_table_def`");
+        checkNoUncompressedFixedArrayColumns(metadata_for_restore->getColumns(), "RESTORE of data");
     }
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
@@ -13743,17 +13741,8 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    /// The parts of a table with the setting `uncompressed_fixed_array_size` of a column are read at positions computed from
-    /// it, see `tryGetOneRowPerBlockLayout`.
-    for (const auto & column : my_snapshot->getColumns().getAllPhysical())
-    {
-        const UInt64 my_array_size = getUncompressedFixedArraySize(my_snapshot->getColumns().get(column.name));
-        const UInt64 src_array_size = getUncompressedFixedArraySize(src_snapshot->getColumns().get(column.name));
-        if (my_array_size != src_array_size)
-            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-                "Tables have different structure: the setting `{}` of column {} is {} and {}",
-                UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name), my_array_size, src_array_size);
-    }
+    checkNoUncompressedFixedArrayColumns(my_snapshot->getColumns(), "ATTACH, REPLACE or MOVE PARTITION between tables");
+    checkNoUncompressedFixedArrayColumns(src_snapshot->getColumns(), "ATTACH, REPLACE or MOVE PARTITION between tables");
 
     /// The definitions are compared as text, so the text must not depend on whether the user has
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.

@@ -109,6 +109,7 @@ renamed column, setting on
 181	0.532
 after alter
 vec	CODEC(NONE)	vectors
+rows after rejected imports	0	0
 lightweight update	1	[5,6]
 lightweight update	2	[3,4]
 codes in few blocks	1

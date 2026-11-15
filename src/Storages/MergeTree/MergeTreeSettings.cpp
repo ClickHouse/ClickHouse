@@ -74,8 +74,10 @@ computed position, see the query setting `merge_tree_use_one_row_per_block_layou
 An `INSERT` of a row with another number of elements fails. The column can have no codec, `CODEC(NONE)`, or a
 `Quantized` codec, and cannot have the column-level settings `min_compress_block_size` and `max_compress_block_size`.
 The setting can be specified only in `CREATE TABLE`: `ALTER` cannot add, change or remove it, or change the type, the
-codec or the TTL of a column that has it, or clear the column. The column cannot have a TTL, and parts cannot be attached
-from the detached directory to the table.
+codec or the TTL of a column that has it, or clear the column. The column cannot have a TTL. A table with such a column
+does not support the operations that bring in parts it did not write: `ATTACH PART` and `ATTACH PARTITION` from the
+detached directory, `ATTACH`, `REPLACE` and `MOVE PARTITION` between tables, `RESTORE` of data, and `ATTACH TABLE` with
+a definition.
 
 The setting has no effect at table level. 0 means that the setting is not used.
 

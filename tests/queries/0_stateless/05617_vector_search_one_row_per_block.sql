@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS tab_merged;
 DROP TABLE IF EXISTS tab_rejected;
 DROP TABLE IF EXISTS tab_alter;
 DROP TABLE IF EXISTS tab_without_setting;
+DROP TABLE IF EXISTS tab_same_setting;
 
 -- Every row of 64 `Float32` elements is one block of 256 bytes, whatever the table-level block sizes.
 CREATE TABLE tab_one_row_per_block
@@ -242,14 +243,24 @@ ALTER TABLE tab_alter MODIFY COLUMN vec COMMENT 'vectors';
 SELECT 'after alter';
 SELECT name, compression_codec, comment FROM system.columns WHERE database = currentDatabase() AND table = 'tab_alter' AND name = 'vec';
 
--- Partitions can be moved only between tables with the same setting.
+-- The operations that bring in parts that the table did not write are not supported: partitions cannot be moved between
+-- tables, even with the same setting, and parts cannot be attached from the detached directory.
 CREATE TABLE tab_without_setting (id UInt32, vec Array(Float32) CODEC(NONE), other Array(Float32))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE tab_same_setting AS tab_alter;
 INSERT INTO tab_without_setting SELECT number, arrayMap(j -> toFloat32(j), range(64)), [] FROM numbers(10);
-ALTER TABLE tab_alter ATTACH PARTITION tuple() FROM tab_without_setting; -- { serverError INCOMPATIBLE_COLUMNS }
-ALTER TABLE tab_alter REPLACE PARTITION tuple() FROM tab_without_setting; -- { serverError INCOMPATIBLE_COLUMNS }
-ALTER TABLE tab_without_setting ATTACH PARTITION tuple() FROM tab_alter; -- { serverError INCOMPATIBLE_COLUMNS }
+INSERT INTO tab_same_setting SELECT number, arrayMap(j -> toFloat32(j), range(64)), [] FROM numbers(10);
+ALTER TABLE tab_alter ATTACH PARTITION tuple() FROM tab_without_setting; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_alter REPLACE PARTITION tuple() FROM tab_without_setting; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_without_setting ATTACH PARTITION tuple() FROM tab_alter; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_alter ATTACH PARTITION tuple() FROM tab_same_setting; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_same_setting MOVE PARTITION tuple() TO TABLE tab_alter; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_same_setting DETACH PARTITION tuple();
+ALTER TABLE tab_same_setting ATTACH PARTITION tuple(); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tab_same_setting ATTACH PART 'all_1_1_0'; -- { serverError NOT_IMPLEMENTED }
+SELECT 'rows after rejected imports', (SELECT count() FROM tab_alter), (SELECT count() FROM tab_same_setting);
+DROP TABLE tab_same_setting;
 
 -- A lightweight update writes a patch part, whose values are checked against the setting of the table as well.
 CREATE TABLE tab_lightweight (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 2))
@@ -261,11 +272,6 @@ OPTIMIZE TABLE tab_lightweight FINAL;
 SELECT 'lightweight update', id, vec FROM tab_lightweight ORDER BY id;
 DROP TABLE tab_lightweight;
 
--- A detached part can be written by another table, so parts cannot be attached from the detached directory.
-INSERT INTO tab_alter SELECT number, arrayMap(j -> toFloat32(j), range(64)), [] FROM numbers(10);
-ALTER TABLE tab_alter DETACH PARTITION tuple();
-ALTER TABLE tab_alter ATTACH PARTITION tuple(); -- { serverError NOT_IMPLEMENTED }
-ALTER TABLE tab_alter ATTACH PART 'all_1_1_0'; -- { serverError NOT_IMPLEMENTED }
 
 SYSTEM FLUSH LOGS query_log;
 

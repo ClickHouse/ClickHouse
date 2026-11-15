@@ -7846,9 +7846,8 @@ void StorageReplicatedMergeTree::truncate(
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
-    /// A detached part can be written by another table. Not the recovery of the replica, which attaches its own parts,
-    /// see `restoreMetadataInZooKeeper`.
-    checkNoUncompressedFixedArrayColumns(*metadata_snapshot, "ATTACH from the detached directory");
+    /// Not the recovery of the replica, which attaches its own parts, see `restoreMetadataInZooKeeper`.
+    checkNoUncompressedFixedArrayColumns(metadata_snapshot->getColumns(), "ATTACH from the detached directory");
     return attachPartitionImpl(
         command, metadata_snapshot, query_context, /* allow_attach_while_readonly */ false, /* deduplicate_part */ true);
 }

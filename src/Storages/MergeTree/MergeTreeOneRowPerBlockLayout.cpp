@@ -183,9 +183,9 @@ void checkUncompressedFixedArraySizes(const Block & block, const StorageInMemory
     }
 }
 
-void checkNoUncompressedFixedArrayColumns(const StorageInMemoryMetadata & metadata, std::string_view operation)
+void checkNoUncompressedFixedArrayColumns(const ColumnsDescription & columns, std::string_view operation)
 {
-    for (const auto & column : metadata.getColumns())
+    for (const auto & column : columns)
         if (getUncompressedFixedArraySize(column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported for a table with a column with the setting `{}`: column {}",
                 operation, UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name));
@@ -234,9 +234,9 @@ std::optional<OneRowPerBlockLayout> tryGetOneRowPerBlockLayout(
     layout.header_bytes = getOneRowPerBlockHeaderBytes();
     layout.block_bytes = layout.header_bytes + layout.row_bytes;
 
-    /// The writer checks the blocks of every part it writes, and parts cannot be attached from the detached directory, so
-    /// this is only a check against a part that was not written for this table, e.g. put into its directory by hand. Every
-    /// block is also checked when it is read.
+    /// The writer checks the blocks of every part it writes, and the ways to bring in other parts are not supported, see
+    /// `checkNoUncompressedFixedArrayColumns`, so this is only a check against a part put into the directory of the table
+    /// by hand. Every block is also checked when it is read.
     const auto & data_checksum = checksum_it->second;
     if (!data_checksum.is_compressed || data_checksum.uncompressed_size != part.rows_count * layout.row_bytes
         || data_checksum.file_size != part.rows_count * layout.block_bytes)
