@@ -2997,6 +2997,57 @@ def test_hiding_credentials(nats_cluster):
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
 
 
+def test_nats_stream_cursor(nats_cluster):
+    """`STREAM` reads the JetStream stream with its own ephemeral consumer, starting after the sequence
+    of the cursor {stream: sequence}, without acknowledging the messages of the durable consumer."""
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(3)]
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
+
+    def query(q):
+        return instance.query(q, settings={"enable_streaming_queries": 1})
+
+    # The messages have the stream sequences 1, 2 and 3.
+    everything = "0\n1\n2\n"
+    assert query("SELECT key FROM test.nats STREAM BOUNDED ORDER BY ALL") == everything
+    # Nothing was acknowledged, so the same messages are read again.
+    assert query("SELECT key FROM test.nats STREAM BOUNDED ORDER BY ALL") == everything
+
+    assert query("SELECT key FROM test.nats STREAM BOUNDED CURSOR {'test_stream': 1} ORDER BY ALL") == "1\n2\n"
+
+    # An unbounded stream waits for new messages.
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 3, "value": 3})]))
+    assert query("SELECT key FROM test.nats STREAM CURSOR {'test_stream': 3} LIMIT 1") == "3\n"
+
+    # The core NATS has no persistence, so there is nothing to stream from.
+    instance.query(
+        """
+        CREATE TABLE test.nats_core (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'core_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    assert "ILLEGAL_STREAM" in instance.query_and_get_error(
+        "SELECT key FROM test.nats_core STREAM", settings={"enable_streaming_queries": 1}
+    )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
