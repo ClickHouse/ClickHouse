@@ -36,7 +36,7 @@ public:
     class StrategyEnumerator;
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the physical alternatives of one logical join into the memo, one method per strategy.
@@ -48,7 +48,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        VectorWithMemoryTracking<GroupExpressionPtr> & result_);
+        GroupExpressions & result_);
 
     void addLocalJoin();
     void addBroadcastJoins(size_t node_count);
@@ -87,7 +87,7 @@ private:
     const JoinStepLogical & join_step;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    VectorWithMemoryTracking<GroupExpressionPtr> & result;
+    GroupExpressions & result;
     VectorWithMemoryTracking<JoinKeyPair> equi_keys;
     bool needs_hash_cast = false;
     bool left_preserved = false;
@@ -127,7 +127,7 @@ HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
     GroupExpressionPtr expression_,
     const ExpressionProperties & required_properties_,
     Memo & memo_,
-    VectorWithMemoryTracking<GroupExpressionPtr> & result_)
+    GroupExpressions & result_)
     : rule(rule_)
     , expression(std::move(expression_))
     , join_step(*typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()))
@@ -433,7 +433,7 @@ void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t
     }
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
     chassert(expression->inputs.size() == 2);
@@ -441,7 +441,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> HashJoinImplementation::applyImpl(G
     const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
     StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
     strategies.addLocalJoin();

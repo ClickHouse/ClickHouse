@@ -50,7 +50,7 @@ public:
 private:
     /// Stage 3: run the enforcer rules to a fixed point over the group's physical expressions
     /// and return the expressions they inserted; satisfying expressions update the best plan.
-    VectorWithMemoryTracking<GroupExpressionPtr> runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const;
+    GroupExpressions runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const;
 
     GroupId group_id;
     ExpressionProperties required_properties;
@@ -117,7 +117,7 @@ public:
     String describe() const override;
 
 private:
-    void updateMemo(const VectorWithMemoryTracking<GroupExpressionPtr> & new_expressions, CascadesOptimizer & optimizer);
+    void updateMemo(const GroupExpressions & new_expressions, CascadesOptimizer & optimizer);
 
     GroupExpressionPtr expression;
     ExpressionProperties required_properties;

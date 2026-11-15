@@ -42,7 +42,7 @@ public:
     class EnforcerEnumerator;
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the exchange enforcers that can bridge one distribution gap, one method per
@@ -59,7 +59,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        VectorWithMemoryTracking<GroupExpressionPtr> & result_)
+        GroupExpressions & result_)
         : rule(rule_)
         , expression(std::move(expression_))
         , input_header(expression->getQueryPlanStep()->getOutputHeader())
@@ -90,7 +90,7 @@ private:
     const SharedHeader & input_header;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    VectorWithMemoryTracking<GroupExpressionPtr> & result;
+    GroupExpressions & result;
 };
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
@@ -253,9 +253,9 @@ void DistributionEnforcer::EnforcerEnumerator::addKeyedShuffle()
         is_scatter ? StreamLayout::Single : StreamLayout::Unknown);
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
     EnforcerEnumerator enforcers(*this, expression, required_properties, memo, result);
 
     if (required_properties.distribution.columns.empty())

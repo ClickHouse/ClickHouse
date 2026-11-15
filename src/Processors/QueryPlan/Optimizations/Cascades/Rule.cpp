@@ -30,22 +30,22 @@ GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupE
 }
 
 void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
-    Memo & memo, VectorWithMemoryTracking<GroupExpressionPtr> & result) const
+    Memo & memo, GroupExpressions & result) const
 {
     expression->setApplied(*this, required_properties);
     if (memo.getGroup(expression->group_id)->addPhysicalExpression(expression))
         result.push_back(expression);
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> IOptimizationRule::addPhysicalToMemo(
+GroupExpressions IOptimizationRule::addPhysicalToMemo(
     GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
     addPhysicalToMemo(std::move(expression), required_properties, memo, result);
     return result;
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto new_expressions = applyImpl(expression, required_properties, memo);
     expression->setApplied(*this, required_properties);

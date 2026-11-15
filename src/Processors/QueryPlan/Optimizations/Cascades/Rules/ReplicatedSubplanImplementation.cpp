@@ -59,7 +59,7 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         DistributionDescription replicated_distribution;
         replicated_distribution.node_count = required_properties.distribution.node_count;

@@ -44,10 +44,10 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-VectorWithMemoryTracking<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+GroupExpressions TwoStageTopN::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     if (!sorting_step)

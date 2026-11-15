@@ -42,7 +42,7 @@ public:
     class StrategyEnumerator;
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the physical alternatives of one logical aggregation into the memo, one method
@@ -55,7 +55,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        VectorWithMemoryTracking<GroupExpressionPtr> & result_);
+        GroupExpressions & result_);
 
     void addPartialAggregation(size_t node_count);
     void addLocalAggregation();
@@ -87,7 +87,7 @@ private:
     const AggregatingStep & agg_step;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    VectorWithMemoryTracking<GroupExpressionPtr> & result;
+    GroupExpressions & result;
 };
 
 /// Logical transformation that splits a single-phase Agg into a two-phase plan:
@@ -111,7 +111,7 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 
@@ -127,7 +127,7 @@ AggregationImplementation::StrategyEnumerator::StrategyEnumerator(
     GroupExpressionPtr expression_,
     const ExpressionProperties & required_properties_,
     Memo & memo_,
-    VectorWithMemoryTracking<GroupExpressionPtr> & result_)
+    GroupExpressions & result_)
     : rule(rule_)
     , expression(std::move(expression_))
     , agg_step(*typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep()))
@@ -216,7 +216,7 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
     }
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
@@ -231,7 +231,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> AggregationImplementation::applyImp
     const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
     StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
@@ -331,7 +331,7 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         && !agg_step->getParams().only_merge;    /// don't split a merge step that's already from a prior split
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+GroupExpressions TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
@@ -410,7 +410,7 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 
 private:
     /// Whether the merge may also run per bucket over states shuffled by the keys.
@@ -454,7 +454,7 @@ bool MergingAggregationImplementation::checkPattern(GroupExpressionPtr expressio
         && expression->strategy == nullptr;
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> MergingAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions MergingAggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * merge_step = typeid_cast<const MergingAggregatedStep *>(expression->getQueryPlanStep());
     if (!merge_step)
@@ -466,7 +466,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> MergingAggregationImplementation::a
             "MergingAggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
 
     /// Local: input and output at {1 node} (default distribution).
     auto local = std::make_shared<GroupExpression>(*expression);

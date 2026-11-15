@@ -90,9 +90,9 @@ void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
     }
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
+GroupExpressions OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
 {
-    VectorWithMemoryTracking<GroupExpressionPtr> enforcer_expressions;
+    GroupExpressions enforcer_expressions;
 
     /// Fixed-point loop: iterate over newly-added physical expressions until no
     /// new enforcers are produced.  Each iteration may create expressions that

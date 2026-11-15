@@ -102,5 +102,6 @@ public:
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+using GroupExpressions = VectorWithMemoryTracking<GroupExpressionPtr>;
 
 }

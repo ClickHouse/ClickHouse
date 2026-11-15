@@ -35,14 +35,14 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-VectorWithMemoryTracking<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     const SortDescription sort_desc = sorting_step->getSortDescription();
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
 
     auto make_variant = [&](size_t node_count)
     {

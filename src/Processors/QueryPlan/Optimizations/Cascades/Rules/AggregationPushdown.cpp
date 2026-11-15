@@ -101,7 +101,7 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 
 private:
     GroupExpressionPtr buildPushdownAlternative(
@@ -799,7 +799,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         std::move(partial_expression), std::move(join_alternative), std::move(merge_step));
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+GroupExpressions AggregationPushdown::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
@@ -807,7 +807,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> AggregationPushdown::applyImpl(Grou
             "AggregationPushdown::applyImpl called for non-AggregatingStep expression '{}'",
             expression->getDescription());
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    GroupExpressions result;
     for (const auto & match : collectJoinsUnderAggregation(*expression, memo, /*stop_at_first_pushable=*/false))
     {
         const auto & join_step = *match.join_step;

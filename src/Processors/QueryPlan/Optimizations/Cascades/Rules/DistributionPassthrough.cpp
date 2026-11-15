@@ -47,9 +47,9 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
-        VectorWithMemoryTracking<GroupExpressionPtr> result;
+        GroupExpressions result;
 
         /// Per-block and non-deterministic functions (`rowNumberInAllBlocks`, `blockNumber`,
         /// `nowInBlock`, `rand`, ...) produce different values when the stream is split across

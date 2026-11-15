@@ -118,6 +118,7 @@ struct ExpressionCost
 class Memo;
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+using GroupExpressions = VectorWithMemoryTracking<GroupExpressionPtr>;
 
 using GroupId = size_t;
 
