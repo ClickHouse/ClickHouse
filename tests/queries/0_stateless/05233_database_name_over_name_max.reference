@@ -43,10 +43,10 @@ UNKNOWN_TABLE
 CANNOT_EXTRACT_TABLE_STRUCTURE
 --- local: control, a glob under a short absent directory ---
 CANNOT_EXTRACT_TABLE_STRUCTURE
---- local: a name over NAME_MAX with archive syntax is an unknown table ---
-UNKNOWN_TABLE
+--- local: a name over NAME_MAX with archive syntax is a missing file ---
+FILE_DOESNT_EXIST
 --- local: control, a short name with archive syntax ---
-UNKNOWN_TABLE
+FILE_DOESNT_EXIST
 --- local: file() on an archive over NAME_MAX with a member glob is not a filesystem error ---
 CANNOT_STAT
 --- local: control, file() on a short absent archive with a member glob ---
