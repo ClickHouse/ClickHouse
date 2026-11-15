@@ -19,7 +19,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -174,10 +173,15 @@ bool injectRequiredColumnsRecursively(
 
 }
 
-bool isDefaultComputed(const ColumnsDescription & columns, const String & column_name)
+bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name)
 {
     auto column_default = columns.getDefault(column_name);
-    return column_default && column_default->expression && !column_default->expression->as<ASTLiteral>();
+    if (!column_default || !column_default->expression)
+        return false;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+    return !identifiers.empty();
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -252,11 +256,9 @@ NameSet injectRequiredColumns(
             if (!storage_snapshot->tryGetColumn(options, column.name))
                 continue;
             available_columns.push_back(column);
-            /// A column that a pending mutation drops is read as its default, and one that it renames away as another column.
-            if (!alter_conversions
-                || (!alter_conversions->columnHasNewName(column.name)
-                    && (!alter_conversions->isColumnDropped(column.name, share_nested)
-                        || !isDefaultComputed(storage_snapshot->metadata->getColumns(), column.name))))
+            /// A column that a pending mutation drops is filled from its default, which can read other columns.
+            if (!alter_conversions || !alter_conversions->isColumnDropped(column.name, share_nested)
+                || !defaultReadsColumns(storage_snapshot->metadata->getColumns(), column.name))
                 readable_columns.push_back(column);
         }
 

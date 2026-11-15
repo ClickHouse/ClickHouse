@@ -9924,14 +9924,14 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     for (const auto & part : parts)
         part_columns.insert(&part.data_part->getColumnPositions());
 
-    /// A pending drop or rename changes what a part stores under a name. That matters for a column whose default is
-    /// computed, as the reader computes it where the part does not store the column, and for a column that some part
-    /// does not store under its current name.
+    /// A pending drop or rename changes what a part stores under a name. That matters for a column whose default reads
+    /// other columns, as the reader computes it where the part does not store the column, and for a column that some
+    /// part does not store under its current name.
     const bool resolve_per_part = mutations_snapshot && mutations_snapshot->hasMetadataMutations()
         && std::ranges::any_of(columns, [&](const auto & column)
         {
             const auto & name = column.getNameInStorage();
-            return isDefaultComputed(table_columns, name)
+            return defaultReadsColumns(table_columns, name)
                 || !std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name); });
         });
 
@@ -9971,13 +9971,13 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
         if (!std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
             return false;
 
-        const bool default_is_computed = isDefaultComputed(table_columns, name_in_storage);
+        const bool default_reads_columns = defaultReadsColumns(table_columns, name_in_storage);
         return std::ranges::all_of(converted_parts, [&](const auto & part)
         {
             const auto & [positions, conversions] = part;
             const auto name_in_part = conversions->isColumnRenamed(name_in_storage) ? conversions->getColumnOldName(name_in_storage) : name_in_storage;
             return positions->contains(name_in_part)
-                && !(default_is_computed && conversions->isColumnDropped(name_in_part, share_nested_offsets));
+                && !(default_reads_columns && conversions->isColumnDropped(name_in_part, share_nested_offsets));
         });
     };
 
