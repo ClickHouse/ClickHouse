@@ -19,9 +19,8 @@ namespace DB::Parquet
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
 
-/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
-/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
-/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined.
+/// Thrift deserialization of a malformed file can store an out-of-range value into an enum field.
+/// Loading it is undefined behavior (-fsanitize=enum); reading the underlying integer via memcpy is not.
 template <typename E>
 int thriftEnumToInt(const E & e)
 {
