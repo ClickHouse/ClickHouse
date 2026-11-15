@@ -67,6 +67,9 @@ add_compile_definitions(
     HAVE___BUILTIN_BSWAPXX
     HAVE___BUILTIN_ASSUME_ALIGNED
 
+    # Select the CRC implementation in a constructor, not with an unsynchronized write on the first call.
+    HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
+
     _GNU_SOURCE
     __EXTENSIONS__
     _POSIX_PTHREAD_SEMANTICS
@@ -96,6 +99,10 @@ endif ()
 
 if (ARCH_AMD64 OR ARCH_AARCH64)
     add_compile_definitions(TUKLIB_FAST_UNALIGNED_ACCESS=1)
+endif ()
+
+if (ARCH_AMD64)
+    add_compile_definitions(HAVE_USABLE_CLMUL)
 endif ()
 
 if (ARCH_S390X)

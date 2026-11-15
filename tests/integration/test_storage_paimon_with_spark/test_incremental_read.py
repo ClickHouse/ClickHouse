@@ -197,7 +197,7 @@ def test_shared_watermark_competing_consumers(started_cluster_paimon_with_spark)
                         table_name, replica_name=replica
                     ),
                 ),
-                settings={"allow_experimental_paimon_storage_engine": 1},
+                settings={"enable_paimon_storage_engine": 1},
             )
         count_query = f"SELECT count() FROM {table_name}"
 
@@ -261,7 +261,7 @@ def test_incremental_read_requires_keeper_settings(started_cluster_paimon_with_s
         additional_settings=["paimon_incremental_read = 1"],
     )
     error = instance.query_and_get_error(
-        create_query, settings={"allow_experimental_paimon_storage_engine": 1}
+        create_query, settings={"enable_paimon_storage_engine": 1}
     )
     assert (
         "both paimon_keeper_path and paimon_replica_name must be specified" in error
@@ -357,7 +357,7 @@ def test_incremental_read_skips_overwrite_snapshots(started_cluster_paimon_with_
                 )
                 + ["paimon_incremental_read_append_overwrite = 1"],
             ),
-            settings={"allow_experimental_paimon_storage_engine": 1},
+            settings={"enable_paimon_storage_engine": 1},
         )
         wait_until_query_result(node2, ids_query, "[0,1,2,4,5,10]\n")
         wait_until_query_result(node2, ids_query, "[]\n")

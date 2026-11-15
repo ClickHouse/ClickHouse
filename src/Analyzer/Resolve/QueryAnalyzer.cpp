@@ -72,6 +72,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -126,6 +127,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 
@@ -421,10 +423,13 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
+QueryAnalyzer::QueryAnalyzer(
+    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
+    , replaced_storage(std::move(replaced_storage_))
+    , view_source_in_subqueries(view_source_in_subqueries_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -1937,7 +1942,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -3797,6 +3802,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    SCOPE_EXIT({ lambdas_in_resolve_process.erase(lambda_with_hash); });
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3836,8 +3842,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -5445,9 +5449,22 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+
+            data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
+            bool alias_column_resolved = false;
+            SCOPE_EXIT({
+                data.alias_columns_in_resolution.pop_back();
+                if (!alias_column_resolved)
+                    alias_column_to_resolve->setExpression(nullptr);
+            });
+
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
-            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
+            /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
+            if (!scope_inserted)
+                scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
             alias_column_resolve_scope.context = scope.context;
 
@@ -5462,6 +5479,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+            alias_column_resolved = true;
         };
 
         data.setColumnNodeMapPopulator(std::move(populator), std::move(alias_column_resolver));
@@ -5502,6 +5520,75 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             "Table function `eval` cannot be used as an argument of another table function");
 
     auto & scope_context = scope.context;
+
+    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
+    /// The execution context is used for the actual table function execution and its settings
+    /// are incorporated into the cache key (so identical settings still reuse the cache,
+    /// while different settings get separate entries).
+    /// The same execution context is used to infer the structure of a parameterized view, because the view
+    /// is read with the settings of its scope.
+    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
+    /// context (which has accumulated settings applied). We only consider subqueries
+    /// (not the outermost query) because the outermost query's SETTINGS are already on
+    /// the query context, and switching to the QueryNode's own context copy could change
+    /// non-settings state (e.g. isDistributed) and break table function execution
+    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    /// An operand of a set operation is not a subquery, but it customizes its settings as well when it has
+    /// a `SETTINGS` clause of its own: `SELECT ... UNION ALL (SELECT ... FROM view(...) SETTINGS x = 1)`.
+    /// The clause of the parenthesized operand applies only to it (see `ParserUnionQueryElement`), so it is
+    /// not on the query context even when the set operation is the outermost query. The only clause an operand
+    /// shares with the set operation is the trailing clause of the last operand, which `QueryTreeBuilder`
+    /// appends to the clauses of the set operation, so that one is a suffix of them.
+    auto has_own_settings = [](const auto & node, const UnionNode & parent_union)
+    {
+        auto is_suffix = [](const auto & suffix, const auto & whole)
+        {
+            return suffix.size() <= whole.size() && std::equal(suffix.begin(), suffix.end(), whole.end() - suffix.size());
+        };
+
+        const auto & operands = parent_union.getQueries().getNodes();
+        bool is_last_operand = !operands.empty() && operands.back().get() == &node;
+        return !(is_last_operand
+            && is_suffix(node.getSettingsChanges(), parent_union.getSettingsChanges())
+            && is_suffix(node.getDefaultSettings(), parent_union.getDefaultSettings())
+            && is_suffix(node.getQueryParameters(), parent_union.getQueryParameters()));
+    };
+
+    auto scope_customizes_settings = [&](const IdentifierResolveScope & scope_to_check) -> bool
+    {
+        const auto * parent_union = scope_to_check.parent_scope && scope_to_check.parent_scope->scope_node
+            ? scope_to_check.parent_scope->scope_node->as<UnionNode>()
+            : nullptr;
+        if (const auto * query_node = scope_to_check.scope_node->as<QueryNode>())
+            return query_node->hasSettingsChanges()
+                && (query_node->isSubquery() || (parent_union && has_own_settings(*query_node, *parent_union)));
+        if (const auto * union_node = scope_to_check.scope_node->as<UnionNode>())
+            return union_node->hasSettingsChanges()
+                && (union_node->isSubquery() || (parent_union && has_own_settings(*union_node, *parent_union)));
+        return false;
+    };
+
+    ContextPtr execution_context = scope_context->getQueryContext();
+    {
+        const IdentifierResolveScope * scope_to_check = &scope;
+        while (scope_to_check != nullptr)
+        {
+            if (scope_customizes_settings(*scope_to_check))
+            {
+                auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope)
+                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope;
+        }
+    }
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
@@ -5544,8 +5631,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
 
-        auto context = scope_context->getQueryContext();
-        auto parameterized_view_storage = context->buildParameterizedViewStorage(
+        auto parameterized_view_storage = execution_context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
@@ -5555,6 +5641,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
             std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
             table_function_node_typed.resolve({}, parameterized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
+            IdentifierResolver::checkAccessToTableMetadata(
+                table_function_node_typed.getStorage(), table_function_node_typed.getStorageID(),
+                table_function_node_typed.getStorageSnapshot(), scope_context);
             return;
         }
 
@@ -5879,46 +5968,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
-    /// The execution context is used for the actual table function execution and its settings
-    /// are incorporated into the cache key (so identical settings still reuse the cache,
-    /// while different settings get separate entries).
-    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
-    /// context (which has accumulated settings applied). We only consider subqueries
-    /// (not the outermost query) because the outermost query's SETTINGS are already on
-    /// the query context, and switching to the QueryNode's own context copy could change
-    /// non-settings state (e.g. isDistributed) and break table function execution
-    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
-    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
-    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
-    /// query tree through cloning and conversion back to AST for distributed execution.
-    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
-    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
-    /// built from the union's context, so the nearest query scope below it already carries the settings.
-    auto subquery_customizes_settings = [](const IQueryTreeNode & node) -> bool
-    {
-        if (const auto * query_node = node.as<QueryNode>())
-            return query_node->isSubquery() && query_node->hasSettingsChanges();
-        if (const auto * union_node = node.as<UnionNode>())
-            return union_node->isSubquery() && union_node->hasSettingsChanges();
-        return false;
-    };
-
-    ContextPtr execution_context = scope_context->getQueryContext();
-    {
-        const IdentifierResolveScope * scope_to_check = &scope;
-        while (scope_to_check != nullptr)
-        {
-            if (subquery_customizes_settings(*scope_to_check->scope_node))
-            {
-                auto * nearest_query_scope = scope.getNearestQueryScope();
-                if (nearest_query_scope)
-                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
-                break;
-            }
-            scope_to_check = scope_to_check->parent_scope;
-        }
-    }
 
     /// The `parallel_replicas_for_cluster_engines` setting may have been disabled on
     /// a query node's local context (in resolveQuery, when cluster alternatives are
@@ -5934,6 +5983,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+
+    /// The one-argument `merge` reads the current database, which the servers this query is sent to do not share.
+    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
+        merge_storage && table_function_node_typed.getArguments().getNodes().size() == 1
+        && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+        argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
+    }
+
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
@@ -6816,6 +6876,18 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     if (view->isSealed(*storage_snapshot->metadata, scope.context))
         return;
 
+    /// A query that ships an inlined body to parallel replicas would have it run as another user. Only plan-based
+    /// parallel replicas ship the resolved plan; the offset and custom key modes ship the query text, as task-based ones do otherwise.
+    const auto & view_metadata = *storage_snapshot->metadata;
+    auto can_ship = [](const ContextPtr & c)
+    {
+        return (c->canUseParallelReplicasOnInitiator() && !c->getSettingsRef()[Setting::parallel_replicas_plan_based])
+            || c->canUseParallelReplicasCustomKey() || c->canUseOffsetParallelReplicas();
+    };
+    if ((view_metadata.sql_security_type == SQLSecurityType::DEFINER || view_metadata.sql_security_type == SQLSecurityType::NONE)
+        && (can_ship(scope.context) || (scope.context->hasQueryContext() && can_ship(scope.context->getQueryContext()))))
+        return;
+
     auto storage_id = storage->getStorageID();
 
     /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
@@ -6944,7 +7016,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         /// Resolve the row policy filter expression against result_node's columns.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
-        QueryAnalyzer filter_analyzer(this->only_analyze);
+        QueryAnalyzer filter_analyzer(
+            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>

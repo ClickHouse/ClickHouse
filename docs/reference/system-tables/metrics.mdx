@@ -276,7 +276,7 @@ Number of queued or active tasks in the thread pool of the object storage disk b
 
 ### BrokenDisks {#brokendisks}
 
-Number of disks disks that were marked as broken during disk check.
+Number of disks that were marked as broken during disk check.
 
 ### BrokenDistributedBytesToInsert {#brokendistributedbytestoinsert}
 
@@ -393,18 +393,6 @@ Total number of CPU slot requests are being scheduled currently
 ### ConcurrencyControlSoftLimit {#concurrencycontrolsoftlimit}
 
 Value of soft limit on number of CPU slots
-
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Number of threads in the thread pool for concurrent hash join.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Number of threads in the thread pool for concurrent hash join running a task.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Number of queued or active jobs in the thread pool for concurrent hash join.
 
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
@@ -618,6 +606,14 @@ Number of distributed cache registered servers
 
 Number of distributed cache registered servers in current az
 
+### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
+
+Number of committed temporary files owned by this distributed cache server process
+
+### DistrCacheServerCommittedTemporaryFilesBytes {#distrcacheservercommittedtemporaryfilesbytes}
+
+Total size in bytes of committed temporary files owned by this distributed cache server process
+
 ### DistrCacheServerConnections {#distrcacheserverconnections}
 
 Number of open connections to ClickHouse server from Distributed Cache
@@ -633,6 +629,18 @@ Number of distributed cache S3 cached clients
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
 Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit
+
+### DistrCacheTemporaryDataActiveIds {#distrcachetemporarydataactiveids}
+
+Number of active committed temporary-data IDs
+
+### DistrCacheTemporaryDataConnectionsBypassingPool {#distrcachetemporarydataconnectionsbypassingpool}
+
+Distributed Cache client metric. Number of connections opened by temporary data bypassing the connection pool
+
+### DistrCacheTemporaryDataServers {#distrcachetemporarydataservers}
+
+Number of servers with committed temporary data
 
 ### DistrCacheUsedConnections {#distrcacheusedconnections}
 
@@ -866,13 +874,13 @@ Number of threads in global thread pool running a task.
 
 Number of queued or active jobs in global thread pool.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Size of the cache of current Iceberg schema field types in Glue catalogs in bytes
+Bytes of the PTX of the kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Number of entries in the cache of current Iceberg schema field types in Glue catalogs
+Kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -885,6 +893,18 @@ Number of threads in the HashedDictionary thread pool running a task.
 ### HashedDictionaryThreadsScheduled {#hasheddictionarythreadsscheduled}
 
 Number of queued or active jobs in the HashedDictionary thread pool.
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Number of threads in the thread pool for destroying the right table of a hash join.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Number of threads in the thread pool for destroying the right table of a hash join running a task.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Number of queued or active jobs in the thread pool for destroying the right table of a hash join.
 
 ### HiveFilesCacheBytes {#hivefilescachebytes}
 

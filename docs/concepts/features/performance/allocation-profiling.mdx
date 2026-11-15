@@ -231,7 +231,7 @@ Keeper also exposes REST API endpoints for programmatic access:
 
 - `GET /jemalloc/stats` — raw `malloc_stats_print` output
 - `GET /jemalloc/status` — profiling state as JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-- `GET /jemalloc/profile?format={collapsed|raw}` — flushes a heap profile with server-side symbolization, returns collapsed stacks suitable for flame graph rendering (default) or the raw jemalloc dump
+- `GET /jemalloc/profile?format={collapsed|raw}` — flushes a heap profile with server-side symbolization, returns collapsed stacks suitable for flame graph rendering (default) or the heap profile in the same form as the `raw` format of `system.jemalloc_profile_text`
 
 </Tab>
 </Tabs>
@@ -260,7 +260,7 @@ SELECT * FROM system.jemalloc_profile_text
 
 The output format is controlled by the `jemalloc_profile_text_output_format` setting, which supports three values:
 
-- `raw` — raw heap profile as produced by jemalloc.
+- `raw` — heap profile as produced by jemalloc, except that runtime addresses are not published: stack addresses inside the ClickHouse binary are replaced by offsets in it, other addresses (shared libraries, JIT code) by `0`, and the memory map (`MAPPED_LIBRARIES`) is removed. `jeprof` analyzes it with the ClickHouse binary: `jeprof /path/to/clickhouse profile.heap`.
 - `symbolized` — jeprof-compatible format with embedded function symbols. Since symbols are already embedded, `jeprof` can analyze the output without requiring the ClickHouse binary.
 - `collapsed` (default) — FlameGraph-compatible collapsed stacks, one stack per line with the byte count.
 

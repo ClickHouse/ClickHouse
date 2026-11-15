@@ -400,6 +400,11 @@ if [ "$FAST_TEST" != "1" ]; then
    ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
 fi
 
+# The encrypted storage for named collections requires SSL, which fasttest builds without.
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/named_collections_storage.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/ci_logs_sender.yaml $DEST_SERVER_PATH/users.d/
@@ -418,6 +423,8 @@ ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
+# A marker setting for merges and mutations, which take their settings from the background profile.
+ln -sf $SRC_PATH/users.d/background_profile.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 # The `url_prefix` handler option is introduced by this feature and is not present in any
 # released version before 26.8, so gate on 26.8 (the first version that can contain it) to

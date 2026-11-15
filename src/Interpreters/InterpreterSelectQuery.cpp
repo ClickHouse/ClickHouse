@@ -35,6 +35,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -127,6 +128,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -166,7 +168,7 @@ namespace Setting
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -443,15 +445,8 @@ void checkAccessRightsForSelect(
         /// In this case just checking access for `required_columns` doesn't work correctly
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
-        auto access = context->getAccess();
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        for (const auto & column : table_metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the same column of its target table.
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
-                return;
-        }
+        if (!getColumnsSelectableByTrivialQuery(storage, table_id, table_metadata->getColumns(), context).empty())
+            return;
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
@@ -460,7 +455,21 @@ void checkAccessRightsForSelect(
     }
 
     /// General check.
-    context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) back to their parent storage
+    /// column names before the access check. Column-level grants are stored against top-level
+    /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
+    if (table_metadata)
+    {
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            table_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck(), context, table_id));
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+    }
 }
 
 /// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
@@ -505,8 +514,8 @@ ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
-/// Returns true if we should ignore quotas and limits for a specified table in the system database.
-bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+/// Returns true if we should ignore quotas for a specified table in the system database.
+bool shouldIgnoreQuota(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -1093,12 +1102,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             checkAccessRightsForFilter(
                 context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
-        /// Remove limits for some tables in the `system` database.
-        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
-        {
+        /// Remove quota for some tables in the `system` database.
+        if (shouldIgnoreQuota(table_id) && (joined_tables.tablesCount() <= 1))
             options.ignore_quota = true;
-            options.ignore_limits = true;
-        }
     }
 
     /// Add prewhere actions with alias columns and record needed columns from storage.
@@ -2059,7 +2065,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
-                    std::vector<QueryPlanPtr> plans;
+                    QueryPlanPtrs plans;
                     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
                     plans.emplace_back(std::move(joined_plan));
 
@@ -2431,32 +2437,12 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
 {
-    if (input_pipe || !storage || !storage->supportsPrewhere())
+    if (input_pipe || !storage)
         return false;
 
-    /// A remote storage cannot carry the filter at all: read() only ships query text to the
-    /// remote servers and never lowers the filter into it, so pushing would silently drop an
-    /// access-control filter. Refuse, and let the stage check fail closed.
-    if (storage->isRemote())
-        return false;
-
-    /// The filter is built against this table's schema, but read() hands it to wrapper
-    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-    /// Push it down only if every column it consumes is in the PREWHERE contract.
     /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
     /// analysis_result exists; they share the same object.
-    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-    {
-        const auto & table_columns = metadata_snapshot->getColumns();
-        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
-        {
-            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                return false;
-        }
-    }
-
-    return true;
+    return canPushDownRowPolicyFilter(*storage, metadata_snapshot->getColumns(), row_policy_info->actions.getRequiredColumnsNames());
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()

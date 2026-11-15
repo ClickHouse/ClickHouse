@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <optional>
@@ -13,8 +14,11 @@ struct FilterDAGOutputPruningResult
 {
     bool changed = false;
     /// The positions of the input header that the remaining outputs and the filter do not need, sorted.
-    std::vector<size_t> unneeded_input_positions;
+    VectorWithMemoryTracking<size_t> unneeded_input_positions;
 };
+
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? See the definition.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node);
 
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
@@ -75,9 +79,9 @@ public:
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
@@ -89,19 +93,19 @@ public:
         const String & filter_column_name,
         bool & remove_filter_column,
         const Block & input_header,
-        const std::vector<size_t> & unneeded_output_positions);
+        const VectorWithMemoryTracking<size_t> & unneeded_output_positions);
 
     /// The input positions `pruneDAGOutputsByPosition` would say are unneeded, without changing the DAG.
-    static std::vector<size_t> getUnneededInputPositions(
+    static VectorWithMemoryTracking<size_t> getUnneededInputPositions(
         const ActionsDAG & dag,
         const String & filter_column_name,
         bool remove_filter_column,
         const Block & input_header,
-        const std::vector<size_t> & unneeded_output_positions);
+        const VectorWithMemoryTracking<size_t> & unneeded_output_positions);
 
     /// For each column of the output header of a filter DAG, the position of the input column it is, unchanged: one the
     /// filter passes through, or an input the DAG outputs as it is. Nothing for a column the DAG computes, an alias too.
-    static std::vector<std::optional<size_t>> mapOutputsToInputs(
+    static VectorWithMemoryTracking<std::optional<size_t>> mapOutputsToInputs(
         const ActionsDAG & dag,
         const String & filter_column_name,
         bool remove_filter_column,
@@ -115,16 +119,16 @@ private:
     struct UnneededColumnsPlan
     {
         /// One entry per column of the input header, in header order.
-        std::vector<InputColumnUsage> input_columns;
+        VectorWithMemoryTracking<InputColumnUsage> input_columns;
         /// The DAG outputs nobody needs, as positions in `getOutputs` before any is removed, sorted.
         /// Never contains the filter column: it is needed to filter, whether or not anyone reads it.
         /// Unlike for the other steps, these are not just the caller's positions.
         /// The header the caller counts in may have the filter column erased from it,
         /// so the caller's positions are shifted back over that column first.
-        std::vector<size_t> unneeded_dag_positions;
+        VectorWithMemoryTracking<size_t> unneeded_dag_positions;
         /// The caller's positions the step drops: a pass-through column after a needed one of the same name is kept,
         /// even if nobody needs it.
-        std::vector<size_t> dropped_output_positions;
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
 
         /// Whether the filter column is removed from the output header after the pruning: it already was, or nobody
         /// reads it any more.
@@ -140,7 +144,7 @@ private:
         void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
 
         /// The positions of the input header nothing needs any more: the columns neither read nor passed on.
-        std::vector<size_t> unneededInputPositions() const;
+        VectorWithMemoryTracking<size_t> unneededInputPositions() const;
 
         /// What the pruning did, once the outputs are pruned and removeUnusedActions has said whether it erased a node.
         FilterDAGOutputPruningResult toResult(bool removed_any_action) const;
@@ -151,9 +155,9 @@ private:
         const String & filter_column_name,
         bool remove_filter_column,
         const Block & input_header,
-        const std::vector<size_t> & unneeded_output_positions);
+        const VectorWithMemoryTracking<size_t> & unneeded_output_positions);
 
-    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;

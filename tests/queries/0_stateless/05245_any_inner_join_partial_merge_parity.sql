@@ -54,7 +54,7 @@ SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray
 SELECT count(), uniqExact(t) FROM (
     SELECT any_inner_l.t AS t FROM any_inner_l ANY INNER JOIN any_inner_r ON any_inner_l.id = any_inner_r.id
     ORDER BY any_inner_l.t
-    SETTINGS join_algorithm = 'parallel_hash', max_threads = 8,
+    SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 8,
              max_bytes_before_external_join = 250000, max_bytes_ratio_before_external_join = 0,
              enable_analyzer = 1, enable_parallel_replicas = 0, optimize_read_in_order = 1,
              query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1, query_plan_join_swap_table = 0
