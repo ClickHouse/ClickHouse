@@ -12,6 +12,7 @@
 #if USE_AVRO
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -31,6 +32,28 @@ namespace DB::Iceberg
 
 using namespace DB;
 
+namespace
+{
+
+/// Avro `null` is read as `Nothing`, which has no values to get or print. For example, Iceberg writes a `void`
+/// partition field whose source column was dropped as `null`. Read it as `Nullable(Nothing)`, so its value is NULL.
+DataTypePtr makeNothingNullable(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return makeNullable(type);
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type)
+        return type;
+
+    DataTypes elements;
+    for (const auto & element : tuple_type->getElements())
+        elements.push_back(makeNothingNullable(element));
+    return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+}
+
+}
+
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
     const IcebergPathFromMetadata & manifest_file_path_,
@@ -43,7 +66,7 @@ try
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
+    auto data_type = makeNothingNullable(AvroSchemaReader::avroNodeToDataType(root_node));
 
     MutableColumns columns;
     columns.push_back(data_type->createColumn());
