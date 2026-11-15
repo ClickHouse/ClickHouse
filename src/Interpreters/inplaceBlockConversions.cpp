@@ -12,6 +12,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Columns/ColumnArray.h>
@@ -66,6 +68,41 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A default expression may reference a subcolumn of another column, e.g. `c.n.x` of the column `c.n`.
+/// When that column is missing from the block, it is computed by its own default expression under its
+/// name as an alias. An identifier is bound to an alias by its first part, so `c.n.x` cannot be bound to
+/// the alias `c.n`. Rewrite such a reference as an explicit `getSubcolumn` of its column, which then is
+/// a required column of the default expression as well.
+void replaceReferencesToSubcolumnsOfMissingColumns(ASTPtr & ast, const Block & block, const ColumnsDescription & columns)
+{
+    /// A subquery has its own scope.
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableIdentifier>())
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const String & name = identifier->name();
+        if (block.has(name) || columns.has(name))
+            return;
+
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column || !column->isSubcolumn() || block.has(column->getNameInStorage()))
+            return;
+
+        auto subcolumn = makeASTFunction(
+            "getSubcolumn",
+            make_intrusive<ASTIdentifier>(column->getNameInStorage()),
+            make_intrusive<ASTLiteral>(column->getSubcolumnName()));
+        subcolumn->setAlias(identifier->tryGetAlias());
+        ast = std::move(subcolumn);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceReferencesToSubcolumnsOfMissingColumns(child, block, columns);
+}
+
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
     const Block & block,
@@ -93,6 +130,7 @@ void addDefaultRequiredExpressionsRecursively(
     {
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         auto column_default_expr = column_default->expression->clone();
+        replaceReferencesToSubcolumnsOfMissingColumns(column_default_expr, block, columns);
 
         /// Our default may depend on columns with default expr which not present in block
         /// we have to add them to block too
