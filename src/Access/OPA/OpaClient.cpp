@@ -154,7 +154,7 @@ bool OpaClient::parseDecision(const Poco::URI & uri, const String & response_bod
     /// A policy may answer with the whole decision document instead of a bare boolean.
     if (result.type() == typeid(Poco::JSON::Object::Ptr))
     {
-        const auto result_object = result.extract<Poco::JSON::Object::Ptr>();
+        const auto & result_object = result.extract<Poco::JSON::Object::Ptr>();
         if (result_object->has("allow"))
         {
             const auto allow = result_object->get("allow");
@@ -194,7 +194,7 @@ Strings OpaClient::parseRowFilters(const Poco::URI & uri, const String & respons
             response_body);
     }
 
-    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+    const auto & array = result.extract<Poco::JSON::Array::Ptr>();
 
     Strings expressions;
     expressions.reserve(array->size());
@@ -212,7 +212,7 @@ Strings OpaClient::parseRowFilters(const Poco::URI & uri, const String & respons
                 response_body);
         }
 
-        const auto entry_object = entry.extract<Poco::JSON::Object::Ptr>();
+        const auto & entry_object = entry.extract<Poco::JSON::Object::Ptr>();
 
         String expression = entry_object->optValue<String>("expression", "");
 
@@ -256,7 +256,7 @@ std::vector<OpaColumnMask> OpaClient::parseColumnMasks(const Poco::URI & uri, co
             response_body);
     }
 
-    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+    const auto & array = result.extract<Poco::JSON::Array::Ptr>();
 
     std::vector<OpaColumnMask> masks;
     masks.reserve(array->size());
@@ -274,7 +274,7 @@ std::vector<OpaColumnMask> OpaClient::parseColumnMasks(const Poco::URI & uri, co
                 response_body);
         }
 
-        const auto entry_object = entry.extract<Poco::JSON::Object::Ptr>();
+        const auto & entry_object = entry.extract<Poco::JSON::Object::Ptr>();
 
         OpaColumnMask mask;
         mask.column = entry_object->optValue<String>("column", "");
@@ -361,7 +361,7 @@ std::vector<bool> OpaClient::parseAllowedIndices(const Poco::URI & uri, const St
             response_body);
     }
 
-    const auto array = result.extract<Poco::JSON::Array::Ptr>();
+    const auto & array = result.extract<Poco::JSON::Array::Ptr>();
 
     for (size_t i = 0; i < array->size(); ++i)
     {
