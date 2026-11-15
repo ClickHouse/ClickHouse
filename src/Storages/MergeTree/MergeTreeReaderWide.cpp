@@ -305,12 +305,12 @@ size_t MergeTreeReaderWide::readRows(
 namespace
 {
 
-/// Whether the default expression of a requested column uses one of `columns`, directly or through the default
-/// expressions of other columns. A default expression can be evaluated before the filter that keeps the selected rows,
-/// for a column that is not read from the part - which is missing, or dropped or renamed by a pending mutation - so
-/// such an expression could use the placeholder values of the rows that are not selected. Whether a column is read from
-/// the part is not checked: every column with a default expression is assumed to be computed from it.
-bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NamesAndTypesList & requested_columns, const NameSet & columns)
+/// Whether a default expression of any column of the table uses one of `columns`. A default expression can be evaluated
+/// before the filter that keeps the selected rows, for a column that is not read from the part, and it would then use the
+/// placeholder values of the rows that are not selected. Which columns are computed from their defaults depends on how
+/// the requested columns are named (members of `Nested`, subcolumns, pending renames), so every default is checked.
+/// A chain of defaults ends in a default that uses one of `columns` directly, so the chains are not followed.
+bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NameSet & columns)
 {
     auto uses_column = [&](const String & name)
     {
@@ -323,37 +323,18 @@ bool defaultExpressionsUse(const ColumnsDescription & table_columns, const Names
         return false;
     };
 
-    NameSet visited;
-    std::vector<String> pending;
-    for (const auto & column : requested_columns)
+    for (const auto & [name, column_default] : table_columns.getDefaults())
     {
-        /// A member of `Nested`, such as `n.d`, is requested as a subcolumn of `n`, but has a default of its own.
-        pending.push_back(column.name);
-        pending.push_back(column.getNameInStorage());
-    }
-
-    while (!pending.empty())
-    {
-        String name = std::move(pending.back());
-        pending.pop_back();
-        if (!visited.insert(name).second)
+        if (!column_default.expression)
             continue;
 
-        const auto column_default = table_columns.getDefault(name);
-        if (!column_default || !column_default->expression)
-            continue;
-
-        std::vector<const IAST *> nodes{column_default->expression.get()};
+        std::vector<const IAST *> nodes{column_default.expression.get()};
         while (!nodes.empty())
         {
             const IAST * node = nodes.back();
             nodes.pop_back();
-            if (const auto * identifier = node->as<ASTIdentifier>())
-            {
-                if (uses_column(identifier->name()))
-                    return true;
-                pending.push_back(identifier->name());
-            }
+            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && uses_column(identifier->name()))
+                return true;
             for (const auto & child : node->children)
                 nodes.push_back(child.get());
         }
@@ -409,7 +390,7 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
             columns_with_placeholders.insert(column.getNameInStorage());
     }
 
-    if (columns_with_placeholders.empty() || defaultExpressionsUse(metadata.getColumns(), getColumns(), columns_with_placeholders))
+    if (columns_with_placeholders.empty() || defaultExpressionsUse(metadata.getColumns(), columns_with_placeholders))
         return;
 
     std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
