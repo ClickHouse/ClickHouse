@@ -16,7 +16,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
@@ -250,9 +250,8 @@ void loadConfigProperty(
     setKafkaConfigValue(kafka_config, tag, property_value);
 }
 
-void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const String & collection_name, const String & config_prefix)
+void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const NamedCollectionPtr & collection, const String & config_prefix)
 {
-    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     for (const auto & key : collection->getKeys(-1, config_prefix))
     {
         // Cut prefix with '.' before actual config tag.
@@ -264,15 +263,15 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Str
 void loadLegacyTopicConfig(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const String & config_prefix)
 {
     /// For the topic `topic` the legacy section is `kafka_topic`, skip it if it is a new syntax section with `<name>`.
     const String name_path = config_prefix + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
-    if (!collection_name.empty())
+    if (collection)
     {
-        if (!NamedCollectionFactory::instance().get(collection_name)->has(name_path))
-            loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        if (!collection->has(name_path))
+            loadNamedCollectionConfig(kafka_config, collection, config_prefix);
         return;
     }
 
@@ -292,14 +291,13 @@ void loadLegacyTopicConfig(
 void loadTopicConfig(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const String & config_prefix,
     const String & topic)
 {
-    if (!collection_name.empty())
+    if (collection)
     {
         const auto topic_prefix = fmt::format("{}.{}", config_prefix, KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG);
-        const auto & collection = NamedCollectionFactory::instance().get(collection_name);
         for (const auto & key : collection->getKeys(1, config_prefix))
         {
             /// Only consider key <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
@@ -310,7 +308,7 @@ void loadTopicConfig(
             const String kafka_topic_name_path = kafka_topic_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
             if (topic == collection->get<String>(kafka_topic_name_path))
                 /// Found it! Now read the per-topic configuration into cppkafka.
-                loadNamedCollectionConfig(kafka_config, collection_name, kafka_topic_path);
+                loadNamedCollectionConfig(kafka_config, collection, kafka_topic_path);
         }
     }
     else
@@ -332,9 +330,8 @@ void loadTopicConfig(
 void loadFromConfig(
     cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params, const String & config_prefix)
 {
-    if (!params.collection_name.empty())
+    if (const auto & collection = params.collection)
     {
-        const auto & collection = NamedCollectionFactory::instance().get(params.collection_name);
         const auto keys = collection->getKeys(-1, config_prefix);
         for (const auto & key : keys)
         {
@@ -402,7 +399,7 @@ void loadFromConfig(
 
                 if (topic_name != topic)
                     continue;
-                loadTopicConfig(kafka_config, params.config, params.collection_name, kafka_topic_path, topic);
+                loadTopicConfig(kafka_config, params.config, params.collection, kafka_topic_path, topic);
             }
             continue;
         }
@@ -422,20 +419,20 @@ void loadFromConfig(
 void loadLegacyConfigSyntax(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const Names & topics)
 {
     for (const auto & topic : topics)
     {
         const String kafka_topic_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_TAG + "_" + topic;
-        loadLegacyTopicConfig(kafka_config, config, collection_name, kafka_topic_path);
+        loadLegacyTopicConfig(kafka_config, config, collection, kafka_topic_path);
     }
 }
 
 void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String consumer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, consumer_path);
 }
@@ -443,7 +440,7 @@ void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String producer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, producer_path);
 }

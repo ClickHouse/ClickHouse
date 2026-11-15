@@ -39,6 +39,25 @@ echo "topic property set: $(grep -c 'Consumer set property retry.backoff.ms:777'
 echo "other topic property set: $(grep -c 'Consumer set property reconnect.backoff.ms:777' <<< "$logs")"
 echo "rejected properties: $(grep -c 'No such configuration property' <<< "$logs")"
 
+# Nested keys given in the table definition replace or add to the ones of the collection.
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE kafka_probe;
+    CREATE TABLE kafka_probe (x UInt64) ENGINE = Kafka($collection,
+        \`kafka.consumer.fetch_min_bytes\` = '888',
+        \`kafka.consumer.fetch_wait_max_ms\` = '888',
+        \`kafka.kafka_topic.retry_backoff_ms\` = '888')
+        SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100;
+"
+
+logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
+    SELECT * FROM kafka_probe LIMIT 1 SETTINGS stream_like_engine_allow_direct_select = 1
+" 2>&1 >/dev/null)
+
+echo "overridden consumer property set: $(grep -c 'Consumer set property fetch.min.bytes:888' <<< "$logs")"
+echo "added consumer property set: $(grep -c 'Consumer set property fetch.wait.max.ms:888' <<< "$logs")"
+echo "overridden topic property set: $(grep -c 'Consumer set property retry.backoff.ms:888' <<< "$logs")"
+echo "stored values set: $(grep -cE 'Consumer set property (fetch.min.bytes|retry.backoff.ms):777' <<< "$logs")"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE kafka_probe;
     DROP NAMED COLLECTION $collection;

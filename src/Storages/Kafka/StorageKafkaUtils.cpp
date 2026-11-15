@@ -117,8 +117,8 @@ void registerStorageKafka(StorageFactory & factory)
         const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+        NamedCollectionPtr named_collection;
+        if (auto collection_with_overrides = tryGetNamedCollectionWithOverrides(
             args.engine_args,
             args.getLocalContext(),
             /*throw_unknown_collection=*/ true,
@@ -126,8 +126,9 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            kafka_settings->loadFromNamedCollection(named_collection);
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+            kafka_settings->loadFromNamedCollection(collection_with_overrides);
+            /// The extended librdkafka properties are read from the collection with the overrides when a consumer or producer is created.
+            named_collection = std::move(collection_with_overrides);
         }
 
         if (has_settings)
@@ -185,7 +186,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
         /// In case of named collection we already validated the arguments.
-        if (collection_name.empty())
+        if (!named_collection)
         {
             CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0, String)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1, String)
@@ -296,7 +297,7 @@ void registerStorageKafka(StorageFactory & factory)
                     "(requires 'kafka_keeper_path' and 'kafka_replica_name' to be set)");
 
             return std::make_shared<StorageKafka>(
-                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), named_collection);
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
@@ -363,7 +364,7 @@ void registerStorageKafka(StorageFactory & factory)
         (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
 
         return std::make_shared<StorageKafka2>(
-            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), named_collection);
     };
 
     factory.registerStorage(
