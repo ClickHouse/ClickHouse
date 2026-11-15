@@ -133,8 +133,7 @@ private:
     /// swallowed on purpose - the fail-closed default takes over.
     String postProcessResponse(const String & raw_response) const override
     {
-        std::string_view trimmed = trimWhitespace(raw_response);
-        if (!trimmed.starts_with('{'))
+        if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;
 
         try
