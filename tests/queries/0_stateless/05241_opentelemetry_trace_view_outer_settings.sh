@@ -14,7 +14,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select toString(generateUUIDv4())")
 
 ${CLICKHOUSE_CLIENT} -q "
     insert into system.opentelemetry_span_log
-        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, finish_date, attribute)
+        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, event_date, attribute)
     values
         ('h', '$trace_id', 1, 0, 'query',   'SERVER',   1000, 9000, today(), map()),
         ('h', '$trace_id', 2, 1, 'child_a', 'INTERNAL', 2000, 4000, today(), map()),

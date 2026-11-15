@@ -11,7 +11,6 @@
 --   * session 0 with a subquery SETTINGS ... = 1: the local context buffers it (the last case here).
 
 -- Correlated subqueries are only supported by the analyzer.
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 -- Parallel replicas change the decorrelation execution path and row distribution; pin it off so the
 -- per-part _part_offset row counts are deterministic (same as the sibling decorrelation test 03734).

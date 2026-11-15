@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionTimestamp.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
@@ -15,6 +16,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionStepRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
 
@@ -37,6 +39,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionScalar(function_name))
         return applyFunctionScalar(function_node, std::move(arguments), context);
+
+    if (isFunctionStepRange(function_name))
+        return fromFunctionStepRange(function_node, std::move(arguments), context);
 
     if (isFunctionTime(function_name))
         return fromFunctionTime(function_node, std::move(arguments), context);
@@ -70,6 +75,9 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionQuantileOverTime(function_name))
         return applyFunctionQuantileOverTime(function_node, std::move(arguments), context);
+
+    if (isFunctionTimestamp(function_name))
+        return applyFunctionTimestamp(function_node, std::move(arguments), context);
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);

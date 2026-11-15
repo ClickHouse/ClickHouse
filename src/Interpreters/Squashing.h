@@ -65,9 +65,15 @@ public:
     Chunk generate(bool flush_if_enough_size = false);
     static Chunk squash(Chunk && input_chunk, SharedHeader header);
 
+    /// Concatenate complete chunks in input order, discarding their `ChunkInfo`. This is for consumers
+    /// whose output no longer represents the source chunks, such as sorting or lazy materialization.
+    static Chunk squashWithoutChunkInfo(Chunks && input_chunks);
+
     Chunk flush();
 
     bool empty() const { return !accumulated; }
+    /// Rows added but not yet generated.
+    size_t getRows() const { return accumulated.getRows() + pending.getRows(); }
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
     const SharedHeader & getHeader() const { return header; }
 
@@ -161,15 +167,9 @@ private:
     bool oneMaxReached(size_t rows, size_t bytes) const;
 
     static Chunk squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkInfoCollection && infos, SharedHeader header);
-    static Chunk squash(Chunks &&input_chunks);
     static Chunk squash(ChunksWithOffsetsAndLengths && input_data);
 
     Chunk convertToChunk();
-
-    // LazyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
-    // that method does not handle ChunkInfos,
-    // therefore it is private method to force using Squashing instance with proper arguments
-    friend class LazyMaterializingTransform;
 };
 
 }

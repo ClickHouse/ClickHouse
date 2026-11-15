@@ -10,6 +10,8 @@ ClickHouse Cloud admite la creación de copias de seguridad en la cuenta de su p
 Para obtener más información sobre cómo funcionan las copias de seguridad en ClickHouse Cloud, incluidas las copias de seguridad &quot;completas&quot; frente a las &quot;incrementales&quot;, consulte la documentación sobre [copias de seguridad](/es/products/cloud/guides/backups/review-and-restore-backups). Tenga en cuenta que
 las copias de seguridad en su propia cuenta en la nube se diferencian de las copias de seguridad de Cloud in situ en un aspecto importante: no pueden usar copia nativa (consulte la nota a continuación).
 
+Exportar copias de seguridad a su propia cuenta no desactiva, por lo general, las copias de seguridad administradas por ClickHouse. Estas copias de seguridad no se pueden desactivar por cuenta propia. Cualquier excepción requiere la aprobación de ClickHouse y cambios contractuales; póngase en contacto con el [soporte de ClickHouse](https://clickhouse.com/support/program) para analizar sus requisitos.
+
 En esta guía, mostramos ejemplos de cómo crear copias de seguridad completas e incrementales en el almacenamiento de objetos de AWS, GCP y Azure, así como de cómo restaurarlas.
 
 <Note>
@@ -27,17 +29,13 @@ En esta guía, mostramos ejemplos de cómo crear copias de seguridad completas e
   copias de seguridad a su propio bucket es más lento y consume más recursos que las copias de seguridad estándar de Cloud in situ.
 </Warning>
 
-<div id="requirements">
-  ## Requisitos
-</div>
+## Requisitos {#requirements}
 
 Antes de ejecutar un comando `BACKUP`, asegúrese de que su usuario de ClickHouse tenga el privilegio `BACKUP`. El `default_role` en ClickHouse Cloud no incluye este privilegio. Póngase en contacto con [soporte de ClickHouse](https://clickhouse.com/support/program) para solicitarlo antes de exportar copias de seguridad.
 
 Necesitará los siguientes datos para exportar/restaurar copias de seguridad en el bucket de almacenamiento de su propio proveedor de servicios en la nube (CSP).
 
-<div id="aws">
-  ### AWS
-</div>
+### AWS {#aws}
 
 1. endpoint de S3 de AWS, en el formato:
 
@@ -62,17 +60,13 @@ Dónde:
   Para usar la autenticación basada en roles, siga la [configuración](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) de Secure S3. Además, deberá añadir los permisos `s3:PutObject` y `s3:DeleteObject` a la política de IAM descrita [aquí.](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
 </Note>
 
-<div id="azure">
-  ### Azure
-</div>
+### Azure {#azure}
 
 1. Cadena de conexión de Azure Storage.
 2. Nombre del contenedor en la cuenta de almacenamiento de Azure.
 3. Blob de Azure en el contenedor.
 
-<div id="google-cloud-storage-gcs">
-  ### Google Cloud Storage (GCS)
-</div>
+### Google Cloud Storage (GCS) {#google-cloud-storage-gcs}
 
 1. endpoint de GCS, con el formato:
 
@@ -83,17 +77,11 @@ Dónde:
 
 <hr />
 
-<div id="backup-restore">
-  ## Copia de seguridad / Restauración
-</div>
+## Copia de seguridad / Restauración {#backup-restore}
 
-<div id="backup--restore-to-aws-s3-bucket">
-  ## Copia de seguridad / restauración en un bucket de S3 de AWS
-</div>
+## Copia de seguridad / restauración en un bucket de S3 de AWS {#backup--restore-to-aws-s3-bucket}
 
-<div id="take-a-db-backup">
-  ### Hacer una copia de seguridad de la base de datos
-</div>
+### Hacer una copia de seguridad de la base de datos {#take-a-db-backup}
 
 **Copia de seguridad completa**
 
@@ -117,9 +105,7 @@ TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key
 SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de una copia de seguridad
-</div>
+### Restaurar a partir de una copia de seguridad {#restore-from-a-backup}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -129,13 +115,9 @@ FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<k
 
 Consulte: [Configuración de BACKUP/RESTORE para usar un endpoint de S3](/es/concepts/features/backup-restore/s3-endpoint) para obtener más información.
 
-<div id="backup--restore-to-azure-blob-storage">
-  ## Copia de seguridad / restauración en Azure Blob Storage
-</div>
+## Copia de seguridad / restauración en Azure Blob Storage {#backup--restore-to-azure-blob-storage}
 
-<div id="take-a-db-backup">
-  ### Hacer una copia de seguridad de la base de datos
-</div>
+### Hacer una copia de seguridad de la base de datos {#take-a-db-backup-1}
 
 **Copia de seguridad completa**
 
@@ -154,9 +136,7 @@ TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container
 SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de una copia de seguridad
-</div>
+### Restaurar a partir de una copia de seguridad {#restore-from-a-backup-1}
 
 ```sql
 RESTORE DATABASE test_backups 
@@ -166,13 +146,9 @@ FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<contain
 
 Consulte: [Configuración de BACKUP/RESTORE para usar un endpoint de AzureBlobStorage](/es/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) para más detalles.
 
-<div id="backup--restore-to-google-cloud-storage-gcs">
-  ## Copia de seguridad / restauración en Google Cloud Storage (GCS)
-</div>
+## Copia de seguridad / restauración en Google Cloud Storage (GCS) {#backup--restore-to-google-cloud-storage-gcs}
 
-<div id="take-a-db-backup">
-  ### Hacer una copia de seguridad de la base de datos
-</div>
+### Hacer una copia de seguridad de la base de datos {#take-a-db-backup-2}
 
 **Copia de seguridad completa**
 
@@ -191,9 +167,7 @@ TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', '
 SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
 ```
 
-<div id="restore-from-a-backup">
-  ### Restaurar a partir de una copia de seguridad
-</div>
+### Restaurar a partir de una copia de seguridad {#restore-from-a-backup-2}
 
 ```sql
 RESTORE DATABASE test_backups 

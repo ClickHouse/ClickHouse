@@ -1,0 +1,40 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+    </settings>
+
+    <!-- High-entropy data in 64 KiB blocks: ZSTD stores it raw, so the per-block cost of the ZSTD context dominates. -->
+    <create_query>
+        CREATE TABLE zstd_ctx_select (n UInt64 CODEC(ZSTD(3)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_compress_block_size = 65536, max_compress_block_size = 65536, auto_statistics_types = ''
+    </create_query>
+    <create_query>
+        CREATE TABLE zstd_ctx_merge (n UInt64 CODEC(ZSTD(3)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_compress_block_size = 65536, max_compress_block_size = 65536, auto_statistics_types = ''
+    </create_query>
+    <create_query>
+        CREATE TABLE zstd_ctx_insert (n UInt64 CODEC(ZSTD(3)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_compress_block_size = 65536, max_compress_block_size = 65536, auto_statistics_types = '',
+            parts_to_delay_insert = 5000, parts_to_throw_insert = 5000
+    </create_query>
+    <create_query>SYSTEM STOP MERGES zstd_ctx_insert</create_query>
+
+    <fill_query>INSERT INTO zstd_ctx_select SELECT intHash64(number) FROM numbers(150000000)</fill_query>
+    <fill_query>INSERT INTO zstd_ctx_merge SELECT intHash64(number) FROM numbers(50000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE zstd_ctx_select FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE zstd_ctx_merge FINAL</fill_query>
+
+    <query>SELECT n FROM zstd_ctx_select FORMAT Null</query>
+    <query>INSERT INTO zstd_ctx_insert SELECT intHash64(number) FROM numbers(30000000)</query>
+    <!-- Re-merge of the single part (1 -> 1): decompresses and recompresses every block. -->
+    <query>OPTIMIZE TABLE zstd_ctx_merge FINAL</query>
+
+    <drop_query>DROP TABLE IF EXISTS zstd_ctx_select</drop_query>
+    <drop_query>DROP TABLE IF EXISTS zstd_ctx_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS zstd_ctx_insert</drop_query>
+</test>

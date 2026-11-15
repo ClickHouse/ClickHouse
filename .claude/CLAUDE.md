@@ -146,11 +146,25 @@ When writing tests in tests/queries, prefer adding a new test instead of extendi
 
 When removing a feature, do not write tests asserting that the feature no longer exists (for example, a test checking that a removed function or setting now throws an error). Instead, delete the tests of the removed feature. Such tests only pin down the absence of something and become noise.
 
+Integration tests (`tests/integration/`) are the most expensive part of CI: about 40% of its cost, and the suite barely fits in its timeout. Add an integration test only when a stateless `.sql`/`.sh` test cannot cover the behavior, for example when it needs several servers, restarts, a real external service, or a special server configuration. Stateless tests already have ZooKeeper, local clusters (`remote('127.0.0.{1,2}')`, `test_cluster_one_shard_three_replicas_localhost`), failpoints, and S3 via MinIO. Keep integration tests small: reuse one module-scoped cluster, reuse existing test modules and their clusters where possible, cover a few core cases rather than a matrix of every combination, and never wait with a fixed `time.sleep`. Do not add integration tests of these kinds:
+- Rare corner cases that real users are not going to hit: hand-corrupted parts or metadata, contrived combinations of legacy formats and obsolete settings.
+- Tests of the test infrastructure (`helpers/cluster.py`, Python helpers, the CI image), or of developer tools, rather than of the server.
+- Tests of malformed or absurd configurations: the server refuses to start or reports a config error.
+- Trivia: a metric, profile event, log line, warning, or setting exists, has some value, or is re-read on config reload.
+- A dedicated cluster only to check that a disabled feature flag rejects a request.
+- Reproductions of an internal race that rebuild internals with failpoints and log-line assertions, probabilistic stress loops, and wall-clock timing assertions.
+- Duplicates of existing stateless tests, or tests that run existing stateless tests again with a setting changed.
+- Tests that are skipped as a whole or never run in CI.
+
+These categories do not cover tests of interoperability with external systems, such as data lakes (Iceberg, Delta Lake, Paimon), catalogs, and Spark. Such tests are valuable, including those for compatibility with files written by other implementations.
+
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
+
+When a job runs on another thread (`ThreadPool`, `ThreadPoolCallbackRunnerLocal`, `ThreadFromGlobalPool`), it must not use by reference anything that can be destroyed before the job is joined, including when a later scheduling throws. Capture by value, or declare everything the job uses, including a lambda it calls, before whatever joins the job: objects are destroyed in reverse order of declaration.
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
 
@@ -174,6 +188,8 @@ Link related pull requests and issues explicitly, using full GitHub URLs, one re
 - For any other relevant pull request or issue, put `Related: <full link>` on its own line.
 
 Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even though GitHub also auto-closes on `Fixes` and `Resolves`. `Caused by` and `Related` are not GitHub keywords and trigger no automatic closing; they are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
+
+When creating an issue about a bug or regression, try to find where it was introduced. If you can identify the pull request that caused it (for example with `git blame`, the bisect skill, or CI history), add `Caused by: <full link to the pull request>` to the issue body. If you can only narrow it down to a release, add the `v<major>.<minor>-affected` label (for example `v26.8-affected`) for each affected release; check which versions are affected by testing released binaries or by checking which release branches contain the causing commit (`git merge-base --is-ancestor <sha> origin/<branch>`). Add both when both are known. If you could not determine the origin, say so in the issue instead of guessing.
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
