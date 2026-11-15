@@ -1,6 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/105855
 --
--- Before the fix, the new analyzer did not push an outer `WHERE` through a
+-- Before the fix, the analyzer did not push an outer `WHERE` through a
 -- subquery containing a `LEFT JOIN` onto a `Distributed` (or `remote(...)`)
 -- table — the predicate stayed on the initiator, so every shard ran the
 -- full join over its entire data before the predicate filtered the result.
@@ -78,6 +78,7 @@ SELECT
 FROM system.query_log
 WHERE type = 'QueryStart'
   AND is_initial_query = 0
+  AND has(databases, currentDatabase())
   AND query ILIKE concat('%', currentDatabase(), '%t_left_join_pushdown_left%')
   AND event_time >= now() - INTERVAL 5 MINUTE;
 
