@@ -1834,6 +1834,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         it = insert_it;
     }
 
+    SCOPE_EXIT({
+        it->second.count--;
+        if (it->second.count == 0)
+            scope.identifier_in_lookup_process.erase(it);
+    });
+
     /// Resolve identifier from current scope
 
     IdentifierResolveResult resolve_result;
@@ -1964,13 +1970,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    it->second.count--;
-    if (it->second.count == 0)
-    {
-        scope.identifier_in_lookup_process.erase(it);
-        if (resolve_result.resolved_identifier)
-            scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
-    }
+    if (it->second.count == 1 && resolve_result.resolved_identifier)
+        scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
 
     return resolve_result;
 }
