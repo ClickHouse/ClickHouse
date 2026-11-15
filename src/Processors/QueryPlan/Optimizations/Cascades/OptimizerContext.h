@@ -23,6 +23,9 @@ struct OptimizerContext
     bool distributed_plan_force_shuffle_aggregation = false;
     bool distributed_plan_partial_aggregation_before_shuffle = true;
     bool cascades_aggregation_pushdown = true;
+    /// Lets a join or an aggregation take its inputs divided by a partition key component of the tables,
+    /// with no exchange.
+    bool distributed_plan_use_partition_key_layout = false;
     bool exact_rows_before_limit = false;
     /// Sort settings taken from the query (size limits, spill thresholds), used when
     /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.

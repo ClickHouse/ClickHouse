@@ -58,6 +58,20 @@ bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> &
     return true;
 }
 
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
+{
+    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            input_to_outputs[node->result_name].push_back(output->result_name);
+    }
+    return input_to_outputs;
+}
+
 bool translateSortDescription(const ActionsDAG & dag, SortDescription & sort_desc)
 {
     for (auto & col_desc : sort_desc)

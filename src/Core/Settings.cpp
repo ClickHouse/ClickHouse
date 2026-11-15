@@ -11496,6 +11496,12 @@ The rule-based planner keeps shuffling the input rows when column statistics sho
 Takes effect only together with `make_distributed_plan = 1`, and not with `distributed_plan_force_shuffle_aggregation`, which shuffles the input rows.
 )", BETA, \
         {"26.11", false, true, "New experimental setting: a distributed aggregation shuffles partial aggregation states instead of input rows."}) \
+    DECLARE(Bool, distributed_plan_use_partition_key_layout, false, R"(
+Experimental. Lets the Cascades optimizer run a join or a `GROUP BY` with no exchange when the tables already divide their rows by a function of the keys. Both tables of a join must have the same expression of the join keys in `PARTITION BY`, for example `cityHash64(user_id) % 16`. Each node then reads the partitions of its bucket from the two tables and joins them.
+The expression can hold only columns, literals and the functions `cityHash64`, `modulo`, `intDiv`, `toYYYYMM`, `toStartOfMonth` and `toDate`, over integers, strings, `Date` and `DateTime` with a time zone in its type. A table with another expression keeps a plan with an exchange.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.

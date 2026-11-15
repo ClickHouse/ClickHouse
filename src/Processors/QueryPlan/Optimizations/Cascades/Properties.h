@@ -6,10 +6,14 @@
 #include <base/types.h>
 #include <vector>
 #include <functional>
+#include <memory>
 #include <boost/functional/hash.hpp>
 
 namespace DB
 {
+
+class StorageLayoutFunction;
+using StorageLayoutFunctionPtr = std::shared_ptr<const StorageLayoutFunction>;
 
 /// A set of columns, but each column can also have multiple equivalent names derived from equality predicates
 using DistributionColumns = std::vector<NameSet>;
@@ -20,14 +24,23 @@ struct DistributionDescription
     /// Type each key is cast to before hashing (parallel to `columns`; empty when the raw
     /// types agree). Aligns buckets across both sides of a shuffle join.
     Names hash_type_names;
+    /// Set when a table read divides the rows, not the hash of an exchange: a row is on the node that
+    /// reads the parts with its value of this function (see `StorageLayoutFunction`). `columns` are then
+    /// the arguments of the function, in its order. Rows divided by one function in two inputs are
+    /// co-located; rows divided by a function and rows hashed by an exchange are not.
+    StorageLayoutFunctionPtr layout_function;
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
     size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for a shuffle exchange or a partitioned read.
 
-    bool operator==(const DistributionDescription & other) const = default;
+    /// Two layout functions are equal when they have the same structure, see `StorageLayoutFunction::equals`.
+    bool operator==(const DistributionDescription & other) const;
 
     void dump(WriteBuffer & out) const;
     String dump() const;
 };
+
+/// 0 when there is no layout function.
+size_t hashOfLayoutFunction(const StorageLayoutFunctionPtr & layout_function);
 
 /// How one node's streams relate to each other. `sorting` always describes each single
 /// stream; the layout says what crossing a stream boundary means.
@@ -77,6 +90,9 @@ struct ExpressionPropertiesHash
         }
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
+        /// Only when present, so that the hash of a distribution with no layout function does not change.
+        if (props.distribution.layout_function)
+            boost::hash_combine(h, hashOfLayoutFunction(props.distribution.layout_function));
         boost::hash_combine(h, static_cast<UInt8>(props.stream_layout));
         for (const auto & col_set : props.stream_disjoint_columns)
         {

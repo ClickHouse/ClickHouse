@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -8,6 +9,20 @@
 
 namespace DB
 {
+
+bool DistributionDescription::operator==(const DistributionDescription & other) const
+{
+    return columns == other.columns
+        && hash_type_names == other.hash_type_names
+        && is_replicated == other.is_replicated
+        && node_count == other.node_count
+        && sameStorageLayoutFunction(layout_function, other.layout_function);
+}
+
+size_t hashOfLayoutFunction(const StorageLayoutFunctionPtr & layout_function)
+{
+    return layout_function ? layout_function->getHash() : 0;
+}
 
 void ExpressionProperties::setDisjointStreams(DistributionColumns columns)
 {
@@ -107,6 +122,11 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.hash_type_names != existing.hash_type_names)
         return false;
 
+    /// Rows divided by a table read and rows hashed by an exchange are on different nodes, and so are
+    /// rows divided by two different functions.
+    if (!sameStorageLayoutFunction(required.layout_function, existing.layout_function))
+        return false;
+
     for (size_t i = 0; i < required.columns.size(); ++i)
     {
         const auto & required_column = required.columns[i];
@@ -139,6 +159,8 @@ void  ExpressionProperties::dump(WriteBuffer & out) const
     out << dumpSortDescription(sorting);
     out << "], {";
     out << fmt::format("{} nodes, {}, {}", distribution.node_count, distribution.is_replicated ? "replicated" : "not replicated", fmt::join(distribution.columns, ","));
+    if (distribution.layout_function)
+        out << ", layout " << distribution.layout_function->dump();
     if (stream_layout == StreamLayout::Single)
         out << ", single stream";
     else if (stream_layout == StreamLayout::Disjoint)

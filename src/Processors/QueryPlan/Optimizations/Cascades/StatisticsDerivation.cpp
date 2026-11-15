@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -479,23 +480,8 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
     }
 }
 
-/// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
-/// Value equality between renamed columns survives; a computed expression changes the values,
-/// so it must not keep an equivalence.
-static UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
-{
-    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
-    for (const auto * output : actions.getOutputs())
-    {
-        const auto * node = output;
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children.front();
-        if (node->type == ActionsDAG::ActionType::INPUT)
-            input_to_outputs[node->result_name].push_back(output->result_name);
-    }
-    return input_to_outputs;
-}
-
+/// A computed expression changes the values, so only the output names that carry an input column
+/// through unchanged keep an equivalence.
 static EquivalenceClasses<String> remapEquivalences(
     const EquivalenceClasses<String> & equivalences, const ActionsDAG & actions)
 {

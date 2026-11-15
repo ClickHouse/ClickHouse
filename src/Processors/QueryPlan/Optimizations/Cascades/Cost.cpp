@@ -236,6 +236,20 @@ Cost ParallelReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
     return cost;
 }
 
+Cost PartitionedReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    /// The node with the largest bucket finishes last.
+    Cost cost = fullReadCost(inputs);
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(inputs.step);
+    const Float64 largest_bucket_share = read_step ? read_step->getLargestDistributedReadBucketShare() : 0;
+    cost.work *= largest_bucket_share > 0 ? largest_bucket_share : 1.0 / inputs.node_count;
+    /// With equal buckets the cost would be equal to the cost of `ParallelRead`, and the order of the rules would
+    /// select one of them. A plan that does not use the layout must take `ParallelRead`, which balances the
+    /// nodes by marks, so this read costs a little more.
+    cost.work *= 1.0 + 1e-6;
+    return cost;
+}
+
 Cost ReplicatedReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
 {
     /// Shared storage: every node reads the full table from S3. No network.

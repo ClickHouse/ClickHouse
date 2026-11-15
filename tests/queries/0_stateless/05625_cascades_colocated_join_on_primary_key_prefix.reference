@@ -1,0 +1,17 @@
+-- the join is co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_pk_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_pk_right)
+-- every row is read one time: the result is the result of the plain engine
+10000	104995000	4995000
+10000	104995000	4995000
+-- the same for a join with GROUP BY the key in one fragment
+1000	10000	104995000
+1000	10000	104995000

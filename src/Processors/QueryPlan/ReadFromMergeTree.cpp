@@ -96,6 +96,8 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitors.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -7705,6 +7707,70 @@ VectorWithMemoryTracking<String> ReadFromMergeTree::serializeDistributedReadBuck
         result.push_back(buf.str());
     }
     return result;
+}
+
+/// The bucket of the parts whose partition key component has `value`. It depends only on the value, so
+/// two tables with the same component agree on it. An integer goes by its remainder: a component like
+/// `hash % 16` then fills 4 buckets evenly.
+static size_t bucketOfPartitionValue(const Field & value, size_t bucket_count)
+{
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() % bucket_count;
+    if (value.getType() == Field::Types::Int64)
+        return static_cast<UInt64>(value.safeGet<Int64>()) % bucket_count;
+
+    SipHash hash;
+    applyVisitor(FieldVisitorHash(hash), value);
+    return hash.get64() % bucket_count;
+}
+
+size_t ReadFromMergeTree::setupDistributedReadBucketsByPartitionValue(size_t component_index, size_t target_buckets)
+{
+    if (target_buckets == 0 || target_buckets > max_distributed_read_buckets || !supportsBucketedRead())
+        return 0;
+
+    /// `FINAL` can merge rows of different partitions, and this split could put them into different buckets.
+    if (isQueryWithFinal() && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return 0;
+
+    auto analysis = getOrCreateAnalyzedResult();
+    if (!analysis || analysis->parts_with_ranges.empty())
+        return 0;
+
+    /// A bucket can stay empty: the count must be `target_buckets` in every table of the join.
+    VectorWithMemoryTracking<DistributedReadBucket> buckets(target_buckets);
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        const auto & partition_value = part.data_part->partition.value;
+        if (component_index >= partition_value.size())
+            return 0;
+
+        RangesInDataPartDescription description;
+        description.info = part.data_part->info;
+        description.ranges = part.ranges;
+        buckets[bucketOfPartitionValue(partition_value[component_index], target_buckets)].marks.push_back(std::move(description));
+    }
+
+    distributed_read_lanes_per_task = 1;
+    setDistributedRead(buckets.size());
+    distributed_read_param_name = nextDistributedReadParamName();
+    distributed_read_buckets = std::move(buckets);
+    return distributed_read_buckets.size();
+}
+
+Float64 ReadFromMergeTree::getLargestDistributedReadBucketShare() const
+{
+    size_t total_marks = 0;
+    size_t largest_bucket_marks = 0;
+    for (const auto & bucket : distributed_read_buckets)
+    {
+        size_t bucket_marks = 0;
+        for (const auto & part : bucket.marks)
+            bucket_marks += part.ranges.getNumberOfMarks();
+        total_marks += bucket_marks;
+        largest_bucket_marks = std::max(largest_bucket_marks, bucket_marks);
+    }
+    return total_marks == 0 ? 0 : static_cast<Float64>(largest_bucket_marks) / static_cast<Float64>(total_marks);
 }
 
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
