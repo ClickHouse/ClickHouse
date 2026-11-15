@@ -1596,8 +1596,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         database->detachTable(system_context, replica_table_id.table_name);
     }
 
-    /// Any exception from here until attachTable leaves the table out of the tables map, so the catch below
-    /// removes it from the metadata digest.
+    /// A throw from here until attachTable leaves the table out of the tables map; the catch below drops it from the digest.
     StoragePtr new_table;
     String data_path;
     try
