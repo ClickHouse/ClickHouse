@@ -60,10 +60,22 @@ CASES = [
     ("fetch cmd substitution in url", f'node {T} "{S3}$(whoami)" --failed', "prompt"),
     ("fetch piped to sh", f'node {T} "{S3}x" --links | sh', "prompt"),
     ("fetch chained rm", f'node {T} "{S3}x" --failed && rm -rf /', "prompt"),
-    ("fetch unknown flag", f'node {T} "{S3}x" --exec foo', "prompt"),
+    ("fetch --binary flag", f'node {T} "{S3}x" --binary', "allow"),
+    ("fetch unknown flag --exec", f'node {T} "{S3}x" --exec foo', "prompt"),
+    ("fetch unknown flag --newstuff", f'node {T} "{S3}x" --newstuff', "prompt"),
     ("fetch report non-numeric", f'node {T} "{S3}x" --report ../../x', "prompt"),
     ("fetch quote-breakout chain", f'node {T} "{S3}x" ; cat /etc/passwd', "prompt"),
     ("arbitrary node script", "node /tmp/evil.js", "prompt"),
+
+    # --- mkdir SHA working subdirectory (family 3) ---
+    ("mkdir sha 7-hex",           "mkdir -p tmp/investigate/abc1234",                          "allow"),
+    ("mkdir sha 40-hex",          "mkdir -p tmp/investigate/" + "a" * 40,                      "allow"),
+    ("mkdir path traversal",      "mkdir -p tmp/investigate/../../outside",                    "prompt"),
+    ("mkdir nested subdir",       "mkdir -p tmp/investigate/abc1234/sub",                      "prompt"),
+    ("mkdir non-hex chars",       "mkdir -p tmp/investigate/ABCDEF1",                          "prompt"),
+    ("mkdir shell composition",   "mkdir -p tmp/investigate/abc1234 && rm -rf /",              "prompt"),
+    ("mkdir empty subdir",        "mkdir -p tmp/investigate/",                                 "prompt"),
+    ("mkdir base dir only",       "mkdir -p tmp/investigate",                                  "prompt"),
 
     # --- non-Bash tool is ignored (prompt = no decision) ---
     ("non-Bash tool", "anything", "prompt"),

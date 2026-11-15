@@ -32,8 +32,10 @@ void registerStorageNull(StorageFactory & factory)
 
         return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },
+    SecretArgumentsSpec{},
     {
         .supports_parallel_insert = true,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -77,11 +79,12 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);

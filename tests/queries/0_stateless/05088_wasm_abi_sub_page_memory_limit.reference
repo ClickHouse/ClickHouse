@@ -1,0 +1,6 @@
+A memory limit below one page is rejected
+WebAssembly memory limit is 1000 bytes, which is less than a single 65536 byte page
+A one-page limit passes the check and reaches instantiation
+memory minimum size of 2 pages exceeds memory limits
+A limit that fits the module runs the function
+[12]

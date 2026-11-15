@@ -1,0 +1,3 @@
+{"commitInfo": {"timestamp": 1700000000000, "operation": "CREATE TABLE", "operationParameters": {}, "isolationLevel": "Serializable", "isBlindAppend": true}}
+{"metaData": {"id": "00000000-0000-0000-0000-0000000000c2", "format": {"provider": "parquet", "options": {}}, "schemaString": "{\"type\": \"struct\", \"fields\": [{\"name\": \"id\", \"type\": \"long\", \"nullable\": true, \"metadata\": {}}, {\"name\": \"arr\", \"type\": {\"type\": \"array\", \"elementType\": \"string\", \"containsNull\": true}, \"nullable\": true, \"metadata\": {\"__CHAR_VARCHAR_TYPE_STRING\": \"array<varchar(5)>\"}}]}", "partitionColumns": [], "configuration": {}, "createdTime": 1700000000000}}
+{"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}}

@@ -1,0 +1,13 @@
+=== written_bytes is bucketed per normalized query hash for async inserts ===
+--- pattern A (Values), first insert is within the per-pattern limit ---
+allowed
+--- pattern A, second insert is still within its own bucket ---
+allowed
+--- pattern A, third insert exceeds its own bucket ---
+QUOTA_EXCEEDED
+--- pattern B (JSONEachRow, a different format hence a different hash) has its own bucket ---
+allowed
+--- pattern B, second insert is still within its own bucket ---
+allowed
+--- pattern B, third insert exceeds its own bucket ---
+QUOTA_EXCEEDED

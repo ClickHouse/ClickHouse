@@ -25,7 +25,7 @@ def check_page_index(file_path):
     metadata = pq.read_metadata(file_path)
     assert (
         metadata
-    ), "pyarrow.parquet library can't read parquet file written by Clickhouse"
+    ), "pyarrow.parquet library can't read parquet file written by ClickHouse"
     return metadata.row_group(0).column(0).has_offset_index
 
 

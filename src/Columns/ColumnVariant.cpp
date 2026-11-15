@@ -7,6 +7,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -27,6 +28,16 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCORRECT_DATA;
+}
+
+static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t num_variants, bool allow_logical_error)
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
+        throw Exception(
+            allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA,
+            "Invalid discriminator value {} (num_variants = {})",
+            static_cast<UInt32>(discr), num_variants);
 }
 
 std::string ColumnVariant::getName() const
@@ -65,7 +76,8 @@ void ColumnVariant::constructOffsetsFromDiscriminators()
     /// If we have only NULLs, offsets column will not contain any real offsets.
     if (hasOnlyNulls())
     {
-        offsets_data.resize(discriminators_concrete->size());
+        /// Offsets of NULL rows are never read for their value, but compression reads the whole buffer.
+        offsets_data.resize_fill(discriminators_concrete->size(), 0);
     }
     /// If we have only one non empty variant and no NULLs,
     /// offsets column will contain just sequential offsets 0, 1, 2, ...
@@ -428,6 +440,10 @@ void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
+    /// Include the global discriminator in the result so values of different variants get different names.
+    if (options.notFull(name_buf))
+        name_buf << static_cast<size_t>(globalDiscriminatorByLocal(discr)) << '_';
+
     variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
 }
 
@@ -439,6 +455,11 @@ bool ColumnVariant::isDefaultAt(size_t n) const
 bool ColumnVariant::isNullAt(size_t n) const
 {
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
+}
+
+bool ColumnVariant::hasOnlyTypeDefaults() const
+{
+    return hasOnlyNulls();
 }
 
 std::string_view ColumnVariant::getDataAt(size_t) const
@@ -844,6 +865,8 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ false);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
@@ -854,17 +877,6 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
     getOffsets().push_back(variants[local_discr]->size());
     variants[local_discr]->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
-{
-    Discriminator global_discr = 0;
-    readBinaryLittleEndian<Discriminator>(global_discr, in);
-
-    if (global_discr == NULL_DISCRIMINATOR)
-        return;
-
-    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
 char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
@@ -1502,11 +1514,26 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
+namespace
+{
+
+/// Source columns are addressed by the global discriminators of the column, so they must have the same number of variants.
+const ColumnVariant & getSourceVariantColumn(const IColumn & source, const ColumnVariant & column, std::string_view operation)
+{
+    const auto * source_variant = typeid_cast<const ColumnVariant *>(&source);
+    if (!source_variant || source_variant->getNumVariants() != column.getNumVariants())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Source column for {} of {} is not a Variant with the same number of variants, but {}", operation, column.getName(), source.getName());
+    return *source_variant;
+}
+
+}
+
 void ColumnVariant::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
-        new_size += source_column->size();
+        new_size += getSourceVariantColumn(*source_column, *this, "squashing").size();
     reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
@@ -1867,7 +1894,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         auto & discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
         {
-            if (null_map[i] ^ inverted)
+            if (!!null_map[i] != inverted)
             {
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
@@ -1933,7 +1960,7 @@ void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variant_col = assert_cast<const ColumnVariant &>(*source_column);
+        const auto & source_variant_col = getSourceVariantColumn(*source_column, *this, "merge");
         for (size_t i = 0; i != num_variants; ++i)
             variants_source_columns[i].push_back(source_variant_col.getVariantPtrByGlobalDiscriminator(i));
     }
@@ -1944,7 +1971,7 @@ void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
 void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
+    const auto & source_variant = getSourceVariantColumn(source, *this, "dynamic structure");
     size_t num_variants = variants.size();
     for (size_t i = 0; i != num_variants; ++i)
         getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
@@ -1957,12 +1984,12 @@ void ColumnVariant::fixDynamicStructure()
         variant->fixDynamicStructure();
 }
 
-void ColumnVariant::validateState() const
+void ColumnVariant::validateState(bool allow_logical_error) const
 {
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
     if (local_discriminators_data.size() != offsets_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
+        throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
 
     VectorWithMemoryTracking<size_t> actual_variant_sizes(variants.size());
     for (size_t i = 0; i != variants.size(); ++i)
@@ -1974,16 +2001,17 @@ void ColumnVariant::validateState() const
         auto local_discr = local_discriminators_data[i];
         if (local_discr != NULL_DISCRIMINATOR)
         {
+            checkDiscriminatorValue(local_discr, variants.size(), allow_logical_error);
             ++expected_variant_sizes[local_discr];
             if (offsets_data[i] >= actual_variant_sizes[local_discr])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
+                throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[local_discr]->getName(), variants[local_discr]->size());
         }
     }
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->size() != expected_variant_sizes[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+            throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
     }
 }
 
@@ -2000,6 +2028,9 @@ bool ColumnVariant::hasStatistics() const
 
 void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    for (const auto & source_column : source_columns)
+        getSourceVariantColumn(*source_column, *this, "statistics");
+
     /// Iterate by global discriminator: source columns are addressed by global discriminator,
     /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)
@@ -2013,4 +2044,17 @@ void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
 }
 
 
+ColumnPlanes ColumnVariant::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Variant, getLocalDiscriminators().data(), getOffsets().data());
+    const size_t num_variants = variants.size();
+    planes.children.reserve(num_variants);
+    planes.local_to_global.reserve(num_variants);
+    for (size_t i = 0; i < num_variants; ++i)
+    {
+        planes.children.push_back(&getVariantByGlobalDiscriminator(i));
+        planes.local_to_global.push_back(globalDiscriminatorByLocal(static_cast<Discriminator>(i)));
+    }
+    return planes;
+}
 }

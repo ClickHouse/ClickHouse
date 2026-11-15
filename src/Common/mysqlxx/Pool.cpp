@@ -9,10 +9,60 @@
 #include <mysqlxx/Pool.h>
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <ctime>
 
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// `mysql_real_connect` reinterprets these hosts and port 0; reject them so it dials exactly what `remote_url_allow_hosts` checked.
+void checkConnectionTarget(const std::string & server, unsigned port, const std::string & socket)
+{
+    std::string_view meaning;
+    if (server.contains('\0'))
+        meaning = "the end of the host";
+    else if (server.find_first_of(";=") != std::string::npos)
+        meaning = "a connection string";
+    else if (server.contains("://"))
+        meaning = "a connection plugin URL";
+    else if (server.contains(','))
+        meaning = "a list of hosts";
+
+    if (!meaning.empty())
+    {
+        std::string printable;
+        for (const char c : server)
+            printable += c == '\0' ? std::string_view("\\0") : std::string_view(&c, 1);
+
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL host '{}' contains syntax which the MySQL client library would read as {}. "
+            "Specify a plain host and port, and use the `socket` and `ssl_*` settings instead",
+            printable, meaning);
+    }
+
+    if (socket.contains('\0'))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "MySQL socket for host '{}' contains a NUL byte, where the MySQL client library would end it", server);
+
+    /// The client library uses the socket only for an empty host or `localhost`, otherwise it connects over TCP.
+    const bool uses_socket = !socket.empty() && (server.empty() || server == "localhost");
+    if (port == 0 && !uses_socket)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL port 0 for host '{}' would be replaced by the default port of the MySQL client library. Specify the port explicitly",
+            server);
+}
+
+}
 
 namespace mysqlxx
 {
@@ -78,15 +128,19 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         socket = cfg.has(config_name + ".socket")
             ? cfg.getString(config_name + ".socket")
             : cfg.getString(parent_config_name + ".socket", "");
-        ssl_ca = cfg.has(config_name + ".ssl_ca")
-            ? cfg.getString(config_name + ".ssl_ca")
-            : cfg.getString(parent_config_name + ".ssl_ca", "");
-        ssl_cert = cfg.has(config_name + ".ssl_cert")
-            ? cfg.getString(config_name + ".ssl_cert")
-            : cfg.getString(parent_config_name + ".ssl_cert", "");
-        ssl_key = cfg.has(config_name + ".ssl_key")
-            ? cfg.getString(config_name + ".ssl_key")
-            : cfg.getString(parent_config_name + ".ssl_key", "");
+        auto get_ssl_param = [&](const std::string & key)
+        {
+            return cfg.has(config_name + "." + key)
+                ? cfg.getString(config_name + "." + key)
+                : cfg.getString(parent_config_name + "." + key, "");
+        };
+        ssl_params.ca_path = get_ssl_param("ssl_ca");
+        ssl_params.cert_path = get_ssl_param("ssl_cert");
+        ssl_params.key_path = get_ssl_param("ssl_key");
+        ssl_params.ca_pem = get_ssl_param("ssl_ca_pem");
+        ssl_params.cert_pem = get_ssl_param("ssl_cert_pem");
+        ssl_params.key_pem = get_ssl_param("ssl_key_pem");
+        ssl_params.key_passphrase = get_ssl_param("ssl_key_passphrase");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
@@ -108,9 +162,13 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         port = cfg.getInt(config_name + ".port", 0);
         socket = cfg.getString(config_name + ".socket", "");
-        ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
-        ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
-        ssl_key = cfg.getString(config_name + ".ssl_key", "");
+        ssl_params.ca_path = cfg.getString(config_name + ".ssl_ca", "");
+        ssl_params.cert_path = cfg.getString(config_name + ".ssl_cert", "");
+        ssl_params.key_path = cfg.getString(config_name + ".ssl_key", "");
+        ssl_params.ca_pem = cfg.getString(config_name + ".ssl_ca_pem", "");
+        ssl_params.cert_pem = cfg.getString(config_name + ".ssl_cert_pem", "");
+        ssl_params.key_pem = cfg.getString(config_name + ".ssl_key_pem", "");
+        ssl_params.key_passphrase = cfg.getString(config_name + ".ssl_key_passphrase", "");
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
@@ -128,6 +186,8 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         cfg.getInt(config_name + ".rw_timeout",
             cfg.getInt("mysql_rw_timeout",
                 MYSQLXX_DEFAULT_RW_TIMEOUT));
+
+    resolved_ssl_paths = ResolvedSSLPaths(ssl_params);
 }
 
 
@@ -137,9 +197,7 @@ Pool::Pool(
      const std::string & user_,
      const std::string & password_,
      unsigned port_,
-     const std::string & ssl_ca_,
-     const std::string & ssl_cert_,
-     const std::string & ssl_key_,
+     const SSLParams & ssl_params_,
      const std::string & socket_,
      unsigned connect_timeout_,
      unsigned rw_timeout_,
@@ -158,9 +216,8 @@ Pool::Pool(
     , socket(socket_)
     , connect_timeout(connect_timeout_)
     , rw_timeout(rw_timeout_)
-    , ssl_ca(ssl_ca_)
-    , ssl_cert(ssl_cert_)
-    , ssl_key(ssl_key_)
+    , ssl_params(ssl_params_)
+    , resolved_ssl_paths(ssl_params_)
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
     , enable_compression(enable_compression_)
@@ -315,14 +372,15 @@ void Pool::Entry::forceConnected() const
                 pool->password.c_str(),
                 pool->port,
                 pool->socket.c_str(),
-                pool->ssl_ca.c_str(),
-                pool->ssl_cert.c_str(),
-                pool->ssl_key.c_str(),
+                pool->resolved_ssl_paths.getCA().c_str(),
+                pool->resolved_ssl_paths.getCert().c_str(),
+                pool->resolved_ssl_paths.getKey().c_str(),
                 pool->connect_timeout,
                 pool->rw_timeout,
                 pool->enable_local_infile,
                 pool->opt_reconnect,
-                pool->enable_compression);
+                pool->enable_compression,
+                pool->ssl_params.key_passphrase.c_str());
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -375,6 +433,9 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
+    /// All connections of the pool are created here.
+    checkConnectionTarget(server, port, socket);
+
     auto conn_ptr = std::make_unique<Connection>();
 
     try
@@ -392,24 +453,32 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             password.c_str(),
             port,
             socket.c_str(),
-            ssl_ca.c_str(),
-            ssl_cert.c_str(),
-            ssl_key.c_str(),
+            resolved_ssl_paths.getCA().c_str(),
+            resolved_ssl_paths.getCert().c_str(),
+            resolved_ssl_paths.getKey().c_str(),
             connect_timeout,
             rw_timeout,
             enable_local_infile,
             opt_reconnect,
-            enable_compression);
+            enable_compression,
+            ssl_params.key_passphrase.c_str());
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
-        LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        const bool permanent_error = e.errnum() == ER_ACCESS_DENIED_ERROR
+            || e.errnum() == ER_DBACCESS_DENIED_ERROR
+            || e.errnum() == ER_BAD_DB_ERROR;
+
+        /// A transient failure is left for the caller to tolerate (e.g. on ATTACH), so it is not an
+        /// error yet, while a permanent one must stay visible even if the caller tolerates it.
+        if (permanent_error)
+            LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        else
+            LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
 
         if (!online
             || (!was_successful && !dont_throw_if_failed_first_time)
-            || e.errnum() == ER_ACCESS_DENIED_ERROR
-            || e.errnum() == ER_DBACCESS_DENIED_ERROR
-            || e.errnum() == ER_BAD_DB_ERROR)
+            || permanent_error)
         {
             online = false;
             throw;
