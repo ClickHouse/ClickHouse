@@ -8,7 +8,6 @@
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Core/YTsaurus/YTsaurusClient.h>
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 namespace DB
@@ -18,6 +17,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
 class YTsarususDictionarySource final : public IDictionarySource
 {
 public:
@@ -25,8 +25,7 @@ public:
         ContextPtr context_,
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-        const Block & sample_block_,
-        const String & name);
+        const Block & sample_block_);
 
     YTsarususDictionarySource(const YTsarususDictionarySource & other);
 
@@ -60,8 +59,6 @@ private:
     const std::shared_ptr<YTsaurusStorageConfiguration> configuration;
     SharedHeader sample_block;
     YTsaurusClientPtr client;
-    const ThrottlerPtr lookup_throttler;
-    const String name;
 };
 
 }

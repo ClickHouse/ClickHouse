@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template<bool conform_rfc>
@@ -26,7 +27,23 @@ struct FunctionPortImpl : public IFunction
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(String, [const UInt16]) -> UInt16"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 1 && arguments.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                            getName(), arguments.size());
+
+        if (!WhichDataType(arguments[0].type).isString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                "Must be String.", arguments[0].type->getName(), getName());
+
+        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isUInt16())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}. "
+                "Must be UInt16.", arguments[1].type->getName(), getName());
+
+        return std::make_shared<DataTypeUInt16>();
+    }
 
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -82,47 +99,34 @@ private:
             return default_port;
 
         p = host.data() + host.size();
-
-        /// An IP-literal host is returned without its brackets (RFC 3986, 3.2.2:
-        /// `IP-literal = "[" ( IPv6address / IPvFuture ) "]"`), so for `http://[2001:db8::1]:8080/`
-        /// the port separator follows the closing bracket rather than the host itself.
-        if constexpr (conform_rfc)
-        {
-            if (p < end && *p == ']')
-                ++p;
-        }
-
-        if (p >= end || *p != ':')
+        if (*p++ != ':')
             return default_port;
-        ++p;
 
-        Int64 port = 0;
-        bool saw_digit = false;
+        Int64 port = default_port;
         while (p < end)
         {
-            if (*p == '/' || *p == '?' || *p == '#')
+            if (*p == '/')
                 break;
             if (!isNumericASCII(*p))
                 return default_port;
 
-            saw_digit = true;
             port = (port * 10) + (*p - '0');
             if (port < 0 || port > static_cast<UInt16>(-1))
                 return default_port;
             ++p;
         }
-        return saw_digit ? static_cast<UInt16>(port) : default_port;
+        return static_cast<UInt16>(port);
     }
 };
 
-struct FunctionPort final : public FunctionPortImpl<false>
+struct FunctionPort : public FunctionPortImpl<false>
 {
     static constexpr auto name = "port";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 };
 
-struct FunctionPortRFC final : public FunctionPortImpl<true>
+struct FunctionPortRFC : public FunctionPortImpl<true>
 {
     static constexpr auto name = "portRFC";
     String getName() const override { return name; }
@@ -178,9 +182,9 @@ Similar to [`port`](#port), but [RFC 3986](https://datatracker.ietf.org/doc/html
 SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:password@example.com:8080/');
         )",
         R"(
-┌─port('http://user:password@example.com:8080/')─┬─portRFC('http://user:password@example.com:8080/')─┐
-│                                              0 │                                              8080 │
-└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+┌─port('http:/⋯com:8080/')─┬─portRFC('htt⋯com:8080/')─┐
+│                        0 │                     8080 │
+└──────────────────────────┴──────────────────────────┘
         )"
     }
     };

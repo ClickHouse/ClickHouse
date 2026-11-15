@@ -122,11 +122,7 @@ def test(storage_policy, key_prefix):
         node.query("ALTER TABLE test MOVE PARTITION 0 TO TABLE test_dst")
 
         count_part_1 = int(node.query("SELECT count(*) FROM test WHERE id % 10 = 1"))
-        # Source partition 1 is empty when this node's random row count was 1 (only id=0).
-        # Opt in to the legacy no-op semantics; #104939 (fix for #23727) made empty-source REPLACE PARTITION throw by default.
-        node.query(
-            "ALTER TABLE test_dst REPLACE PARTITION 1 FROM test SETTINGS allow_replace_partition_from_empty_source = 1"
-        )
+        node.query("ALTER TABLE test_dst REPLACE PARTITION 1 FROM test")
 
         count_dst = int(node.query("SELECT count(*) FROM test_dst"))
         assert count_dst > 0
@@ -166,9 +162,7 @@ def test(storage_policy, key_prefix):
     metadata_count = 0
     for obj in list(metadata_it):
         if "/__meta/" in obj.object_name:
-            assert obj.object_name.endswith(
-                "/prefix.path"
-            ) or obj.object_name.endswith("/__meta/snapshot.bin")
+            assert obj.object_name.endswith("/prefix.path")
             metadata_count += 1
         else:
             assert not obj.object_name.endswith("/prefix.path")

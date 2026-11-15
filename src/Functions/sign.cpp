@@ -16,7 +16,6 @@ struct SignImpl
 {
     using ResultType = Int8;
     static constexpr bool allow_string_or_fixed_string = false;
-    static constexpr auto signature = "(Decimal | Integer | NativeFloat) -> Int8";
 
     ALWAYS_INLINE static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {

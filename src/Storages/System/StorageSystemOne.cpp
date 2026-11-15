@@ -1,14 +1,7 @@
 #include <Storages/System/StorageSystemOne.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <Core/ProtocolDefines.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -19,27 +12,19 @@
 namespace DB
 {
 
+
 StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     /// This column doesn't have a comment, because otherwise it will be added to all tables created via:
     /// CREATE TABLE test (dummy UInt8) ENGINE = Distributed(`default`, `system.one`)
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageSystemOne::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
 
-
-void StorageSystemOne::readImpl(
+void StorageSystemOne::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -64,24 +49,6 @@ ReadFromSystemOneStep::ReadFromSystemOneStep(
 }
 
 
-ReadFromSystemOneStep::ReadFromSystemOneStep(SharedHeader header_)
-    : ISourceStep(std::move(header_))
-{
-}
-
-
-void ReadFromSystemOneStep::serialize(Serialization &) const
-{
-    /// The step has no state of its own beyond its header.
-}
-
-
-QueryPlanStepPtr ReadFromSystemOneStep::deserialize(Deserialization & ctx)
-{
-    return std::make_unique<ReadFromSystemOneStep>(ctx.output_header);
-}
-
-
 void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
@@ -91,26 +58,6 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
     source->addTotalRowsApprox(1);
 
     pipeline.init(Pipe(source));
-}
-
-}
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }
-
-namespace DB
-{
-
-void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry);
-void registerReadFromSystemOneStep(QueryPlanStepRegistry & registry)
-{
-    /// Declared with the version that introduced the step rather than the default "since version 0":
-    /// an older peer does not know the name, so the registry must not write it into a stream below
-    /// that version.
-    registry.registerStep(
-        "ReadFromSystemOne",
-        &ReadFromSystemOneStep::deserialize,
-        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS}});
 }
 
 }

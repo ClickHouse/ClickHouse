@@ -114,7 +114,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
 std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
 {
-    chassert(request.size);
+    assert(request.size);
 
     // take lock here because we're modifying containers and submitting to the ring,
     // the monitor thread can also do the same
@@ -145,7 +145,7 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 return makeFailedResult(Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Tried enqueuing a read request into a buffer that is already submitted"));
+                    ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for {} that is already submitted", request_id));
             }
             return (kv->second).promise.get_future();
         }
@@ -221,7 +221,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
                 in_flight_requests.emplace(request_id, std::move(pending_request));
             else
                 failPromise(pending_request.promise, Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Tried enqueuing a pending read request into a buffer that is already submitted"));
+                    "Tried enqueuing pending read request for {} that is already submitted", request_id));
         }
         else
         {
@@ -282,7 +282,7 @@ void IOUringReader::monitorRing()
         const auto it = in_flight_requests.find(request_id);
         if (it == in_flight_requests.end())
         {
-            LOG_ERROR(log, "Got a completion event for a request that was not submitted");
+            LOG_ERROR(log, "Got a completion event for a request {} that was not submitted", request_id);
 
             io_uring_cqe_seen(&ring, cqe);
             continue;
@@ -312,8 +312,8 @@ void IOUringReader::monitorRing()
             int fd = assert_cast<const LocalFileDescriptor &>(*req.descriptor).fd;
             failRequest(it, Exception(
                 ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                "Failed reading {} bytes at offset {} from fd {}: {}",
-                req.size, req.offset, fd, errnoToString(-cqe->res)
+                "Failed reading {} bytes at offset {} to address {} from fd {}: {}",
+                req.size, req.offset, static_cast<void*>(req.buf), fd, errnoToString(-cqe->res)
             ));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);

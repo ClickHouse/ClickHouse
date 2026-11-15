@@ -1,4 +1,0 @@
-AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))	([1,2],[10.5,20.25])
-1
-AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))	([1,2],[10.5,20.25])
-AggregateFunction(1, sumMap, Array(UInt64), Array(Decimal(9, 2)))

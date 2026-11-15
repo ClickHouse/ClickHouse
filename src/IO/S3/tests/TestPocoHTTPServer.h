@@ -10,7 +10,6 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/ServerSocket.h>
@@ -18,18 +17,6 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/SharedPtr.h>
 #include <fmt/format.h>
-
-/// Keep-alive is disabled so a handler thread exits right after sending the response: it does
-/// not park on the connection until the keep-alive timeout (starving the shared default
-/// `Poco::ThreadPool`, capacity 16 for the whole test binary), and teardown does not need
-/// `stopAll(/* abortCurrent */ true)`, whose socket shutdown races with the handler thread
-/// closing the same socket at the end of `HTTPServerConnection::run` (reported by TSan).
-inline Poco::AutoPtr<Poco::Net::HTTPServerParams> makeMockServerParams()
-{
-    Poco::AutoPtr<Poco::Net::HTTPServerParams> params(new Poco::Net::HTTPServerParams());
-    params->setKeepAlive(false);
-    return params;
-}
 
 class MockRequestHandler : public Poco::Net::HTTPRequestHandler
 {
@@ -81,15 +68,10 @@ public:
     TestPocoHTTPServer():
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new HTTPRequestHandlerFactory(last_request_header)),
-        server_params(makeMockServerParams()),
+        server_params(new Poco::Net::HTTPServerParams()),
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
-    }
-
-    ~TestPocoHTTPServer()
-    {
-        server->stop();
     }
 
     std::string getUrl()
@@ -124,26 +106,22 @@ public:
         last_request_info.emplace();
         last_request_info->headers = request;
 
-        /// The parameters arrive form-encoded in the POST body, as the AWS SDK sends them.
-        Poco::Net::HTMLForm form(request, request.stream());
-        last_request_info->query_params.assign(form.begin(), form.end());
+        Poco::URI uri(request.getURI());
+        last_request_info->query_params = uri.getQueryParameters();
 
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
 
-        /// The response element names follow the action: `AssumeRole` or `AssumeRoleWithWebIdentity`.
-        const std::string action = form.get("Action", "AssumeRole");
         std::string result_xml = fmt::format(R"(
-<{0}Response xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
-<{0}Result>
+<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<AssumeRoleResult>
     <Credentials>
-        <AccessKeyId>{1}</AccessKeyId>
-        <SecretAccessKey>{2}</SecretAccessKey>
+        <AccessKeyId>{}</AccessKeyId>
+        <SecretAccessKey>{}</SecretAccessKey>
         <SessionToken>session_token</SessionToken>
-        <Expiration>2030-01-01T00:00:00Z</Expiration>
     </Credentials>
-</{0}Result>
-</{0}Response>)", action, role_access_key, role_secret_key);
+</AssumeRoleResult>
+</AssumeRoleResponse>)", role_access_key, role_secret_key);
         out << result_xml;
         out.flush();
     }
@@ -188,15 +166,10 @@ public:
     TestPocoHTTPStsServer(std::string role_access_key, std::string role_secret_key):
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, std::move(role_access_key), std::move(role_secret_key))),
-        server_params(makeMockServerParams()),
+        server_params(new Poco::Net::HTTPServerParams()),
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
-    }
-
-    ~TestPocoHTTPStsServer()
-    {
-        server->stop();
     }
 
     std::string getUrl()

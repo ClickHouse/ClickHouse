@@ -6,7 +6,4 @@ accurateCastOrNull with input_format_try_infer_dates=0
 {"d":"2020-01-01"}	String
 CAST with input_format_try_infer_dates=0
 {"d":"2020-01-01"}	String
-accurateCastOrDefault timezone substitution
-DateTime(\'Europe/Moscow\')
-DateTime64(3, \'Europe/Moscow\')
 1000

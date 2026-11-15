@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- Regression test: PREWHERE on a Parquet file with a column declared in the schema
 -- but not present in the actual file. When the missing column appears both in the
 -- PREWHERE condition and in the SELECT list, it stays in the format header as a
@@ -7,6 +9,7 @@
 -- uses PREWHERE output" or "PREWHERE appears to use its own output as input"
 -- exceptions (LOGICAL_ERROR).
 
+SET input_format_parquet_use_native_reader_v3 = 1;
 SET input_format_parquet_allow_missing_columns = 1;
 SET engine_file_truncate_on_insert = 1;
 

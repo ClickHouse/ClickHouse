@@ -3,7 +3,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -24,29 +23,11 @@ namespace ActionLocks
     extern const StorageActionBlockType VirtualPartsUpdate = 11;
     extern const StorageActionBlockType ReduceBlockingParts = 12;
     extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType StreamConsume = 14;
 }
 
 
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
 {
-}
-
-namespace
-{
-
-/// The key a lock for `table` is held under. A lazily loaded table is a `StorageTableProxy` until the
-/// database replaces it with the loaded storage, so `SYSTEM STOP ...` and `SYSTEM START ...` may see
-/// different objects for the same table. Both address the loaded storage. A proxy that has not been
-/// loaded cannot hold a lock: taking one loads the table.
-const IStorage * lockKey(const StoragePtr & table)
-{
-    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
-        if (auto loaded = proxy->getLoadedTable())
-            return loaded.get();
-    return table.get();
-}
-
 }
 
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
@@ -61,9 +42,8 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!action_lock.expired())
     {
-        const auto * key = lockKey(table);
         std::lock_guard lock(mutex);
-        storage_locks[key][action_type] = std::move(action_lock);
+        storage_locks[table.get()][action_type] = std::move(action_lock);
     }
 }
 
@@ -75,11 +55,10 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    const auto * key = lockKey(table);
     std::lock_guard lock(mutex);
 
-    if (auto it = storage_locks.find(key); it != storage_locks.end())
-        it->second.erase(action_type);
+    if (storage_locks.contains(table.get()))
+        storage_locks[table.get()].erase(action_type);
 }
 
 void ActionLocksManager::cleanExpired()

@@ -4,7 +4,9 @@
 # map that a client can write to with a `Scalar` packet (the `clickhouse-client --external ... --scalar`
 # feature). A restricted user could therefore name a client scalar with the policy subquery's query-tree
 # hash and forge its result, replacing `(SELECT [2])` with an attacker-chosen array and reading every
-# tenant's rows. This test pins that the forged client scalar is ignored by the policy.
+# tenant's rows. On 26.3 `clickhouse-client` cannot send scalars (no `--external ... --scalar`), so the
+# forged-scalar cases are left out and this test only pins the policy baseline and that scalars shipped
+# to shards in distributed queries still resolve.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,38 +32,8 @@ CREATE ROW POLICY ${policy} ON ${CLICKHOUSE_DATABASE}.docs FOR SELECT USING has(
 CREATE ROW POLICY ${policy}_all ON ${CLICKHOUSE_DATABASE}.docs FOR SELECT USING 1 TO ALL EXCEPT ${user};
 "
 
-# Derive the query-tree hash the policy subquery `(SELECT [2])` is cached under. ClickHouse prints it
-# itself as the argument of the internal `__getScalar` function (array/tuple scalars are rewritten to
-# it), so no access to `system.row_policies` is needed - exactly the disclosure a real attacker uses.
-# `enable_scalar_subquery_optimization` is pinned on: with it off the array subquery folds to a literal
-# instead of `__getScalar('<hash>')`, so the hash would not be derivable and the repro would not run.
-hash=$(${CLICKHOUSE_CLIENT} --query "EXPLAIN QUERY TREE SELECT has((SELECT [2]), materialize(1)) SETTINGS enable_scalar_subquery_optimization = 1" \
-    | grep -A3 'function_name: __getScalar' | grep -oE "[0-9]+_[0-9]+" | head -1)
-
-if [ -z "${hash}" ]; then echo "FAILED: could not derive scalar hash"; fi
-
-# The scalar the attacker injects: an array naming every tenant, so a successful bypass would return all 8 rows.
-scalar_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_scalar.tsv"
-echo '[0,1,2,3,4,5,6,7,8]' > "${scalar_file}"
-
 echo "-- baseline: the policy confines the user to its single tenant (1)"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.docs SETTINGS enable_scalar_subquery_optimization = 1"
-
-echo "-- with a forged client scalar named as the policy subquery hash, the policy still holds (1)"
-${CLICKHOUSE_CLIENT} --user "${user}" \
-    --external --name="${hash}" --scalar --file="${scalar_file}" --structure="x Array(UInt8)" --format=TSV \
-    --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.docs SETTINGS use_query_cache = 0, enable_scalar_subquery_optimization = 1"
-
-echo "-- and the visible tenant is unchanged (2)"
-${CLICKHOUSE_CLIENT} --user "${user}" \
-    --external --name="${hash}" --scalar --file="${scalar_file}" --structure="x Array(UInt8)" --format=TSV \
-    --query "SELECT DISTINCT tenant_id FROM ${CLICKHOUSE_DATABASE}.docs SETTINGS use_query_cache = 0, enable_scalar_subquery_optimization = 1"
-
-echo "-- a client scalar is still usable through an explicit __getScalar reference (42)"
-echo '42' > "${scalar_file}"
-${CLICKHOUSE_CLIENT} --user "${user}" \
-    --external --name="my_scalar" --scalar --file="${scalar_file}" --structure="x UInt64" --format=TSV \
-    --query "SELECT __getScalar('my_scalar')"
 
 # Marking wire scalars as client-supplied must not disturb distributed queries: the initiator computes
 # an array-returning scalar subquery once and ships the result to the shards in the same `Scalar` packet,
@@ -88,7 +60,6 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 
       WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 1
         AND current_database = currentDatabase() AND log_comment = '${log_comment}')"
 
-rm -f "${scalar_file}"
 ${CLICKHOUSE_CLIENT} --query "
 DROP ROW POLICY ${policy} ON ${CLICKHOUSE_DATABASE}.docs;
 DROP ROW POLICY ${policy}_all ON ${CLICKHOUSE_DATABASE}.docs;

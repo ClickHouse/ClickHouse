@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <mutex>
-#include <span>
 
 namespace DB
 {
@@ -15,7 +14,6 @@ namespace DB
 template <typename T>
 class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
-using ColumnUInt64 = ColumnVector<UInt64>;
 
 class IMergeTreeReader;
 class MergeTreeIndexGranularity;
@@ -52,16 +50,6 @@ struct PrewhereExprStep
 
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
-
-    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
-    bool query_condition_cache_attribution_boundary = false;
-
-    /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
-    /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
-    /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
-    /// count only these steps, so that a query without `PREWHERE` reports nothing and filtering by
-    /// mutations/policies is not attributed to `PREWHERE`.
-    bool is_query_prewhere = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -79,7 +67,6 @@ struct PrewhereExprInfo
 struct ReadStepPerformanceCounters
 {
     std::atomic<UInt64> rows_read = 0;
-    std::atomic<UInt64> rows_passed_filter = 0;
 };
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
@@ -145,13 +132,17 @@ class FilterWithCachedCount
     const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
 
-    ColumnPtr sparse_indices_holder;
-    const ColumnUInt64 * sparse_indices = nullptr;
-
 public:
     explicit FilterWithCachedCount() = default;
 
-    explicit FilterWithCachedCount(const ColumnPtr & column_);
+    explicit FilterWithCachedCount(const ColumnPtr & column_)
+        : const_description(*column_)
+    {
+        ColumnPtr col = column_->convertToFullIfNeeded();
+        FilterDescription desc(*col);
+        column = desc.data_holder ? desc.data_holder : col;
+        data = desc.data;
+    }
 
     bool present() const { return !!column; }
 
@@ -162,23 +153,15 @@ public:
 
     const IColumn::Filter & getData() const { return *data; }
 
-    bool isSparse() const { return sparse_indices != nullptr; }
-    const ColumnUInt64 * getSparseIndices() const { return sparse_indices; }
-
     size_t size() const { return column->size(); }
 
     size_t countBytesInFilter() const
     {
         if (cached_count_bytes == size_t(-1))
-            cached_count_bytes = sparse_indices ? sparse_indices->size() : DB::countBytesInFilter(*data);
+            cached_count_bytes = DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }
 };
-
-/// `getLogger` locks a process-global mutex and looks the logger up by name, while range readers are
-/// constructed once per read step for every read task, so the lookup is cached in a function-local
-/// static (defined in the .cpp, so that the cache is not duplicated per shared object).
-LoggerPtr getMergeTreeRangeReaderLogger();
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
@@ -211,20 +194,22 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, size_t current_range_last_mark_, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, size_t current_task_last_mark_, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(MutableColumns & columns, Columns & shared_columns);
+        size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
+
+        size_t currentTaskLastMark() const { return current_task_last_mark; }
 
     private:
         size_t current_mark = 0;
@@ -232,9 +217,8 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
-        /// End mark of the contiguous mark range being read. Bounds caching of
-        /// deserialized columns in the reader (see IMergeTreeReader::readRows).
-        size_t current_range_last_mark = 0;
+        /// Last mark from all ranges of current task.
+        size_t current_task_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -244,7 +228,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -253,11 +237,11 @@ private:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, size_t current_task_last_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(MutableColumns & columns, Columns & shared_columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(MutableColumns & columns, Columns & shared_columns);
+        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(Columns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -290,12 +274,9 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
-        size_t alignRowsToColumnsCacheStripes(
-            size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
-        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:
@@ -309,21 +290,10 @@ public:
         /// All read marks.
         MarkRanges read_mark_ranges;
 
-        /// Marks emptied by the steps up to the query condition cache attribution boundary.
-        MarkRanges query_condition_cache_attributable_marks;
-
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
-
-        /// Compute mark ranges for granules where all rows were filtered out by PREWHERE.
-        /// Provides fine-grained QueryConditionCache updates: captures individual filtered-out
-        /// granules even when other granules in the same batch pass the filter.
-        /// Safe to call only when use_query_condition_cache is enabled, because that flag
-        /// forces complete-granule reads (via ceilRowsToCompleteGranules), ensuring that
-        /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
-        MarkRanges computeUnmatchedMarkRanges() const;
 
     private:
         friend class MergeTreeRangeReader;
@@ -348,6 +318,8 @@ public:
         using RangesInfo = std::vector<RangeInfo>;
 
         explicit ReadResult(LoggerPtr log_) : log(log_) {}
+
+        static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
         /// Populate @rows_per_granule and @granule_offsets. See comments below.
         void addGranule(size_t num_rows_, GranuleOffset granule_offset);
@@ -380,52 +352,6 @@ public:
         /// Applies the filter to the columns and updates num_rows.
         void applyFilter(const FilterWithCachedCount & filter);
 
-        /// The number of rows that survived all filtering steps applied so far, per granule, parallel to
-        /// `rows_per_granule`. Unlike `rows_per_granule`, which holds the raw rows read for a granule whose
-        /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
-        /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
-        /// PREWHERE iff its entry here is 0.
-        NumRows survivingRowsPerGranule() const;
-
-        /// Calls `callback(mark, surviving_rows)` once for every granule that PREWHERE actually read, where
-        /// `mark` is the granule's mark number in the part and `surviving_rows` is
-        /// `surviving_rows_per_granule[i]` for it. The caller passes `survivingRowsPerGranule()` as the
-        /// survivors. A granule is "read by PREWHERE" only if rows reached the first query-PREWHERE step:
-        /// `entering_rows_per_granule[i] == 0` omits it, covering both a mark pruned before PREWHERE (a skip
-        /// index or the query condition cache) and a granule emptied by an earlier mutation/row-policy
-        /// filter. The caller passes the survivor count at the PREWHERE boundary (or the raw rows read when
-        /// PREWHERE is the first step). Uses the same mark mapping as `computeUnmatchedMarkRanges`. A granule
-        /// split across read blocks appears in each block it spans, so the caller must combine the pieces
-        /// (see `MergeTreeReadersChain` PREWHERE granule stats).
-        template <typename Callback>
-        void forEachGranuleMark(const NumRows & entering_rows_per_granule, const NumRows & surviving_rows_per_granule, Callback && callback) const
-        {
-            if (rows_per_granule.empty())
-                return;
-
-            /// The first i_start entries come from the in-progress range carried over from the previous
-            /// read; their marks start at in_progress_start_mark. The rest belong to started_ranges.
-            const size_t i_start = started_ranges.empty() ? rows_per_granule.size() : started_ranges[0].num_granules_read_before_start;
-
-            if (in_progress_start_mark.has_value())
-                for (size_t i = 0; i < i_start; ++i)
-                    if (entering_rows_per_granule[i] != 0)
-                        callback(*in_progress_start_mark + i, surviving_rows_per_granule[i]);
-
-            size_t range_idx = 0;
-            for (size_t i = i_start; i < rows_per_granule.size(); ++i)
-            {
-                while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
-                    ++range_idx;
-
-                if (entering_rows_per_granule[i] == 0)
-                    continue;
-
-                const size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
-                callback(started_ranges[range_idx].range.begin + offset, surviving_rows_per_granule[i]);
-            }
-        }
-
         /// Verifies that columns and filter sizes match.
         /// The checks might be non-trivial so it make sense to have the only in debug builds.
         void checkInternalConsistency() const;
@@ -445,13 +371,6 @@ public:
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
 
-        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
-        /// the stream's current mark at that point. The first
-        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
-        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
-        /// when the stream was unfinished at entry; absent when the stream was already done.
-        std::optional<size_t> in_progress_start_mark;
-
         /// Number of rows intended to be read per granule during the reading chain.
         ///
         /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
@@ -466,30 +385,13 @@ public:
         /// Granule i+2     8192                      3000       3000                   1000
         /// Granule i+3     1000 (last incomplete)    1000       1000                   1000
         NumRows rows_per_granule;
-        /// Rows physically read per granule by the reader, parallel to `rows_per_granule`, as passed to
-        /// `addGranule` and never reduced by filtering. It is 0 only for a mark that was skipped before
-        /// PREWHERE evaluated it (pruned by a skip index or the query condition cache via `canSkipMark`),
-        /// which `rows_per_granule` cannot distinguish from a granule PREWHERE read and fully dropped.
-        NumRows raw_rows_per_granule;
         /// Stores starting row offset and granule index for each granule.
         /// Used to generate _part_offset and _part_granule_offset columns.
         GranuleOffsets granule_offsets;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
-        /// The number of rows read at the first step. A step that materializes no on-disk column
-        /// contributes its granule-derived row count, so this is zero only when no granule was read.
+        /// The number of rows was read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
-
-        /// Diagnostic counters for debugging adjustLastGranule assertions.
-        /// These track where addRows() increments came from in startReadingChain().
-        size_t debug_rows_from_read_in_loop = 0;       /// rows from stream.read() inside the loop
-        size_t debug_rows_from_finalize_in_loop = 0;    /// rows from stream.finalize() at range boundaries
-        size_t debug_rows_from_finalize_post_loop = 0;  /// rows from stream.finalize() after the loop
-        size_t debug_max_rows = 0;                      /// max_rows parameter passed to startReadingChain
-        size_t debug_num_ranges_processed = 0;          /// number of ranges processed
-        size_t debug_skipped_marks = 0;                 /// marks skipped via canSkipMark
-        bool debug_use_query_condition_cache = false;
-        bool debug_can_read_incomplete_granules = false;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
@@ -515,24 +417,18 @@ public:
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
-        size_t countZeroTailsFromSparse(const ColumnUInt64 & sparse_indices, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
     };
 
-    /// `max_block_size_rows` is the limit of rows in a block (`max_block_size`, lowered by a `LIMIT`), which `max_rows`
-    /// can be below of to keep to `preferred_block_size_bytes`. 0 if not known.
-    /// `columns_cache_readers` are the readers of the chain that read columns, which decide together how its blocks
-    /// are aligned with the stripes of the columns cache; only this reader if empty.
-    ReadResult startReadingChain(
-        size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
+    ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
     const Block & getSampleBlock() const { return result_sample_block; }
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
-    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const;
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
@@ -552,18 +448,11 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    const PrewhereExprStep * prewhere_info{};
+    const PrewhereExprStep * prewhere_info;
 
     Stream stream;
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
-
-    /// Positions in `read_sample_block` of the virtual columns that may be filled by this reader.
-    /// They are found once, so that a lookup by name is not needed for every block.
-    std::optional<size_t> part_offset_position;
-    std::optional<size_t> block_offset_position;
-    std::optional<size_t> part_granule_offset_position;
-    std::optional<size_t> distance_position;
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;
@@ -572,7 +461,7 @@ private:
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
-    LoggerPtr log = getMergeTreeRangeReaderLogger();
+    LoggerPtr log = getLogger("MergeTreeRangeReader");
 };
 
 }

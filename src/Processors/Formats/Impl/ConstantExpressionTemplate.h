@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -12,7 +10,7 @@ namespace DB
 {
 
 struct LiteralInfo;
-using LiteralsInfo = VectorWithMemoryTracking<LiteralInfo>;
+using LiteralsInfo = std::vector<LiteralInfo>;
 struct SpecialParserType;
 
 class ExpressionActions;
@@ -20,8 +18,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct FormatSettings;
 struct Settings;
-
-class BlockMissingValues;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
@@ -43,14 +39,14 @@ class ConstantExpressionTemplate : boost::noncopyable
 
         String result_column_name;
 
-        VectorWithMemoryTracking<String> tokens;
-        VectorWithMemoryTracking<size_t> token_after_literal_idx;
+        std::vector<String> tokens;
+        std::vector<size_t> token_after_literal_idx;
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
         Serializations serializations;
 
-        VectorWithMemoryTracking<SpecialParserType> special_parser;
+        std::vector<SpecialParserType> special_parser;
         bool null_as_default;
     };
 
@@ -59,7 +55,7 @@ public:
 
     class Cache : boost::noncopyable
     {
-        UnorderedMapWithMemoryTracking<size_t, TemplateStructurePtr> cache;
+        std::unordered_map<size_t, TemplateStructurePtr> cache;
         const size_t max_size;
 
     public:

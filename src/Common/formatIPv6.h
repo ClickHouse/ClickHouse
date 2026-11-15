@@ -5,8 +5,7 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
-#include <Common/Hex.h>
-#include <base/itoa.h>
+#include <base/hex.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/MemorySanitizer.h>
@@ -19,6 +18,8 @@ constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;
 
 namespace DB
 {
+
+extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string_lookup_table;
 
 /** Rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
   *  performs significantly faster than the reference implementation due to the absence of sprintf calls,
@@ -112,6 +113,14 @@ inline const char * parseIPv4(const char * src, const char * end, unsigned char 
 inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv4(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, unsigned char * dst)
+{
+    if (parseIPv4(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
 }
 
 /** An optimized version of parsing IPv6 string.
@@ -261,7 +270,7 @@ inline bool parseIPv6(T & src, IsEOF eof, unsigned char * dst, int32_t first_blo
 /// returns pointer to the right after parsed sequence or null on failed parsing
 inline const char * parseIPv6(const char * src, const char * end, unsigned char * dst)
 {
-    if (parseIPv6(src, [&src, end](){ chassert(src <= end); return src == end; }, dst))
+    if (parseIPv6(src, [&src, end](){ return src == end; }, dst))
         return src;
     return nullptr;
 }
@@ -270,6 +279,14 @@ inline const char * parseIPv6(const char * src, const char * end, unsigned char 
 inline bool parseIPv6Whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv6(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, unsigned char * dst)
+{
+    if (parseIPv6(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
 }
 
 /** An optimized version of parsing IPv6 string.
@@ -416,9 +433,11 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
-        std::string_view text = oneByteToString(value);
-        memcpy(dst, text.data(), text.size());
-        dst += text.size();
+        const auto len = one_byte_to_string_lookup_table[value].second;
+        const char* str = one_byte_to_string_lookup_table[value].first;
+
+        memcpy(dst, str, len);
+        dst += len;
         if (octet < 3)
             *dst++ = '.';
     }

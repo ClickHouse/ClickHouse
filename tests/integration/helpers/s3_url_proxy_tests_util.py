@@ -42,7 +42,7 @@ def wait_resolver(cluster):
             [
                 "curl",
                 "-s",
-                "http://resolver:8080/hostname",
+                f"http://resolver:8080/hostname",
             ],
             nothrow=True,
         )

@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -58,9 +56,6 @@ std::vector<std::string> serializeKeysToRawString(
     FieldVector::const_iterator & it, FieldVector::const_iterator end, const DataTypes & key_column_types, size_t max_block_size);
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys);
-
-std::vector<std::string> serializeKeysToRawString(
-    const ColumnWithTypeAndName & keys, const DataTypePtr & serialization_type, PaddedPODArray<UInt8> * null_map);
 
 /// In current implementation redis / keeper can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key);

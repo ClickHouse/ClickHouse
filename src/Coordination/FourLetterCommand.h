@@ -106,11 +106,6 @@ struct RuokCommand : public IFourLetterCommand
  * zk_approximate_data_size    27
  * zk_open_file_descriptor_count 23    - only available on Unix platforms
  * zk_max_file_descriptor_count 1024   - only available on Unix platforms
- * zk_leader_uptime 1234               - only exposed by the Leader
- * zk_sum_leader_unavailable_time 1234 - only exposed by the Leader
- * zk_cnt_leader_unavailable_time 1    - only exposed by the Leader
- * zk_sum_election_time 1234           - only exposed by the Leader
- * zk_cnt_election_time 1              - only exposed by the Leader
  * zk_learners 2                       - only exposed by the Leader
  * zk_followers 1                      - only exposed by the Leader
  * zk_synced_followers  1              - only exposed by the Leader
@@ -422,36 +417,6 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     String name() override { return "ftfl"; }
     String run() override;
     ~FeatureFlagsCommand() override = default;
-};
-
-/// Ask the leader to wait for replicas that cannot keep up: while on, it does
-/// not advance the commit index past any replica it can reach, so a replica
-/// that fell behind can close the gap instead of drifting until it needs a
-/// snapshot. Writes then go at the speed of the slowest voting replica; a
-/// replica with `can_become_leader` off does not vote and is not waited for.
-struct SlowMemberBackpressureOnCommand : public IFourLetterCommand
-{
-    explicit SlowMemberBackpressureOnCommand(KeeperDispatcher & keeper_dispatcher_)
-        : IFourLetterCommand(keeper_dispatcher_)
-    {
-    }
-
-    String name() override { return "bpon"; }
-    String run() override;
-    ~SlowMemberBackpressureOnCommand() override = default;
-};
-
-/// Ask the leader to stop waiting for replicas that cannot keep up.
-struct SlowMemberBackpressureOffCommand : public IFourLetterCommand
-{
-    explicit SlowMemberBackpressureOffCommand(KeeperDispatcher & keeper_dispatcher_)
-        : IFourLetterCommand(keeper_dispatcher_)
-    {
-    }
-
-    String name() override { return "bpof"; }
-    String run() override;
-    ~SlowMemberBackpressureOffCommand() override = default;
 };
 
 /// Yield leadership and become follower.

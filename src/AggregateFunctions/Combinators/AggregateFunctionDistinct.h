@@ -3,7 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -25,15 +25,12 @@ struct AggregateFunctionDistinctSingleNumericData
     /// history will hold all values added so far
     Set history;
 
+    /// Returns true if the value did not exist in the history before
     bool add(const IColumn ** __restrict columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
-        return add(*columns[0], row_num);
-    }
-
-    bool add(const IColumn & column, size_t row_num)
-    {
-        const auto & vec = assert_cast<const ColumnVector<T> &>(column).getData();
-        return history.insert(vec[row_num]).second;
+        const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+        const T value = vec[row_num];
+        return history.insert(value).second;
     }
 
     /// Pass the new values from rhs to the nested function via argument_columns
@@ -77,7 +74,7 @@ struct AggregateFunctionDistinctGenericData
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
-        size_t size = 0;
+        size_t size;
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
             history.insert(readStringBinaryInto(*arena, buf));
@@ -90,8 +87,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        Set::LookupResult it = nullptr;
-        bool inserted = false;
+        Set::LookupResult it;
+        bool inserted;
         history.emplace(key_holder, it, inserted);
 
         return inserted;
@@ -102,8 +99,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            Set::LookupResult it = nullptr;
-            bool inserted = false;
+            Set::LookupResult it;
+            bool inserted;
             history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
 
             if (inserted)
@@ -125,8 +122,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
-        Set::LookupResult it = nullptr;
-        bool inserted = false;
+        Set::LookupResult it;
+        bool inserted;
         history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
 
         return inserted;
@@ -139,8 +136,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             const auto & value = elem.getValue();
             if (!history.contains(value))
             {
-                Set::LookupResult it = nullptr;
-                bool inserted = false;
+                Set::LookupResult it;
+                bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
@@ -156,14 +153,9 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
   * Adding -Distinct suffix to aggregate function
 **/
 template <typename Data>
-class AggregateFunctionDistinct final : public IAggregateFunctionHelper<AggregateFunctionDistinct<Data>>
+class AggregateFunctionDistinct final : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
-    /// Not `IAggregateFunctionDataHelper`, because its `addBatchLookupTable8` is final, and it adds the rows one by one
-    /// for the functions that allocate memory in the arena, see `addBatchToNested`.
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
-    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
-
     AggregateFunctionPtr nested_func;
     size_t prefix_size;
     size_t arguments_num;
@@ -199,137 +191,13 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        chassert(!argument_columns.empty());
+        assert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
-    }
-
-    /// Returns true if the value in the row is seen for the first time.
-    bool addToData(Data & data, const IColumn ** columns, size_t row, Arena * arena) const
-    {
-        /// Detect whether Data provides the single-column `add(IColumn &, row)` overload.
-        constexpr bool is_single_numeric = requires(Data & d, const IColumn & c, size_t r)
-        {
-            { d.add(c, r) } -> std::same_as<bool>;
-        };
-
-        if constexpr (is_single_numeric)
-            return data.add(*columns[0], row);
-        else
-            return data.add(columns, arguments_num, row, arena);
-    }
-
-    /// The argument columns with only the rows from `indexes`, and the pointers to them.
-    std::pair<Columns, ColumnRawPtrs> indexColumns(const IColumn ** columns, const IColumn & indexes) const
-    {
-        std::pair<Columns, ColumnRawPtrs> res{Columns(arguments_num), ColumnRawPtrs(arguments_num)};
-        for (size_t i = 0; i < arguments_num; ++i)
-        {
-            res.first[i] = columns[i]->index(indexes, 0);
-            res.second[i] = res.first[i].get();
-        }
-        return res;
-    }
-
-    /// Adds the rows in [row_begin, row_end) to the places returned by `get_place(row)` (nullptr to skip the row).
-    /// The rows with the values seen for the first time in their place are collected and passed to the nested function together,
-    /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
-    template <typename GetPlace>
-    void addBatchToNested(
-        size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place) const
-    {
-        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
-        auto new_rows = ColumnUInt64::create();
-        auto & new_rows_data = new_rows->getData();
-        PaddedPODArray<AggregateDataPtr> new_places;
-        for (size_t row = row_begin; row < row_end; ++row)
-        {
-            if (flags && !flags[row])
-                continue;
-
-            AggregateDataPtr place = get_place(row);
-            if (!place)
-                continue;
-
-            if (addToData(this->data(place), columns, row, arena))
-            {
-                new_rows_data.push_back(row);
-                new_places.push_back(place);
-            }
-        }
-
-        if (new_rows_data.empty())
-            return;
-
-        /// All rows are new and the places are indexed from zero, there is no need to copy the rows.
-        if (row_begin == 0 && new_rows_data.size() == row_end)
-        {
-            nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
-            return;
-        }
-
-        auto new_columns = indexColumns(columns, *new_rows);
-        nested_func->addBatchWithNonNullPlaces(0, new_rows_data.size(), new_places.data(), prefix_size, new_columns.second.data(), arena);
-    }
-
-    /// Adds the rows in [row_begin, row_end) to a single place, skipping the rows where `null_map` (if not nullptr) is set.
-    /// The rows with the values seen for the first time are collected and passed to the nested function together,
-    /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
-    /// While the new rows are contiguous, they are passed as a range without copying and without allocations:
-    /// it is the common case of window functions, which add a few rows at a time.
-    void addBatchSinglePlaceToNested(
-        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns,
-        const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos) const
-    {
-        auto & data = this->data(place);
-        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
-
-        size_t run_begin = 0;
-        size_t run_end = 0;
-        ColumnUInt64::MutablePtr new_rows;
-        for (size_t row = row_begin; row < row_end; ++row)
-        {
-            if ((flags && !flags[row]) || (null_map && null_map[row]))
-                continue;
-
-            if (!addToData(data, columns, row, arena))
-                continue;
-
-            if (!new_rows)
-            {
-                if (run_begin == run_end)
-                {
-                    run_begin = row;
-                    run_end = row + 1;
-                    continue;
-                }
-                if (row == run_end)
-                {
-                    ++run_end;
-                    continue;
-                }
-
-                new_rows = ColumnUInt64::create();
-                auto & new_rows_data = new_rows->getData();
-                for (size_t i = run_begin; i < run_end; ++i)
-                    new_rows_data.push_back(i);
-            }
-            new_rows->getData().push_back(row);
-        }
-
-        if (!new_rows)
-        {
-            if (run_begin != run_end)
-                addToNested(run_begin, run_end, place, columns, arena);
-            return;
-        }
-
-        auto new_columns = indexColumns(columns, *new_rows);
-        addToNested(0, new_rows->size(), place, new_columns.second.data(), arena);
     }
 
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
-    : IAggregateFunctionHelper<AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_, nested_func_->getResultType())
     , nested_func(nested_func_)
     , arguments_num(arguments.size())
     {
@@ -344,66 +212,7 @@ public:
             addToNested(row_num, row_num + 1, place, columns, arena);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** __restrict columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        addBatchSinglePlaceToNested(row_begin, row_end, place, columns, nullptr, arena, if_argument_pos);
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** __restrict columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        addBatchSinglePlaceToNested(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
-    }
-
-    void addBatch(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos,
-            [&](size_t row) { return places[row] ? places[row] + place_offset : nullptr; });
-    }
-
-    void addBatchWithNonNullPlaces(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos, [&](size_t row) { return places[row] + place_offset; });
-    }
-
-    void addBatchLookupTable8(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr * map, size_t place_offset,
-        std::function<void(AggregateDataPtr &)> init,
-        const UInt8 * key,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        addBatchToNested(row_begin, row_end, columns, arena, -1, [&](size_t row)
-        {
-            AggregateDataPtr & place = map[key[row]];
-            if (unlikely(!place))
-                init(place);
-            return place + place_offset;
-        });
-    }
-
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto argument_columns = prepareArgumentColumns();
         this->data(place).merge(this->data(rhs), argument_columns, arena);
@@ -496,27 +305,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
-    }
-
-    DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_func);
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        /// Distinct state contains a history of unique values and can be merged across
-        /// variants without reading the nested function state from rhs
-        return this->haveSameDefinition(rhs);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place,
-        const IAggregateFunction & /*rhs*/,
-        ConstAggregateDataPtr rhs_place,
-        Arena * arena) const override
-    {
-        this->merge(place, rhs_place, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

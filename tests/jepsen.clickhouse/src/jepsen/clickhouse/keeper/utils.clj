@@ -32,16 +32,6 @@
         conn)
       conn)))
 
-(defn with-fresh-conn
-  "Calls (f conn) on a new connection to node and closes it. Keeper cannot continue a session,
-  so a worker's connection that dropped after its last operation is expired."
-  [node with-auth f]
-  (let [conn (zk-connect node 9181 30000 with-auth)]
-    (try
-      (f conn)
-      (finally
-        (zk/close conn)))))
-
 (defn zk-create-range
   [conn n & {:keys [with-acl] :or {with-acl false}}]
   (dorun (map (fn [v] (zk/create-all conn v
@@ -185,5 +175,4 @@
     :--keeper_server.latest_snapshot_storage_disk "latest_snapshot_local"
     :--keeper_server.log_storage_disk "log_local"
     :--keeper_server.latest_log_storage_disk "latest_log_local"
-    :--keeper_server.data_storage_disk "data_local"
     :--path coordination-data-dir))

@@ -1,8 +1,0 @@
-Baseline (after PK + partition + existing indexes):
-marks: 72
-With p_k (normal projection, hypothetical):
-status: applicable
-marks: 10
-verdict: chosen
-real: ReadFromMergeTree (p_k)
-real: Granules: 10/94

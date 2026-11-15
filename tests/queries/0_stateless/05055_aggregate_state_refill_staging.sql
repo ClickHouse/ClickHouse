@@ -1,5 +1,4 @@
--- Tags: long, no-parallel-replicas
--- Tag no-parallel-replicas: the read through `ReadPoolParallelReplicas` exceeds the `max_memory_usage` this test pins
+-- Tags: long
 
 -- An aggregate state value that arrives across compressed-block boundaries must round-trip
 -- unchanged, and staging it must cost the value rather than the number of pieces it arrives in.

@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <map>
 #include <string>
 
 
@@ -14,7 +13,7 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat final : public IRowOutputFormat
+class PrometheusTextOutputFormat : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
@@ -28,8 +27,8 @@ protected:
 
     struct ColumnPositions
     {
-        size_t name{};
-        size_t value{};
+        size_t name;
+        size_t value;
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> labels;
@@ -41,7 +40,7 @@ protected:
     {
         struct RowValue
         {
-            MapWithMemoryTracking<String, String> labels;
+            std::map<String, String> labels;
             String value;
             String timestamp;
         };
@@ -52,7 +51,7 @@ protected:
         String name;
         String help;
         String type;
-        VectorWithMemoryTracking<RowValue> values;
+        std::vector<RowValue> values;
     };
 
     /// Input rows should be grouped by the same metric.

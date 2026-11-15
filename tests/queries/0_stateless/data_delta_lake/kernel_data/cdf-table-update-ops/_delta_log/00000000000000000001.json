@@ -1,3 +1,0 @@
-{"commitInfo":{"timestamp":1734480110114,"operation":"Manual Update","operationParameters":{},"readVersion":0,"isolationLevel":"SnapshotIsolation","isBlindAppend":false,"operationMetrics":{},"engineInfo":"Apache-Spark/3.5.3 Delta-Lake/3.3.0-SNAPSHOT","txnId":"39f9cdbe-2394-45b9-bef4-8f08e880a6fa"}}
-{"cdc":{"path":"test%25file%25prefix-part-00000-9a716acd-eb85-4781-87a5-6a867818fd0f-c000.snappy.parquet","partitionValues":{},"size":809,"dataChange":false}}
-{"cdc":{"path":"test%25file%25prefix-part-00001-8f7ee130-6a99-430d-a891-abd8349f3945-c000.snappy.parquet","partitionValues":{},"size":814,"dataChange":false}}

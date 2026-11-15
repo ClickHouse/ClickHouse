@@ -7,16 +7,16 @@
 -- predicate first because its default 1% selectivity looks "more selective",
 -- ignoring that the Map column is ~500x more expensive to read.
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 0;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 1;
-SET explain_query_plan_default = 'legacy';
 
--- The cost path compares compressed column sizes, so pin the codec: CI randomizes the server default.
 DROP TABLE IF EXISTS t_prewhere_stats_cost;
 CREATE TABLE t_prewhere_stats_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = 'LZ4';
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 
 -- Split `modality` 50/50: the reject-count ratio is then ~2x while the Map column dwarfs the
 -- scalar, so the cost gap dominates and cheap-filter-first stays stable under randomized serialization.

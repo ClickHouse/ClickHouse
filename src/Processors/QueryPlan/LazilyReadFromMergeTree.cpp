@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
-#include <Formats/FormatSettings.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>

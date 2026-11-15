@@ -1,7 +1,6 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <Common/StringUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -115,7 +114,7 @@ namespace
         /// utf8_offsets[1] is the offset of the second code point in `pad_string`;
         /// utf8_offsets[2] is the offset of the third code point in `pad_string`;
         /// ...
-        VectorWithMemoryTracking<size_t> utf8_offsets;
+        std::vector<size_t> utf8_offsets;
     };
 
     /// Returns the number of characters in a slice.
@@ -142,7 +141,7 @@ namespace
 
     /// If `is_right_pad` - it's the rightPad() function instead of leftPad().
     /// If `is_utf8` - lengths are measured in code points instead of bytes.
-    class FunctionPadString final : public IFunction
+    class FunctionPadString : public IFunction
     {
     public:
         FunctionPadString(const char * name_, bool is_right_pad_, bool is_utf8_)
@@ -165,9 +164,19 @@ namespace
 
         bool useDefaultImplementationForConstants() const override { return false; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return "(StringOrFixedString, Integer, [const String]) -> String";
+            FunctionArgumentDescriptors mandatory_args{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Array"},
+                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "const UInt*"},
+            };
+            FunctionArgumentDescriptors optional_args{
+                {"pad_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "Array"}
+            };
+
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+            return std::make_shared<DataTypeString>();
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -217,9 +226,9 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool is_actually_utf8 = is_utf8
-                && !(isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                    && isAllASCII(chars.data(), chars.size()));
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                                && isAllASCII(chars.data(), chars.size());
+            bool is_actually_utf8 = is_utf8 && !all_ascii;
 
             if (!is_actually_utf8)
             {

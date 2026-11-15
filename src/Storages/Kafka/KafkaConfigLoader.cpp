@@ -1,29 +1,19 @@
 #include <Storages/Kafka/KafkaConfigLoader.h>
 
 #include <Access/KerberosInit.h>
-#include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
-#include <Storages/System/StorageSystemStackTrace.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/HiddenSecret.h>
-#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/QueryProfiler.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
-#include <IO/S3/getAvailabilityZone.h>
 #include <chrdkafka_conf_sensitive.h>
-#include <csignal>
-#include <unordered_set>
 
 namespace CurrentMetrics
 {
@@ -46,42 +36,11 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
-    extern const KafkaSettingsString kafka_autodetect_client_rack;
-    extern const KafkaSettingsString kafka_aws_region;
 }
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace
-{
-
-/// librdkafka prints pointers with `%p`, e.g. `log_cb = 0x55d1c0a3e2f0` with `debug=conf`.
-/// Its messages reach clients through `send_logs_level`, so every hexadecimal number is hidden.
-std::string hideHexNumbers(std::string_view message)
-{
-    std::string res;
-    res.reserve(message.size());
-    for (size_t i = 0; i < message.size();)
-    {
-        if (message[i] == '0' && i + 2 < message.size() && message[i + 1] == 'x' && isHexDigit(message[i + 2]))
-        {
-            res += "0x";
-            res += HIDDEN_SECRET;
-            i += 2;
-            while (i < message.size() && isHexDigit(message[i]))
-                ++i;
-        }
-        else
-            res += message[i++];
-    }
-    return res;
-}
-
 }
 
 template <typename TKafkaStorage>
@@ -130,24 +89,6 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     std::lock_guard lock(self->thread_statuses_mutex);
     self->thread_statuses.emplace_back(std::move(thread_status));
 
-    /// Due to [1] librdkafka blocks all signals before creating threads,
-    /// and broker threads are created while signals are already all-blocked
-    /// (inside rd_kafka_new), so they inherit the all-blocked mask.
-    /// We unblock only the specific signals needed by `system.stack_trace`
-    /// (STACK_TRACE_SERVICE_SIGNAL) and the query profiler (SIGUSR1/SIGUSR2),
-    /// rather than the full mask — otherwise we would also drop the process-wide
-    /// SIGPIPE block installed by the daemon.
-    ///
-    ///   [1]: https://github.com/confluentinc/librdkafka/issues/4571
-    sigset_t mask;
-    sigemptyset(&mask);
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    sigaddset(&mask, STACK_TRACE_SERVICE_SIGNAL);
-#endif
-    sigaddset(&mask, QueryProfilerReal::PAUSE_SIGNAL);
-    sigaddset(&mask, QueryProfilerCPU::PAUSE_SIGNAL);
-    pthread_sigmask(SIG_UNBLOCK, &mask, nullptr);
-
     return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
 
@@ -175,7 +116,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnNew(
     rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status = {};
+    rd_kafka_resp_err_t status;
 
     status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
     if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -196,7 +137,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
     rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status = {};
+    rd_kafka_resp_err_t status;
 
     // cppkafka copies configuration multiple times
     status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);
@@ -223,18 +164,7 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
 {
     /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
     /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-
-    /// ClickHouse-specific keys that live under <kafka> in server config but are not librdkafka properties.
-    /// Exclude them here so they are not forwarded to cppkafka.
-    static const std::unordered_set<String> clickhouse_only_kafka_config_keys
-        = {"use_environment_credentials"}; /// AWS MSK IAM: controls AWS credentials provider selection
-    if (clickhouse_only_kafka_config_keys.contains(key))
-        return;
-
     const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-    /// librdkafka testing properties, e.g. `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member ids.
-    if (setting_name_in_kafka_config.starts_with("test."))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", setting_name_in_kafka_config);
     kafka_config.set(setting_name_in_kafka_config, value);
 }
 
@@ -435,8 +365,7 @@ void updateConfigurationFromConfig(
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty()
-        && !boost::iequals(kafka_settings[KafkaSetting::kafka_sasl_mechanism].value, "AWS_MSK_IAM"))
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty())
         kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
@@ -448,59 +377,8 @@ void updateConfigurationFromConfig(
     if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
-    auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
-    if (!autodetect_rack.empty())
-    {
-        if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
-        {
-            std::string rack
-                = S3::tryGetRunningAvailabilityZone(magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
-            if (!rack.empty())
-            {
-                kafka_config.set("client.rack", rack);
-                LOG_TRACE(params.log, "client.rack set to {}.", rack);
-            }
-            else
-                LOG_ERROR(params.log, "Failed to determine client.rack via facility {}.", autodetect_rack);
-        }
-        else
-            LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility  {}. Expected one of AWS_ZONE_ID, AWS_ZONE_NAME, GCP_ZONE, CLICKHOUSE, AWS_ZONE_NAME_THEN_GCP_ZONE.", autodetect_rack);
-    }
-
-    /// Derive effective SASL mechanism from both table settings and server/named-collection config.
-    /// Table settings take priority; fall back to whatever loadFromConfig already wrote to kafka_config.
-    String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
-    if (sasl_mechanism.empty() && kafka_config.has_property("sasl.mechanism"))
-        sasl_mechanism = kafka_config.get("sasl.mechanism");
-
-    if (boost::iequals(sasl_mechanism, "AWS_MSK_IAM"))
-    {
-#if USE_AWS_S3
-        if (kafka_config.has_property("security.protocol")
-            && !boost::iequals(kafka_config.get("security.protocol"), "SASL_SSL"))
-            LOG_WARNING(
-                params.log,
-                "kafka_security_protocol='{}' will be overridden to 'SASL_SSL' - AWS MSK IAM requires SASL_SSL.",
-                kafka_config.get("security.protocol"));
-
-        String aws_region = kafka_settings[KafkaSetting::kafka_aws_region].value;
-        String broker_list = kafka_config.has_property("metadata.broker.list") ? kafka_config.get("metadata.broker.list") : "";
-
-        std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate;
-        AWSMSKIAMAuth::setupAuthentication(kafka_config, params.config, aws_region, broker_list, params.log, candidate);
-        auto shared_context = storage.ensureOAuthContext(candidate);
-        if (shared_context != candidate)
-            AWSMSKIAMAuth::setupAuthentication(kafka_config, params.config, aws_region, broker_list, params.log, shared_context);
-#else
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "AWS MSK IAM authentication is not supported in this build. ClickHouse must be built with USE_AWS_S3=1");
-#endif
-    }
-
 #if USE_KRB5
-    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
-    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
+    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     kafka_config.set("sasl.kerberos.kinit.cmd", "");
@@ -531,7 +409,6 @@ void updateConfigurationFromConfig(
             cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-            const std::string safe_message = hideHexNumbers(message);
             const auto & kafka_object_config = handle.get_configuration();
             const std::string client_id_key{"client.id"};
             chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
@@ -542,16 +419,13 @@ void updateConfigurationFromConfig(
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,
-                safe_message);
+                message);
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
                 {
                     ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-                    // librdkafka-originated errors (auth failures, broker disconnects) have no
-                    // useful ClickHouse stack trace - the trace only shows poll->log_callback.
-                    // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
-                    sink_shared_ptr->setExceptionInfo(safe_message, /* with_stacktrace = */ false);
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ true);
                 }
             }
         });
@@ -571,7 +445,7 @@ void updateConfigurationFromConfig(
         // This should be safe, since we wait the rdkafka object anyway.
         void * self = static_cast<void *>(&storage);
 
-        int status = 0;
+        int status;
 
         status
             = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(), "init", KafkaInterceptors<TKafkaStorage>::rdKafkaOnNew, self);
@@ -595,8 +469,8 @@ namespace
 /// server log, but also clients that set `send_logs_level`.
 bool isSensitiveProperty(std::string_view name)
 {
-    /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
-    /// substring safety net for properties unknown to the vendored librdkafka version.
+    /// The properties librdkafka marks with the _RK_SENSITIVE flag, plus a substring safety net
+    /// for properties unknown to the vendored librdkafka version.
     static const std::unordered_set<std::string_view> sensitive_properties = []
     {
         std::unordered_set<std::string_view> res;
@@ -613,7 +487,7 @@ void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr &
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
 }
 
 }

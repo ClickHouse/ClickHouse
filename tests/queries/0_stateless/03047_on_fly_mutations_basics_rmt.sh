@@ -15,7 +15,6 @@ DROP TABLE IF EXISTS t_lightweight_mut_1;
 SET apply_mutations_on_fly = 1;
 SET enable_filesystem_cache = 0;
 SET read_through_distributed_cache=0;
-SET use_columns_cache = 0;
 
 CREATE TABLE t_lightweight_mut_1 (id UInt64, v String, s String)
 ENGINE = ReplicatedMergeTree('/clickhouse/zktest/tables/{database}/t_lightweight_mut_1', '1') ORDER BY id
@@ -59,16 +58,12 @@ SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fl
 
 SYSTEM FLUSH LOGS query_log;
 
--- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
-SELECT anyIf(query, is_initial_query), sum(ProfileEvents['S3GetObject']) FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
-(
-    SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-        AND query ILIKE 'SELECT%FROM t_lightweight_mut_1%' AND type = 'QueryFinish' AND is_initial_query
-)
-GROUP BY initial_query_id
-ORDER BY min(event_time_microseconds);
+SELECT query, ProfileEvents['S3GetObject'] FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+    current_database = currentDatabase()
+    AND query ILIKE 'SELECT%FROM t_lightweight_mut_1%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds;
 
 SELECT count() FROM system.mutations
 WHERE table = 't_lightweight_mut_1' AND database = currentDatabase() AND NOT is_done;
@@ -81,7 +76,6 @@ wait_for_mutation "t_lightweight_mut_1" "0000000003"
 $CLICKHOUSE_CLIENT -n --query "
 SET apply_mutations_on_fly = 1;
 SET enable_filesystem_cache = 0;
-SET use_columns_cache = 0;
 
 SELECT count() FROM system.mutations
 WHERE table = 't_lightweight_mut_1' AND database = currentDatabase() AND NOT is_done;

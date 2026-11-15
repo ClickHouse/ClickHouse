@@ -27,9 +27,18 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
 }
 
+namespace
+{
+
+bool isStringOrNull(const IDataType & type)
+{
+    return isString(type) || type.onlyNull();
+}
+
+}
 
 /// A function to read file as a string.
-class FunctionFile final : public IFunction
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
@@ -48,9 +57,21 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, NULL) -> Nullable(String) OR (String, [const String]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrNull, nullptr, "String or Null"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -159,7 +180,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](/reference/functions/table-functions/file) table function.
+Also see the [`file`](../table-functions/file.md) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
@@ -171,18 +192,9 @@ Also see the [`file`](/reference/functions/table-functions/file) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
-INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
-
-CREATE TABLE data (a String, b String) ENGINE = Memory;
-INSERT INTO data SELECT file('a.txt'), file('b.txt');
-
-SELECT * FROM data;
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
             )",
             R"(
-┌─a─────┬─b──────┐
-│ Hello │ World! │
-└───────┴────────┘
             )"
         }
     };

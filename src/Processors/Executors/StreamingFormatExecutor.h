@@ -21,20 +21,13 @@ public:
     /// to result columns in comparison to previous call of `execute`.
     using ErrorCallback = std::function<size_t(const MutableColumns &, const ColumnCheckpoints &, Exception &)>;
 
-    /// Optional predicate polled once per chunk inside `execute`. When it returns true the
-    /// execution is aborted with QUERY_WAS_CANCELLED (rethrown past `on_error`, not treated as a
-    /// per-input parse error). Lets manually-driven callers honor query cancellation, which the
-    /// pipeline executor would otherwise provide.
-    using CancelCallback = std::function<bool()>;
-
     StreamingFormatExecutor(
         const Block & header_,
         InputFormatPtr format_,
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
         size_t total_bytes_ = 0,
         size_t total_chunks_ = 0,
-        SimpleTransformPtr adding_defaults_transform_ = nullptr,
-        CancelCallback is_cancelled_ = {});
+        SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
     size_t execute(size_t num_bytes = 0);
@@ -58,7 +51,6 @@ private:
     const InputFormatPtr format;
     const ErrorCallback on_error;
     const SimpleTransformPtr adding_defaults_transform;
-    const CancelCallback is_cancelled;
 
     InputPort port;
     MutableColumns result_columns;

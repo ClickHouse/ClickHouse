@@ -48,6 +48,7 @@ datetime	DateTime64(3, \'UTC\')
 0	1
 5090915589685802007
 16159458007063698496
+16159458007063698496
 BYTE_ARRAY	String
 FIXED_LEN_BYTE_ARRAY	None
 BYTE_ARRAY	None
@@ -62,12 +63,6 @@ ns	DateTime64(9, \'UTC\')
 cs	DateTime64(3, \'UTC\')					
 s	DateTime64(3, \'UTC\')					
 dus	DateTime64(9, \'UTC\')					
-ms	Timestamp(isAdjustedToUTC=true, timeUnit=milliseconds, is_from_converted_type=false, force_set_converted_type=false)
-us	Timestamp(isAdjustedToUTC=true, timeUnit=microseconds, is_from_converted_type=false, force_set_converted_type=false)
-ns	Timestamp(isAdjustedToUTC=true, timeUnit=nanoseconds, is_from_converted_type=false, force_set_converted_type=false)
-cs	Timestamp(isAdjustedToUTC=true, timeUnit=milliseconds, is_from_converted_type=false, force_set_converted_type=false)
-s	Timestamp(isAdjustedToUTC=true, timeUnit=milliseconds, is_from_converted_type=false, force_set_converted_type=false)
-dus	Timestamp(isAdjustedToUTC=true, timeUnit=nanoseconds, is_from_converted_type=false, force_set_converted_type=false)
 12670676506515577395
 20312
 d	UInt16					

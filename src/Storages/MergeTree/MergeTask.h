@@ -4,7 +4,6 @@
 #include <memory>
 
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -16,6 +15,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -24,11 +24,9 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeCheckpoint.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
-#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
@@ -87,15 +85,6 @@ class MergeTask
 {
 public:
     static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
-    /// Marks the suffix of the throwaway temporary part of `OPTIMIZE ... DRY RUN`. Kept short:
-    /// it replaces the part name in the temporary directory name, so it is paid on every dry run.
-    static constexpr auto DRY_RUN_TEMP_INFIX = "dr_";
-
-    /// Assembles the temporary directory name of a merge.
-    static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
-
-    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
-    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -110,6 +99,7 @@ public:
         Names deduplicate_by_columns_,
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
+        bool need_prefix,
         ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
@@ -144,17 +134,20 @@ public:
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
-            global_ctx->data_settings
-                = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
+            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
 
-    MergeTreeData::MutableDataPartPtr takeResultPart() { return std::exchange(global_ctx->result_part, nullptr); }
+    std::future<MergeTreeData::MutableDataPartPtr> getFuture()
+    {
+        return global_ctx->promise.get_future();
+    }
 
     MergeTreeData::MutableDataPartPtr getUnfinishedPart()
     {
@@ -177,14 +170,7 @@ public:
         return res;
     }
 
-    std::map<String, UInt64> grabProjectionsMergeTime()
-    {
-        return std::move(global_ctx->projections_merge_time);
-    }
-
     bool execute();
-
-    void setMergeCheckpoint(MergeCheckpointPtr checkpoint) { global_ctx->checkpoint = std::move(checkpoint); }
 
     void cancel() noexcept;
 
@@ -210,7 +196,7 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder{};
+        TableLockHolder * holder;
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -237,24 +223,14 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
-        /// When true, all source parts are fully expired (MergeType::TTLDrop).
-        /// The data pipeline is skipped entirely — no readers are opened,
-        /// no buffers allocated, and the result is an empty part.
-        bool ttl_drop_short_circuit{false};
         CompressionCodecPtr compression_codec{nullptr};
-        /// T when `compression_codec` came from an explicit (non-`Default`) `RECOMPRESS` TTL. Adaptive codec selection must not override it.
-        bool is_explicit_recompression{false};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_columns{};
+        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
-        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
-        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
-        NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
@@ -272,10 +248,6 @@ private:
         std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
         std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
 
-        /// Whether any projection to rebuild needs _block_number / _block_offset in the horizontal phase.
-        bool need_block_number_in_merge{false};
-        bool need_block_offset_in_merge{false};
-
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
@@ -290,23 +262,14 @@ private:
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
-        std::map<String, UInt64> projections_merge_time;
-
-        /// The finished part until the owner takes it. `cancel` rolls back a part that is still here.
-        MergeTreeData::MutableDataPartPtr result_part;
+        std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
-        /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
-        /// per-column writer and MergeTextIndexesTask.
-        StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 
-        MergeCheckpointPtr checkpoint;
-        MergeCheckpointIdentity checkpoint_identity;
-        std::optional<size_t> resumed_columns;
-
         MergeTreeTransactionPtr txn;
+        bool need_prefix;
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
@@ -316,9 +279,6 @@ private:
 
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
-
-        /// Text indexes are rebuilt for the resulting part instead of being merged.
-        bool rebuild_text_indexes{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -341,27 +301,15 @@ private:
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
         ProjectionNameToItsBlocks projection_parts;
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
-
-        /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
-        /// Shared across all projections since they all consume the same source blocks.
-        /// Only the columns required by at least one projection (plus _row_exists when
-        /// present) are squashed, so wide source columns no projection reads are not
-        /// retained in memory until the squash boundary.
-        std::optional<Squashing> pre_calculate_squash;
-        NameSet pre_calculate_required_columns;
-        UInt64 pre_calculate_starting_offset{0};
-
-        /// Post-calculate squash: accumulates calculated projection blocks before writing.
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
-        std::map<String, UInt64> projections_rebuild_elapsed_ns;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
         BuildStatisticsTransformMap build_statistics_transforms;
 
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> merge_cancelled{};
+        std::function<bool()> is_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -402,22 +350,11 @@ private:
 
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
-        void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
-        bool canCheckpointVerticalMerge() const;
-
-        struct SavedCheckpointLoadResult
-        {
-            MergeCheckpointState state;
-            MergedBlockOutputStream::FinishedColumns finished_columns;
-        };
-        /// Read and check the saved checkpoint, or discard it and throw.
-        SavedCheckpointLoadResult readSavedCheckpoint() const;
-
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -476,7 +413,6 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
-        Stopwatch since_checkpoint;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -513,7 +449,6 @@ private:
         void prepareVerticalMergeForOneColumn() const;
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
-        void saveCheckpoint() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
@@ -579,11 +514,6 @@ private:
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
-
-        /// Accumulate per-projection merge time in nanoseconds to avoid truncation
-        /// when individual execute() steps take less than 1ms.
-        /// Converted to milliseconds only when a projection finishes.
-        std::map<String, UInt64> projections_merge_elapsed_ns;
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -640,11 +570,9 @@ private:
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
-    static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
-    static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
@@ -652,22 +580,11 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
-/// Rolls back the uncommitted transaction of `storage`, removing the blobs it has uploaded; logs a failure.
-void tryUndoTransaction(IDataPartStorage & storage) noexcept;
-
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    try
-    {
-        while (task->execute()) {}
-    }
-    catch (...)
-    {
-        task->cancel();
-        throw;
-    }
-    return task->takeResultPart();
+    while (task->execute()) {}
+    return task->getFuture().get();
 }
 
 }

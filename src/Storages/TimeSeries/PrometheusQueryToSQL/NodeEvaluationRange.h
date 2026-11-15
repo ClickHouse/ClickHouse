@@ -30,7 +30,6 @@ namespace DB::PrometheusQueryToSQL
 
 struct NodeEvaluationRange
 {
-    /// All fields use the scale `ConverterContext::result_timestamp_scale`.
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;

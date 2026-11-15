@@ -4,8 +4,6 @@
 #include <string>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
-#include <IO/SnappyMode.h>
 
 namespace DB
 {
@@ -48,17 +46,6 @@ std::string toContentEncodingName(CompressionMethod method);
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
 
-/// Whether `chooseCompressionMethod` derives the method from the path for this hint (an empty hint or `auto`).
-bool isCompressionMethodHintAuto(const std::string & hint);
-
-/** File name suffixes that `chooseCompressionMethod` recognizes for the given compression method
-  * hint, e.g. `{"gz", "gzip"}` for `gzip`. An empty hint or `auto` yields the suffixes of every
-  * supported method, `none` yields nothing, and an unrecognized hint throws the same exception as
-  * `chooseCompressionMethod`.
-  * Used to build globs that have to match compressed files by name.
-  */
-Strings getFileSuffixesForCompressionMethodHint(const std::string & hint);
-
 /** Choose a compression method from HTTP header list of supported compression methods.
   */
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list);
@@ -70,7 +57,6 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,
     int zstd_window_log_max = 0,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0);
@@ -80,7 +66,6 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log = 0,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
@@ -91,7 +76,6 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,

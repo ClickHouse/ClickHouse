@@ -127,14 +127,6 @@
 #undef JEMALLOC_TLS_MODEL
 
 /*
- * Route TSD thread-local address computation through a noinline
- * optimization-barrier accessor so the compiler cannot cache it across a
- * user-space context switch (fibers migrating between OS threads).  See
- * tsd_tls_addr.h.
- */
-#define JEMALLOC_EXPERIMENTAL_FIBER_SAFE_TLS
-
-/*
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
  * inline functions.
  */
@@ -372,6 +364,6 @@
 #undef JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
 
 /* Performs additional safety checks when defined. */
-/* #undef JEMALLOC_OPT_SAFETY_CHECKS */
+#undef JEMALLOC_OPT_SAFETY_CHECKS
 
 #endif /* JEMALLOC_INTERNAL_DEFS_H_ */

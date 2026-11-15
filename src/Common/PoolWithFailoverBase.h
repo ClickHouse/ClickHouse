@@ -82,7 +82,6 @@ public:
                                     /// Depends on max_replica_delay_for_distributed_queries setting
         UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
         bool is_readonly = false;   /// Table is in read-only mode, INSERT can ignore such replicas.
-        bool local_pool_exhausted = false; /// The replica was not probed: no free slot in the initiator's own pool for it.
     };
 
     struct PoolState;
@@ -109,13 +108,11 @@ public:
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
-    /// When `fail_if_replica_unprobed`, returning no entries is an error if any replica was left unprobed.
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             bool skip_read_only_replicas,
-            bool fail_if_replica_unprobed,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority);
 
@@ -256,7 +253,6 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
         max_ignored_errors,
         fallback_to_stale_replicas,
         /* skip_read_only_replicas= */ false,
-        /* fail_if_replica_unprobed= */ false,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
@@ -271,7 +267,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
         bool skip_read_only_replicas,
-        bool fail_if_replica_unprobed,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority)
 {
@@ -351,14 +346,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    bool unprobed_replica = false;
-    for (const TryResult & result : try_results)
-        unprobed_replica |= result.local_pool_exhausted;
-
     std::erase_if(try_results, [&](const TryResult & r) { return isTryResultInvalid(r, skip_read_only_replicas); });
 
     /// Sort so that preferred items are near the beginning.
-    ::stableSort(
+    std::stable_sort(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {
@@ -385,11 +376,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     else
         throw DB::Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
                 "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
-
-    /// A shard's rows live only on its own replicas, so returning none is acceptable only when every replica was probed.
-    if (fail_if_replica_unprobed && try_results.empty() && unprobed_replica)
-        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
     return try_results;
 }

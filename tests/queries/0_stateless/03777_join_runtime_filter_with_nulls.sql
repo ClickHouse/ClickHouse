@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
 SET query_plan_optimize_join_order_algorithm='greedy';
@@ -26,7 +27,7 @@ USING (id);
 SELECT 1 FROM t0 JOIN t1 USING c0;
 
 -- And with runtime filters
-SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
+SET enable_join_runtime_filters=1;
 
 SELECT id, value
 FROM

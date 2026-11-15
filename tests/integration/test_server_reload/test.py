@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 
 import grpc
 import psycopg2
@@ -21,7 +22,7 @@ from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
 
 from helpers.client import Client, QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
@@ -166,7 +167,7 @@ def sync_loaded_config(querier):
 def wait_loaded_config_changed(loads_before, querier):
     loads_after = None
     start_time = time.monotonic()
-    while time.monotonic() - start_time < 60:
+    while time.monotonic() - start_time < 10:
         try:
             loads_after = querier(LOADS_QUERY)
             if loads_after != loads_before:
@@ -308,14 +309,10 @@ def test_change_listen_host(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
-    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
-    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
-        "-e",
-        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
     try:
@@ -326,7 +323,8 @@ def test_change_listen_host(cluster, zk):
             client.query("SELECT 1")
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
-        configure_from_zk(zk, localhost_client.query)
+        with sync_loaded_config(localhost_client.query):
+            configure_from_zk(zk)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting
@@ -341,14 +339,10 @@ def test_reload_via_client(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
-    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
-    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
-        "-e",
-        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
 

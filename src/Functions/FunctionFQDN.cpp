@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -10,7 +9,7 @@
 namespace DB
 {
 
-class FunctionFQDN final : public IFunction
+class FunctionFQDN : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
@@ -26,9 +25,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
-    bool isServerConstant() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -36,9 +32,9 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -64,9 +60,9 @@ Returns the fully qualified domain name of the ClickHouse server.
 SELECT fqdn()
         )",
         R"(
-┌─FQDN()────────────────────────┐
+┌─FQDN()──────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└───────────────────────────────┘
+└─────────────────────────────────┘
         )"
     }
     };

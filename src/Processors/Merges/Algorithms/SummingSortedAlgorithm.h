@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -30,8 +29,7 @@ public:
         const String & sum_function_name,
         const String & sum_function_map_name,
         bool remove_default_values,
-        bool aggregate_all_columns,
-        bool allow_tuple_element_aggregation);
+        bool aggregate_all_columns);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -61,24 +59,15 @@ public:
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         /// Columns which should be aggregated.
-        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
+        std::vector<AggregateDescription> columns_to_aggregate;
         /// Mapping for nested columns.
-        VectorWithMemoryTracking<MapDescription> maps_to_sum;
+        std::vector<MapDescription> maps_to_sum;
 
         /// Names of columns from header.
         Names column_names;
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
-
-        /// Per-column flag: true for Float32/Float64 columns that need bit-exact
-        /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
-        VectorWithMemoryTracking<bool> columns_need_exact_copy;
-
-        /// Record the origin header before tuple flattening.
-        SharedHeader origin_header;
-
-        bool allow_tuple_element_aggregation = false;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.
@@ -108,7 +97,7 @@ public:
 
         Row current_row;
         /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
-        Columns current_row_columns;
+        std::vector<ColumnPtr> current_row_columns;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

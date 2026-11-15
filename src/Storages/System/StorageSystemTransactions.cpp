@@ -1,12 +1,9 @@
 #include <Storages/System/StorageSystemTransactions.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
-
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionManager.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -38,12 +35,12 @@ ColumnsDescription StorageSystemTransactions::getColumnsDescription()
 
 void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto list = TransactionManager::instance().getTransactionsList();
+    auto list = TransactionLog::instance().getTransactionsList();
     for (const auto & elem : list)
     {
         auto txn = elem.second;
         size_t i = 0;
-        res_columns[i++]->insert(Tuple{txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id, txn->tid.session_node_version});
+        res_columns[i++]->insert(Tuple{txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id});
         res_columns[i++]->insert(txn->tid.getHash());
         res_columns[i++]->insert(txn->elapsedSeconds());
         res_columns[i++]->insert(txn->isReadOnly());
@@ -52,6 +49,3 @@ void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPt
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTransactions) }

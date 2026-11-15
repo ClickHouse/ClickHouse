@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <expected>
-#include <optional>
 
 namespace DB
 {
@@ -35,12 +34,6 @@ class MergeTreeDataMergerMutator
     void updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
-    /// Undo the due time that `updateTTLMergeTimes` advanced for a TTL merge that was selected but
-    /// discarded before it could run (`StorageMergeTree::merge` does that when no executor slot is
-    /// free). Only restores the due time if it is still exactly the value that selection installed,
-    /// so an advance made by a later selection is never overwritten.
-    void rollbackTTLMergeTime(const String & partition_id, MergeType merge_type);
-
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
@@ -98,6 +91,7 @@ public:
         bool cleanup,
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
+        bool need_prefix = true,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
@@ -110,10 +104,11 @@ public:
         MutationCommandsConstPtr commands,
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
-        ContextMutablePtr context,
+        ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        bool need_prefix = true);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -137,58 +132,10 @@ private:
 
     /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
     PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
-
-    /// The due time advance of the last TTL merge selection of a partition, kept so that a
-    /// discarded selection can be undone. See `rollbackTTLMergeTime`.
-    struct TTLMergeTimeAdvance
-    {
-        time_t installed = 0;
-        std::optional<time_t> previous;
-    };
-    std::unordered_map<String, TTLMergeTimeAdvance> last_delete_ttl_merge_time_advance;
-    std::unordered_map<String, TTLMergeTimeAdvance> last_recompress_ttl_merge_time_advance;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
 
 std::string convertMergeConstraintsToString(const MergeConstraints & constraints);
-
-std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const MergePredicatePtr & merge_predicate);
-std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions(const PartsRanges & ranges);
-
-String getBestPartitionToOptimizeEntire(
-    size_t max_total_size_to_merge,
-    const ContextPtr & context,
-    const MergeTreeSettingsPtr & settings,
-    const std::unordered_map<String, PartitionStatistics> & stats,
-    const LoggerPtr & log);
-
-PartsRanges grabAllPossibleRanges(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::optional<PartitionIdsHint> & partitions_hint,
-    LogSeriesLimiter & series_log);
-
-MergeSelectorChoices chooseMergesFrom(
-    const MergeSelectorApplier & selector,
-    const IMergePredicate & predicate,
-    const PartsRanges & ranges,
-    const PartitionsStatistics & partitions_stats,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettingsPtr & data_settings,
-    const PartitionIdToTTLs & next_delete_times,
-    const PartitionIdToTTLs & next_recompress_times,
-    bool can_use_ttl_merges,
-    time_t current_time,
-    const LoggerPtr & log);
-
-std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::string & partition_id);
 
 }

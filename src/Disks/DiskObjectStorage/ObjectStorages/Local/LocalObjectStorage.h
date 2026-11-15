@@ -1,10 +1,8 @@
 #pragma once
 
+#include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Common/SharedMutex.h>
-
-#include <shared_mutex>
 
 
 namespace Poco
@@ -50,14 +48,6 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
-
-    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
         std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
@@ -70,9 +60,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -99,12 +87,7 @@ public:
 
     bool isRemote() const override { return false; }
 
-    /// With `object_storage_write_atomically` the data is written to a temporary file which is then renamed.
-    bool supportsAtomicWrite() const override { return true; }
-
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
-
-    ObjectStoragePtr cloneImpl() const override;
 
 private:
     void removeObject(const StoredObject & object) const;
@@ -116,12 +99,6 @@ private:
     LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
-
-    /// Removing an object also removes its directory if it became empty, and a local filesystem has no atomic
-    /// "create a file in a directory unless it is being removed": a concurrent writer that has just created the directory
-    /// would fail to create its file, and even path resolution canonicalizes the path and fails if a component vanishes
-    /// in the middle. So the removal is exclusive with the operations resolving a path, which are shared among themselves.
-    mutable SharedMutex directories_mutex;
 };
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path);

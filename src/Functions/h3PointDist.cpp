@@ -19,6 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -43,9 +44,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Float64, Float64, Float64, Float64) -> Float64";
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        {
+            const auto * arg = arguments[i].get();
+            if (!WhichDataType(arg).isFloat64())
+                throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument {} of function {}. Must be Float64",
+                        arg->getName(), i + 1, getName());
+        }
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -150,16 +160,16 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
             "Calculate distance between two points in meters",
             "SELECT h3PointDistM(-10.0, 0.0, 10.0, 0.0) AS h3PointDistM",
             R"(
-┌───────h3PointDistM─┐
-│ 2223901.0395045886 │
-└────────────────────┘
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", greatCircleDistanceM); }, documentation);
+    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", distanceM); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistKm)
 {
@@ -183,16 +193,16 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
             "Calculate distance between two points in kilometers",
             "SELECT h3PointDistKm(-10.0, 0.0, 10.0, 0.0) AS h3PointDistKm",
             R"(
-┌──────h3PointDistKm─┐
-│ 2223.9010395045884 │
-└────────────────────┘
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", greatCircleDistanceKm); }, documentation);
+    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", distanceKm); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistRads)
 {
@@ -225,7 +235,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in radians.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", greatCircleDistanceRads); }, documentation);
+    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", distanceRads); }, documentation);
 }
 
 }

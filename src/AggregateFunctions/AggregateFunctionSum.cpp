@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -60,46 +59,30 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     const DataTypePtr & data_type = argument_types[0];
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<Function>(*data_type, *data_type, argument_types));
-    else if (isInterval(data_type))
-    {
-        /// `Interval` is backed by `Int64` and is not a numeric type, so it is not part of the
-        /// dispatch above. The sum of a set of intervals of one unit is an interval of the same
-        /// unit, so only the underlying number of units is summed and the unit of the argument is
-        /// kept: values of different units are already brought to their common unit, where one
-        /// exists, before the aggregation.
-        /// Kahan compensation applies to floating point values only, so, as for `Decimal`, the
-        /// exact integer summation is used instead of degrading the count of units to `Float64`.
-        using IntervalFunction = std::conditional_t<
-            std::is_same_v<typename Function<Int64>::ResultType, Int64>,
-            Function<Int64>,
-            typename SumSimple<Int64>::Function>;
-        res = std::make_shared<IntervalFunction>(argument_types, data_type);
-    }
     else
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
-                        argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        argument_types[0]->getName(), name);
     return res;
 }
 
 }
 
-void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the sum of numeric values or of intervals.
+Calculates the sum of numeric values.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 sum(num)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"num", "Column of numeric values or of intervals.", {"(U)Int*", "Float*", "Decimal*", "Interval"}}
+        {"num", "Column of numeric values.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the sum of the values. For an `Interval` argument the result is an interval of the same unit, and an empty input gives a zero-length interval.", {"(U)Int*", "Float*", "Decimal*", "Interval"}
+        "Returns the sum of the values.", {"(U)Int*", "Float*", "Decimal*"}
     };
     FunctionDocumentation::Examples examples = {
     {
@@ -126,33 +109,13 @@ SELECT sum(salary) FROM employees;
 │      266140 │
 └─────────────┘
         )"
-    },
-    {
-        "Total time spent on requests",
-        R"(
-CREATE TABLE requests
-(
-    req_id UInt32,
-    duration IntervalMillisecond
-)
-ENGINE = Memory;
-
-INSERT INTO requests VALUES (1, 100), (2, 200), (3, 300);
-
-SELECT sum(duration) AS total_duration, toTypeName(total_duration) FROM requests;
-        )",
-        R"(
-┌─total_duration─┬─toTypeName(total_duration)─┐
-│            600 │ IntervalMillisecond        │
-└────────────────┴────────────────────────────┘
-        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_overflow = R"(
 Computes a sum of numeric values, using the same data type for the result as for the input parameters.
@@ -162,10 +125,10 @@ If the sum exceeds the maximum value for this data type, it is calculated with o
 sumWithOverflow(num)
     )";
     FunctionDocumentation::Arguments arguments_overflow = {
-        {"num", "Column of numeric values or of intervals.", {"(U)Int*", "Float*", "Decimal*", "Interval"}}
+        {"num", "Column of numeric values.", {"(U)Int*", "Float*", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_overflow = {
-        "The sum of the values.", {"(U)Int*", "Float*", "Decimal*", "Interval"}
+        "The sum of the values.", {"(U)Int*", "Float*", "Decimal*"}
     };
     FunctionDocumentation::Examples examples_overflow = {
     {
@@ -207,22 +170,21 @@ FROM employees;
     FunctionDocumentation::Category category_overflow = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_overflow = {description_overflow, syntax_overflow, arguments_overflow, {}, returned_value_overflow, examples_overflow, introduced_in_overflow, category_overflow};
 
-    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, documentation_overflow, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, documentation_overflow});
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
-Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
-The compensation works only for [Float](/reference/data-types/float) types.
-For the [Decimal](/reference/data-types/decimal) and [Interval](/reference/data-types/special-data-types/interval) types, which are backed by integers, the exact summation of `sum` is used instead.
+Slower than [`sum`](/sql-reference/aggregate-functions/reference/sum) function.
+The compensation works only for [Float](/sql-reference/data-types/float) types.
     )";
     FunctionDocumentation::Syntax syntax_kahan = R"(
 sumKahan(x)
     )";
     FunctionDocumentation::Arguments arguments_kahan = {
-        {"x", "Input value.", {"Integer", "Float", "Decimal", "Interval"}}
+        {"x", "Input value.", {"Integer", "Float", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_kahan = {
-        "Returns the sum of numbers.", {"(U)Int*", "Float*", "Decimal", "Interval"}
+        "Returns the sum of numbers.", {"(U)Int*", "Float*", "Decimal"}
     };
     FunctionDocumentation::Examples examples_kahan = {
     {
@@ -241,7 +203,7 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation::Category category_kahan = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
-    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
 }
 
 }

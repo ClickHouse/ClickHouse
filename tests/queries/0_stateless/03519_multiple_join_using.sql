@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 CREATE TABLE table0 (id Int64, val String) Engine=MergeTree ORDER BY id;
 CREATE TABLE table1 (id2 Int64, val String) Engine=MergeTree ORDER BY id2;

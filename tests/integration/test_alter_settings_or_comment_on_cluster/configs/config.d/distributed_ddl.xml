@@ -1,5 +1,0 @@
-<clickhouse>
-<distributed_ddl>
-    <path>/clickhouse/task_queue/ddl</path>
-</distributed_ddl>
-</clickhouse>

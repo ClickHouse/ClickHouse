@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Formats/NumpyDataTypes.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ class ReadBuffer;
 
 struct NumpyHeader
 {
-    VectorWithMemoryTracking<size_t> shape;
+    std::vector<int> shape;
     std::shared_ptr<NumpyDataType> numpy_type;
 };
 
@@ -33,6 +33,7 @@ private:
 
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
+    void readData(MutableColumns & columns);
 
     template <typename T>
     void readAndInsertInteger(IColumn * column, const DataTypePtr & data_type, const NumpyDataType & npy_type);
@@ -49,15 +50,16 @@ private:
     template <typename ColumnValue>
     void readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness);
 
+    void readRows(MutableColumns & columns);
+
     void readValue(IColumn * column);
 
     DataTypePtr nested_type;
     NumpyHeader header;
     size_t counted_rows = 0;
-    size_t read_rows = 0;
 };
 
-class NpySchemaReader final : public ISchemaReader
+class NpySchemaReader : public ISchemaReader
 {
 public:
     explicit NpySchemaReader(ReadBuffer & in_);

@@ -18,10 +18,6 @@ struct BitHammingDistanceImpl
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
 
-    /// Documentation-only — result is `UInt16` for 256-bit inputs, otherwise
-    /// `UInt8`; this isn't expressible compactly in the DSL.
-    static constexpr auto signature_documentation = "(Number, Number) -> UInt";
-
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
@@ -61,7 +57,7 @@ REGISTER_FUNCTION(BitHammingDistance)
 {
     FunctionDocumentation::Description description = R"(
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two numbers.
-Can be used with [`SimHash`](/reference/functions/regular-functions/hash-functions#ngramSimHash) functions for detection of semi-duplicate strings.
+Can be used with [`SimHash`](../../sql-reference/functions/hash-functions.md#ngramSimHash) functions for detection of semi-duplicate strings.
 The smaller the distance, the more similar the strings are.
 )";
     FunctionDocumentation::Syntax syntax = "bitHammingDistance(x, y)";

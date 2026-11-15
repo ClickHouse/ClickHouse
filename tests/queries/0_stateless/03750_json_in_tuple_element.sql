@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 
 select tupleElement('{"a" : 42}'::JSON, 'a');
 select tupleElement('{"a" : 42}'::JSON(a UInt32), 'a');
@@ -22,6 +23,7 @@ insert into test values ('{"a" : 42, "b" : "s1", "c" : [{"d" : 1}, {"d" : 2}, {"
 select tupleElement(json, 'a') from test;
 select tupleElement(json, 'b') from test;
 select tupleElement(json, 'c') from test;
+select tupleElement(json, 'c.:`Array(JSON)`') from test;
 select json.c[1].d from test;
 
 explain syntax run_query_tree_passes=1 select tupleElement(json, 'a') from test settings optimize_functions_to_subcolumns=1;

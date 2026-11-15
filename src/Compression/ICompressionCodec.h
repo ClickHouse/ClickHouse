@@ -3,11 +3,10 @@
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <memory>
-#include <optional>
+#include <vector>
 
 class SipHash;
 
@@ -18,17 +17,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 namespace ErrorCodes
 {
-extern const int CANNOT_DECOMPRESS;
-extern const int CORRUPTED_DATA;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
 }
-
-/// What a codec keeps between the blocks of one stream. One codec object serves any number of streams at once, each with its own state.
-struct CompressionState
-{
-    virtual ~CompressionState() = default;
-};
-
-using CompressionStatePtr = std::unique_ptr<CompressionState>;
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -41,35 +32,22 @@ public:
     /// Byte which indicates codec in compressed file
     virtual uint8_t getMethodByte() const = 0;
 
-    /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)". Constructed on demand.
-    virtual ASTPtr getCodecDescription() const = 0;
+    /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
+    virtual ASTPtr getCodecDesc() const;
 
     /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
     /// "CODEC(LZ4,LZ4HC(5))"
-    ASTPtr getFullCodecDescription() const;
+    ASTPtr getFullCodecDesc() const;
 
     /// Hash, that depends on codec ast and optional parameters like data type
     virtual void updateHash(SipHash & hash) const = 0;
     UInt64 getHash() const;
 
-    /// Stateful compression from uncompressed source to dest. Dest should preallocate memory
-    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const;
-
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const
-    {
-        return compress(source, source_size, dest, createCompressionState().get());
-    }
-
-    /// Fresh state for one stream, nullptr when this codec is stateless.
-    virtual CompressionStatePtr createCompressionState() const { return nullptr; }
+    UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
-
-    /// Exact compressed payload size (no header) for the given input. std::nullopt if this codec cannot determine its output size cheaply.
-    /// Same value as doCompressData  would return, computed without actually compressing.
-    virtual std::optional<UInt32> tryGetCompressedSize(const char * /*source*/, UInt32 /*source_size*/) const { return std::nullopt; }
 
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
@@ -92,12 +70,6 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
-    /// Does the codec need to know the vector (Array) dimension before compression?
-    virtual bool needsVectorDimensionUpfront() const { return false; }
-
-    /// Setting dimension is useful for vector codecs (only SZ3 codec at the moment).
-    virtual void setAndCheckVectorDimension(size_t /*dimension*/);
-
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
 
@@ -116,19 +88,12 @@ public:
     /// If the codec's purpose is to calculate deltas between consecutive values.
     virtual bool isDeltaCompression() const { return false; }
 
-    virtual bool isLossyCompression() const { return false; }
-
-    /// If the codec needs the column data type to compress (e.g. `PCO`). An instance created without a type
-    /// can still decompress.
-    virtual bool requiresColumnTypeToCompress() const { return false; }
+    /// It is a codec available only for evaluation purposes and not meant to be used in production.
+    /// It will not be allowed to use unless the user will turn off the safety switch.
+    virtual bool isExperimental() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
-
-    /// If the codec is selected by the data type, which was not known when it was created (`FirstApplicable` made
-    /// without a data type, or a chain of codecs with it). Such a codec is created again from `getFullCodecDescription`
-    /// once the data type is known.
-    virtual bool dependsOnDataType() const { return false; }
 
     // Returns a string with a high level codec description.
     virtual String getDescription() const = 0;
@@ -137,11 +102,7 @@ protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
-    /// Delegates every operation to the codec it selected.
-    friend class CompressionCodecFirstApplicable;
-
-    /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
-    /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.
+    /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
     /// Actually compress data without header
@@ -150,16 +111,17 @@ protected:
     /// Actually decompress data without header
     virtual UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
-    /// Build a description for `getCodecDescription` from a codec name and optional arguments.
-    static ASTPtr makeCodecDescription(const String & name, const ASTs & arguments = {});
-
-    /// Writes the block header in front of `body_size` bytes of compressed data already at `dest + getHeaderSize()`. Returns the block size.
-    UInt32 writeHeader(char * dest, UInt32 body_size, UInt32 uncompressed_size) const;
+    /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
+    void setCodecDescription(const String & name, const ASTs & arguments);
+    void setCodecDescription(const String & name) { setCodecDescription(name, ASTs{}); }
 
     int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
+
+private:
+    ASTPtr full_codec_desc;
 };
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 }

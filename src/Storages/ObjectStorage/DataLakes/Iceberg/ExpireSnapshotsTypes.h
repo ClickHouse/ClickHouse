@@ -20,7 +20,6 @@ struct ExpireSnapshotsResult
     Int64 deleted_manifest_files_count = 0;
     Int64 deleted_manifest_lists_count = 0;
     Int64 deleted_statistics_files_count = 0;
-    Int64 failed_deletions_count = 0;
     bool dry_run = false;
 };
 

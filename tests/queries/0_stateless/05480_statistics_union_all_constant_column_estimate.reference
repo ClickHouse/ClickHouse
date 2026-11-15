@@ -1,5 +1,0 @@
--- the branch selected by a constant column is estimated as without that filter, the other one as empty
-1	1	1	1	1
--- comparisons of materialized constants are decided as they are executed
-1
-1

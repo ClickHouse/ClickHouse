@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessRightsElement.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -27,7 +28,7 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
 struct DDLQueryOnClusterParams
 {
     /// A cluster to execute a distributed query.
-    /// If not set, `executeDDLQueryOnCluster` will use `query->cluster` to determine a cluster to execute the query.
+    /// If not set, executeDDLQueryOnCluster() will use `query->cluster` to determine a cluster to execute the query.
     ClusterPtr cluster;
 
     /// 1-bases index of a shard to execute a query on, 0 means all shards.
@@ -40,12 +41,10 @@ struct DDLQueryOnClusterParams
     AccessRightsElements access_to_check;
 
     /// An authorization check which must run after the standard cluster and query checks but before enqueueing.
-    /// It receives each default database which the cluster can use for an unqualified target table, and whether
-    /// an object missing on the initiator must be rejected. It need not be when
-    /// `distributed_ddl_use_initial_user_and_roles` is enabled and `distributed_ddl_entry_format_version` carries
-    /// the initiator's user: the workers then run the query as that user and roles and repeat the check against
-    /// their own objects.
-    std::function<void(const String & default_database, bool throw_if_unresolved)> additional_access_check;
+    /// It receives whether the workers run the query without the initiator's user: they run it as that user and
+    /// roles only when `distributed_ddl_use_initial_user_and_roles` is enabled and `distributed_ddl_entry_format_version`
+    /// carries the initiator's user.
+    std::function<void(bool throw_if_unresolved)> additional_access_check;
 
     /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
     ZooKeeperRetriesInfo retries_info;

@@ -3,7 +3,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/JemallocCacheAllocator.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -19,43 +18,11 @@ namespace DB
 {
 
 
-/// Cache entries are the server's, not the query's that inserts or evicts them.
-template <typename T>
-struct ServerOwnedCacheEntryAllocator
-{
-    using value_type = T;
-
-    ServerOwnedCacheEntryAllocator() = default;
-    template <typename U>
-    explicit ServerOwnedCacheEntryAllocator(const ServerOwnedCacheEntryAllocator<U> &) {}
-
-    T * allocate(size_t n)
-    {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        return static_cast<T *>(::operator new(n * sizeof(T)));
-    }
-
-    void deallocate(T * p, size_t n) noexcept
-    {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        ::operator delete(p, n * sizeof(T));
-    }
-
-    template <typename U>
-    bool operator==(const ServerOwnedCacheEntryAllocator<U> &) const { return true; }
-};
-
 struct UncompressedCacheCell
 {
     Memory<JemallocCacheAllocator> data;
-    size_t compressed_size{};
-    UInt32 additional_bytes{};
-
-    ~UncompressedCacheCell()
-    {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        data = {};
-    }
+    size_t compressed_size;
+    UInt32 additional_bytes;
 };
 
 struct UncompressedSizeWeightFunction

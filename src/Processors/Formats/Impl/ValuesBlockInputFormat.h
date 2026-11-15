@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -38,7 +37,7 @@ public:
 
     /// TODO: remove context somehow.
     void setContext(const ContextPtr & context_);
-    void setQueryParameters(const NameToNameMap & parameters) override;
+    void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
@@ -57,7 +56,7 @@ private:
         SingleExpressionEvaluation
     };
 
-    using ConstantExpressionTemplates = VectorWithMemoryTracking<std::optional<ConstantExpressionTemplate>>;
+    using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
     Chunk read() override;
 
@@ -90,10 +89,10 @@ private:
     const size_t num_columns;
     size_t total_rows = 0;
 
-    VectorWithMemoryTracking<ParserType> parser_type_for_column;
-    VectorWithMemoryTracking<size_t> attempts_to_deduce_template;
-    VectorWithMemoryTracking<size_t> attempts_to_deduce_template_cached;
-    VectorWithMemoryTracking<size_t> rows_parsed_using_template;
+    std::vector<ParserType> parser_type_for_column;
+    std::vector<size_t> attempts_to_deduce_template;
+    std::vector<size_t> attempts_to_deduce_template_cached;
+    std::vector<size_t> rows_parsed_using_template;
 
     ParserExpression parser;
     ConstantExpressionTemplates templates;
@@ -106,7 +105,7 @@ private:
     size_t approx_bytes_read_for_chunk = 0;
 };
 
-class ValuesSchemaReader final : public IRowSchemaReader
+class ValuesSchemaReader : public IRowSchemaReader
 {
 public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

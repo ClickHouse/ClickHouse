@@ -3,7 +3,6 @@
 #include <vector>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/writeJSONNumber.h>
 
 namespace DB
 {

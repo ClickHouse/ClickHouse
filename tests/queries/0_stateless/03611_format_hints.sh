@@ -7,5 +7,3 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_LOCAL --query="SELECT 1 format CSVt" 2>&1 | grep -q "Maybe you meant: \['CSV','TSV'\]" && echo 'OK' || echo 'FAIL'
 
 $CLICKHOUSE_LOCAL --query="SELECT 1 format PrettyJSON" 2>&1 | grep -q "Maybe you meant: \['PrettyNDJSON'\]" && echo 'OK' || echo 'FAIL'
-
-$CLICKHOUSE_LOCAL --query="SELECT 1 format CompletelyNonexistentFormatName" 2>&1 | grep -q "Maybe you meant:" && echo 'FAIL' || echo 'OK'

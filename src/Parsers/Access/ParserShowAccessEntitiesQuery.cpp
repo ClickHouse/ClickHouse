@@ -1,6 +1,5 @@
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
-#include <Parsers/Access/parseAccessEntityName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -30,14 +29,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected)
-                || !parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database))
-                return false;
-
-            /// A prefix wildcard like `db*.*` or `table*` cannot be represented by the
-            /// (database, table) pair this query type carries; reject it explicitly
-            /// instead of silently narrowing it to the non-wildcard form.
-            return !wildcard;
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -48,7 +41,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!ParserKeyword{Keyword::SHOW}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type = {};
+    AccessEntityType type;
     bool all = false;
     bool current_quota = false;
     bool current_roles = false;
@@ -91,7 +84,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             else
                 database_and_table_name.emplace(database, table_name);
         }
-        else if (!atQueryOutputTail(pos, expected) && parseIdentifierOrStringLiteral(pos, expected, short_name))
+        else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
         {
         }
         else

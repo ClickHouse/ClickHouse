@@ -6,7 +6,6 @@
 #endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -29,21 +28,10 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds async_block_ids_cache_update_wait_ms;
-    extern const MergeTreeSettingsMilliseconds deduplication_hashes_cache_update_wait_ms;
+    extern const MergeTreeSettingsBool use_async_block_ids_cache;
 }
 
 static constexpr int FAILURE_RETRY_MS = 3000;
-
-/// `deduplication_hashes_cache_update_wait_ms` is the current name of this knob; the legacy
-/// `async_block_ids_cache_update_wait_ms` is still honored for one release when the new setting is left
-/// at its default, so existing configs keep working. The legacy name will be removed afterwards.
-static std::chrono::milliseconds getCacheUpdateWaitMs(const MergeTreeSettings & settings)
-{
-    if (settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].changed
-        || !settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].changed)
-        return std::chrono::milliseconds(settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].totalMilliseconds());
-    return std::chrono::milliseconds(settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds());
-}
 
 template <typename TStorage>
 struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
@@ -83,18 +71,19 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait(saturatedMilliseconds(getCacheUpdateWaitMs(*storage.getSettings()).count()))
+    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ update(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ update(); });
 }
 
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::start()
 {
-    task->activateAndSchedule();
+    if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+        task->activateAndSchedule();
 }
 
 template <typename TStorage>
@@ -118,40 +107,44 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 {
     std::lock_guard lock(mu);
     cache_ptr.reset();
+    version = 0;
 }
 
+/// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
-typename AsyncBlockIDsCache<TStorage>::Conflicts
-AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version)
+std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version)
 {
-    Conflicts conflicts;
+    if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+        return {};
+
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
-        if (min_version)
-        {
-            cv.wait_for(lk, update_wait, [&]{ return version >= min_version; });
+        /// For first time access of this cache, the `last_version` is zero, so it will not block here.
+        /// For retrying request, We compare the request version and cache version, because zk only returns
+        /// incomplete information of duplication, we need to update the cache to find out more duplication.
+        cv.wait_for(lk, update_wait, [&]{return version != last_version;});
 
-            if (version < min_version)
-                LOG_INFO(log, "Read cache with a old version {}", version);
-        }
+        if (version == last_version)
+            LOG_INFO(log, "Read cache with a old version {}", last_version);
 
         cur_cache = cache_ptr;
-        conflicts.version = version;
+        last_version = version;
     }
 
     if (cur_cache == nullptr)
-        return conflicts;
+        return {};
 
+    std::vector<DeduplicationHash> conflicts;
     for (const auto & hash : deduplication_hashes)
     {
         if (cur_cache->contains(hash.getBlockId()))
         {
-            conflicts.hashes.push_back(hash);
+            conflicts.push_back(hash);
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.hashes.empty());
+    ProfileEvents::increment(ProfileEvents::AsyncInsertCacheHits, !conflicts.empty());
 
     return conflicts;
 }

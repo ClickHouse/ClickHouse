@@ -2,8 +2,6 @@
 1
 -- a codec that stores data uncompressed must not lie about the uncompressed size
 1
--- and neither may the other verbatim codec
-1
 -- nor may it understate the uncompressed size
 1
 -- engines keep working on ordinary data

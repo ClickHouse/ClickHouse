@@ -40,7 +40,6 @@ CREATE USER ${restoring_user};
 GRANT CREATE USER, CREATE ROLE ON *.* TO ${restoring_user};
 GRANT ROLE ADMIN ON *.* TO ${restoring_user};
 GRANT SELECT ON *.* TO ${restoring_user} WITH GRANT OPTION;
-GRANT READ ON DISK TO ${restoring_user};
 "
 
 # Drop the entities we will restore.
@@ -76,7 +75,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
 CREATE USER ${no_grant_user};
 GRANT CREATE USER, CREATE ROLE ON *.* TO ${no_grant_user};
 GRANT ROLE ADMIN ON *.* TO ${no_grant_user};
-GRANT READ ON DISK TO ${no_grant_user};
 "
 
 ${CLICKHOUSE_CLIENT} --user="${no_grant_user}" --query "RESTORE ALL FROM ${backup_name} SETTINGS restore_access_entities_with_current_grants=true FORMAT Null"

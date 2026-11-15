@@ -1,4 +1,4 @@
--- Text index `preprocessor`/`postprocessor` expressions must only use functions the user declaring
+-- Text index `preprocessor` expressions must only use functions the user declaring
 -- the index is permitted to run.
 --
 -- The test needs a function the current user may not run. Introspection functions fit: they are
@@ -24,17 +24,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '3. Denied in a postprocessor.';
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
-)
-ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
-
-SELECT '4. Denied when nested under a String result.';
+SELECT '3. Denied when nested under a String result.';
 
 CREATE TABLE tab
 (
@@ -44,7 +34,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '5. Denied via ALTER ADD INDEX.';
+SELECT '4. Denied via ALTER ADD INDEX.';
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
@@ -52,7 +42,7 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', prep
 
 DROP TABLE tab;
 
-SELECT '6. Unprivileged expression unaffected.';
+SELECT '5. Unprivileged expression unaffected.';
 
 CREATE TABLE tab
 (
@@ -67,7 +57,7 @@ SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
 DROP TABLE tab;
 
-SELECT '7. Accepted with the privilege, so not a blocklist.';
+SELECT '6. Accepted with the privilege, so not a blocklist.';
 
 SET allow_introspection_functions = 1;
 
@@ -76,56 +66,39 @@ CREATE TABLE tab
 (
     id UInt64,
     val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
 )
 ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
-SELECT '8. Existing index stays readable without the privilege.';
+SELECT '7. Existing index stays readable without the privilege.';
 
 SET allow_introspection_functions = 0;
 
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
-SELECT '9. Unrelated ALTER does not re-authorize.';
+SELECT '8. Unrelated ALTER does not re-authorize.';
 
 ALTER TABLE tab ADD COLUMN extra UInt8 DEFAULT 0;
 ALTER TABLE tab RENAME COLUMN val TO val2;
 SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
-SELECT '10. Neither does DETACH/ATTACH.';
+SELECT '9. Neither does DETACH/ATTACH.';
 
 DETACH TABLE tab;
 ATTACH TABLE tab;
 SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
-SELECT '11. An ALIAS column hiding a privileged function is denied.';
-
--- Its own table: a column may carry only one text index, and that is checked before permissions are.
-SET allow_introspection_functions = 1;
-CREATE TABLE tab_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id;
-SET allow_introspection_functions = 0;
-
-ALTER TABLE tab_alias ADD INDEX idx_alias(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
-
-SELECT '12. So is an alias renamed by an earlier command of the same ALTER.';
-
--- The rename is applied before the index is added, so `renamed` is what expands to `demangle(val)`.
-ALTER TABLE tab_alias RENAME COLUMN mangled TO renamed,
-                      ADD INDEX idx_renamed(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
-
-DROP TABLE tab_alias;
-
-SELECT '13. Redeclaring with a privileged function is denied.';
+SELECT '10. Redeclaring with a privileged function is denied.';
 
 ALTER TABLE tab DROP INDEX idx,
                 ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
 DROP TABLE tab;
 
-SELECT '14. The transform preflight does not reject what a plain ALTER accepts.';
+SELECT '11. The transform preflight does not reject what a plain ALTER accepts.';
 
 CREATE TABLE tab_preflight (id UInt64, val String, num UInt64)
 ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax';
@@ -139,28 +112,12 @@ WHERE database = currentDatabase() AND table = 'tab_preflight' ORDER BY name;
 
 DROP TABLE tab_preflight;
 
-SELECT '15. Replacing a privileged alias in the same statement is allowed.';
-
-SET allow_introspection_functions = 1;
-CREATE TABLE tab_replace (id UInt64, val String, transformed String ALIAS demangle(val))
-ENGINE = MergeTree ORDER BY id;
-SET allow_introspection_functions = 0;
-
--- The installed transform is `lower(val)`; the alias it replaces must not be demanded.
-ALTER TABLE tab_replace MODIFY COLUMN transformed String ALIAS lower(val),
-                        ADD INDEX idx_replaced(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = transformed) GRANULARITY 1;
-
-SELECT name FROM system.data_skipping_indices
-WHERE database = currentDatabase() AND table = 'tab_replace' ORDER BY name;
-
-DROP TABLE tab_replace;
-
-SELECT '16. A statement without a transform is not analyzed at all.';
+SELECT '12. A statement without a transform is not analyzed at all.';
 
 SET allow_statistics = 1;
-CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic';
+CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'minmax';
 
-ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD STATISTICS x TYPE basic;
+ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD STATISTICS x TYPE minmax;
 
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain';
 

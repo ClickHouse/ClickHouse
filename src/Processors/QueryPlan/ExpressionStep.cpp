@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -11,9 +9,6 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
 #include <Interpreters/ActionsDAG.h>
-
-#include <span>
-#include <unordered_set>
 
 
 namespace DB
@@ -81,12 +76,8 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    /// All streams of the pipe have the same header, so compute the transformed header once
-    /// instead of in every ExpressionTransform instance: the computation is linear in the size
-    /// of the DAG, and there is one transform per stream.
-    auto transformed_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), expression->getActionsDAG()));
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<ExpressionTransform>(header, transformed_header, expression, dataflow_cache_updater); });
+                                { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
@@ -99,10 +90,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             &columns_contain_compiled_function);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        auto converted_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(pipeline.getHeader(), convert_actions->getActionsDAG()));
         pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<ExpressionTransform>(header, converted_header, convert_actions);
+            return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
     }
 }
@@ -111,7 +101,6 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
-
     if (!settings.compact)
         expression->describeActions(settings.out, prefix);
 }
@@ -129,12 +118,12 @@ void ExpressionStep::updateOutputHeader()
 
 void ExpressionStep::serialize(Serialization & ctx) const
 {
-    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
+    actions_dag.serialize(ctx.out, ctx.registry);
 }
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 {
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
@@ -143,171 +132,101 @@ QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 
 bool ExpressionStep::canRemoveUnusedColumns() const
 {
-    return true;
+    // At the time of writing ActionsDAG doesn't handle removal of unused actions well in case of duplicated names in input or outputs
+    return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
 }
 
-ActionsDAG::NodeRawConstPtrs ExpressionStep::UnneededColumnsPlan::neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const
-{
-    ActionsDAG::NodeRawConstPtrs needed;
-    needed.reserve(outputs.size() - unneeded_dag_position_count);
-
-    size_t next_unneeded = 0;
-    for (size_t position = 0; position < outputs.size(); ++position)
-    {
-        if (next_unneeded < unneeded_dag_position_count && unneeded_output_positions[next_unneeded] == position)
-            ++next_unneeded;
-        else
-            needed.push_back(outputs[position]);
-    }
-
-    return needed;
-}
-
-std::vector<size_t> ExpressionStep::UnneededColumnsPlan::unneededInputPositions() const
-{
-    std::vector<size_t> positions;
-    for (size_t position = 0; position < input_columns.size(); ++position)
-    {
-        const auto column = input_columns[position];
-        if (column == InputColumnUsage::ReadDropped || column == InputColumnUsage::PassesThroughDropped)
-            positions.push_back(position);
-    }
-
-    return positions;
-}
-
-ExpressionStep::UnneededColumnsPlan
-ExpressionStep::analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
 
-    UnneededColumnsPlan plan;
-    plan.unneeded_output_positions = unneeded_output_positions;
+    /// When extra columns were absorbed from a child step that cannot reduce its output,
+    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
+    if (prevent_input_removal)
+        remove_inputs = false;
+
+    const auto required_output_count = required_outputs.size();
+    auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
+    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
+
+    const auto actions_dag_required_outputs = getRequiredOutputNamesInOrder(std::move(split_results.output_names), actions_dag);
+    auto updated_actions = actions_dag.removeUnusedActions(actions_dag_required_outputs, remove_inputs);
 
     const auto & input_header = input_headers.front();
+    // Number of input columns that are not removed by actions
+    const auto pass_through_inputs = input_header->columns() - actions_dag_input_count_before;
+    const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
+    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
 
-    /// The output header is structured as:
-    /// [DAG output 0, ..., DAG output N-1, pass-through input 0, pass-through input 1, ...]
-    /// so the positions below the number of DAG outputs are the DAG outputs nobody needs, and the rest
-    /// name pass-through columns, counting from that number. The positions are sorted, so the first
-    /// group is a prefix of them and the second is the remaining suffix.
-    chassert(std::ranges::is_sorted(unneeded_output_positions));
-    const auto dag_output_count = actions_dag.getOutputs().size();
-    const auto first_passthrough
-        = std::ranges::lower_bound(unneeded_output_positions, dag_output_count) - unneeded_output_positions.begin();
-
-    plan.unneeded_dag_position_count = first_passthrough;
-
-    const auto unneeded_passthrough_positions
-        = std::span{unneeded_output_positions}.subspan(first_passthrough);
-
-    /// What removeUnusedActions would keep once the outputs are pruned.
-    ///
-    /// It also folds constants before it collects the nodes to keep, and folding clears the children of
-    /// a folded node, so those children are dropped. Stop at such a node to see the same.
-    auto roots = plan.neededDAGOutputs(actions_dag.getOutputs());
-    for (const auto & node : actions_dag.getNodes())
-        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-            roots.push_back(&node);
-
-    const auto is_folded_constant = [](const ActionsDAG::Node * node)
+    const auto build_required_inputs_set = [this, &not_output_names = split_results.not_output_names]()
     {
-        return node->column && !node->children.empty();
+        std::unordered_set<String> required_inputs_set;
+
+        for (const auto * input_node : actions_dag.getInputs())
+            required_inputs_set.insert(input_node->result_name);
+
+        for (const auto & pass_through_input : not_output_names)
+            required_inputs_set.insert(pass_through_input);
+
+        return required_inputs_set;
     };
 
-    const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
-
-    /// One entry per column of the input header: the input reading it, or nothing when it passes by.
-    const auto header_columns = mapHeaderColumnsToInputs(actions_dag.getInputs(), *input_header);
-    plan.input_columns.resize(header_columns.size());
-
-    /// The caller's pass-through indices ascend, and so do the pass-through columns, so one walk over
-    /// the header pairs them up.
-    size_t passthrough_index = 0;
-    size_t next_unneeded_passthrough = 0;
-
-    /// A dropped column the child keeps is consumed by a new input, and inputs are paired with header columns by name,
-    /// in order. So a pass-through column after a needed one of the same name cannot be consumed, and is kept.
-    std::unordered_set<std::string_view> needed_passthrough_names;
-    std::vector<size_t> kept_unneeded_positions;
-
-    for (size_t position = 0; position < header_columns.size(); ++position)
+    if (has_to_add_input_to_actions)
     {
-        if (!header_columns.passesThrough(position))
-        {
-            const auto * input = actions_dag.getInputs()[header_columns.read_by[position]];
-            const bool is_needed = surviving_nodes.contains(input);
-            plan.input_columns[position] = is_needed ? InputColumnUsage::ReadNeeded : InputColumnUsage::ReadDropped;
-            continue;
-        }
+        const auto required_inputs_set = build_required_inputs_set();
 
-        const auto output_position = dag_output_count + passthrough_index;
-        bool is_unneeded = next_unneeded_passthrough < unneeded_passthrough_positions.size()
-            && unneeded_passthrough_positions[next_unneeded_passthrough] == output_position;
+        for (const auto & name_and_type : *input_header)
+            if (!required_inputs_set.contains(name_and_type.name))
+                actions_dag.addInput(name_and_type.name, name_and_type.type);
 
-        if (is_unneeded)
-            ++next_unneeded_passthrough;
-
-        const auto & name = input_header->getByPosition(position).name;
-        if (is_unneeded && needed_passthrough_names.contains(name))
-        {
-            is_unneeded = false;
-            kept_unneeded_positions.push_back(output_position);
-        }
-
-        if (!is_unneeded)
-            needed_passthrough_names.insert(name);
-
-        plan.input_columns[position] = is_unneeded ? InputColumnUsage::PassesThroughDropped : InputColumnUsage::PassesThroughNeeded;
-        ++passthrough_index;
+        updated_actions = true;
     }
 
-    if (next_unneeded_passthrough != unneeded_passthrough_positions.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unneeded output position {} is out of range for the output header",
-            unneeded_passthrough_positions[next_unneeded_passthrough]);
+    // If the actions are not updated and no outputs has to be removed, then there is nothing to update
+    // Note: required_outputs must be a subset of already existing outputs
+    if (!updated_actions && output_header->columns() == required_output_count)
+        return RemovedUnusedColumns::None;
 
-    /// Both lists are sorted, and the kept positions are pass-through ones, so they are not in the prefix of DAG outputs.
-    std::erase_if(plan.unneeded_output_positions, [&](size_t position) { return std::ranges::binary_search(kept_unneeded_positions, position); });
+    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    return plan;
+    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
+    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
+
+    if (update_inputs)
+    {
+        const auto required_inputs_set = build_required_inputs_set();
+        Block new_input_header{};
+
+        for (const auto & col_type_and_name : *input_header)
+            if (required_inputs_set.contains(col_type_and_name.name))
+                new_input_header.insert(col_type_and_name);
+
+        SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
+        updateInputHeader(std::move(new_shared_input_header), 0);
+
+        return RemovedUnusedColumns::OutputAndInput;
+    }
+
+    updateOutputHeader();
+
+    return RemovedUnusedColumns::OutputOnly;
 }
 
-ExpressionStep::UnneededInputPositions ExpressionStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+bool ExpressionStep::canRemoveColumnsFromOutput() const
 {
-    return {analyzeUnneededColumns(unneeded_output_positions).unneededInputPositions()};
+    if (output_header == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
+
+    return canRemoveUnusedColumns();
 }
-
-ExpressionStep::RemoveUnusedColumnsResult
-ExpressionStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs)
-{
-    const auto plan = analyzeUnneededColumns(unneeded_output_positions);
-    const auto & pruned = inputs.at(0);
-    const auto input_header = input_headers.front();
-
-    actions_dag.getOutputs() = plan.neededDAGOutputs(actions_dag.getOutputs());
-
-    RemoveUnusedColumnsResult result;
-    result.dropped_output_positions = plan.unneeded_output_positions;
-
-    const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
-    result.step_changed = !result.dropped_output_positions.empty() || dag_changed
-        || !blocksHaveEqualStructure(*input_header, *pruned.header);
-
-    if (result.step_changed)
-        updateInputHeader(pruned.header, 0);
-
-    return result;
-}
-
 
 QueryPlanStepPtr ExpressionStep::clone() const
 {
     return std::make_unique<ExpressionStep>(*this);
 }
 
-void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Expression", ExpressionStep::deserialize);

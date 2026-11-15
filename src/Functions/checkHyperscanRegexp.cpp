@@ -3,19 +3,14 @@
 #include <Common/Exception.h>
 #include <charconv>
 
-#include "config.h"
-
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FUNCTION_NOT_ALLOWED;
-    extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
-    extern const int NOT_IMPLEMENTED;
 }
 
-void checkHyperscanRegexp(const VectorWithMemoryTracking<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
+void checkHyperscanRegexp(const std::vector<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
 {
     if (max_hyperscan_regexp_length > 0 || max_hyperscan_regexp_total_length > 0)
     {
@@ -33,39 +28,12 @@ void checkHyperscanRegexp(const VectorWithMemoryTracking<std::string_view> & reg
     }
 }
 
-void checkHyperscanFunctionArguments(
-    [[maybe_unused]] const VectorWithMemoryTracking<std::string_view> & regexps,
-    [[maybe_unused]] bool allow_hyperscan,
-    [[maybe_unused]] size_t max_hyperscan_regexp_length,
-    [[maybe_unused]] size_t max_hyperscan_regexp_total_length,
-    [[maybe_unused]] bool reject_expensive_hyperscan_regexps)
-{
-#if !USE_VECTORSCAN
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse has been built without Hyperscan functions");
-#else
-    if (!allow_hyperscan)
-        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
-
-    checkHyperscanRegexp(regexps, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
-    if (reject_expensive_hyperscan_regexps)
-    {
-        SlowWithHyperscanChecker checker;
-        for (auto regexp : regexps)
-        {
-            if (checker.isSlow(regexp))
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
-        }
-    }
-#endif
-}
-
 namespace
 {
 
 bool isLargerThanFifty(std::string_view str)
 {
-    int number = 0;
+    int number;
     auto [_, ec] = std::from_chars(str.data(), str.data() + str.size(), number);
     if (ec != std::errc())
         return false;

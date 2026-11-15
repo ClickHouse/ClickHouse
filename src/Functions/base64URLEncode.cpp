@@ -1,6 +1,6 @@
 #include <Functions/FunctionBase64Conversion.h>
 
-#if USE_SIMDUTF
+#if USE_BASE64
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -42,7 +42,6 @@ Encodes a string using [Base64](https://datatracker.ietf.org/doc/html/rfc4648#se
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase64Encode>(documentation);
-    factory.registerAlias("to_base64url", "base64URLEncode", FunctionFactory::Case::Insensitive);
 }
 
 }

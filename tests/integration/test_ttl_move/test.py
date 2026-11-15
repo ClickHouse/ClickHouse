@@ -1,5 +1,6 @@
 from collections import defaultdict
 import datetime
+import inspect
 import json
 import random
 import time
@@ -9,6 +10,8 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1189,12 +1192,9 @@ def test_moves_with_full_disk(started_cluster, engine, request):
         # This test checks that if the target disk is full, the data will be placed onto the available disk,
         # and later moved to the correct destination once possible.
         # TEMP table to fill up the disk
-        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
-        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
-        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String CODEC(LZ4)
+                s1 String
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
@@ -1267,12 +1267,9 @@ def test_merges_with_full_disk(started_cluster, engine, request):
         # NOTE: MERGE operation is sensitive to not-having enough free space at 'jbod1' - its data sizes are imbalanced (or 'jbod1' is more full than expected), this test might flap by hanging in OPTIMIZE
 
         # TEMP table to fill up the disk
-        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
-        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
-        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String CODEC(LZ4)
+                s1 String
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
@@ -1352,15 +1349,12 @@ def test_moves_after_merges(started_cluster, engine, request):
         """)
         # we want to control over when to MOVE to eliminate flakinness
         node1.query(f"SYSTEM STOP MOVES {table_name}")
-        # SYSTEM STOP MOVES does not stop a merge from applying the TTL move, so the TTL must outlive the OPTIMIZE below.
-        ttl_ts = int(time.time()) + 10
-        f_ttl_datetime = lambda _: f'toDateTime({ttl_ts})'
         populate_with_records(
             node=node1,
             table_name=table_name,
             generators=[
-                gen_pair_records(10, F_SMALL_STRING, f_ttl_datetime),
-                gen_pair_records(10, F_SMALL_STRING, f_ttl_datetime),
+                gen_pair_records(10, F_SMALL_STRING, F_SOON_TO_EXPIRE_DATETIME),
+                gen_pair_records(10, F_SMALL_STRING, F_SOON_TO_EXPIRE_DATETIME),
             ]
         )
 
@@ -1374,7 +1368,7 @@ def test_moves_after_merges(started_cluster, engine, request):
 
         # 2. Waiting for the data to expire and then expecting it at the target location
         node1.query(f"SYSTEM START MOVES {table_name}")
-        time.sleep(max(0, ttl_ts - time.time()))
+        time.sleep(SOON_SECONDS)
         wait_if_moving_then_assert_disks(node1, table_name, target_state={
             'external' : {'rows': 20}
         })

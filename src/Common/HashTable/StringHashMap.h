@@ -135,7 +135,7 @@ public:
     TMapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) TMapped();
@@ -170,27 +170,6 @@ public:
         {
             func(v.getKey(), v.getMapped());
         }
-    }
-
-    /// `forEachValue` with the hash of every key, `func(key, mapped, hash)`, taken from its cell. It is the hash `hash`
-    /// computes, which must not be computed from the key handed out here: a key packed into an integer is a view of
-    /// that integer in its cell. Such a key goes into another table with `emplaceIteratedKey`.
-    template <typename Func>
-    void ALWAYS_INLINE forEachValueWithHash(Func && func)
-    {
-        /// The hash function of every submap: a cell computes the hash of its packed key with it, or returns the hash it
-        /// saved for a key of `ms`.
-        const StringHashTableHash hash_function;
-        if (this->m0.size())
-            func(std::string_view{}, this->m0.zeroValue()->getMapped(), this->hash(std::string_view{}));
-        for (auto & v : this->m1)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->m2)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->m3)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
-        for (auto & v : this->ms)
-            func(v.getKey(), v.getMapped(), v.getHash(hash_function));
     }
 
     template <typename Func>

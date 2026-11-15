@@ -10,7 +10,6 @@ import pyspark
 
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
-    AzureDownloader,
     AzureUploader,
     LocalUploader,
     S3Downloader,
@@ -33,8 +32,7 @@ def get_spark(log_dir=None):
         .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
-            "org.apache.sedona.spark.SedonaSparkSessionExtension",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
         .master("local")
     )
@@ -139,9 +137,6 @@ def started_cluster_iceberg_with_spark():
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
         cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
-        cluster.default_azure_downloader = AzureDownloader(
-            cluster.blob_service_client, cluster.azure_container_name
-        )
 
         yield cluster
 

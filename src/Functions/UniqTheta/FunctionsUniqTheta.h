@@ -6,9 +6,15 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
@@ -51,7 +57,7 @@ namespace DB
     };
 
     template <typename Impl, typename Name>
-    class FunctionUniqTheta final : public IFunction
+    class FunctionUniqTheta : public IFunction
     {
     public:
         static constexpr auto name = Name::name;
@@ -65,24 +71,6 @@ namespace DB
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         size_t getNumberOfArguments() const override { return 2; }
-
-        /// Both arguments must be `AggregateFunction('uniqTheta', ...)` sketches with
-        /// identical inner-argument lists of any length; the result is the first
-        /// argument's sketch type. The DSL models neither the variadic inner-argument
-        /// list nor its equality, so the signature is documentation-only.
-        String getSignatureString() const override
-        {
-            return "(A : AggregateFunction('uniqTheta', Any), AggregateFunction('uniqTheta', Any)) -> A";
-        }
-
-        /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative.
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-        {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return getReturnTypeImpl(data_types);
-        }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {

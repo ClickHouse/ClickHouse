@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -82,29 +83,26 @@ TEST(FormatSharedInit, ParserSharedResourcesDoesNotLeakCallerContext)
     EXPECT_EQ(init_attempts, 1u);
 }
 
-/// The reported stack fails inside `FormatFilterInfo::initKeyConditionOnce` while building the
-/// `KeyCondition`. A `LIKE` over the key with an invalid `ESCAPE` argument throws there:
-/// `KeyCondition` validates the escape character at planning time.
+/// The reported stack fails inside `FormatFilterInfo::initKeyConditionOnce`: building the
+/// `KeyCondition` converts the filter's constant to the key type and an unparseable
+/// `DateTime64` string throws out of `extractAtomFromTree`.
 TEST(FormatSharedInit, FilterInfoDoesNotLeakCallerContext)
 {
     tryRegisterFunctions();
 
     auto context = getContext().context;
-    const DataTypePtr key_type = std::make_shared<DataTypeString>();
+    const DataTypePtr key_type = std::make_shared<DataTypeDateTime64>(3);
     const DataTypePtr string_type = std::make_shared<DataTypeString>();
 
-    /// `s LIKE 'a|%' ESCAPE '||'`: the escape argument is not a single character.
+    /// `dt = 'not-a-datetime'`, i.e. the filter shape from the report.
     ActionsDAG dag;
-    const auto & key_node = dag.addInput("s", key_type);
-    const auto & pattern_node = dag.addColumn(
-        DataTypeString().createColumnConst(1, "a|%"), string_type, "'a|%'_String");
-    const auto & escape_node = dag.addColumn(
-        DataTypeString().createColumnConst(1, "||"), string_type, "'||'_String");
-    auto like = FunctionFactory::instance().get("like", context)->build(
+    const auto & key_node = dag.addInput("dt", key_type);
+    const auto & const_node = dag.addColumn(
+        ColumnWithTypeAndName(DataTypeString().createColumnConst(1, "not-a-datetime"), string_type, "'not-a-datetime'_String"));
+    auto equals = FunctionFactory::instance().get("equals", context)->build(
         {{key_node.column, key_node.result_type, key_node.result_name},
-         {pattern_node.column, pattern_node.result_type, pattern_node.result_name},
-         {escape_node.column, escape_node.result_type, escape_node.result_name}});
-    const auto & predicate = dag.addFunction(like, {&key_node, &pattern_node, &escape_node}, "like(s, 'a|%', '||')");
+         {const_node.column, const_node.result_type, const_node.result_name}});
+    const auto & predicate = dag.addFunction(equals, {&key_node, &const_node}, "equals(dt, 'not-a-datetime')");
     dag.getOutputs() = {&predicate};
 
     /// A row-level filter over a column outside `keys` makes the init append to
@@ -120,10 +118,10 @@ TEST(FormatSharedInit, FilterInfoDoesNotLeakCallerContext)
         std::make_shared<const ActionsDAG>(std::move(dag)), context, nullptr, row_level_filter, nullptr);
 
     Block keys;
-    keys.insert({key_type->createColumn(), key_type, "s"});
+    keys.insert({key_type->createColumn(), key_type, "dt"});
 
     expectNoCallerContextLeak(
-        [&] { filter_info->initKeyConditionOnce(keys); }, /* num_callers */ 3, "must be a single ASCII character");
+        [&] { filter_info->initKeyConditionOnce(keys); }, /* num_callers */ 3, "not-a-datetime");
 
     /// The init body must run exactly once; later callers are served from `init_exception`. If
     /// the failure were not cached, every caller would re-run the body and append `extra` again.

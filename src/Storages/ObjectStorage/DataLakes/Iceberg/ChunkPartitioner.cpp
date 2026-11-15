@@ -3,13 +3,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/isValidUTF8.h>
 
 namespace DB
 {
@@ -24,16 +23,16 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 }
 
 ChunkPartitioner::ChunkPartitioner(
-    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Array::Ptr schema_fields, ContextPtr context, SharedHeader sample_block_)
+    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
     , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
     std::unordered_map<Int32, String> id_to_column;
     {
+        auto schema_fields = schema->getArray(Iceberg::f_fields);
         for (size_t i = 0; i < schema_fields->size(); ++i)
         {
             auto field = schema_fields->getObject(static_cast<UInt32>(i));
@@ -83,11 +82,6 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
 ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
-    /// Not `chunk.empty()`: a chunk whose rows were all position-deleted has columns but no rows,
-    /// and there is nothing to scatter in it either.
-    if (!chunk.hasRows())
-        return {};
-
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
     for (size_t i = 0; i < sample_block->columns(); ++i)
     {
@@ -112,10 +106,9 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
         auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
+            = functions[transform_ind]->build(arguments)->execute(arguments, std::make_shared<DataTypeString>(), chunk.getNumRows(), false);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
-
         for (size_t i = 0; i < chunk.getNumRows(); ++i)
         {
             Field field;
@@ -128,11 +121,12 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     {
         return transform_results[row_num];
     };
-
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
+
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
+
 
     size_t partitions_count = partition_num_to_first_row.size();
     if (partitions_count > max_partitions_count)
@@ -146,28 +140,13 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     result_columns.reserve(partitions_count);
 
     for (size_t i = 0; i < partitions_count; ++i)
-    {
-        auto partition_key = get_partition(partition_num_to_first_row[i]);
-        for (size_t transform_ind = 0; transform_ind < partition_key.size(); ++transform_ind)
-        {
-            /// String partition values are stored as Avro strings in the manifest, which must be UTF-8.
-            if (partition_key[transform_ind].getType() != Field::Types::String)
-                continue;
-            const auto & value = partition_key[transform_ind].safeGet<String>();
-            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot write a partition value that is not valid UTF-8 into Iceberg partition column '{}'",
-                    columns_to_apply[transform_ind]);
-        }
-        result_columns.push_back({std::move(partition_key), chunk.cloneEmptyColumns()});
-    }
+        result_columns.push_back({get_partition(partition_num_to_first_row[i]), chunk.cloneEmptyColumns()});
 
     for (size_t col = 0; col < chunk.getNumColumns(); ++col)
     {
         if (partitions_count > 1)
         {
-            auto scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+            MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
             for (size_t i = 0; i < partitions_count; ++i)
                 result_columns[i].second[col] = std::move(scattered[i]);
         }
@@ -176,33 +155,12 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
         }
     }
-
-    result.reserve(result_columns.size());
     for (auto && [key, partition_columns] : result_columns)
     {
         size_t column_size = partition_columns[0]->size();
         result.push_back({key, Chunk(std::move(partition_columns), column_size)});
     }
     return result;
-}
-
-void IcebergPartitionCalculator::transform(Chunk & chunk)
-{
-    /// Position deletes upstream may filter a chunk down to zero rows (`skip_empty_chunks` only
-    /// suppresses empty output, it does not shield `transform` from empty input). Skip it: the
-    /// partition value is latched from the first non-empty chunk instead.
-    if (!chunk.hasRows())
-        return;
-
-    if (!partition_value.empty())
-        return;
-
-    auto result = partitioner.partitionChunk(chunk);
-    if (result.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not calculate partition when chunk have {} partitions", result.size());
-
-    for (const auto & [partition_key, _] : result)
-        partition_value = partition_key;
 }
 
 #endif

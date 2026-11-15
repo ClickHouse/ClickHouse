@@ -1,8 +1,6 @@
 #pragma once
 
-#include <span>
 #include <Core/NamesAndTypes.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
@@ -76,7 +74,7 @@ protected:
     DataTypePtr default_type;
     String hints_str;
     FormatSettings format_settings;
-    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
+    std::unordered_map<String, DataTypePtr> hints;
     String hints_parsing_error;
 };
 
@@ -103,18 +101,18 @@ protected:
     /// Return std::nullopt if can't read more data.
     virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
-    void setColumnNames(std::span<const String> names) { column_names.assign(names.begin(), names.end()); }
+    void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
-    size_t field_index{};
+    size_t field_index;
 
 private:
     DataTypePtr getDefaultType(size_t column) const;
     void initColumnNames(const String & column_names_str);
 
     DataTypes default_types;
-    Names column_names;
+    std::vector<String> column_names;
 };
 
 /// Base class for schema inference for formats that read data row by row and each
@@ -209,7 +207,7 @@ void chooseResultColumnTypes(
     DataTypes & types,
     DataTypes & new_types,
     const DataTypePtr & default_type,
-    std::span<const String> column_names,
+    const std::vector<String> & column_names,
     size_t row)
 {
     if (types.size() != new_types.size())

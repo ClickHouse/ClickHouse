@@ -1,21 +1,14 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-
-#include <Core/Settings.h>
-#include <Core/UUID.h>
-#include <Common/Jemalloc.h>
-#include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
+
 
 namespace DB
 {
@@ -35,68 +28,6 @@ namespace FailPoints
     extern const char patch_part_index_write_empty[];
 }
 
-namespace
-{
-
-/// Stands for the writer of the columns finished by `finalizeDataFiles`, so that the finalization of the part adds what they
-/// left: their checksums, substreams, granularity, primary index and marks.
-class FinishedColumnsWriter final : public IMergeTreeDataPartWriter
-{
-public:
-    FinishedColumnsWriter(
-        const MergeTreeMutableDataPartPtr & part,
-        const MergeTreeSettingsPtr & storage_settings_,
-        const NamesAndTypesList & columns_list_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const MergeTreeWriterSettings & settings_,
-        MergedBlockOutputStream::FinishedColumns finished_,
-        std::optional<Columns> index_ = {},
-        PlainMarksByName cached_marks_ = {},
-        PlainMarksByName cached_index_marks_ = {})
-        : IMergeTreeDataPartWriter(
-              part->name,
-              part->getSerializations().toSerializationByName(),
-              part->getDataPartStoragePtr(),
-              part->index_granularity_info,
-              storage_settings_,
-              columns_list_,
-              metadata_snapshot_,
-              settings_,
-              finished_.index_granularity)
-        , finished(std::move(finished_))
-    {
-        if (index_)
-            for (auto & column : *index_)
-                index_columns.push_back(IColumn::mutate(std::move(column)));
-        cached_marks = std::move(cached_marks_);
-        cached_index_marks = std::move(cached_index_marks_);
-    }
-
-    void write(const Block &, const IColumnPermutation *, Block *) override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write into the finished columns of part {}", data_part_name);
-    }
-
-    void finalizeIndexGranularity() override { }
-    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet &) override
-    {
-        checksums.add(MergeTreeDataPartChecksums(finished.checksums));
-    }
-    void finish(bool) override { }
-    void cancel() noexcept override { }
-    size_t getNumberOfOpenStreams() const override { return 0; }
-    const Block & getColumnsSample() const override { return columns_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
-
-    const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
-
-private:
-    MergedBlockOutputStream::FinishedColumns finished;
-    Block columns_sample;
-};
-
-}
-
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -110,10 +41,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
-    WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec,
-    StreamBaseManifestPtr stream_base_manifest,
-    std::optional<FinishedColumns> finished_columns)
+    WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -134,48 +62,26 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        blocks_are_granules_size,
-        try_adaptive_codec);
-
-    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+        blocks_are_granules_size);
 
     data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
-    data_part->version->setAndStoreCreationTID(tid, nullptr);
-
-    /// Finished by `finalizeDataFiles` of an earlier attempt.
-    if (finished_columns)
-    {
-        rows_count = finished_columns->index_granularity->getTotalRows();
-        /// Only the columns of this stream.
-        for (auto & [name, info] : new_serialization_infos)
-            info->replaceData(*finished_columns->serialization_infos.at(name));
-        finished_columns->serialization_infos = new_serialization_infos.clone();
-        /// A resumed part has no primary index in memory: it is loaded from the file.
-        auto finished_writer_settings = writer_settings;
-        finished_writer_settings.save_primary_index_in_memory = false;
-        writer = std::make_unique<FinishedColumnsWriter>(
-            data_part,
-            storage_settings,
-            columns_list,
-            metadata_snapshot,
-            finished_writer_settings,
-            std::move(*finished_columns));
-        return;
-    }
+    data_part->version.setCreationTID(tid, nullptr);
+    data_part->storeVersionMetadata();
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
         data_part->storage.getLogName(),
-        data_part->getSerializations().toSerializationByName(),
+        data_part->getSerializations(),
         data_part_storage,
         data_part->index_granularity_info,
         storage_settings,
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
+        data_part->storage.getVirtualsPtr(),
         skip_indices,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -200,9 +106,9 @@ void MergedBlockOutputStream::cancel() noexcept
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
-void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
-    writeImpl(block, permutation, permuted_columns_cache);
+    writeImpl(block, permutation);
 }
 
 struct MergedBlockOutputStream::Finalizer::Impl
@@ -245,19 +151,11 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
-    /// Finalize all files first (writes any pending bytes to the OS),
-    /// then sync them in parallel — fsync of independent files can run concurrently
-    /// and is a major contributor to part finalization latency when many small files are involved.
     for (auto & file : written_files)
-        file->finalize();
-
-    if (sync)
     {
-        std::vector<WriteBufferFromFileBase *> files_to_sync;
-        files_to_sync.reserve(written_files.size());
-        for (auto & file : written_files)
-            files_to_sync.push_back(file.get());
-        parallelSyncFiles(files_to_sync);
+        file->finalize();
+        if (sync)
+            file->sync();
     }
 
     for (const auto & file_name : files_to_remove_after_finish)
@@ -297,36 +195,6 @@ void MergedBlockOutputStream::finalizePart(
 void MergedBlockOutputStream::finalizeIndexGranularity()
 {
     writer->finalizeIndexGranularity();
-}
-
-const MergedBlockOutputStream::FinishedColumns & MergedBlockOutputStream::finalizeDataFiles(const MergeTreeMutableDataPartPtr & part, bool sync)
-{
-    if (const auto * finished = dynamic_cast<const FinishedColumnsWriter *>(writer.get()))
-        return finished->getFinishedColumns();
-
-    MergeTreeDataPartChecksums checksums;
-    NameSet removed;
-    writer->fillChecksums(checksums, removed);
-    for (const auto & name : removed)
-        checksums.files.erase(name);
-    auto columns_substreams = writer->getColumnsSubstreams();
-    auto index_granularity = writer->getIndexGranularity();
-    writer->finish(sync);
-    FinishedColumns finished{
-        .serialization_infos = new_serialization_infos,
-        .checksums = std::move(checksums),
-        .columns_substreams = std::move(columns_substreams),
-        .index_granularity = std::move(index_granularity),
-    };
-    auto index = writer->releaseIndexColumns();
-    /// Keep the marks for prewarming the caches once the part is committed.
-    auto marks = writer->releaseCachedMarks();
-    auto index_marks = writer->releaseCachedIndexMarks();
-    writer = std::make_unique<FinishedColumnsWriter>(
-        part, storage_settings, columns_list, metadata_snapshot, writer_settings, std::move(finished),
-        std::move(index), std::move(marks), std::move(index_marks));
-
-    return static_cast<FinishedColumnsWriter*>(writer.get())->getFinishedColumns();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
@@ -374,20 +242,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
 
-    /// Everything assigned onto the part below (checksums, index granularity, primary index, TTL infos,
-    /// column sizes) lives as long as the part and is freed by a background thread, so it must not be
-    /// charged to the query writing it; see `IMergeTreeDataPart::setColumns` for why that would drift
-    /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
-    /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
-    /// write must stay accounted.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
-    {
-        /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
-        /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        new_part->checksums = checksums;
-    }
+    new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
@@ -418,25 +273,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
-
-    /// The TTL infos and the index granularity are built during the write (in the default arenas) and
-    /// assigned above; re-home them into the dedicated MergeTree arena so a freshly written part's
-    /// long-lived metadata lives there, like a reloaded part's. The in-memory primary index is
-    /// already built in the arena by the writer, and `checksums` was copied under the arena above.
-    /// Runs for insert / merge / mutation, and for projections via each projection part's own
-    /// finalize. When the feature is off, skip the O(marks) copies rather than paying them for nothing.
-    if (JemallocMergeTreeArena::isEnabled())
-    {
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        /// `TTLTransform` rebuilds `ttl_infos` from scratch during the write (in the default arenas),
-        /// discarding the copy re-homed at prepare time, so re-home the final maps here. `checksums`
-        /// was already copied into the part under the arena above.
-        reallocateByCopy(new_part->ttl_infos);
-        if (new_part->index_granularity)
-            new_part->index_granularity = new_part->index_granularity->clone();
-    }
-
-    not_charged_to_the_query.reset();
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
@@ -488,9 +324,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 written_files.emplace_back(std::move(file));
             }
 
-            if (new_part->getMinMaxIndex()->initialized)
+            if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -499,23 +335,20 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadPatchPartIndex`
-            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
-            if (new_part->info.isPatch())
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
             {
                 /// Writes an index without source parts, which is the corruption shape the load path
                 /// rejects: a patch part that holds rows but names no part it patches. Only for tests.
                 bool write_empty_index = false;
                 fiu_do_on(FailPoints::patch_part_index_write_empty, { write_empty_index = true; });
 
-                write_hashed_file(PatchPartIndex::FILENAME, [&](auto & buffer)
+                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    const auto & patch_part_index = new_part->getPatchPartIndex();
-
                     if (write_empty_index)
-                        patch_part_index.cloneEmpty().writeBinary(buffer);
+                        SourcePartsSetForPatch{}.writeBinary(buffer);
                     else
-                        patch_part_index.writeBinary(buffer);
+                        source_parts.writeBinary(buffer);
                 });
             }
         }
@@ -587,22 +420,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    if (!new_part->storage.storesMetadataVersionInPartAttributes())
+    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
-        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
-        {
-            writeIntText(new_part->getMetadataVersion(), buffer);
-        });
-    }
+        writeIntText(new_part->getMetadataVersion(), buffer);
+    });
 
     if (default_codec != nullptr)
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            if (new_part->default_codec_is_approximate)
-                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
-            else
-                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else
@@ -618,14 +445,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
         return;
 
-    writer->write(block, permutation, permuted_columns_cache);
+    writer->write(block, permutation);
     if (reset_columns)
         new_serialization_infos.add(block);
 
