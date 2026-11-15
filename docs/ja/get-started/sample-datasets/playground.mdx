@@ -13,9 +13,7 @@ Playground では、いくつかのサンプルデータセットを利用でき
 
 Playground に対しては、[curl](https://curl.haxx.se) や [wget](https://www.gnu.org/software/wget/) などの任意の HTTP クライアントを使ってクエリを送信できます。また、[JDBC](/ja/integrations/language-clients/java/jdbc) または [ODBC](/ja/concepts/features/interfaces/odbc) ドライバーを使用して接続を設定することもできます。ClickHouse をサポートするソフトウェア製品の詳細は、[こちら](/ja/integrations/home) を参照してください。
 
-<div id="credentials">
-  ## 認証情報
-</div>
+## 認証情報 {#credentials}
 
 | パラメータ             | 値                                  |
 | :---------------- | :--------------------------------- |
@@ -24,20 +22,18 @@ Playground に対しては、[curl](https://curl.haxx.se) や [wget](https://www
 | ユーザー              | `explorer` または `play`              |
 | パスワード             |  (空欄)                              |
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
-クエリは読み取り専用ユーザーとして実行されるため、いくつかの制限があります。
+クエリは読み取り専用ユーザーの権限で実行されるため、次の制限があります。
 
 * DDLクエリは実行できません
 * INSERTクエリは実行できません
 
-このサービスには、使用量に関するクォータも設定されています。
+また、サービスの利用にはクォータが適用されます。
 
-<div id="examples">
-  ## 例
-</div>
+読み取り専用の制限を受けずに独自のデータを取り込んで試すには、無料の[ClickHouse Cloudトライアル](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground)に登録するか、[ClickHouseをローカルにインストール](/ja/get-started/setup/install)してください。
+
+## 例 {#examples}
 
 `curl` を使った HTTPS エンドポイントの例：
 
@@ -51,9 +47,7 @@ curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play Cl
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## Playground の仕様
-</div>
+## Playground の仕様 {#specifications}
 
 ClickHouse Playground は、以下の仕様で稼働しています。
 

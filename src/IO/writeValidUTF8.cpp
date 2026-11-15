@@ -5,22 +5,18 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UTF8Encoding.h>
 
+#include <base/types.h>
+
 #if USE_SIMDUTF
 #    include <simdutf.h>
 #endif
 
+#include <bit>
 #include <string_view>
 
-#include <base/simd.h>
-#include <base/types.h>
-
-#ifdef __SSE2__
-#    include <emmintrin.h>
-#endif
-
 #if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <base/simd.h>
 #    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -75,29 +71,27 @@ void writeValidUTF8(const char * begin, const char * end, WriteBuffer & out)
 
     while (p < end)
     {
-#ifdef __SSE2__
+#if defined(__aarch64__) && defined(__ARM_NEON)
+        /// Dense Unicode needs no ASCII scan.
+        if (static_cast<unsigned char>(*p) < 0x80)
+        {
+            p = skipASCIIBlocks(p, end);
+            if (end - p >= 16)
+            {
+                /// The first remaining block contains a non-ASCII byte.
+                const auto mask = getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80)));
+                p += std::countr_zero(mask) / 4;
+            }
+
+            /// Skip ASCII in a partial vector tail without a Poco legality check.
+            while (p < end && static_cast<unsigned char>(*p) < 0x80)
+                ++p;
+            if (p == end)
+                break;
+        }
+#else
         /// Fast skip of ASCII
-        static constexpr size_t SIMD_BYTES = 16;
-        const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
-
-        while (p < simd_end && !_mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(p))))
-            p += SIMD_BYTES;
-
-        if (!(p < end))
-            break;
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-        /// Fast skip of ASCII for aarch64.
-        static constexpr size_t SIMD_BYTES = 16;
-        const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
-        /// Other options include
-        /// vmaxvq_u8(input) < 0b10000000;
-        /// Used by SIMDJSON, has latency 3 for M1, 6 for everything else
-        /// SIMDJSON uses it for 64 byte masks, so it's a little different.
-        /// vmaxvq_u32(vandq_u32(input, vdupq_n_u32(0x80808080))) // u32 version has latency 3
-        /// shrn version has universally <=3 cycles, on servers 2 cycles.
-        while (p < simd_end && getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
-            p += SIMD_BYTES;
-
+        p = skipASCIIBlocks(p, end);
         if (!(p < end))
             break;
 #endif

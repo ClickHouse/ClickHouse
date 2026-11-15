@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'journalisation', 'intégration', 'supervision des applications']
 ---
 
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 Le SDK React Native de ClickStack vous permet d’instrumenter votre application
 React Native pour envoyer des événements à ClickStack. Vous pouvez ainsi
 visualiser les requêtes réseau mobiles et les exceptions aux côtés des événements du backend sur une même chronologie.
 
-Ce guide intègre :
+<ClickStackIntegrates signals={['traces']} />
 
-* **Requêtes XHR/Fetch**
+## Prise en main {#getting-started}
 
-<div id="getting-started">
-  ## Prise en main
-</div>
-
-<div id="install-via-npm">
-  ### Installer avec NPM
-</div>
+### Installer avec NPM {#install-via-npm}
 
 Utilisez la commande suivante pour installer le [paquet ClickStack pour React Native](https://www.npmjs.com/package/@hyperdx/otel-react-native).
 
@@ -28,26 +24,22 @@ Utilisez la commande suivante pour installer le [paquet ClickStack pour React Na
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### Initialiser ClickStack
-</div>
+### Initialiser ClickStack {#initialize-clickstack}
 
-Initialisez la bibliothèque dès que possible dans le cycle de vie de votre application :
+Initialisez la bibliothèque dès que possible dans le cycle de vie de votre application :
 
 ```javascript
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
   apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
   tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### Associer des informations utilisateur ou des métadonnées (facultatif)
-</div>
+### Associer des informations utilisateur ou des métadonnées (facultatif) {#attach-user-information-metadata}
 
 L’association d’informations utilisateur vous permettra de rechercher/filtrer des sessions et des événements
 dans HyperDX. Cela peut être appelé à tout moment pendant la session du client. La
@@ -68,9 +60,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### Instrumenter les versions antérieures
-</div>
+### Instrumenter les versions antérieures {#instrument-lower-versions}
 
 Pour instrumenter les applications qui s’exécutent sur des versions de React Native antérieures à 0.68,
 modifiez votre fichier `metro.config.js` afin de forcer metro à utiliser des
@@ -116,9 +106,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## Navigation entre les vues
-</div>
+## Navigation entre les vues {#view-navigation}
 
 Les versions 5 et 6 de [react-navigation](https://github.com/react-navigation/react-navigation) sont prises en charge.
 

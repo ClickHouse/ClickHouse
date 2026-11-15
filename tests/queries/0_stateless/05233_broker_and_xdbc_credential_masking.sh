@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no NATS, RabbitMQ or Kafka, whose secrets it then does not mask
 
 # A credential embedded in a broker address, in an XDBC connection string or in a URL-valued setting
 # must not reach `system.query_log`. Every statement below is rejected, and none of them needs a

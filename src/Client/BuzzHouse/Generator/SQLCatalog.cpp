@@ -58,6 +58,26 @@ bool SQLDatabase::isDataLakeCatalogDatabase() const
     return deng == DatabaseEngineValues::DDataLakeCatalog;
 }
 
+bool SQLDatabase::isClusterDatabase() const
+{
+    return deng == DatabaseEngineValues::DCluster;
+}
+
+bool SQLDatabase::isRemoteDatabase() const
+{
+    return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
+}
+
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
+bool SQLDatabase::isProxyDatabase() const
+{
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
+}
+
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
 {
     return isReplicatedDatabase() || isSharedDatabase();
@@ -215,6 +235,12 @@ bool SQLBase::isFileEngine(const bool as_alias) const
 {
     return engine.value == TableEngineValues::File
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
+}
+
+bool SQLBase::isSummingMergeTree(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::SummingMergeTree
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SummingMergeTree);
 }
 
 bool SQLBase::isJoinEngine(const bool as_alias) const
@@ -500,11 +526,23 @@ bool SQLBase::isKafkaEngine(const bool as_alias) const
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Kafka);
 }
 
+bool SQLBase::isTimeSeriesEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::TimeSeries
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::TimeSeries);
+}
+
+bool SQLBase::isFileLogEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::FileLog
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::FileLog);
+}
+
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
         || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isAnyRemoteEngine() || isDictionaryEngine()
-        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine();
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isFileLogEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -754,6 +792,14 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bucket_path = fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, bname);
         }
     }
+    else if (isFileLogEngine())
+    {
+        /// The directory must exist at CREATE, so glob over the files `File` tables write there
+        bucket_path = fmt::format(
+            "{}/{}",
+            fc.server_file_path.generic_string(),
+            rg.nextBool() ? "*" : ("t" + std::to_string(rg.randomInt<uint32_t>(0, 20)) + "*"));
+    }
 
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
@@ -798,10 +844,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             file_format = "ORC";
         }
     }
-    else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
+    else if (
+        isFileEngine() || isFileLogEngine()
+        || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
     {
-        /// At the moment give more preference for Parquet
-        file_format = rg.nextMediumNumber() < 26 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
+        file_format = fc.pickFormat(rg, fc.in_out_formats);
     }
     if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
     {
@@ -868,7 +915,7 @@ String SQLBase::getTablePath() const
     /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
     chassert(
         isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
-        || isURLEngine());
+        || isURLEngine() || isFileLogEngine());
     return bucket_path.has_value() ? bucket_path.value() : "test";
 }
 

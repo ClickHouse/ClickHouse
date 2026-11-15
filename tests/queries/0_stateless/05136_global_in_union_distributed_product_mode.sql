@@ -15,7 +15,6 @@ INSERT INTO t_local VALUES (1), (2);
 -- `rand()` as the sharding key, so that a randomized `optimize_skip_unused_shards` cannot prune a shard.
 CREATE TABLE t_dist AS t_local ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_local, rand());
 
-SET enable_analyzer = 1;
 SET distributed_product_mode = 'global';
 
 SELECT 'IN with UNION ALL';

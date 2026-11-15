@@ -47,7 +47,7 @@ SELECT hasPhrase(materialize('a b c'), toLowCardinality('b c'));
 SELECT hasPhrase(materialize('a b c'), toLowCardinality('c b'));
 SELECT hasPhrase(materialize('a b c'), 'b c', toLowCardinality('splitByString'));
 SELECT hasPhrase(materialize('a-b'), 'a b', toLowCardinality('splitByString'));
-SELECT hasPhrase(materialize('a b c'), 'b c', toLowCardinality('array')); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase(materialize('a b c'), 'b c', toLowCardinality('sparseGrams')); -- { serverError BAD_ARGUMENTS }
 SELECT now(toLowCardinality('UTC')) > toDateTime('2020-01-01', 'UTC');
 SELECT CAST(1, toLowCardinality('String'));
 SELECT toTypeName(CAST(1, toLowCardinality('String')));

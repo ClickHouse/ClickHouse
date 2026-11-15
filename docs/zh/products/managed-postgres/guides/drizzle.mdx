@@ -1,0 +1,274 @@
+---
+slug: /cloud/managed-postgres/guides/drizzle
+sidebarTitle: 'Drizzle ORM'
+title: '在 ClickHouse Managed Postgres 中使用 Drizzle ORM'
+description: '使用 Drizzle ORM 和 node-postgres 将 TypeScript 应用连接到 ClickHouse Managed Postgres，通过 drizzle-kit 执行迁移，并在经过验证的 TLS 连接上执行查询'
+keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescript', 'node.js', 'node-postgres', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
+
+[Drizzle ORM](https://orm.drizzle.team/) 是一个 TypeScript ORM，提供类 SQL 的查询构建器；`drizzle-kit` 是与之配套的命令行工具，用于生成和运行迁移。在本指南中，您将使用 TypeScript 定义一个 `todos` 表，通过 `drizzle-kit` 迁移创建该表，并用一个小型 Node.js HTTP 服务器处理增、删、改、查 (CRUD) 查询。所有连接均使用 TLS，并执行完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* [Node.js](https://nodejs.org/) 20 或更高版本
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内准备就绪。完整操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。弹出的对话框会显示用户名、密码、服务器和端口，并提供 **Directly** / **via PgBouncer** 切换开关。
+
+本指南使用两个连接字符串：
+
+* **直连 (端口 `5432`)&#x20;**：供 `drizzle-kit` 使用。迁移会执行 DDL，可能耗时较长，还可能依赖会话状态 (例如 `SET lock_timeout`) ，因此应直接连接 Postgres。
+* **PgBouncer (端口 `6432`)&#x20;**：供应用程序使用。内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 以事务池化模式运行，可让大量应用实例 (包括 serverless 函数) 共享少量 Postgres 连接。
+
+<Tip>
+  如果您只运行单个长期运行的 Node.js 服务器，由于 `node-postgres` 本身已维护连接池，也可以让应用使用直连。当您横向扩容到多个进程或在 serverless 平台上运行时，请使用 PgBouncer 连接。
+</Tip>
+
+选中 **Directly** 后，开启 **Use SSL**。此时 **url** 选项卡中的连接 URL 会以 `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem` 结尾，端口为 `5432`。选择 **via PgBouncer** 可查看池化连接信息：端口变为 `6432`，且 URL 始终包含 `sslmode=verify-full`。
+
+在对话框中点击 **Download CA certificate**。您也可以在 **Settings → CA Certificate** 中下载。该证书是您的实例专属的，驱动程序可借此验证所连接的确实是您的服务器。
+
+## 设置项目 {#project-setup}
+
+创建一个项目，然后安装 Drizzle ORM、[`node-postgres`](https://node-postgres.com/) 驱动程序 (`pg`) 和 `drizzle-kit`：
+
+```bash
+mkdir drizzle-managed-postgres && cd drizzle-managed-postgres
+npm init -y
+npm pkg set type=module
+npm install drizzle-orm pg dotenv
+npm install -D drizzle-kit tsx @types/pg
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  请跳过 `mkdir`、`npm init` 和 `npm pkg set type=module` 命令。直接在项目中运行 `npm install drizzle-orm pg dotenv` 和 `npm install -D drizzle-kit tsx @types/pg`，然后继续[配置连接](#configure-connection)。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机替换为 **Connect** 对话框中提供的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_drizzle;"
+```
+
+```text
+CREATE DATABASE
+```
+
+将这两个连接字符串添加到项目根目录下的 `.env` 文件中，或添加到你现有的 `.env` 文件中。两者仅端口不同，均指向 `guide_drizzle` 数据库：
+
+```bash title=".env"
+# Runtime queries go through PgBouncer (port 6432)
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+# drizzle-kit migrations connect directly to Postgres (port 5432)
+DIRECT_DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_drizzle?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+`node-postgres` 会从 URL 中读取 `sslmode=verify-full` 和 `sslrootcert`。它会加载 CA 文件，并同时校验证书链和主机名，因此无需编写额外的 TLS 代码。`sslrootcert` 路径会相对于执行命令时所在的目录进行解析。请勿将 `.env` 提交到版本控制系统中。
+
+<Note>
+  如果 CA 缺失或有误，连接会失败并报错 `unable to verify the first certificate`。如果主机名与证书不匹配，则会报错 `ERR_TLS_CERT_ALTNAME_INVALID`。如果密码中包含 `@`、`/` 或 `#` 等特殊字符，请先对其进行 URL 编码。
+</Note>
+
+## 定义 schema {#schema}
+
+创建 `src/db/schema.ts` 文件：
+
+```ts title="src/db/schema.ts"
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+export const todos = pgTable("todos", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  title: text().notNull(),
+  done: boolean().notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+```
+
+在项目根目录下创建 `drizzle.config.ts`，用于让 `drizzle-kit` 指向 schema 和直连地址：
+
+```ts title="drizzle.config.ts"
+import "dotenv/config";
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    // Migrations use the direct connection (port 5432)
+    url: process.env.DIRECT_DATABASE_URL!,
+  },
+});
+```
+
+## 执行迁移 {#migrations}
+
+基于 schema 生成 SQL 迁移脚本：
+
+```bash
+npx drizzle-kit generate --name init
+```
+
+```text
+1 tables
+todos 4 columns 0 indexes 0 fks
+
+[✓] Your SQL migration file ➜ drizzle/0000_init.sql 🚀
+```
+
+生成的 `drizzle/0000_init.sql` 文件包含 `CREATE TABLE` 语句。请检查该文件，并将 `drizzle` 文件夹连同代码一起提交，然后应用该迁移：
+
+```bash
+npx drizzle-kit migrate
+```
+
+```text
+Using 'pg' driver for database querying
+[✓] migrations applied successfully!
+```
+
+`drizzle-kit migrate` 会将已应用的迁移记录在 `drizzle.__drizzle_migrations` 表中，后续调用时只会运行新的迁移。每次修改 `schema.ts` 后，都需要先运行 `generate`，再重新运行 `migrate`。
+
+<Tip>
+  当 `drizzle-kit migrate` 无法建立连接时 (例如 `sslrootcert` 路径或密码错误) ，它会以状态码 `1` 退出，且不输出任何错误信息。遇到这种情况时，请先使用 `psql` 测试 `DIRECT_DATABASE_URL`。
+</Tip>
+
+`drizzle-kit push` 无需迁移文件即可直接应用 schema 变更，非常适合原型开发；但在生产环境中，使用 `generate` 和 `migrate` 可以获得便于审查的 SQL 文件和完整的变更历史。
+
+## 查询数据库 {#query}
+
+创建 `src/db/index.ts` 文件。该文件通过 PgBouncer 连接，基于 `node-postgres` 连接池创建 Drizzle 客户端：
+
+```ts title="src/db/index.ts"
+import "dotenv/config";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+// The app uses the PgBouncer connection (port 6432)
+export const db = drizzle(process.env.DATABASE_URL!);
+```
+
+创建 `src/server.ts`，这是一个小型 HTTP 服务器，每个路由执行一个 Drizzle 查询。如果是现有应用，也可以直接在自己的路由处理程序中调用相同的 `db` 查询：
+
+```ts title="src/server.ts"
+import { createServer } from "node:http";
+import { desc, eq, not } from "drizzle-orm";
+import { db } from "./db";
+import { todos } from "./db/schema";
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const id = Number(url.pathname.split("/")[2]);
+  let body: unknown;
+
+  try {
+    if (req.method === "GET" && url.pathname === "/todos") {
+      // Read
+      body = await db.select().from(todos).orderBy(desc(todos.id));
+    } else if (req.method === "POST" && url.pathname === "/todos") {
+      // Create
+      const title = url.searchParams.get("title") ?? "Untitled";
+      [body] = await db.insert(todos).values({ title }).returning();
+    } else if (req.method === "PATCH" && id) {
+      // Update: toggle the done flag
+      [body] = await db
+        .update(todos)
+        .set({ done: not(todos.done) })
+        .where(eq(todos.id, id))
+        .returning();
+    } else if (req.method === "DELETE" && id) {
+      // Delete
+      [body] = await db.delete(todos).where(eq(todos.id, id)).returning();
+    } else {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body, null, 2) + "\n");
+  } catch (err) {
+    console.error(err);
+    res.writeHead(500).end("Database error\n");
+  }
+});
+
+server.listen(3101, () => console.log("Listening on http://localhost:3101/todos"));
+```
+
+<Note>
+  使用 PgBouncer 时无需额外配置驱动程序设置。Drizzle 的查询默认使用未命名语句，而内置的 PgBouncer 在事务池化模式下同样支持命名预处理语句 (例如通过 Drizzle 的 `.prepare` 创建的语句) 。会话级功能 (如 `LISTEN` 和会话级咨询锁) 无法通过 PgBouncer 使用。详情请参阅 [FAQ](/zh/products/managed-postgres/faq#prepared-statement-errors)。
+</Note>
+
+## 运行与验证 {#verify}
+
+启动服务器：
+
+```bash
+npx tsx src/server.ts
+```
+
+```text
+Listening on http://localhost:3101/todos
+```
+
+在另一个终端中，创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -X POST "http://localhost:3101/todos?title=Try%20Drizzle%20ORM"
+curl -X POST "http://localhost:3101/todos?title=Write%20a%20migration"
+curl -X PATCH http://localhost:3101/todos/1
+curl -X DELETE http://localhost:3101/todos/2
+```
+
+`PATCH` 请求会返回更新后的行：
+
+```json
+{
+  "id": 1,
+  "title": "Try Drizzle ORM",
+  "done": true,
+  "createdAt": "2026-09-30T16:45:14.610Z"
+}
+```
+
+在浏览器中打开 `http://localhost:3101/todos`，即可查看剩余的待办事项。响应如下所示：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Try Drizzle ORM",
+    "done": true,
+    "createdAt": "2026-09-30T16:45:14.610Z"
+  }
+]
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_drizzle` 和 `public`，然后点击 `todos` 表。`drizzle` schema 中存放的是迁移历史表。`todos` 表中包含剩下的这一行：
+
+| id | title           | done | created&#95;at                |
+| -- | --------------- | ---- | ----------------------------- |
+| 1  | Try Drizzle ORM | true | 2026-09-30 16:45:14.610099+00 |
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：借助 Drizzle 的 [`withReplicas`](https://orm.drizzle.team/docs/read-replicas) 扩展读取能力
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私有网络
