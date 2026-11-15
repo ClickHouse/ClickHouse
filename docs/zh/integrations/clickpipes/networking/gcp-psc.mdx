@@ -11,8 +11,6 @@ integration:
   - category: "clickpipes"
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 您可以使用 GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)，在 ClickPipes 与托管在 GCP 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建一个**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用端点服务，确保流量不会暴露于公网。
 
 <Check>
