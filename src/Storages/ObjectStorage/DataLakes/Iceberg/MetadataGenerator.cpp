@@ -10,6 +10,8 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Common/randomSeed.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -108,6 +110,8 @@ void setSnapshotTotals(
     set_delete_total(Iceberg::f_total_position_deletes, added_position_deletes);
     set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
+
+constexpr UInt32 max_iceberg_decimal_precision = 38;
 
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
@@ -552,8 +556,20 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
-            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
+            const auto old_field_type = current_field->get(Iceberg::f_type);
+            if (!checkValidSchemaEvolution(old_field_type, new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
+
+            /// The Iceberg spec limits the precision of a decimal to 38. A table with a wider decimal
+            /// cannot be loaded by the readers that enforce it, so do not promote a column to such a type.
+            const auto nested_type = removeNullable(type);
+            if (isDecimal(nested_type) && getDecimalPrecision(*nested_type) > max_iceberg_decimal_precision
+                && old_field_type.convert<String>() != new_type.first.convert<String>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg spec doesn't allow schema evolution to type {}: the maximum precision of an Iceberg decimal is {}",
+                    type->getPrettyName(),
+                    max_iceberg_decimal_precision);
 
             auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);

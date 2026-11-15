@@ -26,3 +26,8 @@ SELECT id, d, toTypeName(d) FROM t ORDER BY id;
 ALTER TABLE t MODIFY COLUMN d Decimal(15, 1); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t MODIFY COLUMN s Int64; -- { serverError BAD_ARGUMENTS }
 DESCRIBE t;
+
+-- The Iceberg spec limits the precision of a decimal to 38; a rejected change leaves the schema and the data readable.
+ALTER TABLE t MODIFY COLUMN d Decimal(38, 0);
+ALTER TABLE t MODIFY COLUMN d Decimal(39, 0); -- { serverError BAD_ARGUMENTS }
+SELECT id, d, toTypeName(d) FROM t ORDER BY id;
