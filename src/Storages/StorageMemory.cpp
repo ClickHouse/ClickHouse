@@ -30,6 +30,11 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/ISource.h>
+#include <Interpreters/castColumn.h>
+#include <Core/Streaming/Settings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/NativeReader.h>
@@ -81,6 +86,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TOO_MANY_BYTES;
+    extern const int ABORTED;
+    extern const int TOO_SLOW;
 }
 
 namespace FailPoints
@@ -258,6 +265,120 @@ size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
     return std::min(num_streams, std::max(1uz, data.get()->blocks.size()));
 }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+
+/// Reads the blocks of a `Memory` table for a streaming query (`SELECT ... FROM memory_table STREAM`): the blocks that
+/// the table has at the start of the query, and then every block inserted later, in the order of the blocks of the table.
+/// It waits for new blocks asynchronously, without holding a thread of the pipeline. A bounded stream (`STREAM BOUNDED`)
+/// reads the blocks that the table has at the start of the query.
+///
+/// The blocks are numbered within a generation of the data, see `StorageMemory::BlocksWithCounts`. If the data is replaced
+/// (by `TRUNCATE`, a mutation or a restore), the stream fails rather than read the replaced rows again. If the blocks that
+/// the stream has not read yet are removed (by `max_rows_to_keep` or `max_bytes_to_keep`), the stream fails as well.
+class MemoryStreamingSource final : public ISource
+{
+public:
+    MemoryStreamingSource(SharedHeader header_, std::shared_ptr<const StorageMemory> storage_, bool bounded_)
+        : ISource(header_)
+        , storage(std::move(storage_))
+        , bounded(bounded_)
+        , wakeup(storage->stream_subscribers->subscribe())
+    {
+        /// The subscription is created before the first look at the data, so that no change is missed.
+        const auto snapshot = storage->data.get();
+        generation = snapshot->generation;
+        next_block_number = snapshot->first_block_number;
+        end_block_number = snapshot->first_block_number + snapshot->blocks.size();
+    }
+
+    String getName() const override { return "MemoryStreamingSource"; }
+
+    Status prepare() override
+    {
+        if (isCancelled())
+        {
+            getPort().finish();
+            return Status::Finished;
+        }
+
+        if (is_async_state)
+            return Status::Async;
+
+        return ISource::prepare();
+    }
+
+    int schedule() override { return wakeup->fd(); }
+
+    void onCancel() noexcept override
+    {
+        try
+        {
+            wakeup->notify();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("MemoryStreamingSource");
+        }
+    }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        if (isCancelled())
+            return {};
+
+        if (bounded && next_block_number >= end_block_number)
+            return {};
+
+        wakeup->reset();
+        const auto snapshot = storage->data.get();
+
+        if (snapshot->generation != generation)
+            throw Exception(ErrorCodes::ABORTED,
+                "The data of the Memory table {} was replaced (by TRUNCATE, a mutation or a restore) during the streaming query",
+                storage->getStorageID().getNameForLogs());
+
+        if (next_block_number < snapshot->first_block_number)
+            throw Exception(ErrorCodes::TOO_SLOW,
+                "The streaming query fell behind the Memory table {}: the blocks it has not read yet were removed by "
+                "max_rows_to_keep or max_bytes_to_keep", storage->getStorageID().getNameForLogs());
+
+        const size_t index = next_block_number - snapshot->first_block_number;
+        if (index >= snapshot->blocks.size())
+        {
+            is_async_state = true;
+            return Chunk();
+        }
+        is_async_state = false;
+
+        const auto & block = snapshot->blocks[index];
+        ++next_block_number;
+
+        const auto & header = getPort().getHeader();
+        Columns columns;
+        columns.reserve(header.columns());
+        for (const auto & column : header)
+        {
+            /// The structure of the table may have changed since the start of the query.
+            auto stored = block.getColumnOrSubcolumnByName(column.name);
+            columns.push_back(castColumn(stored, column.type)->convertToFullColumnIfConst());
+        }
+        return Chunk(std::move(columns), block.rows());
+    }
+
+private:
+    const std::shared_ptr<const StorageMemory> storage;
+    const bool bounded;
+    const MemoryTableWakeupPtr wakeup;
+
+    UInt64 generation = 0;
+    UInt64 next_block_number = 0;
+    UInt64 end_block_number = 0;
+    bool is_async_state = false;
+};
+
+#endif
+
 void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -268,6 +389,28 @@ void StorageMemory::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
+    if (query_info.isStream())
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+        if (stream_settings.cursor)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CURSOR is not supported for STREAM from a table with engine Memory");
+        if (stream_settings.watermark)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Memory");
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+        auto source = std::make_shared<MemoryStreamingSource>(
+            header, std::static_pointer_cast<const StorageMemory>(shared_from_this()), !stream_settings.subscribe_for_updates);
+        source->setStorageLimits(query_info.storage_limits);
+        auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        step->setStepDescription("Read from Memory STREAM");
+        query_plan.addStep(std::move(step));
+        return;
+#else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries from a Memory table are not supported on this platform");
+#endif
+    }
+
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
 }
@@ -293,6 +436,7 @@ void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
     MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
     auto replaced = data.get();
     data.set(std::move(new_data));
+    stream_subscribers->notify();
 }
 
 void StorageMemory::drop()
@@ -936,6 +1080,16 @@ ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 100
 ```
 
 **Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM memory_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) returns the blocks that the table has at the start of the query, and then every block inserted later, in the order of the blocks of the table. Any number of queries can insert into the table and read it with `STREAM` at the same time. `STREAM BOUNDED` returns the blocks that the table has at the start of the query.
+
+```sql
+SELECT * FROM memory_table STREAM WHERE level = 'Error'
+```
+
+The query fails if the data of the table is replaced while it runs (by `TRUNCATE`, a mutation or a restore), and with `TOO_SLOW` if the blocks it has not read yet are removed by `max_rows_to_keep` or `max_bytes_to_keep`. `CURSOR` and `WATERMARK` are not supported.
 
 ## Examples {#examples}
 ```sql
