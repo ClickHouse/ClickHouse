@@ -1,0 +1,5 @@
+--- an insert of many blocks is not rejected in the middle ---
+1
+8
+--- a new insert is rejected at its start ---
+1

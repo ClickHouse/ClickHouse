@@ -815,6 +815,10 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
             pipeline->context->setSetting("insert_deduplication_token", fmt::format("{}:{}:{}", token, kind, input_block_number));
     }
 
+    /// A pipeline created for a later block continues the insert, so it must not reject it for too many parts.
+    if (input_block_number)
+        pipeline->context->setInsertContinuation();
+
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
