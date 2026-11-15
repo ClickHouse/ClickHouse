@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Cloudflare', 'журналы', 'ClickStack', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -70,7 +68,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     1. ClickHouse Cloud Console → **Источники данных** → **Create ClickPipe**
     2. **Источник**: Amazon S3
 
-    <Image img="/images/clickstack/cloudflare/clickpipe-s3.webp" alt="Clickpipe s3" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+
+    </Frame>
+
+    </div>
 
     **Подключение:**
 
@@ -86,7 +92,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     * Включите **Continuous ingestion**
     * **Порядок**: Лексикографический порядок
 
-    <Image img="/images/clickstack/cloudflare/continuous-ingestion.webp" alt="Непрерывная ингестия" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Непрерывная ингестия](/images/clickstack/cloudflare/continuous-ingestion.webp)
+
+    </Frame>
+
+    </div>
 
     Cloudflare Logpush записывает файлы с именами на основе даты (например, `20250127/...`), что естественным образом соответствует лексикографическому порядку. ClickPipes проверяет наличие новых файлов каждые 30 секунд и выполняет ингестию каждого файла, имя которого больше имени последнего обработанного файла.
 
@@ -94,7 +108,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 
     Нажмите **Parse information**. ClickPipes анализирует выборку из ваших файлов журнала и автоматически определяет схему. Проверьте сопоставленные столбцы и при необходимости скорректируйте типы. Задайте **ключ сортировки** для целевой таблицы — для журналов Cloudflare хорошим выбором будет `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`.
 
-    <Image img="/images/clickstack/cloudflare/parse-information.webp" alt="Parse information" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
+
+    </Frame>
+
+    </div>
 
     Нажмите **Complete Setup**.
 
@@ -108,11 +130,27 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 
     1. Откройте HyperDX → **Team Settings** → **Sources**
 
-    <Image img="/images/clickstack/cloudflare/add-source.webp" alt="Добавить источник" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Добавить источник](/images/clickstack/cloudflare/add-source.webp)
+
+    </Frame>
+
+    </div>
 
     2. Нажмите **Add source** и задайте следующие параметры. Чтобы получить доступ ко всем полям, нажмите **Configure Optional Fields**:
 
-    <Image img="/images/clickstack/cloudflare/configure-optional-fields.webp" alt="Настроить необязательные поля" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Настроить необязательные поля](/images/clickstack/cloudflare/configure-optional-fields.webp)
+
+    </Frame>
+
+    </div>
 
     | Параметр                           | Значение                                                                                                                                                                                                                                                                                                          |
     | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,7 +169,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 
     3. Нажмите **Save Source**
 
-    <Image img="/images/clickstack/cloudflare/save-source.webp" alt="Сохранить источник" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Сохранить источник](/images/clickstack/cloudflare/save-source.webp)
+
+    </Frame>
+
+    </div>
 
     Это позволяет напрямую сопоставить исходные столбцы Cloudflare с представлением логов HyperDX без какого-либо преобразования или дублирования данных. В поле **Body** будет отображаться сводка по запросу, например `GET /api/v1/users 200`, а все поля Cloudflare будут доступны как атрибуты для поиска.
   </Step>
@@ -143,9 +189,25 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     * Уровни серьёзности, выделенные цветом в зависимости от HTTP-статуса (INFO для 2xx, WARN для 4xx, ERROR для 5xx)
     * Атрибуты, доступные для поиска, такие как `http.status_code`, `client.country`, `cache.status` и `bot.score`
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="Представление Search" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="Представление логов" />
+    <Frame>
+
+    ![Представление Search](/images/clickstack/cloudflare/search-view.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Представление логов](/images/clickstack/cloudflare/log-view.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -184,9 +246,25 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 
     Вы увидите записи журнала со сводками по запросам, доступными для поиска атрибутами Cloudflare и уровнями серьёзности на основе кодов состояния HTTP.
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="Представление поиска" />
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="Представление логов" />
+    <Frame>
+
+    ![Представление поиска](/images/clickstack/cloudflare/search-view.webp)
+
+    </Frame>
+
+    </div>
+
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Представление логов](/images/clickstack/cloudflare/log-view.webp)
+
+    </Frame>
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -208,15 +286,39 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
   <Step title="Импорт панели мониторинга" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
-    <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="Импорт панели мониторинга" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Импорт панели мониторинга](/images/clickstack/cloudflare/import-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     2. Загрузите `cloudflare-logs-dashboard.json` → **Finish Import**
 
-    <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="Импорт панели мониторинга" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Импорт панели мониторинга](/images/clickstack/cloudflare/finish-import.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Просмотр панели мониторинга" id="view-dashboard">
-    <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="Пример панели мониторинга" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Пример панели мониторинга](/images/clickstack/cloudflare/example-dashboard.webp)
+
+    </Frame>
+
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (скорректируйте с учётом вашего локального часового пояса). По умолчанию в импортированной панели мониторинга временной диапазон не задан.

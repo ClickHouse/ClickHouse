@@ -51,7 +51,8 @@ public:
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_,
         BlockMissingValues * block_missing_values_ = nullptr,
-        NativeReaderTypeCache * type_cache_ = nullptr);
+        NativeReaderTypeCache * type_cache_ = nullptr,
+        ISerialization::KindSet allowed_kinds_ = default_allowed_kinds);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,

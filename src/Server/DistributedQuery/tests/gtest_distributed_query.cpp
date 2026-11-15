@@ -73,6 +73,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/ServerUUID.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -305,14 +307,14 @@ static QueryPlan createHashJoinQueryPlan(const String & data_a, const String & d
             std::move(join_info),
             std::move(join_expression_actions),
             std::move(required_output_columns),
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             false,
             join_settings,
             SortingStep::Settings(query_context->getSettingsRef()));
 
         join_step->setStepDescription("Join");
 
-        std::vector<QueryPlanPtr> plans;
+        QueryPlanPtrs plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
 
@@ -820,7 +822,7 @@ RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataType
     return descriptor;
 }
 
-String serializeTaskWithDescriptors(std::vector<RuntimeFilterReceiveDescriptor> descriptors)
+String serializeTaskWithDescriptors(VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor> descriptors)
 {
     DistributedQueryTaskDescription description;
     description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
@@ -859,7 +861,7 @@ TEST(DistributedTaskSerialization, InvalidRuntimeFilterDescriptorsAreRejected)
     auto without_key = valid;
     without_key.filter_key.clear();
 
-    const std::vector<std::pair<const char *, std::vector<RuntimeFilterReceiveDescriptor>>> cases = {
+    const std::vector<std::pair<const char *, VectorWithMemoryTracking<RuntimeFilterReceiveDescriptor>>> cases = {
         {"an empty filter key", {without_key}},
         {"a duplicate filter key", {valid, valid}},
     };
