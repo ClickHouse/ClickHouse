@@ -180,7 +180,12 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
-            result = ORC::Type::createPrimitiveType(ORC::TypeKind::TIMESTAMP);
+            /// A lake column (Iceberg `timestamptz`) is an instant, which ORC calls `TIMESTAMP_INSTANT`,
+            /// unless the lake schema declares it a wall-clock time (Iceberg `timestamp`). The writer
+            /// encodes `TIMESTAMP_INSTANT` as UTC seconds, regardless of the writer time zone.
+            const bool is_instant = column_mapper && column_mapper->getStorageColumnEncoding().contains(column_path)
+                && !column_mapper->isLocalTimestampPath(column_path);
+            result = ORC::Type::createPrimitiveType(is_instant ? ORC::TypeKind::TIMESTAMP_INSTANT : ORC::TypeKind::TIMESTAMP);
             break;
         }
         case TypeIndex::Int128: [[fallthrough]];

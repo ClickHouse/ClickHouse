@@ -126,6 +126,7 @@ uniq_combined_merge.xml                                  # AggregateFunction col
 uniq_exact_merge_large_states.xml                        # AggregateFunction column
 uniq_states_read_merge.xml                               # AggregateFunction column
 uniq_stored.xml                                          # AggregateFunction column
+utc_timestamp_transform.xml                              # DateTime read back as DateTime64(6, 'UTC'), rejected by toUTCTimestamp
 uuid_ip_comparison.xml                                   # IPv4 widened to UInt32
 vector_binary_serialization.xml                          # AggregateFunction column
 wide_integer_add_sub.xml                                 # Int128 widened to Decimal

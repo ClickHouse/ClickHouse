@@ -1104,7 +1104,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return {"timestamp", true};
+            /// The Parquet writer sets `isAdjustedToUTC=true`, so declare `timestamptz` instead of `timestamp`.
+            /// `timestamptz_ns` is a format version 3 type, so `DateTime64(9)` keeps the microsecond type, as before.
+            return {Iceberg::f_timestamptz, true};
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:

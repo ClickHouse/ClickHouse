@@ -5,8 +5,8 @@
 
 # A manifest file header keeps a copy of the schema the data was written with, while metadata.json is
 # the authoritative source. The conflict below is produced the way broken writers produce it: the
-# manifest headers keep the `timestamp` type, while metadata.json binds the same schema-id to
-# `timestamptz`.
+# manifest headers keep the `timestamptz` type, while metadata.json binds the same schema-id to
+# `timestamp`.
 #
 # A read registers the metadata.json schemas before it walks the manifests, so a strict read meets a
 # header conflicting with a known metadata.json copy and fails with `ICEBERG_SPECIFICATION_VIOLATION`.
@@ -18,8 +18,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The data is written as `timestamp` (parsed in the session time zone) and read back as `timestamptz`
-# (rendered in UTC), so the session time zone has to be UTC for the values to round-trip unchanged.
+# The data is written as `timestamptz` (rendered in UTC) and read back as `timestamp` (rendered in the
+# session time zone), so the session time zone has to be UTC for the values to round-trip unchanged.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --session_timezone UTC"
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
@@ -47,8 +47,8 @@ path = sys.argv[1]
 meta = json.load(open(path))
 for schema in meta["schemas"]:
     for field in schema["fields"]:
-        if field["type"] == "timestamp":
-            field["type"] = "timestamptz"
+        if field["type"] == "timestamptz":
+            field["type"] = "timestamp"
 json.dump(meta, open(path, "w"))
 PY
 

@@ -1,0 +1,10 @@
+--- timestamptz column ---
+1	2024-01-02 03:04:05.123456	DateTime64(6, \'UTC\')
+iceberg type: timestamptz
+orc type: timestamp[ns, tz=UTC]
+orc epoch nanoseconds: [1704164645123456000]
+--- legacy timestamp column ---
+1	2024-01-02 03:04:05.123456	DateTime64(6)
+iceberg type: timestamp
+orc type: timestamp[ns]
+orc epoch nanoseconds: [1704164645123456000]
