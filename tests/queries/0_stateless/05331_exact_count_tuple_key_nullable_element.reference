@@ -1,0 +1,19 @@
+a descending key
+4
+4
+an ascending key
+3
+3
+3
+4
+2
+4
+a NULL in a nested tuple
+3
+3
+a LowCardinality(Nullable) element
+3
+3
+a Nullable(Tuple) key
+3
+3
