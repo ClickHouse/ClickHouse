@@ -291,7 +291,8 @@ def parallel_replicas_job_runs_autopr(sha):
     Keyed off the commit rather than the clock so that a run is reproducible: the same commit always
     picks the same mode, and which mode ran is reported in the job's own result line.
     """
-    if not sha:
+    # `_Environment.from_env` sets the SHA to "TEST" when the job runs without a CI environment.
+    if not sha or sha == "TEST":
         return False
     return int(sha[:8], 16) % 2 == 1
 
