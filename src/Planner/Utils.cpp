@@ -57,6 +57,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -150,7 +151,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 }
 
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context)

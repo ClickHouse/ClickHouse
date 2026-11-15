@@ -3,6 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileView.h>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -24,6 +26,30 @@ PackedFilesReader::PackedFilesReader(PackedFilesIO::Index index_)
 {
 }
 
+
+/// File names from the index are used verbatim to build paths inside the part directory
+/// (e.g. members written separately are copied to disk when the part is cloned), so they must not escape it.
+static void assertFileNameIsRelativeAndContained(const String & file_name)
+{
+    if (file_name.empty())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Empty file name in packed archive index");
+
+    /// A NUL byte would be kept inside a single path component here, but the local disk layer
+    /// passes the joined path to C APIs which truncate at the first NUL, hiding the rest of the name.
+    if (file_name.contains('\0'))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "File name '{}' in packed archive index contains a NUL byte", file_name);
+
+    const std::filesystem::path path(file_name);
+    if (path.is_absolute())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Absolute file name '{}' in packed archive index", file_name);
+
+    for (const auto & component : path)
+    {
+        if (component == "." || component == "..")
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "File name '{}' in packed archive index contains '{}' path component", file_name, component.string());
+    }
+}
 
 PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
 {
@@ -48,6 +74,8 @@ PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
         readIntBinary(offset.size, in);
         if (version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE)
             readIntBinary(offset.uncompressed_size, in);
+
+        assertFileNameIsRelativeAndContained(file_name);
 
         if (!index.emplace(file_name, offset).second)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated file: {}", file_name);

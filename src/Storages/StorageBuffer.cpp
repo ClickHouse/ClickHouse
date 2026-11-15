@@ -60,6 +60,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -749,7 +750,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -917,7 +918,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, getContext().get());
             }
             return;
         }
@@ -1330,7 +1331,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Context * query_context)
 {
     if (!destination_id || block.empty())
         return;
@@ -1377,6 +1378,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,

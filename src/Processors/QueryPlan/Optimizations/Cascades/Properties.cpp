@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <fmt/ranges.h>
 #include <algorithm>
 #include <numeric>
@@ -16,14 +17,14 @@ void ExpressionProperties::setDisjointStreams(DistributionColumns columns)
     /// in a different set order would then compare and hash unequal. The sort permutes
     /// indexes over precomputed keys; sorting the sets directly would let the comparator
     /// read a set that `std::sort` has moved out.
-    std::vector<Names> sort_keys(columns.size());
+    VectorWithMemoryTracking<Names> sort_keys(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
         chassert(!columns[i].empty());
         sort_keys[i].assign(columns[i].begin(), columns[i].end());
         std::sort(sort_keys[i].begin(), sort_keys[i].end());
     }
-    std::vector<size_t> order(columns.size());
+    VectorWithMemoryTracking<size_t> order(columns.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(),
         [&](size_t left, size_t right) { return sort_keys[left] < sort_keys[right]; });

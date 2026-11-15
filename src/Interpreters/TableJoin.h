@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -372,9 +373,9 @@ public:
         return 0;
     }
 
-    const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
+    const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {
-        static const std::vector<SharedRuntimeFilterDescriptor> empty;
+        static const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 
