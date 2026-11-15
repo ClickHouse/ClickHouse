@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+
+# Regression test: a lexical error inside balanced brackets must not make the
+# single-line continuation probe take an opener for an unclosed one. In
+# `SELECT (1!)` the `)` closing the opener comes after the invalid `!`: the
+# statement is complete, so <ENTER> submits it and its lexical error is reported.
+# An unterminated string after an opener still keeps the buffer open.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --highlight 0 --output-format PrettyCompact --implicit_select 0 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT (1!)\r"
+expect "Syntax error"
+expect ":) "
+
+send -- "SELECT \[1!\]\r"
+expect "Syntax error"
+expect ":) "
+
+# The string is still being typed: complete it on the continuation line.
+send -- "SELECT length(('abc\r"
+sleep 1
+send -- "def'))\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +7 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

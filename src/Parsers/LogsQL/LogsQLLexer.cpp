@@ -54,6 +54,11 @@ void LogsQLLexer::throwSyntaxError(const String & message) const
     throw Exception(ErrorCodes::SYNTAX_ERROR, "{}; context: [{}]", message, context());
 }
 
+void LogsQLLexer::throwUnexpectedEndOfInput(const String & message) const
+{
+    throw LogsQLUnexpectedEndOfInput(ErrorCodes::SYNTAX_ERROR, "{}; context: [{}]", message, context());
+}
+
 String LogsQLLexer::context() const
 {
     const char * context_end = token_begin < end ? token_begin : end;
@@ -75,6 +80,7 @@ bool LogsQLLexer::isWord(std::string_view text)
 
 bool LogsQLLexer::isKeyword(std::string_view keyword) const
 {
+    noteInspection();
     if (quoted)
         return false;
     if (token.size() != keyword.size())
@@ -95,6 +101,7 @@ bool LogsQLLexer::isKeywordAny(const std::vector<std::string_view> & keywords) c
 
 bool LogsQLLexer::isQueryPartTrailer() const
 {
+    noteInspection();
     return isEnd() || isKeyword("|") || isKeyword(")") || isKeyword(";");
 }
 
@@ -112,6 +119,7 @@ void LogsQLLexer::restoreState(const State & state)
     prev_raw_token = state.prev_raw_token;
     quoted = state.quoted;
     skipped_space = state.skipped_space;
+    examined_end = false;
 }
 
 void LogsQLLexer::checkPrevAdjacentToken(const std::vector<std::string_view> & allowed) const
@@ -238,7 +246,7 @@ String LogsQLLexer::decodeBacktickQuoted(const char *& pos) const
         if (pos == end)
         {
             checkTruncation(pos);
-            throwSyntaxError("unterminated backtick-quoted string");
+            throwUnexpectedEndOfInput("unterminated backtick-quoted string");
         }
         char c = *pos;
         ++pos;
@@ -256,6 +264,7 @@ String LogsQLLexer::decodeSingleQuoted(const char *& pos) const
 
 void LogsQLLexer::nextToken()
 {
+    examined_end = false;
     prev_raw_token = String(raw_token);
     token.clear();
     raw_token = {};
@@ -380,6 +389,8 @@ bool LogsQLLexer::isAllowedCompoundToken(const std::vector<std::string_view> & s
 
 String LogsQLLexer::nextCompoundToken(const std::vector<std::string_view> & stop_tokens)
 {
+    /// The current token must start the compound token, so the end of input is examined here.
+    noteInspection();
     if (quoted)
     {
         String result = token;

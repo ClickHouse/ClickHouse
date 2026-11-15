@@ -1,0 +1,44 @@
+#!/usr/bin/expect -f
+
+# Regression test: the trailing `;` that forces submission in single-line mode
+# must be judged by the dialect of the last statement, which a `SET dialect`
+# earlier in the same buffer may have changed. Starting from SQL, in
+# `SET dialect = 'logsql'; error and #keep ;` the final `;` is inside a LogsQL
+# comment and `error and` still expects a filter, so the first <ENTER> must
+# keep the input buffer open. The completed query then reaches execution and
+# fails only because the local test has no `logs` table.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --enable_logsql_dialect 1 --logsql_table logs --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# Complete the query after the client has processed the first <ENTER>.
+send -- "SET dialect = 'logsql'; error and #keep ;\r"
+sleep 1
+send -- "warn\r"
+expect {
+    "unexpected end of query" { exit 1 }
+    "Unknown table expression identifier 'logs'" {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

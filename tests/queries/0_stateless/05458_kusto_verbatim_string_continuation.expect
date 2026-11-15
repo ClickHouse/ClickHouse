@@ -1,0 +1,49 @@
+#!/usr/bin/expect -f
+
+# Regression test: in single-line interactive mode the continuation probe
+# `ClientBase::queryNeedsContinuation` must find the next Kusto statement where the
+# KQL parser left off. In `print @'\'; print (` the verbatim string holds one
+# backslash for KQL, but the SQL lexer takes its closing quote for an escaped one
+# and swallows the rest of the buffer into a single string token. Following the SQL
+# tokens, the probe skipped the unfinished `print (` and <ENTER> submitted the buffer.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --dialect kusto --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The second statement stops at an unclosed parenthesis, so the buffer must fold and wait.
+send -- "print @'\\'; print (\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+# Complete the statement on the continuation line. The whole buffer now runs as one.
+send -- "41 + 1)\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +42 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof
