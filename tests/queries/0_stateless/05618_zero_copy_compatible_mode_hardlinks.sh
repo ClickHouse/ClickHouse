@@ -41,6 +41,8 @@ do
         [ "$inactive" = "0" ] && break
         sleep 0.5
     done
+    # The reads below prove nothing unless the parent parts are removed, and in this order
+    if [ "$inactive" != "0" ]; then echo "Old parts of $table were not removed: $inactive left"; exit 1; fi
 done
 
 # Column `b` was hardlinked by the mutation, its blobs must still exist and be readable on both replicas
