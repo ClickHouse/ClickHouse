@@ -1,7 +1,6 @@
 #include <base/StringViewHash.h>
 
-#if defined(ENABLE_EXPERIMENTAL_LONG_CRC32_HASH) && ENABLE_EXPERIMENTAL_LONG_CRC32_HASH \
-    && defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 
 namespace

@@ -290,8 +290,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
     return hashLessThan8(data, size);
 }
 
-#if defined(ENABLE_EXPERIMENTAL_LONG_CRC32_HASH) && ENABLE_EXPERIMENTAL_LONG_CRC32_HASH \
-    && defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 /// Completes `CRC32Hash` from its first 24 bytes; requires at least 1024 bytes.
 size_t crc32HashLong(const char * data, size_t size, UInt32 seed);
@@ -299,8 +298,7 @@ size_t crc32HashLong(const char * data, size_t size, UInt32 seed);
 
 struct CRC32Hash
 {
-#if defined(ENABLE_EXPERIMENTAL_LONG_CRC32_HASH) && ENABLE_EXPERIMENTAL_LONG_CRC32_HASH \
-    && defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     ALWAYS_INLINE
 #endif
@@ -322,8 +320,7 @@ struct CRC32Hash
         const char * end = pos + size;
         size_t res = static_cast<size_t>(-1U);
 
-#if defined(ENABLE_EXPERIMENTAL_LONG_CRC32_HASH) && ENABLE_EXPERIMENTAL_LONG_CRC32_HASH \
-    && defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         res = __crc32cd(static_cast<UInt32>(res), unalignedLoadLittleEndian<UInt64>(pos));
         pos += 8;
