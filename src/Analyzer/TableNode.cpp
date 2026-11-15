@@ -160,6 +160,13 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     parameterized_view_query_hash = getParameterizedViewQueryHash(storage, storage_snapshot);
 }
 
+void TableNode::replaceStorage(StoragePtr storage_value, StorageSnapshotPtr storage_snapshot_value)
+{
+    storage = std::move(storage_value);
+    storage_metadata = storage_snapshot_value->metadata;
+    storage_snapshot = std::move(storage_snapshot_value);
+}
+
 void TableNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
 {
     table_expression_modifiers = std::move(table_expression_modifiers_value);

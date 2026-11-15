@@ -1,4 +1,4 @@
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SET optimize_syntax_fuse_functions = 0;
 
 -- Moving division out of the aggregate changes infinities, signed zero, and empty sums.

@@ -29,6 +29,8 @@ public:
 
     bool withTies() const { return with_ties; }
 
+    QueryPlanStepPtr clone() const override;
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 

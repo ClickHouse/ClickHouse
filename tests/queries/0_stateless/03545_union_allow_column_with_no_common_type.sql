@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 set use_variant_as_common_type = 1;
 SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord) ORDER BY ord;
 SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord UNION ALL SELECT 3.14 AS x, 3 AS ord) ORDER BY ord;

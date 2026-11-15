@@ -8,7 +8,6 @@
 
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS quantize_prewhere;
 CREATE TABLE quantize_prewhere

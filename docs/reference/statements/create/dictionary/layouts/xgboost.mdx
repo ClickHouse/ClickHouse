@@ -110,7 +110,7 @@ Only the parameters listed below are accepted; any other name fails the load, so
 | `booster` | Booster type: `gbtree`, `gblinear`, or `dart`. |
 | `objective` | Learning objective, e.g. `reg:squarederror` or `binary:logistic`. Must be an objective that predicts a single value per row; multiclass objectives (`multi:softmax`, `multi:softprob`) are rejected. |
 | `seed` | Random number seed. Training is otherwise deterministic, so this only changes the model when a stochastic parameter (`subsample`, `sampling_method`, any `colsample_*`) is also set. |
-| `verbosity` | Logging verbosity of XGBoost: `0` (silent) to `3` (debug), default `1` (warnings). Affects only which messages XGBoost logs, never the trained model. See [Notes](#notes) for where the messages go. |
+| `verbosity` | Logging verbosity of XGBoost: `0` (silent), `1` (warnings, the default) or `2` (info). Debug verbosity `3` is rejected, because the timing monitors it turns on are not thread-safe. Affects only which messages XGBoost logs, never the trained model. See [Notes](#notes) for where the messages go. |
 | `nthread` | Number of parallel threads used for training. Accepted and forwarded, but currently has no effect: the bundled XGBoost is built without OpenMP, so training and prediction always run on a single thread. |
 | `eta` | Step-size shrinkage applied after each boosting round. Only this spelling is accepted; XGBoost's `learning_rate` alias is not. |
 | `gamma` | Minimum loss reduction required to make a further split on a leaf. |

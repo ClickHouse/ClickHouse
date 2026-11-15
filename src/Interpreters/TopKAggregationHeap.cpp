@@ -158,9 +158,22 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
         const T boundary = boundary_data[boundaryRow()];
         const int direction = directions[0];
         const int nulls_direction = nulls_directions[0];
-        for (size_t i = begin; i < end; ++i)
-            skip_bitmap[i] = direction * CompareHelper<T>::compare(src[i], boundary, nulls_direction) > 0;
-        result = skip_bitmap.data();
+        /// A row is skipped when `direction * compare(row, boundary) > 0`. The direction is 1 or -1, so this is
+        /// `greater` or `less`, chosen once outside of the loop. clang 23 turns the three-way compare into a
+        /// `ucmp`/`scmp` intrinsic, which the x86 backend expands to a scalar `cmp`/`sbb` per row instead of
+        /// a vector compare (see `compareColumnImpl` in `ColumnVector.cpp`).
+        UInt8 * bitmap = skip_bitmap.data();
+        if (direction > 0)
+        {
+            for (size_t i = begin; i < end; ++i)
+                bitmap[i] = CompareHelper<T>::greater(src[i], boundary, nulls_direction);
+        }
+        else
+        {
+            for (size_t i = begin; i < end; ++i)
+                bitmap[i] = CompareHelper<T>::less(src[i], boundary, nulls_direction);
+        }
+        result = bitmap;
     });
     return result;
 }

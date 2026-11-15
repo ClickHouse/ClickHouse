@@ -22,7 +22,7 @@ SELECT number, number = 50000,
               hex(sipHash128(number, 5)), hex(sipHash128(number, 6)), hex(sipHash128(number, 7)), hex(sipHash128(number, 8)))
 FROM numbers(100000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
     parallel_replicas_local_plan = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 -- Let the cost model favour parallel replicas for a read this small: it caps the reading threads by
@@ -31,6 +31,9 @@ SET max_threads = 1, merge_tree_min_bytes_per_task_for_remote_reading = 1;
 -- With the range-splitting fault injection armed, the early estimate declines to answer, and a read of
 -- unknown size is never turned away.
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+-- The `collect` and `rejected` runs must select the same granules, but the query condition cache is server-wide and a parallel
+-- test can clear it between them (dropping a table of an `Ordinary` database clears every cache), which looks like drift.
+SET use_query_condition_cache = 0;
 
 -- Skipped early: no read in the plan comes near the threshold.
 SELECT key % 10 AS k, max(payload) FROM t_autopr_min_bytes PREWHERE flag = 1 GROUP BY k FORMAT Null

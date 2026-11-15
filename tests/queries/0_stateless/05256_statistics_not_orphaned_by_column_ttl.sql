@@ -1,13 +1,13 @@
 -- Tests that a column TTL which empties a column does not leave a stale statistic for it behind:
 -- min()/max() and a filtered count() on that column must agree with the rows the table stores.
 
+SET min_marks_per_part_to_load_statistics = 0;
 SET mutations_sync = 2, alter_sync = 2, materialize_statistics_on_insert = 1;
 -- Pin every gate the two statistics consumers below depend on, so that neither a randomized draw
 -- nor a future default flip can disarm this test silently.
 SET use_statistics = 1, use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0, aggregate_functions_null_for_empty = 0;
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 
@@ -56,6 +56,6 @@ WHERE explain ILIKE '%Statistics%';
 
 -- liveness: the min/max aggregation must actually be answered from statistics
 SELECT count() > 0 FROM (EXPLAIN SELECT min(v), max(v) FROM ttl_stats_orphan)
-WHERE explain ILIKE '%_statistics_min_max_projection%';
+WHERE explain ILIKE '%_statistics_projection%';
 
 DROP TABLE ttl_stats_orphan;
