@@ -39,10 +39,7 @@ public:
 
     void setCommitOnSelect(bool value) { commit_on_select = value; }
 
-    /// A source that feeds the materialized views rather than a query result. It matters for the
-    /// messages `nats_skip_broken_messages` passed over: a streaming cycle never inserts them, so
-    /// their skip is final as soon as it happened, while a direct `SELECT` consumes nothing before
-    /// it commits, so a resubscribe inside the query hands them back to the broker instead.
+    /// A source of a streaming cycle into the materialized views rather than of a direct `SELECT`.
     void setBackgroundStreaming(bool value) { background_streaming = value; }
 
     bool wasConsumptionAborted() const { return consumption_aborted; }

@@ -17,7 +17,7 @@ from helpers.s3_queue_common import (
 from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -248,6 +248,92 @@ def test_filtering_files(started_cluster, mode):
     ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
+
+
+@pytest.mark.parametrize("mode", ["exclusive", "unordered"])
+def test_filtering_files_multinode(started_cluster, mode):
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+    nodes = [node1, node2]
+
+    table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 100
+
+    for i, node in enumerate(nodes):
+        node.query("DROP DATABASE IF EXISTS r")
+        node.query(
+            f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node{i+1}')"
+        )
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            mode,
+            files_path if mode != "exclusive" else f"{files_path}{{replica}}",
+            additional_settings={
+                "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
+            },
+            database_name="r",
+        )
+
+    chunk = files_to_generate//len(nodes)
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        files = [(f"{files_path_node}/test_{i}.csv", i) for i in range(i*chunk, i*chunk + chunk)]
+        generate_random_files(
+            started_cluster,
+            files_path_node,
+            chunk,
+            start_ind=i*chunk,
+            row_num=1,
+            files=files,
+        )
+
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    failed_files = []
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        failed_files.append(f"{files_path_node}/testz_fff.csv")
+
+    for failed_file in failed_files:
+        put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+
+    for node in nodes:
+        create_mv(node, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        query = f"SELECT count() FROM default.{dst_table_name}"
+        return sum(int(node.query(query)) for node in nodes)
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    if mode == "exclusive":
+        log_line = lambda failed_file: f"StorageObjectStorageQueue({keeper_path}): File {failed_file} failed to process and will not be retried"
+    else:
+        log_line = lambda failed_file: f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+
+    skips = [node.contains_in_log(log_line(failed_files[i])) for i, node in enumerate(nodes)]
+    if mode == "exclusive":
+        assert all(skips)
+    else:
+        assert any(skips)
 
 
 def test_ordered_start_after_avoids_deep_relisting(started_cluster):
@@ -1100,7 +1186,7 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):
     node = started_cluster.instances["instance"]
@@ -1346,6 +1432,77 @@ def test_select_after_failed_startup(started_cluster):
     )
 
     assert_reports_table_is_dropped(node, table_name)
+
+
+def test_rename_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    suffix = generate_random_string()
+    database = f"rename_after_failed_startup_{suffix}"
+    renamed_database = f"{database}_renamed"
+    failed = f"failed_{suffix}"
+    healthy = f"healthy_{suffix}"
+
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        create_table(
+            started_cluster,
+            node,
+            healthy,
+            "unordered",
+            f"{healthy}_data",
+            database_name=database,
+        )
+        node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+        try:
+            assert "Failed to startup" in create_table(
+                started_cluster,
+                node,
+                failed,
+                "unordered",
+                f"{failed}_data",
+                database_name=database,
+                expect_error=True,
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+        # Precondition: the failed table stays attached but is no longer registered.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Unregistered table: {database}.{failed}"
+        )
+
+        node.query(f"RENAME TABLE {database}.{failed} TO {database}.{failed}_2")
+        node.query(f"RENAME DATABASE {database} TO {renamed_database}")
+        uuids = dict(
+            row.split("\t")
+            for row in node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}'"
+            ).splitlines()
+        )
+        node.query(
+            f"EXCHANGE TABLES {renamed_database}.{failed}_2 AND {renamed_database}.{healthy}"
+        )
+
+        assert (
+            node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}' ORDER BY name"
+            )
+            == f"{failed}_2\t{uuids[healthy]}\n{healthy}\t{uuids[failed + '_2']}\n"
+        )
+        # The running table is still tracked under each new name.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {database}.{healthy}"
+        )
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {renamed_database}.{healthy} ({uuids[healthy]})"
+            f" -> {renamed_database}.{failed}_2 ({uuids[healthy]})"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {renamed_database} SYNC")
+
+    assert node.query("SELECT 1") == "1\n"
+    assert not node.contains_in_log(f"Table with storage id {database}.{failed}")
 
 
 def test_select_after_failed_drop(started_cluster):
@@ -1805,8 +1962,10 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     sizeof_file_status = cache_size_bytes
     logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
 
-    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
+    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields.
+    # The weight also includes the capacity of the path string, which depends on the allocation
+    # rounding of the standard library (libc++ from LLVM 23 rounds long strings to 16 bytes instead of 8).
+    assert 200 <= sizeof_file_status <= 320, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
 
     # Process 19 more files
     files_to_generate = 19

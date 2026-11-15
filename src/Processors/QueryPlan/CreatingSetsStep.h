@@ -20,7 +20,9 @@ public:
         const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        FutureSetSettings set_settings_,
+        bool recoverable_build_ = false);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -44,7 +46,13 @@ private:
     SetAndKeyPtr set_and_key;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
+    FutureSetSettings set_settings;
     bool preliminary_distinct = false;
+
+    /// True only for the in-place build that runs against a CLONE of the subquery source
+    /// (`FutureSetFromSubquery::buildOrderedSetInplace`): only there does abandoning the build leave
+    /// `source` intact for the deferred build to create the set. `build()` moves `source` out.
+    bool recoverable_build = false;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
@@ -85,7 +93,7 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(
+    static VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> makePlansForSets(
         DelayedCreatingSetsStep && step,
         const QueryPlanOptimizationSettings & optimization_settings);
 

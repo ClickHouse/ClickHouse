@@ -29,6 +29,16 @@ void DefinerDependencies::addDependency(const String & definer, const StorageID 
         return;
 
     std::lock_guard lock(mutex);
+
+    auto object_it = object_to_definer.find(object_id.uuid);
+    if (object_it != object_to_definer.end())
+    {
+        if (object_it->second == definer)
+            return;
+
+        unregisterObject(object_id.uuid);
+    }
+
     definer_to_objects[definer].insert(object_id.uuid);
     object_to_definer[object_id.uuid] = definer;
 }
@@ -36,29 +46,33 @@ void DefinerDependencies::addDependency(const String & definer, const StorageID 
 void DefinerDependencies::removeDependencies(const StorageID & object_id)
 {
     std::lock_guard lock(mutex);
+    unregisterObject(object_id.uuid);
+}
 
-    auto object_it = object_to_definer.find(object_id.uuid);
-    if (object_it != object_to_definer.end())
+void DefinerDependencies::unregisterObject(const UUID & object_uuid)
+{
+    auto object_it = object_to_definer.find(object_uuid);
+    if (object_it == object_to_definer.end())
+        return;
+
+    const auto & definer = object_it->second;
+    auto definer_it = definer_to_objects.find(definer);
+    if (definer_it != definer_to_objects.end())
     {
-        const auto & definer = object_it->second;
-        auto definer_it = definer_to_objects.find(definer);
-        if (definer_it != definer_to_objects.end())
+        definer_it->second.erase(object_uuid);
+        if (definer_it->second.empty())
         {
-            definer_it->second.erase(object_id.uuid);
-            if (definer_it->second.empty())
+            if (definer.ends_with(":definer"))
             {
-                if (definer.ends_with(":definer"))
-                {
-                    auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
-                    if (const auto uuid = access_control.find<User>(definer))
-                        access_control.tryRemove(*uuid);
-                }
-
-                definer_to_objects.erase(definer_it);
+                auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
+                if (const auto uuid = access_control.find<User>(definer))
+                    access_control.tryRemove(*uuid);
             }
+
+            definer_to_objects.erase(definer_it);
         }
-        object_to_definer.erase(object_it);
     }
+    object_to_definer.erase(object_it);
 }
 
 std::vector<UUID> DefinerDependencies::getObjectsForDefiner(const String & definer) const

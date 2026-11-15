@@ -3,8 +3,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -205,14 +203,11 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserDropQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementDrop(StatementFactory & factory)
-{
-    factory.registerStatement("DROP",
+    documentation["DROP"] =
     {
         .description = R"DOCS_MD(
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
@@ -359,6 +354,23 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```
+
+## DROP HANDLER {#drop-handler}
+
+Deletes a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler).
+
+**Syntax**
+
+```sql
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
+DROP HANDLER my_handler;
+```
 )DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -373,11 +385,12 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storag
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
-    });
+    };
 
-    factory.registerStatement("DETACH",
+    documentation["DETACH"] =
     {
         .description = R"DOCS_MD(
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
@@ -450,9 +463,9 @@ In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE
 DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 )",
         .related = {"ATTACH", "DROP"},
-    });
+    };
 
-    factory.registerStatement("TRUNCATE",
+    documentation["TRUNCATE"] =
     {
         .description = R"DOCS_MD(
 The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a table or database while preserving their structure.
@@ -474,7 +487,7 @@ You can use the [alter_sync](/reference/settings/session-settings/alter#alter_sy
 You can specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-If the `alter_sync` is set to `2`, or to `3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown. With `alter_sync = 3` the inactive replicas are not waited for, so no exception is thrown.
 </Note>
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
@@ -523,7 +536,9 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 )",
         .related = {"DROP", "DELETE", "ALTER TABLE ... PARTITION"},
-    });
+    };
+
+    return documentation;
 }
 
 }

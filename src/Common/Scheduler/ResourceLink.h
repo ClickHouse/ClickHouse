@@ -7,6 +7,10 @@ namespace DB
 
 class ISchedulerQueue;
 class IAllocationQueue;
+class ResourceSchedulingContext;
+struct ResourceQueryState;
+class ResourceRequest;
+extern ResourceQueryState default_scheduling_state; // fallback state (see ResourceLink.cpp), keeps scheduling_state non-null
 using ResourceCost = Int64;
 
 /*
@@ -18,7 +22,29 @@ struct ResourceLink
     ISchedulerQueue * queue = nullptr; // queue for time-shared resources (CPU, network, etc)
     IAllocationQueue * allocation_queue = nullptr; // queue for space-shared resources (memory, disk, etc)
 
-    bool operator==(const ResourceLink &) const = default;
+    /// Per-query scheduling pointers, stamped by the classifier that produced this link (both
+    /// non-owning; the classifier owns them for the query's lifetime). `scheduling_context` is the
+    /// query-global config (weight/priority/…); `scheduling_state` points straight at this query's
+    /// per-resource slot for this leaf, so the query-aware schedulers reach it with one dereference.
+    /// Requests tagged with this link carry both. `scheduling_context` is null for links not produced
+    /// by a classifier (internal/test `getLink()`); `scheduling_state` defaults to the shared fallback
+    /// state (never null) so the schedulers dereference it without a null check.
+    ResourceSchedulingContext * scheduling_context = nullptr;
+    ResourceQueryState * scheduling_state = &default_scheduling_state;
+
+    /// Enqueue `request` into this link's time-shared `queue`, first stamping the query's scheduling
+    /// pointers onto it (so the query-aware schedulers reach this query's state with one dereference).
+    /// Returns false and does nothing when the link has no `queue` (unclassified/unlimited access) —
+    /// the caller treats that as "granted for free". Uses `enqueueRequest`, not the budget-aware
+    /// variant. Defined out-of-line to keep this widely-included header free of scheduler deps.
+    bool enqueue(ResourceRequest * request) const;
+
+    /// Identity is the resource target only; the context is derived from the same classifier as the
+    /// queue, so it does not participate in comparison.
+    bool operator==(const ResourceLink & rhs) const
+    {
+        return queue == rhs.queue && allocation_queue == rhs.allocation_queue;
+    }
 
     explicit operator bool() const
     {
@@ -29,6 +55,8 @@ struct ResourceLink
     {
         queue = nullptr;
         allocation_queue = nullptr;
+        scheduling_context = nullptr;
+        scheduling_state = &default_scheduling_state;
     }
 };
 

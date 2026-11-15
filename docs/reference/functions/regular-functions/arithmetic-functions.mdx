@@ -251,11 +251,19 @@ SELECT byteSwap(123294967295)
 
 Introduced in: v1.1.0
 
-Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/reference/data-types/float).
-Integer division is provided by the `intDiv` function.
+Calculates the quotient of two values `a` and `b`. The `/` operator is equivalent to this function.
+For integer and floating-point arguments, the result type is [Float64](/reference/data-types/float) by default.
+With `sql_compatible_division_for_integers = 1`, two integer arguments instead produce an integer quotient truncated toward zero.
+The result has the width of the first argument and is signed if either argument is signed.
+Division by zero or a quotient outside the result type's range throws an exception in this mode.
+
+When a `Decimal` argument is combined with another `Decimal` or an integer, the result is `Decimal`.
+For two `Decimal` arguments, the result uses the wider storage type and the first argument's scale.
+For a `Decimal` and an integer, it uses the `Decimal` argument's type and scale.
+The setting does not change these rules or the behavior of `intDiv`, `divideDecimal`, and `divideOrNull`.
 
 <Note>
-Division by `0` returns `inf`, `-inf`, or `nan`.
+Floating-point division by `0` returns `inf`, `-inf`, or `nan`. `Decimal` division by zero throws an exception.
 </Note>
     
 
@@ -352,11 +360,74 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 └─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
+## divideExact {#divideExact}
+
+Introduced in: v26.10.0
+
+Calculates the quotient of `x` and `y`. When both arguments are integers, the quotient is computed without conversion to floating point and truncated toward zero.
+The result has the width of `x` and is signed if either argument is signed. Integer types through 256 bits are supported, including mixed signed and unsigned arguments.
+Division by zero or a quotient outside the result type's range throws `ILLEGAL_DIVISION`. Nullable arguments propagate `NULL`.
+
+For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `sql_compatible_division_for_integers = 0`.
+
+The function's behavior does not depend on `sql_compatible_division_for_integers`.
+When that setting is enabled, newly submitted `/` and `divide` expressions are rewritten to `divideExact`.
+This explicit name is preserved in stored expressions, such as table metadata and views, so changing the setting later does not change their division semantics.
+Existing stored `/` and `divide` expressions retain their historical behavior.
+    
+
+**Syntax**
+
+```sql
+divideExact(x, y)
+```
+
+**Arguments**
+
+- `x` — Dividend - `y` — Divisor 
+
+**Returned value**
+
+The quotient of `x` and `y`, truncated toward zero when both arguments are integers.
+
+**Examples**
+
+**Integer division**
+
+```sql title=Query
+SELECT divideExact(toUInt64(5), toUInt8(2)) AS quotient, toTypeName(quotient)
+```
+
+```response title=Response
+2	UInt64
+```
+
+**Mixed signed and unsigned arguments**
+
+```sql title=Query
+SELECT divideExact(toInt32(-5), toUInt64(2)) AS quotient, toTypeName(quotient)
+```
+
+```response title=Response
+-2	Int32
+```
+
+**Floating-point division**
+
+```sql title=Query
+SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)
+```
+
+```response title=Response
+2.5	Float64
+```
+
 ## divideOrNull {#divideOrNull}
 
 Introduced in: v25.5.0
 
-Same as `divide` but returns NULL when dividing by zero.
+Same as `divide` with `sql_compatible_division_for_integers = 0`, but returns `NULL` when dividing by zero.
+The `sql_compatible_division_for_integers` setting does not affect this function.
     
 
 **Syntax**
@@ -619,6 +690,8 @@ otherwise this function returns `0`.
 isFinite(x)
 ```
 
+**Aliases**: `is_finite`
+
 **Arguments**
 
 - `x` — Number to check for finiteness. [`Float*`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float)
@@ -653,6 +726,8 @@ Introduced in: v1.1.0
 isInfinite(x)
 ```
 
+**Aliases**: `is_infinite`
+
 **Arguments**
 
 - `x` — Number to check for infiniteness. [`Float*`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float)
@@ -685,6 +760,8 @@ Returns `1` if the Float32 or Float64, or BFloat16 argument is `NaN`, otherwise 
 isNaN(x)
 ```
 
+**Aliases**: `is_nan`
+
 **Arguments**
 
 - `x` — Argument to evaluate for if it is `NaN`. [`Float*`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float)
@@ -713,8 +790,9 @@ Rounds a value down to a multiple of `roundTo`, as the Kusto Query Language's `b
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan. A KQL
-datetime is a `DateTime64`; the narrower `DateTime` and `Date` carriers are rejected, because
-they cannot represent every bin a KQL datetime can produce.
+datetime is a `DateTime64`; a value of the narrower `DateTime`, `Date` or `Date32` types is
+converted to `DateTime64` first, because they cannot represent every bin a KQL datetime can
+produce.
 
 This function backs `bin()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
@@ -727,7 +805,7 @@ kqlBin(value, roundTo)
 
 **Arguments**
 
-- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `roundTo` — The bin size. 
+- `value` — A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`). - `roundTo` — The bin size. 
 
 **Returned value**
 
@@ -774,9 +852,9 @@ Language's `bin_at()` does. The bins may align before or after the fixed point.
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan from a timespan, and a datetime is rounded by a
-timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; the narrower
-`DateTime` and `Date` carriers are rejected, because they cannot represent every bin a KQL
-datetime can produce.
+timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; a value or a
+fixed point of the narrower `DateTime`, `Date` or `Date32` types is converted to `DateTime64`
+first, because they cannot represent every bin a KQL datetime can produce.
 
 This function backs `bin_at()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
@@ -789,7 +867,7 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **Arguments**
 
-- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `binSize` — The bin size. - `fixedPoint` — The point the bins are counted from. 
+- `value` — A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`). - `binSize` — The bin size. - `fixedPoint` — The point the bins are counted from. 
 
 **Returned value**
 
@@ -1362,8 +1440,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 Introduced in: v20.3.0
 
-Like modulo but returns zero when the divisor is zero, as opposed to an
-exception with the modulo function.
+Like modulo but returns zero instead of an exception for integer results when the operation would otherwise raise an
+exception. For floating-point results, a zero divisor produces `NaN`.
     
 
 **Syntax**
@@ -1379,11 +1457,12 @@ moduloOrZero(a, b)
 
 **Returned value**
 
-Returns the remainder of a % b, or `0` when the divisor is `0`.
+Returns the remainder of `a % b`. For integer results, returns `0` when the operation would otherwise raise an exception.
+For floating-point results, a zero divisor produces `NaN`.
 
 **Examples**
 
-**Usage example**
+**Integer zero divisor**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1391,6 +1470,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**Floating-point zero divisor**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}

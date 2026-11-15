@@ -1,0 +1,10 @@
+multiple_atoms=0
+cityHash64(x + 1) IN (cityHash64(toUInt64(9)))	1	1	Condition: (cityHash64(cityHash64(plus(x, 1))) in 1-element set) | Granules: 2/64
+has([cityHash64(toUInt64(9))], cityHash64(x + 1))	1	1	Condition: (cityHash64(cityHash64(plus(x, 1))) in 1-element set) | Granules: 2/64
+cityHash64(x + 1) NOT IN (cityHash64(toUInt64(9)))	63	63	Condition: (cityHash64(cityHash64(plus(x, 1))) notIn 1-element set) | Granules: 64/64
+notHas([cityHash64(toUInt64(9))], cityHash64(x + 1))	63	63	Condition: (cityHash64(cityHash64(plus(x, 1))) notIn 1-element set) | Granules: 64/64
+multiple_atoms=1
+cityHash64(x + 1) IN (cityHash64(toUInt64(9)))	1	1	Condition: (cityHash64(cityHash64(plus(x, 1))) in 1-element set) | Granules: 2/64
+has([cityHash64(toUInt64(9))], cityHash64(x + 1))	1	1	Condition: (cityHash64(cityHash64(plus(x, 1))) in 1-element set) | Granules: 2/64
+cityHash64(x + 1) NOT IN (cityHash64(toUInt64(9)))	63	63	Condition: (cityHash64(cityHash64(plus(x, 1))) notIn 1-element set) | Granules: 64/64
+notHas([cityHash64(toUInt64(9))], cityHash64(x + 1))	63	63	Condition: (cityHash64(cityHash64(plus(x, 1))) notIn 1-element set) | Granules: 64/64

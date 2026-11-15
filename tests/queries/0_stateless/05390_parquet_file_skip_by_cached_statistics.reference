@@ -1,0 +1,30 @@
+row groups per file: 2, skipped 0
+range, first read: 101 156550, skipped 0, pruned row groups 7
+range, second read: 101 156550, skipped 0, pruned row groups 7
+range, third read: 101 156550, skipped 3, pruned row groups 7
+range, metadata cache off: 101 156550, skipped 0
+point in f3: 1 3999, skipped 3
+no file matches: 0 0, skipped 4
+IN list: 3 5006, skipped 2
+OR of ranges: 15 20030, skipped 2
+x and s: 1 1501, skipped 3
+s beyond its range, first read: 0, skipped 1
+s beyond its range, second read: 0, skipped 4
+s only: 4, skipped 0
+Int64 table, metadata cache off: 101 156550, skipped 0
+Int64 table, first read: 101 156550, skipped 0
+Int64 table, second read: 101 156550, skipped 3
+file(): 101 156550, skipped 3
+file(), filter push-down off: 101 156550, skipped 0
+with query condition cache: 101 176750, skipped 3
+after rewrite of f0: 111 172050, skipped 2
+after rewrite of f0, again: 111 172050, skipped 2
+f4 unsettled: 111 172050, skipped 2
+f4 unsettled, again: 111 172050, skipped 2
+f4 settled, first read: 111 172050, skipped 2
+f4 settled, second read: 111 172050, skipped 2
+f4 settled, third read: 111 172050, skipped 3
+ranges too large to keep, extra memory of the read that collects them below 3 MB: 1
+clickhouse-local: weight counts the kept ranges 1, unchanged by the skip 1, skipped 1
+clickhouse-local, kept through the aggregate function wrapper: skipped 1
+clickhouse-local, unsettled version token: weight unchanged by the filtered read 1

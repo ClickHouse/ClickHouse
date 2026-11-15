@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 
 
@@ -24,6 +25,18 @@ ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Hostname of the server executing the query."
+        },
+        {
+            "clickhouse_version",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Version of the ClickHouse server that produced the row."
+        },
+        {
+            "system_processor",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "CPU architecture of the ClickHouse server that produced the row."
         },
         {
             "event_date",
@@ -63,6 +76,8 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);

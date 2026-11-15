@@ -17,6 +17,8 @@ profiles:
         max_memory_usage_for_user: 0
         # Force INSERT in background
         distributed_foreground_insert: 0
+        # Disable server-side AST fuzzer
+        ast_fuzzer_runs: 0
         # Without the readonly constraints the settings of the query that
         # triggers the DEFINER = ci_logs_sender views (e.g. 32G for
         # max_memory_usage_for_user from the CI default profile) override the
@@ -41,6 +43,8 @@ profiles:
             max_memory_usage_for_user:
                 readonly: true
             distributed_foreground_insert:
+                readonly: true
+            ast_fuzzer_runs:
                 readonly: true
 users:
     ci_logs_sender:

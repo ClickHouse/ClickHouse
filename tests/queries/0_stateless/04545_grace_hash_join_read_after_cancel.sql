@@ -16,7 +16,8 @@ INSERT INTO grace_hash_failpoint_04545 SELECT number, repeat('x', 200) FROM numb
 
 SET join_algorithm = 'grace_hash';
 SET grace_hash_join_initial_buckets = 4;
-SET max_bytes_in_join = 600000;   -- force spilling to disk
+SET max_bytes_before_external_join = 1200000; -- force spilling to disk (it rehashes at half of this)
+SET max_bytes_ratio_before_external_join = 0;
 SET max_threads = 16;             -- several workers share one spilled-block reader
 SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_joins = 0;

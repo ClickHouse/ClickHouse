@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 表函数是用于构建表的函数。
 
-<div id="usage">
-  ## 用法
-</div>
+## 用法 {#usage}
 
 表函数可用于 `SELECT` 查询的 [`FROM`](/zh/reference/statements/select/from)
 子句中。例如，你可以使用 `file` 表函数从本地
@@ -87,5 +85,7 @@ cat numbers.csv
 ```
 
 <Note>
-  如果 [allow&#95;ddl](/zh/reference/settings/session-settings/allow#allow_ddl) 设置已禁用，则无法使用表函数。
+  大多数表函数需要 `CREATE TEMPORARY TABLE` 权限才能运行，因此当
+  [`readonly`](/zh/concepts/features/configuration/settings/permissions-for-queries#readonly) 设置为 1 时，
+  执行表函数的 `SELECT` 或 `INSERT` 会被拒绝。
 </Note>

@@ -37,7 +37,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(notEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -77,7 +76,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(less(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -109,7 +107,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greater(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -141,7 +138,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(lessOrEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -173,7 +169,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -205,7 +200,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(and(greaterOrEquals(toYear(date1), 1993), lessOrEquals(toYear(date1), 1997)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -245,7 +239,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(or(equals(toYear(date1), 1993), equals(toYear(date1), 1994)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -301,7 +294,6 @@ QUERY id: 0
                     LIST id: 32, nodes: 2
                       COLUMN id: 29, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 33, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT\n    value1,\n    toYear(date1) AS year1\nFROM date_t\nWHERE and(equals(year1, 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -346,7 +338,6 @@ QUERY id: 0
                     LIST id: 24, nodes: 2
                       COLUMN id: 21, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greater(1993, toYear(date1)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -378,7 +369,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nPREWHERE equals(toYear(date1), 1993)\nWHERE and(greaterOrEquals(id, 1), lessOrEquals(id, 3))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -416,7 +406,6 @@ QUERY id: 0
               LIST id: 20, nodes: 2
                 COLUMN id: 17, column_name: id, result_type: UInt32, source_id: 3
                 CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(id, 1), lessOrEquals(id, 3))\nHAVING equals(toYear(date1), 1993)
 QUERY id: 0
   PROJECTION COLUMNS
@@ -454,7 +443,6 @@ QUERY id: 0
               LIST id: 20, nodes: 2
                 COLUMN id: 17, column_name: date1, result_type: Date, source_id: 3
                 CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199300), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -489,7 +477,6 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199313), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -524,7 +511,6 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -564,7 +550,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(equals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -604,7 +589,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(notEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -644,7 +628,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(less(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -676,7 +659,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greater(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -708,7 +690,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(lessOrEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -740,7 +721,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(greaterOrEquals(toYYYYMM(date1), 199203), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -772,7 +752,6 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date_t\nWHERE and(or(greaterOrEquals(toYYYYMM(date1), 199203), equals(toYear(date1), 1993)), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -820,7 +799,6 @@ QUERY id: 0
                     LIST id: 27, nodes: 2
                       COLUMN id: 24, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 28, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM datetime_t\nWHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -860,7 +838,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM datetime_t\nWHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -900,7 +877,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date32_t\nWHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -940,7 +916,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM date32_t\nWHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -980,7 +955,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM datetime64_t\nWHERE and(equals(toYear(date1), 1993), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -1020,7 +994,6 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1
 SELECT value1\nFROM datetime64_t\nWHERE and(equals(toYYYYMM(date1), 199312), and(greaterOrEquals(id, 1), lessOrEquals(id, 3)))
 QUERY id: 0
   PROJECTION COLUMNS
@@ -1060,4 +1033,3 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS enable_analyzer=1

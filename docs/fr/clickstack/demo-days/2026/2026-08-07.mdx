@@ -223,7 +223,7 @@ Les secrets sont délibérément exclus de l’API V2. Une requête `GET` ne ren
 
 *Démo par [@elizabetdev](https://github.com/elizabetdev)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Les cartes des tableaux de bord personnalisés et celles des préréglages avaient fini par diverger visuellement, ce qui soulevait une question évidente : pourquoi n&#39;utilisaient-elles pas le même composant dès le départ ? C&#39;est désormais le cas. Un ChartCard partagé encapsule les graphiques autonomes dans les mêmes primitives que les tuiles de tableau de bord, afin de conserver la cohérence des bordures, de l&#39;espacement interne et du séparateur d&#39;en-tête pleine largeur sans avoir à les ajuster manuellement. Faire passer les deux chemins par un seul composant s&#39;est avéré plus complexe que prévu, mais ils produisent désormais le même rendu en interne. Il reste quelques ajustements à effectuer pour les cartes sans contrôles à droite, qui doivent conserver une hauteur cohérente.
 
