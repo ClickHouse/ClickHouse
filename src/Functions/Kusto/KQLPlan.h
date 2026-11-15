@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -131,9 +132,11 @@ public:
     {
     }
 
-    size_t argument(DataTypePtr type)
+    /// An argument slot drops `LowCardinality`: the default implementation hands the plan an
+    /// already-converted full column, with its null map intact.
+    size_t argument(const DataTypePtr & type)
     {
-        slots.push_back({std::move(type), {}});
+        slots.push_back({recursiveRemoveLowCardinality(type), {}});
         return slots.size() - 1;
     }
 

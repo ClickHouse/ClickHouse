@@ -1,0 +1,37 @@
+-- results identical with and without the optimization
+OK
+OK
+-- the row groups that hold no value passing the filter below the threshold are skipped
+!=: skipped >= 10: True
+notEmpty: skipped >= 10: True
+> '': skipped >= 10: True
+'' <: skipped >= 10: True
+LIKE: skipped >= 10: True
+another conjunct: skipped >= 10: True
+PREWHERE: skipped >= 10: True
+long values: skipped >= 10: True
+0xFF maximum: skipped >= 10: True
+LowCardinality: skipped >= 10: True
+LowCardinality(Nullable): skipped >= 9: True
+position: skipped >= 10: True
+no PREWHERE: skipped >= 10: True
+OR: skipped == 0: True
+indexHint: skipped == 0: True
+no statistics: skipped == 0: True
+remote: skipped == 0: True
+-- query condition cache
+000003	11003
+000013	11013
+000023	11023
+000033	11033
+000043	11043
+000003	11003
+000013	11013
+000023	11023
+000033	11033
+000043	11043
+	19999
+	19998
+	19997
+	19996
+	19995

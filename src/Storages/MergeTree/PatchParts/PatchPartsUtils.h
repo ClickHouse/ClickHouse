@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -13,7 +14,7 @@ namespace DB
 struct MergeTreePartition;
 class ColumnLowCardinality;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 /// Returns patches from patch_part required to be applied to source_part.
@@ -77,7 +78,7 @@ bool patchHasHigherDataVersion(const IMergeTreeDataPartInfoForReader & patch, In
 
 /// Returns maximal version among patches which version are in [current_data_version, next_mutation_version)
 /// If there no such patches returns current_data_version.
-PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, PartsRangeView range, Int64 next_mutation_version);
+PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, const PartsRange & range, Int64 next_mutation_version);
 
 /// Returns minimal block number with Update operation.
 std::optional<Int64> getMinUpdateBlockNumber(const CommittingBlocksSet & committing_blocks);

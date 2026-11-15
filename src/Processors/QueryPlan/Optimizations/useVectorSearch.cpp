@@ -628,7 +628,11 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 if (prewhere_expression_step)
                     new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression));
                 else
-                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                {
+                    auto new_filter_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                    new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+                    new_step = std::move(new_filter_step);
+                }
                 new_step->setStepDescription(*filter_or_prewhere_node->step);
                 filter_or_prewhere_node->step = std::move(new_step);
             }

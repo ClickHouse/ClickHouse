@@ -109,3 +109,47 @@ TEST(FindNotSymbols, NullCharacter)
     std::string long_s("abcdefgabcdefgab\0", 17u);
     test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(long_s, 16u);
 }
+
+TEST(FindSymbols, EveryVectorRemainder)
+{
+    for (size_t length = 0; length <= 96; ++length)
+    {
+        for (size_t alignment = 0; alignment < 16; ++alignment)
+        {
+            std::string storage(length + alignment, 'a');
+            char * begin = storage.data() + alignment;
+            char * end = begin + length;
+
+            for (size_t position = 0; position <= length; ++position)
+            {
+                SCOPED_TRACE(::testing::Message() << "length=" << length << ", alignment=" << alignment << ", position=" << position);
+                if (position < length)
+                    begin[position] = '\\';
+
+                const char * first = position < length ? begin + position : end;
+                const char * last = position < length ? begin + position : nullptr;
+                EXPECT_EQ((find_first_symbols<'\\', '"'>(begin, end)), first);
+                EXPECT_EQ((find_last_symbols_or_null<'\\', '"'>(begin, end)), last);
+
+                if (position < length)
+                    begin[position] = 'a';
+            }
+
+            std::fill(begin, end, '\\');
+            for (size_t position = 0; position <= length; ++position)
+            {
+                SCOPED_TRACE(::testing::Message() << "negative length=" << length << ", alignment=" << alignment << ", position=" << position);
+                if (position < length)
+                    begin[position] = 'a';
+
+                const char * first = position < length ? begin + position : end;
+                const char * last = position < length ? begin + position : nullptr;
+                EXPECT_EQ((find_first_not_symbols<'\\', '"'>(begin, end)), first);
+                EXPECT_EQ((find_last_not_symbols_or_null<'\\', '"'>(begin, end)), last);
+
+                if (position < length)
+                    begin[position] = '\\';
+            }
+        }
+    }
+}

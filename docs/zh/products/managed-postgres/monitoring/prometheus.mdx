@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -119,7 +118,15 @@ scrape_configs:
 
 这个现成的 Grafana 仪表盘可将该端点公开的各项指标可视化——包括可排序的服务表格、CPU 和内存利用率、带阈值告警的磁盘使用情况、按状态划分的连接、事务和回滚比率、Tuple 活动、I/O、各数据库的存储情况以及死锁。
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres 服务的 Grafana 仪表盘" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Managed Postgres 服务的 Grafana 仪表盘](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="import-dashboard">
   ### 导入仪表盘

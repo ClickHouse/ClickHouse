@@ -1,5 +1,7 @@
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
+#include <Core/Settings.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 
 #include <algorithm>
@@ -7,40 +9,36 @@
 namespace DB
 {
 
-/// `min_insert_block_size_bytes` is not the amount of memory an `INSERT` needs, it is the size of one
-/// block; the pipeline holds several of those at once. The squashing transform accumulates the next
-/// block while the previous one is being concatenated, and the concatenated block is still alive in
-/// the sink (where the writer additionally holds a permuted copy of one column at a time). Blocks are
-/// also measured by their logical byte size while the columns behind them are `PODArray`s whose
-/// capacity is rounded up, so a "256 MiB" block costs noticeably more than 256 MiB of memory.
-/// Measured end to end, `INSERT ... SELECT` into a `MergeTree` table peaks at around five times
-/// `min_insert_block_size_bytes` per insert stream.
-///
-/// Cap the threshold so those copies stay a bounded share of the server's memory limit. On a server
-/// with several GiB of RAM or more this leaves the setting untouched; on a small one it is the
-/// difference between the insert completing and failing with `MEMORY_LIMIT_EXCEEDED`.
-///
-/// One operation can run several squashing pipelines at once: an `INSERT` squashes for the target
-/// table and again for every dependent materialized view (the view query result in every sink stream,
-/// and possibly once more before the view's sink), and a merge or a mutation squashes once
-/// for the projection input and once per rebuilt projection. Each of them holds its own copies, so
-/// the share is split between `num_simultaneous_squashes` of them.
-size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes, size_t num_simultaneous_squashes)
+namespace Setting
 {
+    extern const SettingsDouble insert_squashing_max_memory_ratio;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes, const Settings & settings)
+{
+    const double ratio = settings[Setting::insert_squashing_max_memory_ratio];
+    /// The negated comparison also rejects NaN. A ratio above 1 is meaningless, and rejecting it keeps the
+    /// product with the memory limit representable in `size_t`.
+    if (!(ratio >= 0 && ratio <= 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The value of the setting `insert_squashing_max_memory_ratio` must be from 0 to 1, got {}", ratio);
+    if (ratio == 0)
+        return min_block_size_bytes;
+
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
     if (memory_limit <= 0)
         return min_block_size_bytes;
 
-    /// Use 90% of the hard limit as the budget, leaving headroom for spikes and overhead, and allow the
-    /// insert's blocks to take at most 40% of that budget - the rest is for the source (a format parser
-    /// or another table's read pipeline), background merges and the server itself.
-    static constexpr double budget_of_the_limit = 0.9;
-    static constexpr double share_for_insert_blocks = 0.4;
-    static constexpr double copies_held_by_the_pipeline = 5;
-
-    const double budget = static_cast<double>(memory_limit) * budget_of_the_limit;
-    const double copies = copies_held_by_the_pipeline * static_cast<double>(std::max<size_t>(1, num_simultaneous_squashes));
-    return std::min(min_block_size_bytes, static_cast<size_t>(budget * share_for_insert_blocks / copies));
+    /// A threshold of 0 means "no threshold", so a cap that rounds down to 0 must not turn into that.
+    if (min_block_size_bytes == 0)
+        return 0;
+    const size_t cap = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(memory_limit) * ratio));
+    return std::min(min_block_size_bytes, cap);
 }
 
 }

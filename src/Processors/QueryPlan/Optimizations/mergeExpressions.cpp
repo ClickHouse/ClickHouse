@@ -95,6 +95,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
+        filter->setOptimizeConstantColumnsAfterFilter(parent_filter->getOptimizeConstantColumnsAfterFilter());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
@@ -148,6 +149,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    std::move(child_actions),
                                                    condition_name,
                                                    true);
+        filter->setOptimizeConstantColumnsAfterFilter(FilterStep::combineOptimizeConstantColumnsAfterFilter(
+            parent_filter->getOptimizeConstantColumnsAfterFilter(), child_filter->getOptimizeConstantColumnsAfterFilter()));
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
