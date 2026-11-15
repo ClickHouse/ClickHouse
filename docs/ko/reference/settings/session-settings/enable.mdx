@@ -32,9 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "새 설정입니다. 메모리 데이터를 외부 스토리지로 적응적으로 spill할 수 있도록 설정합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "새 설정입니다. 메모리 데이터를 외부 스토리지로 적응적으로 디스크 유출(spill)할 수 있도록 설정합니다."}]}]} />
 
-프로세서가 데이터를 외부 스토리지로 적응적으로 spill하도록 트리거합니다. 현재는 spill이 가능한 해시 조인, 즉 `grace_hash`와 적응형 `hash` / `parallel_hash` 경로가 지원됩니다.
+쿼리에 메모리 압력이 발생하면 대상이 되는 집계, 정렬(sorting), `DISTINCT`, 해시 조인 프로세서의 데이터를 외부 스토리지로 적응적으로 디스크 유출(spill)합니다.
+지원되는 해시 조인은 `grace_hash`와 적응형 `hash` / `parallel_hash` 경로입니다.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -83,6 +84,16 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 함수와 서브쿼리의 결과를 분석하고, 여기에 상수가 있으면 쿼리를 재작성하는 쿼리 최적화를 활성화합니다
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)의 사용 여부를 제어하는 새로운 설정입니다."}]}]} />
+
+실험적 Elasticsearch 통합(`Elasticsearch` 테이블 엔진 및 `elasticsearch` 테이블 함수)을 활성화합니다.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -154,6 +165,23 @@ funnel 분석용 함수를 활성화합니다.
 
 WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새로운 설정: `GROUP BY key [ORDER BY key] LIMIT n`이 top-K 힙 경계를 `MergeTree` 읽기 단계에 발행하면, 읽기 단계는 이 경계를 기준으로 행을 필터링하고 그래뉼을 건너뜁니다. `compatibility`가 26.10 미만이면 비활성화됩니다."}]}]} />
+
+[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)과 함께 동작하는 설정입니다. 정렬 기준이 되는 첫 번째 `GROUP BY` 키가 `MergeTree` 테이블에서 읽는 컬럼이면, 집계 단계는 top-K 힙에 `LIMIT`개의 키가 채워지는 즉시 힙의 경계를 읽기 단계에 발행합니다. 그러면 읽기 단계는 다른 컬럼을 읽기 전에 키가 경계를 벗어나는 행을 제거하고(`PREWHERE`), 해당 컬럼의 프라이머리 키 또는 `minmax` 스킵 인덱스를 사용하여 경계를 벗어나는 그래뉼 전체를 건너뜁니다.
+
+이 설정은 `GROUP BY key ORDER BY key LIMIT n`뿐만 아니라, `ORDER BY` 없이 임의의 `n`개 그룹을 반환해도 되는 `GROUP BY key LIMIT n`에도 적용됩니다.
+
+`FINAL` 또는 병렬 레플리카를 사용하는 읽기에는 적용되지 않습니다. `FINAL`은 행의 모든 버전을 확인해야 하고, 경계는 원격 레플리카의 읽기로 전달되지 않기 때문입니다.
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -211,6 +239,16 @@ HTTP 요청 응답에서 데이터 압축을 활성화하거나 비활성화합�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "쿼리 분석기에서 식별자 해석 캐시를 제어하는 새로운 설정"}]}]} />
 
 쿼리 분석기에서 식별자 해석 캐시를 활성화합니다. 이 캐시는 해석된 별칭(alias) 노드를 공유하여 동일한 별칭이 여러 번 참조될 때 AST가 과도하게 증가하는 것을 방지합니다. 잘못된 결과가 의심되면 캐싱을 비활성화하려면 `false`로 설정하십시오.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "실험적 IP 주소 암호화 함수를 활성화하는 새로운 설정입니다."}]}]} />
+
+실험적 IP 주소 암호화 함수(`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`)를 활성화합니다.
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -412,6 +450,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터를 사용자 지정 직렬화(예: Sparse)가 적용된 컬럼으로 직접 파싱할 수 있습니다.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "베타 버전인 `PCO` 압축 코덱을 활성화하는 새로운 설정입니다."}]}]} />
+
+`PCO` 압축 코덱을 활성화합니다.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -539,6 +587,18 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 기능을 위한 상위 제어 설정이며, 추가 기능은 각자의 설정으로
 별도로 제어될 수 있습니다.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "서브컬럼에 대한 코덱 선언을 활성화하는 새로운 설정입니다."}]}]} />
+
+`CREATE TABLE`의 `CODEC name (...)` 엔트리와 `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`을 사용하여 `Tuple`의 원소나 `Map`의 키와 값(keys and values) 등 컬럼의 서브컬럼에 압축 코덱(compression codecs)을 선언할 수 있습니다.
+이러한 선언이 이미 있는 테이블(tables)은 이 설정과 관계없이 정상적으로 동작하며, 해당 선언은 언제든지 제거할 수 있습니다.
+서브컬럼 코덱이 선언된 테이블은 이전 버전의 서버에서 ATTACH할 수 없습니다.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -588,11 +648,11 @@ Prometheus 스타일의 time series 리샘플링, rate 및 delta 계산에 사�
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Trino SQL 구문을 변환하고 Trino 함수 이름을 ClickHouse의 동등한 함수로 매핑하는 `dialect` 설정의 `trino` 값을 활성화하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Trino SQL 구문을 변환하고 Trino 함수 이름을 ClickHouse의 동등한 함수로 매핑하는 `dialect` 설정의 `trino` 값을 활성화하는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`trino` 방언이 베타로 전환되었습니다."}]}]} />
 
 `dialect` 설정의 `trino` 값을 활성화합니다.
 
@@ -674,6 +734,16 @@ Possible values:
 
 * 0 - 비활성화
 * 1 - 활성화
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "실험적 XGBoost 통합(`XGBOOST` 딕셔너리 레이아웃과 `predictXGBoost` 함수)의 사용 여부를 제어하는 새로운 설정입니다."}]}]} />
+
+실험적 XGBoost 통합 기능인 `XGBOOST` 딕셔너리 레이아웃과 `predictXGBoost` 함수를 활성화합니다.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

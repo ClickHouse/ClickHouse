@@ -3,6 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
@@ -23,6 +24,7 @@ namespace ErrorCodes
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+struct ColumnSize;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -97,7 +99,7 @@ public:
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
@@ -160,6 +162,11 @@ public:
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
+    /// The column cheapest to read to count rows: the smallest <compressed size, size of value in memory,
+    /// uncompressed size> among the columns in `column_sizes`, otherwise `getSmallestColumn`.
+    static NameAndTypePair getCheapestColumnToRead(
+        const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns = true);
+
     ExpressionActionsPtr clone() const;
 
 private:
@@ -167,8 +174,8 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(
-        const std::unordered_set<const Node *> & lazy_executed_nodes,
-        const std::unordered_set<const Node *> & reorderable_short_circuit_arguments,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes,
+        const UnorderedSetWithMemoryTracking<const Node *> & reorderable_short_circuit_arguments,
         const std::unordered_map<const Node *, size_t> & short_circuit_eager_arguments);
 };
 

@@ -214,6 +214,25 @@ void PipelineExecutor::cancel(IProcessor::CancelReason reason)
     graph->cancel(reason);
 }
 
+void PipelineExecutor::cancelWithException(std::exception_ptr cause)
+{
+    /// Recorded before the callback, which can make the other threads throw because of the cancellation.
+    std::call_once(cancel_exception_once, [&]
+    {
+        cancel_exception = std::move(cause);
+        if (exception_callback)
+            exception_callback();
+    });
+    cancel(IProcessor::CancelReason::Exception);
+}
+
+void PipelineExecutor::logAndRethrowException()
+{
+    tasks.logLogicalErrors(log);
+    if (cancel_exception)
+        std::rethrow_exception(cancel_exception);
+}
+
 void PipelineExecutor::cancelReading()
 {
     if (!cancelled_reading)
@@ -243,7 +262,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     try
     {
         executeImpl(num_threads, concurrency_control);
-        tasks.rethrowFirstThreadException(log);
+        logAndRethrowException();
     }
     catch (...)
     {
@@ -284,7 +303,7 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
         return true;
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
-    tasks.rethrowFirstThreadException(log);
+    logAndRethrowException();
 
     finalizeExecution();
 
@@ -299,6 +318,11 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 {
     step_profiler = std::move(step_profiler_);
+}
+
+void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
+{
+    exception_callback = std::move(callback);
 }
 
 void PipelineExecutor::finalizeExecution()
@@ -422,7 +446,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         {
             auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
             if (!context.executeTask(spill_target))
-                cancel(IProcessor::CancelReason::Exception);
+                cancelWithException(context.getException());
 
             if (tasks.isFinished())
                 break;
@@ -454,7 +478,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 catch (...)
                 {
                     context.setException(std::current_exception());
-                    cancel(IProcessor::CancelReason::Exception);
+                    cancelWithException(std::current_exception());
                 }
 
                 /// Release the buffers of `updateNode` now if they have grown too large,
@@ -508,7 +532,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK or RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
-                    cancel(IProcessor::CancelReason::Exception);
+                    cancelWithException(std::current_exception());
                     throw;
                 }
             }
@@ -532,7 +556,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
-                    cancel(IProcessor::CancelReason::Exception);
+                    cancelWithException(std::current_exception());
                     throw;
                 }
             }
@@ -548,7 +572,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// syncMemory() can throw an exception, for example MEMORY_RESERVATION_KILLED.
                     /// We should cancel execution properly before rethrow.
-                    cancel(IProcessor::CancelReason::Exception);
+                    cancelWithException(std::current_exception());
                     throw;
                 }
             }
@@ -730,8 +754,8 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
             catch (...)
             {
                 /// In case of exception from executor itself, stop other threads.
-                finish();
                 tasks.getThreadContext(thread_num).setException(std::current_exception());
+                cancelWithException(std::current_exception());
             }
         });
 
@@ -766,11 +790,11 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        cancel(IProcessor::CancelReason::Exception);
+        cancelWithException(std::current_exception());
         if (pool)
             pool->wait();
 
-        throw;
+        std::rethrow_exception(cancel_exception);
     }
 }
 

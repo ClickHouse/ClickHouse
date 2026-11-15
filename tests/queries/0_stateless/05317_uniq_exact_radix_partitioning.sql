@@ -64,7 +64,7 @@ SELECT 'single thread', uniqExact(number) FROM numbers_mt(400000) SETTINGS max_t
 
 -- The radix partitioned aggregation is used only for a single `uniqExact` of a supported type without keys.
 -- It is not used where the aggregation is not finalized, such as on parallel replicas, or where `uniqExact` is rewritten to `GROUP BY`.
-SET enable_parallel_replicas = 0, count_distinct_optimization = 0;
+SET enable_parallel_replicas = 0;
 
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used with null for empty', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS aggregate_functions_null_for_empty = 1) WHERE explain LIKE '%RadixUniqExact%';

@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
@@ -595,8 +596,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
+    /// A fixed-shard-count scatter must keep one sorted stream per shard: the join above pairs the shards
+    /// of its two sides positionally, and the thread count is a per-side budget, not a shared contract.
     /// If there are several streams, then we merge them into one
-    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
+    const bool merge_needed = scatter_partitions == 0 && pipeline.getNumStreams() > 1
+        && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
     if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
@@ -921,6 +925,7 @@ QueryPlanStepPtr SortingStep::clone() const
     }
 
     cloned->is_sorting_for_merge_join = is_sorting_for_merge_join;
+    cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
@@ -931,7 +936,7 @@ QueryPlanStepPtr SortingStep::clone() const
     return cloned;
 }
 
-std::vector<size_t> SortingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> SortingStep::getStepGroups() const
 {
     return { static_cast<size_t>(SortingStage::Scatter),
         static_cast<size_t>(SortingStage::Sort),

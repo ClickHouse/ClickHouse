@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>

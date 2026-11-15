@@ -68,6 +68,8 @@ struct S3RequestSettings
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
     void updateIfChanged(const S3RequestSettings & settings);
+    /// Sets a setting from its string form, as given in the arguments of a storage definition.
+    void setByName(const String & name, const String & value);
     /// Returns true if applying `settings` via `updateIfChanged` would change a setting marked with `AFFECTS_CLIENT`,
     /// i.e. the S3 client has to be rebuilt to pick up the change.
     bool hasChangesAffectingClient(const S3RequestSettings & settings) const;

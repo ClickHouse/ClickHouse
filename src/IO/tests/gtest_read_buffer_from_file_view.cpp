@@ -79,7 +79,8 @@ private:
 
         const size_t size = std::min(internal_buffer.size(), data.size() - file_offset);
         memcpy(internal_buffer.begin(), data.data() + file_offset, size);
-        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
+        setWorkingBufferFromInternal();
+        working_buffer.resize(size);
         file_offset += size;
         return true;
     }
@@ -136,6 +137,15 @@ TEST(ReadBufferFromFileView, RequestMapIsTheSliceByDefault)
     ByteRangeSet map;
     ReadBufferFromFileView view(std::make_unique<MapRecordingBuffer>(map), "file", 100, 200);
     expectRanges(map, {{100, 100}});
+}
+
+TEST(ReadBufferFromFileView, PreservesPaddingAcrossBufferSwaps)
+{
+    auto archive = makeArchive(32);
+    ReadBufferFromFileView view(std::make_unique<ArchiveBuffer>(archive, 32, false), "file", 0, archive.size());
+
+    ASSERT_TRUE(view.next());
+    EXPECT_TRUE(view.isPadded());
 }
 
 TEST(ReadBufferFromFileView, EmptyRequestMapIsNothing)
