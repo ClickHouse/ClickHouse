@@ -145,6 +145,11 @@ namespace
             /// `log_level` is the only librdkafka property with an underscore.
             if (property.name != "log_level")
                 std::ranges::replace(property.name, '_', '.');
+            /// librdkafka aliases of the properties set by the flat settings.
+            if (property.name == "sasl.mechanisms")
+                property.name = "sasl.mechanism";
+            else if (property.name == "compression.type")
+                property.name = "compression.codec";
             return property;
         }
         return std::nullopt;

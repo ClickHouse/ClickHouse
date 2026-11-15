@@ -13,6 +13,7 @@ nc="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 nc_locked="${nc}_locked"
 nc_topic="${nc}_topic"
 nc_topic_locked="${nc}_topic_locked"
+nc_alias="${nc}_alias"
 user="${nc}_user"
 table="${nc}_table"
 
@@ -25,6 +26,7 @@ function cleanup()
         DROP NAMED COLLECTION IF EXISTS ${nc_locked};
         DROP NAMED COLLECTION IF EXISTS ${nc_topic};
         DROP NAMED COLLECTION IF EXISTS ${nc_topic_locked};
+        DROP NAMED COLLECTION IF EXISTS ${nc_alias};
     "
 }
 trap cleanup EXIT
@@ -55,6 +57,11 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
         kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
         \`kafka.kafka_topic.name\` = 'topic',
         \`kafka.kafka_topic.security_protocol\` = 'SASL_SSL' NOT OVERRIDABLE;
+    CREATE NAMED COLLECTION ${nc_alias} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        \`kafka.consumer.kafka_topic.name\` = 'topic',
+        \`kafka.consumer.kafka_topic.sasl_mechanisms\` = 'SCRAM-SHA-256',
+        \`kafka.producer.compression_type\` = 'zstd';
 "
 
 function expect_error()
@@ -77,6 +84,10 @@ expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_sasl_username = 'x'"
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_topic}) SETTINGS kafka_compression_codec = 'gzip'"
+
+# The same for the librdkafka aliases of the properties.
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_alias}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_alias}) SETTINGS kafka_compression_codec = 'gzip'"
 
 # A flattened setting without a stored nested equivalent is an addition.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
