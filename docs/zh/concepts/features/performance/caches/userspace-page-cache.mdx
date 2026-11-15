@@ -1,14 +1,12 @@
 ---
-description: '一种缓存机制，可将 数据缓存在进程内内存中，而非依赖操作系统页缓存。'
+description: '一种缓存机制，可将数据缓存在进程内内存中，而非依赖操作系统页缓存。'
 sidebarTitle: '用户态页缓存'
 slug: /operations/userspace-page-cache
 title: '用户态页缓存'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## 概述
-</div>
+## 概述 {#overview}
 
 > 用户态页缓存是一种新的缓存机制，可将
 > 数据缓存在进程内内存中，而不是依赖操作系统页缓存。
@@ -28,13 +26,9 @@ Cloud Storage (GCS) 或 Azure Blob 存储等远程对象存储之上进行缓存
 | 不会反映在服务器的内存使用量中          | 会反映在服务器的内存使用量中 |
 | 既适用于磁盘，也适用于内存 (操作系统页缓存)  | **适合无盘服务器**    |
 
-<div id="configuration-settings-and-usage">
-  ## 配置项与用法
-</div>
+## 配置项与用法 {#configuration-settings-and-usage}
 
-<div id="usage">
-  ### 用法
-</div>
+### 用法 {#usage}
 
 要启用用户态页缓存，首先需要在服务器端进行配置：
 
@@ -55,9 +49,7 @@ page_cache_max_size: 100G
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
 
-<div id="settings">
-  ### 设置
-</div>
+### 设置 {#settings}
 
 | 设置                                                      | 描述                                                                                                                                                                                             | 默认值         |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -75,9 +67,7 @@ SET use_page_cache_for_disks_without_file_cache=1;
 | `page_cache_lookahead_blocks`                           | 当用户态页缓存未命中时，如果后续连续块也不在缓存中，则一次最多从底层存储读取这么多个连续块。每个块的大小为 page&#95;cache&#95;block&#95;size 字节。                                                                                                    | `16`        |
 | `page_cache_shards`                                     | 将用户态页缓存划分为这么多个分片，以减少互斥锁竞争。Experimental，不太可能提升性能。                                                                                                                                               | `4`         |
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * [文件系统缓存](/zh/concepts/features/configuration/server-config/storing-data)
 * [ClickHouse v25.3 版本发布网络研讨会](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

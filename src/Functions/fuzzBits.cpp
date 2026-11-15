@@ -78,8 +78,9 @@ public:
     {
         auto col_in_untyped = arguments[0].column;
 
+        /// Not a constant even for 0 rows: the header must not claim that every row holds the unfuzzed value.
         if (input_rows_count == 0)
-            return col_in_untyped;
+            return col_in_untyped->convertToFullColumnIfConst();
 
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
 

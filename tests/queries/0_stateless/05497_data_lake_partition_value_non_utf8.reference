@@ -1,0 +1,15 @@
+-- string partition column: the INSERT with a non-UTF-8 value is rejected, the table stays readable
+INCORRECT_DATA
+log versions: 2
+data files: 1
+1	ok
+-- binary partition column: a non-UTF-8 value is rejected too
+INCORRECT_DATA
+log versions: 1
+-- Iceberg: an INSERT or ALTER UPDATE that would write a non-UTF-8 partition value is rejected and leaves no files
+INCORRECT_DATA
+INCORRECT_DATA
+new files: 0
+metadata versions: 3
+1	ok
+2	ok
