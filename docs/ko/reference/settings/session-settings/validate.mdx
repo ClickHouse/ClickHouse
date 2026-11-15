@@ -34,16 +34,6 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - `GROUP BY ALL`이 확장하여 만드는 키 타입에 대해 유효성 검사를 수행하지 않습니다.
 * 1 - 명시적인 `GROUP BY`가 자체 키를 검사하는 것과 마찬가지로 유효성 검사를 수행합니다.
 
-## validate_mutation_query {#validate_mutation_query}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "기본적으로 뮤테이션 쿼리를 검사하는 새로운 설정입니다."}]}]} />
-
-뮤테이션 쿼리를 허용하기 전에 검사합니다. 뮤테이션은 백그라운드에서 실행되므로 유효하지 않은 쿼리를 실행하면 뮤테이션이 중단된 채로 남아 수동 개입이 필요할 수 있습니다.
-
-이전 버전과 호환되지 않는 버그가 발생한 경우에만 이 설정을 변경하십시오.
-
 ## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

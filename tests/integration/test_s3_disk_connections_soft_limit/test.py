@@ -39,26 +39,17 @@ def get_object_requests(instance, query_id):
             """))
 
 
-def get_total_object_requests(instance):
-    # Merges read through the threadpool reader, whose threads are not covered by the merge's own
-    # profile counters in `system.part_log`, so the server-wide counter is used instead.
-    return int(
-        instance.query(
-            "SELECT sum(value) FROM system.events WHERE event = 'DiskS3GetObject'"
-        )
-    )
-
-
 def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
     checksum_query = "SELECT sum(cityHash64(*)) FROM t"
     settings = {"max_read_buffer_size_remote_fs": 65536, "max_threads": 4}
 
     for instance in [node, node_limited]:
         instance.query("DROP TABLE IF EXISTS t SYNC")
+        # No statistics: their reads are equal on both nodes and would dilute the merge ratio.
         instance.query("""
             CREATE TABLE t (key UInt64, a String, b String, c Array(UInt32))
             ENGINE = MergeTree ORDER BY key
-            SETTINGS storage_policy = 's3', min_bytes_for_wide_part = 0
+            SETTINGS storage_policy = 's3', min_bytes_for_wide_part = 0, auto_statistics_types = ''
             """)
         # Two parts of deterministic, poorly compressible data, so that every `.bin` file spans
         # many buffer fills and both nodes store the same rows.
@@ -86,12 +77,13 @@ def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
         requests[instance.name] = get_object_requests(instance, query_id)
 
     # The limited node fetches every 64 KiB of every stream with its own request.
-    assert requests["node_limited"] >= 5 * requests["node"], requests
+    assert requests["node_limited"] >= 5 * requests["node"] > 0, requests
 
     for instance in [node, node_limited]:
-        requests_before = get_total_object_requests(instance)
-        instance.query("OPTIMIZE TABLE t FINAL")
-        requests[instance.name] = get_total_object_requests(instance) - requests_before
+        query_id = f"merge_{instance.name}"
+        # The counters of the `OPTIMIZE` query include those of the merge it runs.
+        instance.query("OPTIMIZE TABLE t FINAL", query_id=query_id)
+        requests[instance.name] = get_object_requests(instance, query_id)
         assert (
             instance.query(
                 "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active"
@@ -102,4 +94,4 @@ def test_reads_above_soft_limit_do_not_hold_connections(started_cluster):
 
     # The merge reads whole `.bin` files: one request per file on the default node, one per
     # buffer fill of 1 MiB on the limited node.
-    assert requests["node_limited"] >= 5 * requests["node"], requests
+    assert requests["node_limited"] >= 5 * requests["node"] > 0, requests

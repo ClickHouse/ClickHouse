@@ -1,0 +1,58 @@
+---
+title: 'ClickPipes용 AWS IAM role 인증'
+sidebarTitle: 'AWS IAM 역할'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: 'AWS IAM 역할을 사용하면 AWS 액세스 키를 저장하지 않고도 ClickPipes에 데이터 소스 액세스 권한을 부여할 수 있습니다.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'role-based access', 'authentication']
+---
+
+AWS IAM role 인증을 사용하면 ClickPipes가 AWS 액세스 키를 저장하지 않고도 지원되는 AWS 소스에 액세스할 수 있습니다. AWS 계정에서 역할(role)을 생성하고, ClickHouse Cloud 서비스가 해당 역할을 수임할 수 있도록 허용한 다음, 소스에 대한 권한을 역할에 부여하십시오.
+
+## 시작하기 전에 {#before-you-begin}
+
+* IAM role 인증을 사용하려면 ClickHouse Cloud 서비스가 AWS에서 실행 중이어야 합니다.
+* 소스를 소유한 AWS 계정에서 IAM 역할을 생성하고 구성할 수 있는 권한(permission)이 필요합니다.
+* RDS 또는 Aurora 데이터베이스 인증을 사용하려면 IAM 데이터베이스 인증을 활성화하고 데이터베이스 사용자(database user)를 구성할 수 있는 권한도 있어야 합니다.
+
+## 작동 방식 {#how-it-works}
+
+1. **Settings → Network security information**에서 ClickHouse Cloud 서비스의 **Service role ID (IAM)**&#xB97C; 확인하십시오. 이 ARN은 ClickPipes가 액세스를 요청할 때 사용하는 역할을 식별합니다.
+2. AWS 계정에서 역할을 생성한 후, ClickHouse 서비스 역할이 이 역할을 수임할 수 있도록 신뢰 관계를 설정하십시오.
+3. 아래에 있는 소스별 설정 가이드에 따라 이 역할에 해당 소스에 필요한 권한을 부여하십시오.
+4. 생성한 역할의 ARN을 사용하도록 ClickPipe를 구성하십시오. ClickPipes는 소스에 연결할 때 이 역할을 수임합니다.
+
+## 신뢰 정책 구성 {#configure-trust-policy}
+
+AWS 계정에서 역할(role)을 생성할 때 다음 신뢰 정책을 사용하십시오. `{ClickHouse_IAM_ARN}`은 ClickHouse Cloud 서비스의 **Service role ID (IAM)** ARN으로 바꾸십시오.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+**RDS 및 Aurora IAM 데이터베이스 인증**을 사용하는 경우 `Action` 필드에 `sts:AssumeRole`과 `sts:TagSession`을 모두 허용하십시오. IAM이 활성화된 데이터베이스 사용자(database user) 설정을 포함한 전체 설정 절차는 [데이터베이스별 IAM 인증 가이드](/ko/integrations/clickpipes/postgres/auth)를 참조하십시오.
+
+역할(role)의 **권한 정책(permissions policy)** 및 역할 이름 지정 요구 사항은 소스마다 다릅니다. 아래의 소스별 가이드를 참고하여 구성하십시오.
+
+## 소스 선택 {#choose-your-source}
+
+| 소스 또는 통합                                                             | 설정 가이드                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Amazon S3                                                            | [S3 IAM role 인증](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role). SQS 알림을 사용해 지속적인 수집을 하려면 [unordered 모드 IAM role 설정 단계](/ko/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role)를 따르십시오. |
+| Amazon Kinesis                                                       | [Kinesis 역할 기반 접근](/ko/integrations/clickpipes/kinesis/auth#setup).                                                                                                                                                                           |
+| Amazon MSK                                                           | [MSK IAM 권한 및 신뢰 관계](/ko/integrations/clickpipes/kafka/best-practices#iam).                                                                                                                                                                   |
+| Amazon RDS (PostgreSQL, MySQL, MariaDB) 및 Aurora (PostgreSQL, MySQL) | 사용하는 데이터베이스에 맞는 [IAM 인증 가이드](/ko/integrations/clickpipes/postgres/auth)를 선택하십시오. 이 소스들은 IAM이 활성화된 데이터베이스 사용자(database user)와 `rds-db:connect` 권한(permission)도 필요합니다.                                                                          |
+| AWS Glue 스키마 레지스트리                                                   | [MSK IAM role 재사용 또는 전용 레지스트리 역할(role) 구성](/ko/integrations/clickpipes/kafka/schema-registries#glue-iam-setup).                                                                                                                               |
+
+IAM role 인증은 소스에 대한 액세스만 제어합니다. 소스가 프라이빗 네트워크에 있는 경우 [네트워크 연결](/ko/integrations/clickpipes/networking/index)을 별도로 구성하십시오.

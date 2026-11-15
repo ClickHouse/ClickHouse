@@ -27,6 +27,13 @@ def started_cluster():
             with_remote_database_disk=False,
             stay_alive=True,
         )
+        cluster.add_instance(
+            "test_disk_checker_unusable_path",
+            with_minio=False,
+            with_zookeeper=False,
+            with_remote_database_disk=False,
+            stay_alive=True,
+        )
         cluster.start()
 
         node = cluster.instances["test_disk_checker"]
@@ -164,3 +171,36 @@ def test_disk_broken_status(started_cluster):
             node.exec_in_container(["mv", f"{disk_path}_broken", disk_path])
         except:
             pass
+
+
+def test_server_starts_with_unusable_local_disk_path(started_cluster):
+    """A local disk whose directory cannot be created is marked broken at startup, and the access
+    check must be skipped for it, otherwise the server does not start at all.
+    """
+    node = cluster.instances["test_disk_checker_unusable_path"]
+
+    # A regular file in the middle of the path makes `create_directories` fail even for root.
+    node.exec_in_container(["bash", "-c", "touch /var/lib/clickhouse/not_a_directory"])
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/unusable_disk.xml << 'EOF'
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <unusable>
+                <type>local</type>
+                <path>/var/lib/clickhouse/not_a_directory/disk/</path>
+            </unusable>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    node.restart_clickhouse()
+
+    assert node.query("SELECT is_broken FROM system.disks WHERE name = 'unusable'") == "1\n"
+    assert node.contains_in_log("Skip access check for disk unusable (disk is broken)")

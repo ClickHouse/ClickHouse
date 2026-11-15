@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -12,7 +13,7 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan)
 {
     StepWallClocks clocks;
 
-    std::vector<const QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
     stack.push_back(plan.getRootNode());
 
     while (!stack.empty())
@@ -28,7 +29,7 @@ StepWallClocks collectWallClocksForPlanSteps(const QueryPlan & plan)
 
         for (const auto * child : cur->children)
             stack.push_back(child);
-        for (const auto * child_plan : cur->step->getChildPlans())
+        for (const auto * child_plan : cur->step->getChildPlans(/*for_explain=*/ false))
             stack.push_back(child_plan->getRootNode());
     }
 

@@ -143,6 +143,124 @@ void unpackFixedKeyIntoColumns(const Key & key, const std::vector<size_t> * unpa
     }
 }
 
+/// Same as fillFixedBatch, but only over rows [begin, end): `out` holds one element per row of that
+/// range, so its element `i` is row `begin + i`.
+template <typename T, typename Key>
+void fillFixedBatchRange(
+    size_t keys_size,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t begin,
+    size_t end,
+    PaddedPODArray<Key> & out,
+    size_t & offset)
+{
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (key_sizes[i] == sizeof(T))
+        {
+            out.resize_fill(end - begin);
+
+            /// Note: here we violate strict aliasing, as fillFixedBatch does.
+            const char * source = static_cast<const ColumnFixedSizeHelper *>(key_columns[i])->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(end - begin, reinterpret_cast<const T *>(source) + begin, dest);
+            offset += sizeof(T);
+        }
+    }
+}
+
+/// Same as packFixedBatch, but only over rows [begin, end), which must be a non-empty range.
+template <typename T>
+void packFixedBatchRange(
+    size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out, size_t begin, size_t end)
+{
+    size_t offset = 0;
+    fillFixedBatchRange<UInt128>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt64>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt32>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt16>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt8>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+}
+
+template <size_t size, typename Key>
+void fillFixedBatchOrdered(size_t num_rows, const char * source, char * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        memcpy(dest, source, size);
+        source += size;
+        dest += sizeof(Key);
+    }
+}
+
+/// Packs rows [begin, end) in clause order after `offset` zero bytes, which is the layout of the nullable
+/// `packFixed` for a row without NULLs. Element `i` of `out` is row `begin + i`.
+template <typename Key>
+void packFixedBatchOrdered(
+    size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t offset,
+    PaddedPODArray<Key> & out, size_t begin, size_t end)
+{
+    const size_t num_rows = end - begin;
+    out.resize_fill(num_rows);
+
+    char * dest = reinterpret_cast<char *>(out.data()) + offset;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        const size_t size = key_sizes[j];
+        const char * source = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + begin * size;
+        switch (size)
+        {
+            case 1: fillFixedBatchOrdered<1, Key>(num_rows, source, dest); break;
+            case 2: fillFixedBatchOrdered<2, Key>(num_rows, source, dest); break;
+            case 4: fillFixedBatchOrdered<4, Key>(num_rows, source, dest); break;
+            case 8: fillFixedBatchOrdered<8, Key>(num_rows, source, dest); break;
+            case 16: fillFixedBatchOrdered<16, Key>(num_rows, source, dest); break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected key size {} for batch packing", size);
+        }
+        dest += size;
+    }
+}
+
+template <typename Key, size_t ELEMENT_SIZE>
+static inline void ALWAYS_INLINE fillFixedLongestFirst(
+    size_t row, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, char * bytes, size_t & offset)
+{
+    if constexpr (sizeof(Key) >= ELEMENT_SIZE)   /// To avoid warning about memcpy exceeding object size.
+    {
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            if (key_sizes[i] != ELEMENT_SIZE)
+                continue;
+
+            const char * source = static_cast<const ColumnFixedSizeHelper *>(key_columns[i])->getRawDataBegin<1>();
+            memcpy(bytes + offset, source + row * ELEMENT_SIZE, ELEMENT_SIZE);
+            offset += ELEMENT_SIZE;
+        }
+    }
+}
+
+/// Pack the keys of a single row into a binary blob of type Key, laid out exactly as packFixedBatch
+/// lays out the same key set: one pass per key width, longest first. That order is load-bearing,
+/// because shuffleKeyColumns makes the output side read the blob back in it when usePreparedKeys holds.
+template <typename Key>
+static NO_INLINE Key packFixedLongestFirst(
+    size_t row, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+{
+    Key key{};
+    char * bytes = reinterpret_cast<char *>(&key);
+    size_t offset = 0;
+
+    fillFixedLongestFirst<Key, 16>(row, keys_size, key_columns, key_sizes, bytes, offset);
+    fillFixedLongestFirst<Key, 8>(row, keys_size, key_columns, key_sizes, bytes, offset);
+    fillFixedLongestFirst<Key, 4>(row, keys_size, key_columns, key_sizes, bytes, offset);
+    fillFixedLongestFirst<Key, 2>(row, keys_size, key_columns, key_sizes, bytes, offset);
+    fillFixedLongestFirst<Key, 1>(row, keys_size, key_columns, key_sizes, bytes, offset);
+
+    return key;
+}
+
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
 /// binary blob, they are disposed in it consecutively.
 template <typename T, bool has_low_cardinality = false>

@@ -16,6 +16,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 
@@ -29,7 +30,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 class PartitionWriteGuard
@@ -57,10 +60,29 @@ void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
         TransactionManager::instance().rollbackTransaction(txn);
 }
 
+/// The commit's Keeper reply was lost. The transaction log's updating thread resolves the transaction once
+/// it knows whether the csn entry exists; a commit that never reached Keeper passes through UnknownCSN on its
+/// way to RolledBackCSN.
+CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind)
+{
+    /// TODO(unique-key): KILL QUERY and a cancelled background task cannot interrupt this wait.
+    if (txn->waitStateChange(Tx::CommittingCSN) && txn->getCSN() == Tx::UnknownCSN)
+        txn->waitStateChange(Tx::UnknownCSN);
+
+    if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+        throw Exception(ErrorCodes::ABORTED,
+            "UNIQUE KEY {}: transaction {} lost its commit reply and was rolled back, retry the query", kind, txn->tid);
+    if (txn->getState() != MergeTreeTransaction::COMMITTED)
+        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "UNIQUE KEY {}: transaction {} lost its commit reply and is unresolved at shutdown", kind, txn->tid);
+    return txn->getCSN();
 }
 
-UniqueKeyTxnManager::UniqueKeyTxnManager(DeleteBitmapStorePtr delete_bitmap_store_)
-    : delete_bitmap_store(std::move(delete_bitmap_store_))
+}
+
+UniqueKeyTxnManager::UniqueKeyTxnManager(const MergeTreeData & data_, DeleteBitmapStorePtr delete_bitmap_store_)
+    : data(data_)
+    , delete_bitmap_store(std::move(delete_bitmap_store_))
     , log(getLogger("UniqueKeyTxnManager"))
 {
     chassert(delete_bitmap_store, "UniqueKeyTxnManager requires a non-null delete bitmap store");
@@ -86,7 +108,8 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
     return beginUniqueKeyTransaction(context->getCurrentTransaction(), operation);
 }
 
-CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write)
+CSN UniqueKeyTxnManager::commitTransaction(
+    MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & commit)
 {
     const MergeTreeTransactionPtr txn = transaction.getTransaction();
     chassert(txn, "UNIQUE KEY commit requires the transaction the part was written under");
@@ -95,17 +118,22 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     std::optional<MergeTreePartInfo> registered_holder;
     CSN csn = INVALID_CSN;
 
-    const std::string_view kind = write.writeKind();
-    const String partition_id = write.partitionId();
+    const std::string_view kind = commit.writeKind();
+    const String partition_id = commit.partitionId();
+
+    LOG_TRACE(log, "UNIQUE KEY {} (partition {}): waiting for the partition guard, tid {}",
+        kind, partition_id, txn->tid);
+
+    /// Outside the `try`, so a failed write is rolled back before the next writer probes the partition.
+    std::optional<PartitionWriteGuard> write_guard(std::in_place, partitionLock(partition_id));
 
     try
     {
-        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): waiting for the partition guard, tid {}",
-            kind, partition_id, txn->tid);
+        /// Before staging, it needs to see the latest state.
+        /// TODO(unique-key): wait for the part's writer again once commit waits can be interrupted.
+        throwIfUnresolvedPart(partition_id, kind);
 
-        PartitionWriteGuard write_guard(partitionLock(partition_id));
-
-        staged = write.stage(write_guard);
+        staged = commit.stage(*write_guard);
         if (!staged)
         {
             LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): staged nothing, rolling back tid {}",
@@ -119,7 +147,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
 
         /// Must precede the commit, which moves the transaction to `CommittingCSN`: `addNewPart`
         /// rejects a transaction already there. The part is Active but not yet visible.
-        const IMergeTreeDataPart & holder = write.publish(write_guard, txn, *staged);
+        const IMergeTreeDataPart & holder = commit.publish(*write_guard, txn, *staged);
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): published part {}, not yet visible",
             kind, partition_id, holder.name);
@@ -131,15 +159,24 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         registered_holder = holder.info;
 
         /// Commit point
-        csn = TransactionManager::instance().commitTransaction(txn, /*throw_on_unknown_status=*/true);
+        csn = TransactionManager::instance().commitTransaction(txn, /*throw_on_unknown_status=*/false);
+
+        /// Still inside the guard: a writer that probed this partition now would find this part live beside the
+        /// row it replaced, with the kill that hides that row not yet visible.
+        if (csn == Tx::CommittingCSN)
+        {
+            LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): lost the commit reply, waiting for tid {} to resolve",
+                kind, partition_id, txn->tid);
+            csn = waitForLostCommitReply(txn, kind);
+        }
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed part {} at csn {}",
             kind, partition_id, holder.name, csn);
     }
     catch (...)
     {
-        LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): threw at csn {}, rolling back tid {}",
-            kind, partition_id, csn, txn->tid);
+        LOG_DEBUG(log, "UNIQUE KEY {} (partition {}): threw, rolling back tid {}",
+            kind, partition_id, txn->tid);
         rollbackTransaction(txn);
 
         if (registered_holder && txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
@@ -148,11 +185,24 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         throw;
     }
 
+    write_guard.reset();
+
     /// Read-your-own-writes: `latest_snapshot` only advances on the updating thread, so a
     /// SELECT issued right after this would otherwise bind a snapshot below `csn`.
     TransactionManager::instance().waitForCSNLoaded(csn);
 
     return csn;
+}
+
+void UniqueKeyTxnManager::throwIfUnresolvedPart(const String & partition_id, std::string_view kind) const
+{
+    const auto parts = data.getDataPartsVectorInPartitionForInternalUsage(MergeTreeData::DataPartState::Active, partition_id);
+
+    /// Normally nothing is unresolved: every writer resolves inside the guard.
+    const auto it = std::ranges::find_if(parts, [](const auto & part) { return part->version->getInfo().creation_csn == Tx::UnknownCSN; });
+    if (it != parts.end())
+        throw Exception(ErrorCodes::ABORTED,
+            "UNIQUE KEY {} (partition {}): part {} has no creation csn yet; retry the query", kind, partition_id, (*it)->name);
 }
 
 }

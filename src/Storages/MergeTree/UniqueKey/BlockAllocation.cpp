@@ -17,7 +17,9 @@ BlockAllocation::BlockAllocation(
     : block_holder(std::move(block_holder_))
     , deduplication_log(deduplication_log_)
 {
-    assignTo(part);
+    part.info.min_block = block_holder->block.number;
+    part.info.max_block = block_holder->block.number;
+    part.setName(part.getNewName(part.info));
     part_info = part.info;
 
     if (deduplication_hashes.empty())
@@ -47,13 +49,6 @@ BlockAllocation::~BlockAllocation()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-void BlockAllocation::assignTo(IMergeTreeDataPart & part) const
-{
-    part.info.min_block = block_holder->block.number;
-    part.info.max_block = block_holder->block.number;
-    part.setName(part.getNewName(part.info));
 }
 
 }

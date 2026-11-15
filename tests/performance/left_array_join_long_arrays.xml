@@ -1,0 +1,14 @@
+<test>
+    <create_query>CREATE TABLE left_array_join_long (id UInt64, s Array(String), n Array(UInt64)) ENGINE = MergeTree ORDER BY id</create_query>
+    <fill_query>INSERT INTO left_array_join_long SELECT number, if(number % 10 = 0, [], arrayMap(i -> concat('tag_', toString(i), '_', toString(number % 1000)), range(50))), if(number % 10 = 0, [], arrayMap(i -> number * 50 + i, range(50))) FROM numbers(500000)</fill_query>
+    <fill_query>OPTIMIZE TABLE left_array_join_long FINAL</fill_query>
+
+    <query>SELECT x FROM left_array_join_long LEFT ARRAY JOIN s AS x SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT arrayJoin(emptyArrayToSingle(s)) FROM left_array_join_long SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT x, y FROM left_array_join_long LEFT ARRAY JOIN s AS x, n AS y SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT x FROM left_array_join_long LEFT ARRAY JOIN s AS x WHERE x != 'none' SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT x, y FROM left_array_join_long LEFT ARRAY JOIN s AS x, n AS y SETTINGS max_threads = 1, enable_unaligned_array_join = 1 FORMAT Null</query>
+    <query>SELECT x FROM left_array_join_long ARRAY JOIN s AS x SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS left_array_join_long</drop_query>
+</test>

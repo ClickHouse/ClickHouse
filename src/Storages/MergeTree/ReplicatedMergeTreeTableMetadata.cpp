@@ -6,7 +6,9 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -272,34 +274,42 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
         || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
         return result;
 
+    ParserIndexDeclarationList parser;
+    ASTPtr list = parseQuery(parser, result.skip_indices, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
     constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
-    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
-
+    IndicesDescription explicit_indices;
     bool has_implicit = false;
-    for (auto & index : parsed)
+    for (const auto & index : list->children)
     {
-        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
-            continue;
-
-        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-        if (!columns.has(column_name))
-            continue;
-
-        const auto & col_type = columns.get(column_name).type;
-
-        /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
-        /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
-        /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
-        if ((add_minmax_index_for_numeric_columns && isNumber(col_type))
-            || (add_minmax_index_for_string_columns && isString(col_type)))
+        const auto & index_name = index->as<ASTIndexDeclaration &>().name;
+        bool is_implicit = false;
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
         {
-            index.is_implicitly_created = true;
-            has_implicit = true;
+            String column_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+            if (columns.has(column_name))
+            {
+                const auto & col_type = columns.get(column_name).type;
+
+                /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
+                /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
+                /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
+                is_implicit = ((add_minmax_index_for_numeric_columns && isNumber(col_type))
+                        || (add_minmax_index_for_string_columns && isString(col_type)))
+                    && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(column_name)->formatWithSecretsOneLine();
+            }
         }
+
+        /// An implicit index is stripped without analyzing its expression, which may use an object that is gone.
+        if (is_implicit)
+            has_implicit = true;
+        else
+            explicit_indices.emplace_back(IndexDescription::getIndexFromAST(
+                index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
     }
 
     if (has_implicit)
-        result.skip_indices = parsed.explicitToString();
+        result.skip_indices = explicit_indices.explicitToString();
 
     return result;
 }

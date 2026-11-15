@@ -99,6 +99,18 @@ def jetstream_ack_pending(nats_cluster, stream, durable):
     return asyncio.run(run())
 
 
+def jetstream_purge_stream(nats_cluster, stream):
+    """Remove all messages from the stream, so the broker cannot deliver them anymore."""
+
+    async def run():
+        nc = await nats_connect_ssl(nats_cluster)
+        js = nc.jetstream()
+        await js.purge_stream(stream)
+        await nc.close()
+
+    asyncio.run(run())
+
+
 def setup_consuming_table(table, subject):
     instance.query(
         f"""
@@ -893,17 +905,17 @@ def test_commit_on_select_failed_parse_does_not_ack(nats_cluster):
 
 
 def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
-    # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. With a long
-    # ack-wait the broker does not redeliver during the test, so after the burst is delivered a later read
-    # must return nothing: it drops the buffer before resubscribing. Before the fix the stale copies were
-    # handed out again, duplicating the broker's redelivery once ack_wait passed.
+    # A direct read (block size 1) buffers the whole delivered burst locally and never acks it. A later read
+    # must not hand out those buffered copies again: every row it returns has to be a delivery of the
+    # broker. Before the fix the stale copies were handed out again, duplicating the broker's redelivery.
+    # Once the burst is delivered, the stream is purged, so the broker has nothing left to deliver: any
+    # row a later read returns can only be a stale local copy.
     stream = "js_stale_stream"
     subject = "js_stale_subject"
     durable = "js_stale_durable"
     table = "nats_stale"
     n = 10
-    # Long ack-wait: the broker will not redeliver within the test, so any row a later read returns can only
-    # be a stale local copy.
+    # Long ack-wait: the broker redelivers only what a read returned to it.
     jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=60)
     instance.query(
         f"""
@@ -933,16 +945,14 @@ def test_repeated_direct_reads_do_not_return_stale_copies(nats_cluster):
         )
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
-    # The burst is delivered and unacked; with a 60s ack-wait the broker does not redeliver now, so further
-    # reads must return nothing: the local buffer is dropped on resubscribe and there is nothing fresh.
-    returned = 0
+    # Nothing is left for the broker to deliver, so further reads must return nothing.
+    jetstream_purge_stream(nats_cluster, stream)
     for _ in range(3):
         res = instance.query(
-            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
-            ignore_error=True,
+            f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1"
         )
-        returned += len([x for x in res.split() if x.strip()])
-    assert returned == 0, f"a direct read returned stale buffered copies ({returned} rows)"
+        rows = len([x for x in res.split() if x.strip()])
+        assert rows == 0, f"a direct read returned {rows} stale buffered copies of purged messages"
 
 
 def test_system_stop_all_background(nats_cluster):

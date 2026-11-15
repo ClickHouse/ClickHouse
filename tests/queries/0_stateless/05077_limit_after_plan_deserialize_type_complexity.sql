@@ -9,7 +9,6 @@ INSERT INTO t_range_plan_local SELECT number FROM numbers(4);
 CREATE TABLE t_range_plan_dist AS t_range_plan_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_range_plan_local);
 
 -- Only the analyzer's planner ships a serialized plan to the shard; the legacy path sends the query text.
-SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
 SET prefer_localhost_replica = 0;
 

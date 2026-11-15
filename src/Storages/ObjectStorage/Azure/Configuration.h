@@ -102,11 +102,10 @@ public:
     void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
-    const Paths & getPaths() const override { return blobs_paths; }
-    void setPaths(const Paths & paths) override { blobs_paths = paths; }
-
     String getNamespace() const override { return connection_params.getContainer(); }
-    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
+
+    std::string getMetadataLocationURI() const override;
+    String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURLWithoutQuery()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     String getContainer() const { return connection_params.getContainer(); }
@@ -143,6 +142,9 @@ public:
     }
 
 protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return blobs_paths; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex) { blobs_paths = paths; }
+
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
@@ -150,7 +152,7 @@ private:
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
-    Paths blobs_paths;
+    Paths blobs_paths TSA_GUARDED_BY(paths_mutex);
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
 

@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 
 #if USE_ARROWFLIGHT
@@ -78,7 +79,7 @@ ArrowFlightSource::ArrowFlightSource(
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    std::vector<arrow::flight::FlightEndpoint> endpoints_,
+    VectorWithMemoryTracking<arrow::flight::FlightEndpoint> endpoints_,
     const Block & sample_block_,
     ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
@@ -132,7 +133,9 @@ void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
     if (flight_info->endpoints().empty())
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "FlightInfo returned with no endpoints");
 
-    endpoints = flight_info->endpoints();
+    /// `FlightInfo` only exposes its endpoints by const reference, so this copy is unavoidable.
+    const auto & info_endpoints = flight_info->endpoints();
+    endpoints.assign(info_endpoints.begin(), info_endpoints.end());
 }
 
 
