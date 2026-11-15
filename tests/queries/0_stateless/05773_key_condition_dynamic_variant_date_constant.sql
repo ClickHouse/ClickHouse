@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS t_stats;
 DROP TABLE IF EXISTS t_tuple;
 DROP TABLE IF EXISTS t_str;
 DROP TABLE IF EXISTS t_u64;
+DROP TABLE IF EXISTS t_enum;
+DROP TABLE IF EXISTS t_nullable_u64;
 
 CREATE TABLE t_pk (dt DateTime('Europe/Moscow')) ENGINE = MergeTree ORDER BY dt
 SETTINGS index_granularity = 1, auto_statistics_types = '';
@@ -96,6 +98,25 @@ SELECT '-- incomparable member';
 CREATE TABLE t_u64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO t_u64 VALUES (1), (2), (3);
 SELECT count() FROM t_u64 WHERE k != CAST(toDate32('2024-01-02') AS Variant(Date32, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM t_u64 WHERE k = CAST(toDate32('2024-01-02') AS Dynamic); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- string member';
+-- A string member is compared with an enum key by label, not converted to the enum as a constant string is.
+CREATE TABLE t_enum (k Enum8('a' = 2, 'b' = 1, 'c' = 3)) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1, auto_statistics_types = '';
+INSERT INTO t_enum VALUES ('a'), ('b'), ('c');
+SELECT (SELECT count() FROM t_enum WHERE k < CAST('b' AS Dynamic)) AS pruned,
+       (SELECT countIf(k < CAST('b' AS Dynamic)) FROM t_enum) AS honest;
+SELECT count() FROM t_enum WHERE k < CAST('b' AS Dynamic(max_types = 0));
+SELECT count() FROM t_enum WHERE k < CAST('b' AS Variant(String, UInt8));
+
+SELECT '-- numeric member';
+-- `UInt64` and `Int64` have no common type but are compared.
+CREATE TABLE t_nullable_u64 (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = '';
+INSERT INTO t_nullable_u64 VALUES (1), (2), (3);
+SELECT count() FROM t_nullable_u64 WHERE k > CAST(toInt64(1) AS Dynamic);
+SELECT count() FROM t_nullable_u64 WHERE k > CAST(toInt64(1) AS Dynamic(max_types = 0));
 
 DROP TABLE t_pk;
 DROP TABLE t_src;
@@ -106,3 +127,5 @@ DROP TABLE t_stats;
 DROP TABLE t_tuple;
 DROP TABLE t_str;
 DROP TABLE t_u64;
+DROP TABLE t_enum;
+DROP TABLE t_nullable_u64;

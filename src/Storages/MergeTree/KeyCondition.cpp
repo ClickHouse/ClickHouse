@@ -2871,6 +2871,22 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
     }
 }
 
+/// Whether the function accepts arguments of these types.
+static bool canBuildFunction(const String & name, const ColumnsWithTypeAndName & arguments, const ContextPtr & context)
+{
+    try
+    {
+        FunctionFactory::instance().get(name, context)->build(arguments);
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return false;
+    }
+}
+
 
 /// Whether two `Field`s stand for the same value. `Field::operator==` answers only for values carried
 /// the same way, which is what the round trip below needs everywhere except inside a `Dynamic`: a
@@ -5719,10 +5735,18 @@ void KeyCondition::extractBinaryComparisonAtoms(
             const auto member = getActiveMember(data_column, constant.type);
             const auto member_type = removeLowCardinality(member.type);
 
-            /// Without a common type with the key, comparing the member throws or returns NULL at execution.
+            /// The member is compared as a column: unlike a constant string, a column of strings is not converted to the
+            /// type of a non-string key. Such a member, or one the comparison rejects, is left to execution.
             const auto & key_type = function.getArgumentTypes()[1 - const_arg_pos];
-            if (tryGetLeastSupertype(DataTypes{key_type, member_type}))
-                constant = {ColumnConst::create(member.column->convertToFullColumnIfLowCardinality(), 1), member_type, constant.name};
+            ColumnsWithTypeAndName arguments(2);
+            arguments[const_arg_pos].type = member_type;
+            arguments[1 - const_arg_pos].type = key_type;
+            if ((isStringOrFixedString(removeLowCardinalityAndNullable(member_type))
+                 && !isStringOrFixedString(removeLowCardinalityAndNullable(key_type)))
+                || !canBuildFunction(function.getName(), arguments, func.getContext()))
+                return;
+
+            constant = {ColumnConst::create(member.column->convertToFullColumnIfLowCardinality(), 1), member_type, constant.name};
         }
     }
 
