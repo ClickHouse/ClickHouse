@@ -8,9 +8,9 @@
 # at a time, so max_download_threads = 4 leaves room to read ahead and max_download_threads = 1 does not.
 # With as many streams as max_download_threads (k: two), each reader's share is the row group it decodes, yet
 # it keeps one small row group ahead (_gaps.parquet: ~9 KB chunks of x between ~64 KB chunks of an unread
-# column), but not with max_download_threads = 1 (m). One stream with max_parsing_threads = 16 and
-# max_download_threads = 2 is the same case throughout (with two streams, the one left when the other
-# finishes gets a larger share and reads ahead normally): it keeps _gaps_1.parquet's row groups ahead (o), but
+# column), but not with max_download_threads = 1 (m). With max_parsing_threads = 8, the stream left when the
+# other finishes stays in this case instead of reading ahead normally. One stream with max_parsing_threads = 16
+# and max_download_threads = 2 is the same case: it keeps _gaps_1.parquet's row groups ahead (o), but
 # reads no row group ahead that admission would read together with the next ones (l, _adj.parquet: adjacent
 # ~16 KB row groups, read in a few requests), since reading it alone would split that request, nor a read above
 # remote_read_min_bytes_for_seek (n: the same ~9 KB chunks over a 4 KB threshold).
@@ -55,8 +55,10 @@ settings="max_threads = 1, max_parsing_threads = 4, input_format_parquet_memory_
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_a_s3_4'"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings, max_download_threads = 1, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_b_s3_1'"
 gaps_files="s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_gaps_{1,2}.parquet', format = 'Parquet', structure = 'x UInt64')"
-$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS ${settings/max_threads = 1/max_threads = 2}, max_download_threads = 2, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'"
-$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS ${settings/max_threads = 1/max_threads = 2}, max_download_threads = 1, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_m_s3_2_streams_1'"
+settings_2_streams="${settings/max_threads = 1/max_threads = 2}"
+settings_2_streams="${settings_2_streams/max_parsing_threads = 4/max_parsing_threads = 8}"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS $settings_2_streams, max_download_threads = 2, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM $gaps_files SETTINGS $settings_2_streams, max_download_threads = 1, remote_read_min_bytes_for_seek = 32768, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_m_s3_2_streams_1'"
 $CLICKHOUSE_CLIENT --query "$query FROM $local_files SETTINGS $settings, max_download_threads = 4, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_c_local_4'"
 settings_16="max_threads = 1, max_parsing_threads = 16, input_format_parquet_memory_low_watermark = 0, input_format_parquet_memory_high_watermark = 4294967296, input_format_parquet_enable_row_group_prefetch = 1, enable_parallel_replicas = 0, use_page_cache_for_object_storage = 0, use_columns_cache = 0"
 $CLICKHOUSE_CLIENT --query "$query FROM $s3_files SETTINGS $settings_16, max_download_threads = 16, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_g_s3_16_decoders'"
@@ -75,7 +77,7 @@ $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM s3(s3_conn, filename = '
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['ParquetColumnDataReadAheadRowGroups'] * 2 > ProfileEvents['ParquetReadRowGroups']
+    SELECT ProfileEvents['ParquetColumnDataReadAheadRowGroups'] * 8 > ProfileEvents['ParquetReadRowGroups']
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_k_s3_2_streams_2'
