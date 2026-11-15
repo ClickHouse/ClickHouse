@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
+# Tags: no-parallel, no-replicated-database, no-fasttest
 # Tag no-parallel: uses fail points which affect the whole server.
+# Tag no-fasttest: fail points are not supported in fast test builds.
 # Tag no-replicated-database: exercises the plain MergeTree durable metadata path
 # and uses DETACH/ATTACH (rejected under Replicated) to reload mutations from disk.
 #
