@@ -74,6 +74,10 @@ with client.query_row_block_stream(
 
 `with` ステートメントを使わずに `StreamContext` を使用しようとすると、エラーが発生する点に注意してください。Python のコンテキストを使うことで、ストリーム (この場合はストリーミング HTTP レスポンス) は、すべてのデータが消費されなかった場合や、処理中に例外が発生した場合でも、適切にクローズされます。また、`StreamContext` はストリームの消費に一度しか使用できません。終了後の `StreamContext` を使用しようとすると、`StreamClosedError` が発生します。
 
+同期的な Native フォーマットの HTTP ストリームでは、コンテキストの終了時に進行中の読み取りの完了を待ってから、残りのレスポンスを読み取って破棄します。これは、Python codec と Rust codec のどちらを使用する場合でも、行、カラム、NumPy、Pandas の各ストリームに当てはまります。低速なクエリがあると、クリーンアップが遅れる可能性があります。`send_receive_timeout` は個々の socket 読み取りを制限するものであり、コンテキスト終了のデッドラインを設定するものではありません。
+
+Rust codec を使用する `AsyncClient` のストリームでは、`async with` の終了時にレスポンスのクリーンアップの完了を待機します。消費中のタスクがキャンセルされた場合は、クリーンアップが完了してからキャンセルが再送出されます。
+
 結果の読み取り中に接続が失敗した場合、切り詰められた結果が暗黙的に返されるのではなく、`StreamFailureError` が発生します。そのメッセージはクライアントの `show_clickhouse_errors` 設定に従います。
 
 `StreamContext` の `source` プロパティを使うと、カラム名と型を含む親の結果オブジェクトにアクセスできます。ほとんどのストリームではこれは `QueryResult` ですが、`query_np_stream` と `query_df_stream` メソッドでは代わりに `NumpyResult` が公開されます。

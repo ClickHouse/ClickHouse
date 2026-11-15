@@ -5,7 +5,6 @@
 -- same-named columns while the reference promised the deduplicated header, so the join's build-side blocks
 -- were wider than the join algorithm's header.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 SELECT '-- right';

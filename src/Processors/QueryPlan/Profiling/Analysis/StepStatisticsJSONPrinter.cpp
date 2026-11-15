@@ -28,6 +28,7 @@ std::string_view jsonKey(MetricGroupKey key)
         case MetricGroupKey::Left: return "Left";
         case MetricGroupKey::Right: return "Right";
         case MetricGroupKey::HashTable: return "HashTable";
+        case MetricGroupKey::Memory: return "Memory";
         case MetricGroupKey::Buffer: return "Buffer";
         case MetricGroupKey::Spill: return "Spill";
         case MetricGroupKey::Build: return "Build";
@@ -73,6 +74,7 @@ std::string_view jsonKey(MetricKey key)
 
         case MetricKey::UniqueKeys: return "UniqueKeys";
         case MetricKey::Memory: return "Memory";
+        case MetricKey::Bytes: return "Bytes";
         case MetricKey::Buckets: return "Buckets";
         case MetricKey::Rehashes: return "Rehashes";
 

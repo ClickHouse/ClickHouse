@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: Parquet format is not available in fasttest builds
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

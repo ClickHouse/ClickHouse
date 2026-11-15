@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "alter_update"},{"label": "إعداد جديد"}]}]} />
 
-وضع لاستعلام التحديث الداخلي الذي يُنفَّذ كجزء من الحذف الخفيف.
+وضع لاستعلام التحديث الداخلي الذي يُنفَّذ كجزء من الحذف الخفيف.
 
 القيم الممكنة:
 
@@ -27,7 +27,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `lightweight_update` - يشغّل التحديث الخفيف إن أمكن، وإلا فيشغّل `ALTER UPDATE`.
 * `lightweight_update_force` - يشغّل التحديث الخفيف إن أمكن، وإلا فيُطلِق استثناءً.
 
-## lightweight_deletes_sync
+في حالة `DELETE FROM ... ON CLUSTER`، يحدّد كل مضيف منفِّذ الوضع وفقًا لإعداداته الخاصة، ولذلك
+قد تُنفِّذ المضيفات التي تضبط ملفات تعريفها قيمًا افتراضية مختلفة عملية الحذف بأوضاع مختلفة. أما الـ shard
+المتماثل فيُنفَّذ على نسخة متماثلة واحدة فقط، ومن ثَمّ تكون إعدادات تلك النسخة هي الحاسمة. ويؤدي ضبط هذا الإعداد في
+session الاستعلام البادئ إلى تجاوز هذا السلوك، لأن إدخال distributed DDL يحمل تغييرات الـ session
+عندما تكون قيمة `distributed_ddl_entry_format_version` هي 2 أو أكثر، وهو ما تستوفيه القيمة الافتراضية.
+أما المضيف الذي يفرض قيودًا على هذا الإعداد فيُعيد القيمة إلى النطاق المسموح به.
+
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

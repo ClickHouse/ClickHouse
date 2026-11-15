@@ -50,9 +50,10 @@ SELECT
 SELECT
     (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
   = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+-- One stream: rows tied on the sort key are ordered by the stream that read them.
 SELECT
-    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
-  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0, max_threads = 1)
+  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, max_threads = 1);
 
 DROP TABLE t_topk_blocksize;
 

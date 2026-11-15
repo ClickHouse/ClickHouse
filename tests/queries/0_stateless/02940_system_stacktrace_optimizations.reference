@@ -1,5 +1,5 @@
 thread = 0
 thread != 0
-Send signal to
+Captured stack traces of
 thread_name = 'foo'
-Send signal to 0 threads (total)
+Captured stack traces of 0 threads (total)

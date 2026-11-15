@@ -6,8 +6,6 @@ keywords: ['índice primário esparso', 'índice primário', 'índice']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <Tip>
   **Procurando detalhes avançados sobre indexação?**
 
@@ -32,7 +30,15 @@ Para ilustrar como o índice primário esparso é construído, usamos a tabela [
 
 Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e comprimidos, em arquivos separados para cada coluna:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -42,7 +48,15 @@ Para processamento, os dados de cada coluna são ④ divididos logicamente em gr
 
 Essa estrutura em grânulos também é o que torna o índice primário **esparso**: em vez de indexar cada linha, o ClickHouse armazena ⑤ os valores da chave primária de apenas uma linha por grânulo — especificamente, a primeira linha. Isso resulta em uma entrada de índice por grânulo:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -56,7 +70,15 @@ Graças à sua esparsidade, o índice primário é pequeno o suficiente para cab
 
 Mostramos como o índice primário esparso é usado para acelerar consultas com outra animação:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

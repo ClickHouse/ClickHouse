@@ -17,9 +17,7 @@ import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx
 | ------- | ------- | ------------ |
 | ✗       | ✔       |              |
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
 يُخرج التنسيق `Pretty` البيانات على شكل جداول مرسومة بأحرف Unicode،
 باستخدام تسلسلات إفلات ANSI لعرض الألوان في الطرفية.
@@ -29,9 +27,7 @@ import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx
 
 يُخرَج [NULL](/ar/reference/syntax) على هيئة `ᴺᵁᴸᴸ`.
 
-<div id="example-usage">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#example-usage}
 
 مثال (بصيغة [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact)):
 
@@ -45,28 +41,39 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-لا يُطبَّق الإفلات على الصفوف في أيٍّ من تنسيقات `Pretty`. ويُعرض المثال التالي لتنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact):
+لا يُطبَّق الإفلات على الصفوف في أيٍّ من صيغ `Pretty`. وبدلًا من ذلك، تُعرض افتراضيًا محارف التحكم غير القابلة للطباعة (محارف التحكم C0 `0x00`-`0x1F` و`DEL` `0x7F`) الموجودة في القيم وفي أسماء الأعمدة على هيئة رموز Unicode &quot;Control Pictures&quot; المقابلة لها (`U+2400`-`U+2421`)، كي تظل مرئية ولا تُخِلّ بشكل الجدول. فعلى سبيل المثال، يُعرض المحرف NUL على هيئة `␀`:
 
 ```sql title="Query"
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
+┌─Escaping_test─────────────────┐
+│ String with a NUL ␀ character │
+└───────────────────────────────┘
 ```
+
+تُعدّ `TAB` ومحرف line feed و`ESC` استثناءات: إذ تُطبع دائمًا كما هي، لأن الطرفية تفسّرها ولا تتجاهلها؛ فمحرف الجدولة ينقل المؤشر إلى موضع الجدولة التالي، وتسلسل الإفلات ANSI هو ما يتيح للبيانات أن تتضمّن تصورًا. كما يظل محرف line feed يُحدث فاصل سطر: داخل خلية الجدول عند تفعيل [`output_format_pretty_multiline_fields`](/ar/reference/settings/formats#output_format_pretty_multiline_fields)، وكما هو في غير ذلك. أما اسم العمود فهو استثناء من هذا الاستثناء: فالترويسة والتذييل يتكوّنان من سطر واحد، لذا يُستبدل محرف line feed في الاسم كأي محرف تحكّم آخر.
+
+لطباعة محارف التحكّم كما هي بدلًا من ذلك، عطّل الإعداد [`output_format_pretty_display_control_characters`](/ar/reference/settings/formats#output_format_pretty_display_control_characters):
+
+```sql title="Query"
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+عندئذٍ تحتوي الاستجابة على بايت `NUL` الخام بدلًا من ذلك. تبتلع الطرفية هذا البايت، فيصبح الحرف غير مرئي ويزيد عرض الصف بموضع واحد عن الإطار الذي قيس له، فينتج الجدول المشوَّه الذي يتفاداه عرض Control Picture.
 
 لتجنّب إخراج كمية كبيرة جدًا من البيانات إلى الطرفية، لا يُطبع سوى أول `10,000` صف.
 إذا كان عدد الصفوف أكبر من أو يساوي `10,000`، فستُطبع الرسالة &quot;تم عرض أول 10 000&quot;.
 
 <Note>
-  هذا التنسيق مناسب فقط لإخراج نتيجة استعلام، وليس لتحليل البيانات.
+  هذه الصيغة مناسبة فقط لإخراج نتيجة استعلام، وليس لتحليل البيانات.
 </Note>
 
-يدعم تنسيق Pretty إخراج القيم الإجمالية (عند استخدام `WITH TOTALS`) والقيم القصوى (عند ضبط &#39;extremes&#39; على 1).
+تدعم صيغة Pretty إخراج القيم الإجمالية (عند استخدام `WITH TOTALS`) والقيم القصوى (عند ضبط &#39;extremes&#39; على 1).
 في هذه الحالات، تُخرَج القيم الإجمالية والقيم القصوى بعد البيانات الرئيسية، في جداول منفصلة.
-يوضح المثال التالي ذلك باستخدام تنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact):
+يوضح المثال التالي ذلك باستخدام صيغة [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact):
 
 ```sql title="Query"
 SELECT EventDate, count() AS c 
@@ -100,9 +107,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<div id="format-settings">
-  ## إعدادات الصيغة
-</div>
+## إعدادات الصيغة {#format-settings}
 
 <PrettyFormatSettings />
 
