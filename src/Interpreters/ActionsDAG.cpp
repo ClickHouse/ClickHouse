@@ -444,47 +444,44 @@ void ActionsDAG::Node::updateOwnHash(
     if (function)
         updateHashWithString(hash_state, function->getName());
 
-    /// A lambda's body is not in this node: `function_base->getName()` is only `FunctionCapture`, and the
+    /// A lambda's body is not in this node: `function_base->getName()` is only its signature, and the
     /// composed `result_name` that does carry it - `arrayExists(lambda(tuple(v), greater(v, 5)), a)` -
-    /// is dropped in build-independent mode. Without this, `v -> v > 5` and `v -> v < 5` hash alike and
-    /// one predicate's statistics are served to the other. So hash the capture and the body, mirroring
-    /// what `serialize` writes. Only in build-independent mode: an exact hash still has the name, and
-    /// `optimizeJoin` reads exact hashes back for its own statistics.
-    if (build_independent)
+    /// is dropped in build-independent mode and replaced by that signature in a DAG built by
+    /// `buildFilterActionsDAG`. Without this, `v -> v > 5` and `v -> v < 5` hash alike and one predicate's
+    /// statistics or query condition cache entry is served to the other. So hash the capture and the body,
+    /// mirroring what `serialize` writes.
+    const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
     {
-        const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
+        updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(capture.return_name));
+        updateHashWithString(hash_state, capture.return_type->getName());
+        hash_state.update(capture.captured_names.size());
+        for (const auto & captured_name : capture.captured_names)
+            updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(captured_name));
+        for (const auto & captured_type : capture.captured_types)
+            updateHashWithString(hash_state, captured_type->getName());
+        /// The lambda's own argument names are written by the user, so they are the same in every build.
+        hash_state.update(capture.lambda_arguments.size());
+        for (const auto & argument : capture.lambda_arguments)
         {
-            updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(capture.return_name));
-            updateHashWithString(hash_state, capture.return_type->getName());
-            hash_state.update(capture.captured_names.size());
-            for (const auto & captured_name : capture.captured_names)
-                updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(captured_name));
-            for (const auto & captured_type : capture.captured_types)
-                updateHashWithString(hash_state, captured_type->getName());
-            /// The lambda's own argument names are written by the user, so they are the same in every build.
-            hash_state.update(capture.lambda_arguments.size());
-            for (const auto & argument : capture.lambda_arguments)
-            {
-                updateHashWithString(hash_state, argument.name);
-                updateHashWithString(hash_state, argument.type->getName());
-            }
-            lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-        };
+            updateHashWithString(hash_state, argument.name);
+            updateHashWithString(hash_state, argument.type->getName());
+        }
+        lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+    };
 
-        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
-            hash_capture(function_capture->getCapture(), function_capture->getAcionsDAG());
+    if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
+        hash_capture(function_capture->getCapture(), function_capture->getAcionsDAG());
 
-        /// The same lambda can arrive as the value of a constant column instead of as the node's function.
-        if (column && result_type && WhichDataType(result_type).isFunction())
+    /// The same lambda can arrive as the value of a constant column instead of as the node's function.
+    if (column && result_type && WhichDataType(result_type).isFunction())
+    {
+        const IColumn * inner = column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
+            inner = &column_const->getDataColumn();
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(inner))
         {
-            const IColumn * inner = column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(inner))
-                inner = &column_const->getDataColumn();
-            if (const auto * column_function = typeid_cast<const ColumnFunction *>(inner))
-            {
-                if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
-                    hash_capture(function_expression->getCapture(), function_expression->getAcionsDAG());
-            }
+            if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+                hash_capture(function_expression->getCapture(), function_expression->getAcionsDAG());
         }
     }
 
