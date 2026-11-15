@@ -4,6 +4,9 @@
 
 The cases of `schema/*` are schemas, they become the table schema. The cases of `types/*` are types,
 they become the type of an optional column `c` with field id 1000 (the ids inside the cases are smaller).
+The table metadata is of format version 3 (with `next-row-id`) for every case, because some valid cases use types
+introduced in version 3 (`unknown`, `variant`, `timestamp_ns`, `timestamptz_ns`, `geometry`, `geography`),
+and a version 3 table accepts all types of the earlier versions.
 """
 import glob
 import json
@@ -15,7 +18,7 @@ src, out = sys.argv[1], sys.argv[2]
 
 def metadata(schema):
     return {
-        "format-version": 2,
+        "format-version": 3,
         "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
         "location": "file:///unused",
         "last-sequence-number": 0,
@@ -32,6 +35,7 @@ def metadata(schema):
         "snapshots": [],
         "snapshot-log": [],
         "metadata-log": [],
+        "next-row-id": 0,
     }
 
 
