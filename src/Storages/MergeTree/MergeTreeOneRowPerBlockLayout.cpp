@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -180,6 +181,14 @@ void checkUncompressedFixedArraySizes(const Block & block, const StorageInMemory
                     backQuote(column.name), size, UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, array_size);
         }
     }
+}
+
+void checkNoUncompressedFixedArrayColumns(const StorageInMemoryMetadata & metadata, std::string_view operation)
+{
+    for (const auto & column : metadata.getColumns())
+        if (getUncompressedFixedArraySize(column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported for a table with a column with the setting `{}`: column {}",
+                operation, UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name));
 }
 
 bool isTopLevelArrayElementsStream(const ISerialization::SubstreamPath & path)

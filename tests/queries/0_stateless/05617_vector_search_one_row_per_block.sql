@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS tab_one_row_per_block;
 DROP TABLE IF EXISTS tab_several_rows_per_block;
 DROP TABLE IF EXISTS tab_adaptive;
 DROP TABLE IF EXISTS tab_compact;
+DROP TABLE IF EXISTS tab_lightweight;
 DROP TABLE IF EXISTS tab_merged;
 DROP TABLE IF EXISTS tab_rejected;
 DROP TABLE IF EXISTS tab_alter;
@@ -249,6 +250,16 @@ INSERT INTO tab_without_setting SELECT number, arrayMap(j -> toFloat32(j), range
 ALTER TABLE tab_alter ATTACH PARTITION tuple() FROM tab_without_setting; -- { serverError INCOMPATIBLE_COLUMNS }
 ALTER TABLE tab_alter REPLACE PARTITION tuple() FROM tab_without_setting; -- { serverError INCOMPATIBLE_COLUMNS }
 ALTER TABLE tab_without_setting ATTACH PARTITION tuple() FROM tab_alter; -- { serverError INCOMPATIBLE_COLUMNS }
+
+-- A lightweight update writes a patch part, whose values are checked against the setting of the table as well.
+CREATE TABLE tab_lightweight (id UInt32, vec Array(Float32) SETTINGS (uncompressed_fixed_array_size = 2))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO tab_lightweight VALUES (1, [1, 2]), (2, [3, 4]);
+UPDATE tab_lightweight SET vec = [3] WHERE id = 1 SETTINGS enable_lightweight_update = 1; -- { serverError BAD_ARGUMENTS }
+UPDATE tab_lightweight SET vec = [5, 6] WHERE id = 1 SETTINGS enable_lightweight_update = 1;
+OPTIMIZE TABLE tab_lightweight FINAL;
+SELECT 'lightweight update', id, vec FROM tab_lightweight ORDER BY id;
+DROP TABLE tab_lightweight;
 
 -- A detached part can be written by another table, so parts cannot be attached from the detached directory.
 INSERT INTO tab_alter SELECT number, arrayMap(j -> toFloat32(j), range(64)), [] FROM numbers(10);

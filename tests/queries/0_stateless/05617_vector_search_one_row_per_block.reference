@@ -109,6 +109,8 @@ renamed column, setting on
 181	0.532
 after alter
 vec	CODEC(NONE)	vectors
+lightweight update	1	[5,6]
+lightweight update	2	[3,4]
 codes in few blocks	1
 05617_adaptive_on	1
 05617_materialized_on	0

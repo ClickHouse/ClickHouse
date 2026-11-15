@@ -76,6 +76,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -10614,6 +10615,13 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
+    /// Otherwise the definition of the table in the backup is the same, and the parts were written with the same settings.
+    if (restorer.getRestoreSettings().allow_different_table_def)
+    {
+        const auto metadata_for_restore = getInMemoryMetadataPtr(getContext(), false);
+        checkNoUncompressedFixedArrayColumns(*metadata_for_restore, "RESTORE with `allow_different_table_def`");
+    }
+
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
@@ -12422,15 +12430,6 @@ void MergeTreeData::removeTemporaryPart(const MutableDataPartPtr & part) const
 
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
 {
-    /// A detached part can be written by another table, with rows of other numbers of elements that still have the file sizes
-    /// of one block per row, so it would be read at wrong positions, see `tryGetOneRowPerBlockLayout`.
-    const auto metadata_for_attach = getInMemoryMetadataPtr(local_context, false);
-    for (const auto & column : metadata_for_attach->getColumns())
-        if (getUncompressedFixedArraySize(column))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot attach parts from the detached directory to a table with a column with the setting `{}`: column {}",
-                UNCOMPRESSED_FIXED_ARRAY_SIZE_SETTING, backQuote(column.name));
-
     const fs::path source_dir = DETACHED_DIR_NAME;
 
     /// Let's compose a list of parts that should be added.
@@ -14959,6 +14958,33 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
     return {};
 }
 
+namespace
+{
+
+/// Checks the rows of the columns with the setting `uncompressed_fixed_array_size`, see `checkUncompressedFixedArraySizes`.
+class CheckUncompressedFixedArraySizesTransform final : public ISimpleTransform
+{
+public:
+    CheckUncompressedFixedArraySizesTransform(SharedHeader header_, StorageMetadataPtr metadata_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/ false)
+        , metadata(std::move(metadata_))
+    {
+    }
+
+    String getName() const override { return "CheckUncompressedFixedArraySizesTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        checkUncompressedFixedArraySizes(getInputPort().getHeader().cloneWithColumns(chunk.getColumns()), *metadata);
+    }
+
+private:
+    StorageMetadataPtr metadata;
+};
+
+}
+
 MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
 {
     auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
@@ -15038,6 +15064,17 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     {
         return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
+
+    /// The metadata of a patch part has no column settings, so its writer does not check the updated values of a column
+    /// with the setting `uncompressed_fixed_array_size`. They are checked against the metadata of the table here, as the
+    /// merges that apply the patch would fail on them.
+    if (std::ranges::any_of(metadata_snapshot->getColumns(), [](const auto & column) { return getUncompressedFixedArraySize(column) != 0; }))
+    {
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
+        {
+            return std::make_shared<CheckUncompressedFixedArraySizesTransform>(header, StorageMetadataPtr(metadata_snapshot));
+        });
+    }
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 

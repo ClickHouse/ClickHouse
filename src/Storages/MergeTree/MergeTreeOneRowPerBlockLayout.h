@@ -60,6 +60,11 @@ void validateUncompressedFixedArraySize(const ColumnDescription & column);
 /// rows, and merges and mutations can always write them as one block per row.
 void checkUncompressedFixedArraySizes(const Block & block, const StorageInMemoryMetadata & metadata);
 
+/// Throws `NOT_IMPLEMENTED` if a column of `metadata` has the setting `uncompressed_fixed_array_size`. For the ways to import
+/// parts that can be written by another table, with rows of other numbers of elements that still have the file sizes of
+/// one block per row, so that they would be read at wrong positions, see `tryGetOneRowPerBlockLayout`.
+void checkNoUncompressedFixedArrayColumns(const StorageInMemoryMetadata & metadata, std::string_view operation);
+
 /// Whether `path` is the path of the stream of the elements of a top-level `Array` of numbers: `ArrayElements`, `Regular`.
 bool isTopLevelArrayElementsStream(const ISerialization::SubstreamPath & path);
 
