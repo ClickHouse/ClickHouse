@@ -499,17 +499,21 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
-    tmp_locks_quota = std::min(tmp_locks_quota, available_topic_partitions.size() - reserved_for_lockless);
+    /// The reservation limits only this round's take, not the accumulated quota, so the
+    /// quota keeps growing and coverage resumes in full once the reservation is gone.
+    const size_t locks_to_take = std::min(tmp_locks_quota, available_topic_partitions.size() - reserved_for_lockless);
+    if (reserved_for_lockless)
+        LOG_TRACE(log, "Reserving {} free partitions for lockless replicas", reserved_for_lockless);
+
     /// Logged for every round, including the ones that reset the quota, so the sequence of quotas can be followed
     LOG_INFO(
         log,
-        "The consumer can take {} temporary locks in the current round (available={}, reserved for lockless replicas={}, idx={})",
+        "The consumer can take {} temporary locks in the current round (available={}, idx={})",
         tmp_locks_quota,
         available_topic_partitions.size(),
-        reserved_for_lockless,
         idx);
 
-    if (tmp_locks_quota == 0)
+    if (locks_to_take == 0)
         return;
 
     auto available_topic_partitions_copy = available_topic_partitions;
@@ -518,7 +522,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
 
     for (const auto & tp : available_topic_partitions_copy)
     {
-        if (tmp_locks.size() >= tmp_locks_quota)
+        if (tmp_locks.size() >= locks_to_take)
             break;
         auto maybe_lock = createLocksInfoIfFree(tp);
         if (!maybe_lock.has_value())
