@@ -24,9 +24,10 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${file_name}', 'Parquet
 ${CLICKHOUSE_CLIENT} --query "CREATE VIEW ${view_name} AS SELECT id FROM ${cluster_file}"
 
 # Take a filter that the initiator sent to the replicas. It has an `Array(UInt64)` node, a type of complexity 2.
+# The initiator sends a filter only when the replicas return the select list, as for the query of the view.
 ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
-    SELECT count() FROM ${cluster_file} WHERE has([id, id + 1], 500)
-    SETTINGS log_queries = 1, log_queries_probability = 1"
+    SELECT count() FROM ${view_name} WHERE has([id, id + 1], 500)
+    SETTINGS analyzer_inline_views = 0, log_queries = 1, log_queries_probability = 1"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 filter=$(${CLICKHOUSE_CLIENT} --query "
     SELECT any(Settings['cluster_table_function_pushed_down_filter'])
