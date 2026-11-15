@@ -1642,6 +1642,35 @@ static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & nam
     return false;
 }
 
+/// A key expression is always deterministic, so an expression that calls `rand` or `blockSize` never
+/// computes a key, even when a column is named like it.
+static bool hasNonDeterministicFunction(const ActionsDAG::Node & root)
+{
+    static constexpr auto is_non_deterministic = [](const IFunctionBase & function) { return !function.isDeterministicInScopeOfQuery(); };
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        /// A constant has one value for the whole query.
+        if (!visited.insert(node).second || node->column)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && is_non_deterministic(*node->function_base))
+            return true;
+
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(*node, is_non_deterministic))
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
     /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
@@ -4602,10 +4631,6 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
     DataTypePtr & out_key_column_type,
     std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain)
 {
-    /// A key expression is always deterministic, so a column named like `rand()` must not stand in for a call to `rand`.
-    if (node.isFunction() && !node.toFunctionNode().getFunctionBase()->isDeterministicInScopeOfQuery())
-        return false;
-
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
       */
@@ -5327,6 +5352,9 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
 
     if (node_dag && !info.columns_named_like_key_expressions.empty()
         && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
+        return;
+
+    if (node_dag && hasNonDeterministicFunction(*node_dag))
         return;
 
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".

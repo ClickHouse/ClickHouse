@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_name;
 DROP TABLE IF EXISTS t_name_minmax;
 DROP TABLE IF EXISTS t_name_key;
+DROP TABLE IF EXISTS t_name_wrapped;
 
 -- One value of `id` per granule: a granule skipped by mistake loses all of its rows.
 CREATE TABLE t_set (id UInt64, INDEX s_idx id TYPE set(0) GRANULARITY 1)
@@ -44,7 +45,7 @@ SELECT '-- set index on a column named rand()';
 SELECT 'rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE rand() % 2 = 0;
 SELECT 'id < 10 AND rand', count() BETWEEN 3500 AND 4500 FROM t_name WHERE id < 10 AND rand() % 2 = 0;
 SELECT 'rand, index used', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_name WHERE rand() % 2 = 0 SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0) WHERE explain LIKE '%Name: r_idx%';
-SELECT 'id < 10 AND rand > 1, per granule', count() > 7000 FROM t_name WHERE id < 10 AND rand() > 1 SETTINGS secondary_indices_enable_bulk_filtering = 0;
+SELECT 'id < 10 AND rand > 2, per granule', count() > 7000 FROM t_name WHERE id < 10 AND rand() > 2 SETTINGS secondary_indices_enable_bulk_filtering = 0;
 
 -- Every second granule stores 1 in `rand()`, the others 2.
 CREATE TABLE t_name_minmax (id UInt64, `rand()` UInt32, INDEX r_idx `rand()` TYPE minmax GRANULARITY 1)
@@ -59,8 +60,17 @@ SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_
 INSERT INTO t_name_key SELECT 1 + intDiv(number, 4000), number FROM numbers(8000);
 
 SELECT '-- minmax index and primary key on a column named rand()';
-SELECT 'minmax, rand > 1', count() > 7000 FROM t_name_minmax WHERE rand() > 1;
-SELECT 'primary key, rand > 1', count() > 7000 FROM t_name_key WHERE rand() > 1;
+SELECT 'minmax, rand > 2', count() > 7000 FROM t_name_minmax WHERE rand() > 2;
+SELECT 'primary key, rand > 2', count() > 7000 FROM t_name_key WHERE rand() > 2;
+SELECT 'primary key, rand NOT IN', count() > 7000 FROM t_name_key WHERE rand() NOT IN (1, 2);
+
+-- The key column is named like a deterministic function of `rand`, and stores 1 in every row.
+CREATE TABLE t_name_wrapped (`modulo(rand(), 2)` UInt8, id UInt64)
+ENGINE = MergeTree ORDER BY `modulo(rand(), 2)`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_wrapped SELECT 1, number FROM numbers(8000);
+
+SELECT 'primary key, rand % 2 = 0', count() BETWEEN 3500 AND 4500 FROM t_name_wrapped WHERE rand() % 2 = 0;
 
 -- Every second granule has the key 'k', the others only the key 'z'.
 CREATE TABLE t_map (id UInt64, m Map(String, String), INDEX ki mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1)
@@ -93,3 +103,4 @@ DROP TABLE t_json;
 DROP TABLE t_name;
 DROP TABLE t_name_minmax;
 DROP TABLE t_name_key;
+DROP TABLE t_name_wrapped;
