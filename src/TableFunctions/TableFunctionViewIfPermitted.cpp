@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -124,7 +125,18 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
     }
     else
     {
-        storage = else_table_function->execute(else_ast, context, table_name);
+        /// The query names this function, so a `*Cluster` storage of the `ELSE` function could not rewrite it for the replicas.
+        if (!is_insert_query && else_table_function->isClusterFunction())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Table function '{}' does not support reading from a cluster table function '{}' after 'ELSE'",
+                getName(),
+                else_table_function->getName());
+
+        ContextMutablePtr else_context = Context::createCopy(context);
+        else_context->setSetting("parallel_replicas_for_cluster_engines", false);
+        storage = else_table_function->execute(
+            else_ast, else_context, table_name, /*cached_columns_=*/ {}, /*use_global_context=*/ false, is_insert_query);
     }
 
     storage->startup();
