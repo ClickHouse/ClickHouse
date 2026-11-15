@@ -1,0 +1,22 @@
+-- local, with a deletion vector
+[1,2,3,4,5,6,7,8]	8
+-- local, file:// URI
+45	10
+-- server, source inside user_files
+45
+-- server, source outside user_files
+is outside the table path directory
+PATH_ACCESS_DENIED
+-- s3
+[1,2,3,4,5,6,7,8]	8
+-- s3, another bucket
+is not in the bucket
+NOT_IMPLEMENTED
+-- s3, gs:// path on S3
+is not in the bucket
+NOT_IMPLEMENTED
+-- a user granted only the clone
+value
+necessary to have the grant READ ON FILE
+value
+necessary to have the grant READ ON S3

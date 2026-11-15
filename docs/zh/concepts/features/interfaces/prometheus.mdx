@@ -109,14 +109,15 @@ remote_write:
 
 Prometheus 会将样本写入 `prometheus.metrics` 表。
 
-要将多个并发远程写入请求中的数据合并为更少的 parts，请在 URL 中添加 `async_insert` 设置 (或在 user profile 中启用该设置) ，以启用[异步插入](/zh/reference/settings/session-settings/async-insert#async_insert)：
+为了将多个并发远程写入请求中的数据合并为更少的 parts，ClickHouse 会使用[异步插入](/zh/reference/settings/session-settings/async-insert#async_insert)。该功能默认启用，可通过 URL (或 user profile) 中的 `async_insert` 设置开启或关闭。
 
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+ClickHouse 仅在数据已刷写到 `TimeSeries` 表的所有内部表后，才会确认异步远程写入请求，不受 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置影响：远程写入协议将已确认的写入视为持久化写入。如果刷写失败，请求会返回错误，Prometheus 将重试。
 
-ClickHouse 仅在数据已刷新到 `TimeSeries` 表的所有内部表后，才会确认异步远程写入请求，不受 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置影响：远程写入协议将已确认的写入视为持久化写入。如果刷新失败，请求会返回错误，Prometheus 将重试。
+由于每个请求都要等待其刷写完成，异步插入会限制单个发送方的写入速度。Prometheus 对每个远程写入分片一次只发送一个请求。当多个分片同时发送时，自适应刷写超时会逐步增大至 [`async_insert_busy_timeout_max_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)，除非待处理请求的数据量先达到 [`async_insert_max_data_size`](/zh/reference/settings/session-settings/async-insert#async_insert_max_data_size)。请求会一直等到其所在批次被刷写，而刷写最晚会在该批次开始后经过上述时长时发生。因此在持续负载下，每个分片的写入速率约为 `samples per request / async_insert_busy_timeout_max_ms`，其中 Prometheus 默认每个请求最多发送 2,000 个样本。要提高该速率，可以：
+
+* 在 [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) 的 `queue_config` 中调高 `max_shards` (默认为 50) 或 `max_samples_per_send`。Prometheus 在写入滞后时会自动增加分片，最多增至 `max_shards`。
+* 在 URL 或 user profile 中调低 `async_insert_busy_timeout_max_ms`，例如 `&async_insert_busy_timeout_max_ms=50`。这样刷写会更加频繁，而每次刷写都会在内部表中创建新的 parts。
+* 通过 `async_insert=0` 禁用异步插入。这样每个请求都会在内部表中创建各自的 parts。
 
 ## 使用 PromQL 查询 {#promql-query-support}
 
@@ -254,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## 记录规则 {#recording-rules}
+
+ClickHouse 不会评估 Prometheus 规则文件。[可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view) 可以起到[记录规则](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)的作用：它按调度计划计算 PromQL 表达式，并将结果追加到 `TimeSeries` 表中。以下视图每分钟将 `sum by (job) (rate(http_requests_total[5m]))` 记录为 `job:http_requests:rate5m`：
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+每次刷新都会以当前分钟的起始时刻为准计算该表达式，通过 `mapUpdate` 设置指标名称，并为结果中的每个数据系列追加一个样本。还可以在同一个 Map 中添加额外的标记，例如 `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`。记录下来的数据系列可以像其他指标一样查询：
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+上次求值的时间和错误可在 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes) 中查看。
+
+视图与 Prometheus 记录规则存在以下差异：
+
+* 求值时间为刷新运行时的 `now()`。除按调度计划刷新外，视图还会在以下情况下刷新：创建后立即刷新 (除非创建时指定了 `EMPTY`) ；若刷新并非协调式，则在服务器重启后刷新 (位于 Replicated 或 Shared 数据库之外的视图，或设置了 `all_replicas = 1` 的视图，不会记录其上次刷新) ；以及错过某次计划刷新后，通过 `SYSTEM START VIEW` 恢复时刷新。请参照示例将 `now()` 向下取整到时间间隔，以免这些刷新在两次计划刷新之间插入额外的样本。即便如此，额外的刷新仍可能在同一个取整后的时间戳上写入第二个样本。对于五分钟的规则，请使用 `toStartOfInterval(now(), INTERVAL 5 MINUTE)`。
+* 错过的求值不会补算。服务器宕机或视图停止后，视图只会对当前时间间隔求值，之前的时间间隔将保持为空。若某次刷新耗时超过时间间隔，也会出现同样的情况。
+* 从结果中消失的数据系列不会被打上陈旧标记，因此在回溯周期 (默认 5 分钟) 内，查询仍会返回其最后记录的值。
+* 没有规则文件：每条规则都是一个独立的视图，且不会出现在 `/api/v1/rules` 的列表中。

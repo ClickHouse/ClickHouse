@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버 구성에 사용되며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="uncompressed_cache_policy">
-  ## uncompressed_cache_policy
-</div>
+## uncompressed_cache_policy {#uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />비압축 캐시 정책 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />비압축 캐시 eviction 정책 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="uncompressed_cache_size">
-  ## uncompressed_cache_size
-</div>
+## uncompressed_cache_size {#uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -36,9 +32,7 @@ MergeTree 엔진 계열의 테이블 엔진에서 사용하는 비압축 데이�
   이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
 </Note>
 
-<div id="uncompressed_cache_size_ratio">
-  ## uncompressed_cache_size_ratio
-</div>
+## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />비압축 캐시에서 보호 큐(정책이 SLRU인 경우)가 차지하는 크기의 비율로, 캐시 전체 크기를 기준으로 합니다.
 
