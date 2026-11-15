@@ -100,7 +100,9 @@ fi
 # What the server sees, from outside through its root.
 echo "dev: $(ls "/proc/$PID/root/dev" | paste -sd ' ')"
 echo "dev/pts: $(ls "/proc/$PID/root/dev/pts" | paste -sd ' ')"
-echo "working directory: $(ls "/proc/$PID/root$DIR/work" | paste -sd ' ')"
+# The files mapped into the process stay visible, and a coverage build maps its profile, which the test runner names
+# relative to the working directory.
+echo "working directory: $(ls "/proc/$PID/root$DIR/work" | grep -v '\.profraw$' | paste -sd ' ')"
 echo "definitions: $(ls "/proc/$PID/root$DIR/work/definitions" | paste -sd ' ')"
 echo "cache from a named collection: $([ -d "/proc/$PID/root$DIR/cache_from_named_collection" ] && echo visible || echo invisible)"
 # The checks above see the root of a running server only.
