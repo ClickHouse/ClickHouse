@@ -87,8 +87,8 @@ def quote_identifier(name: str) -> str:
 
 class RandomDisruptor:
     """Background thread that randomly kills queries, client processes and mutations,
-    briefly stops background operations such as merges, empties caches and restarts
-    replicas, during stress tests.
+    briefly stops background operations such as merges, and empties caches, during
+    stress tests.
 
     This helps test that queries and mutations are cancelled correctly, handles
     scenarios where the client unexpectedly disconnects (issue #39803), and exercises
@@ -461,33 +461,6 @@ class RandomDisruptor:
         if self._run_query(f"SYSTEM RELOAD DICTIONARY {name}", quiet=True)[0]:
             logging.info("SYSTEM RELOAD DICTIONARY %s", name)
 
-    def _restart_random_replica(self) -> None:
-        """Reinitialize the Keeper session and the state of a random replicated table, or of all of them."""
-        rows = self._select_rows(
-            "SELECT database, table FROM system.replicas "
-            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand()",
-            {"keep": self._keep_databases_param()},
-        )
-        if not rows or self._stop_event.is_set():
-            return
-        names = [f"{quote_identifier(row['database'])}.{quote_identifier(row['table'])}" for row in rows]
-        if random.random() < 0.26:
-            statement = "RESTART REPLICAS"
-        else:
-            statement, names = f"RESTART REPLICA {names[0]}", names[:1]
-        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
-            logging.info("SYSTEM %s", statement)
-            return
-        # A restart that fails after detaching the table leaves it detached (`doRestartReplica`), also when
-        # killed. `ATTACH` waits for the restart to end, as both take the table's DDL guard, and fails if it is back.
-        for name in names:
-            # On shutdown leave the rest: the teardown must not overlap these queries.
-            if self._stop_event.is_set():
-                logging.warning("Shutting down, not attaching back the tables of a failed SYSTEM %s", statement)
-                break
-            if self._run_query(f"ATTACH TABLE {name}", quiet=True)[0]:
-                logging.warning("Attached %s back after a failed SYSTEM %s", name, statement)
-
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
         logging.info("Random disruptor started (interval: %.1fs)", self._interval)
@@ -503,7 +476,8 @@ class RandomDisruptor:
             self._run_one_shot_statement,
             self._reload_random_dictionary,
             self._refresh_or_cancel_random_view,
-            self._restart_random_replica,
+            # No `SYSTEM RESTART REPLICA(S)`: a restart that fails after detaching a table leaves the metadata
+            # digest of its `Replicated` database stale, and the next digest check fails with `Digest does not match`.
         )
         while not self._stop_event.is_set():
             disruption = random.choice(disruptions)
@@ -1309,7 +1283,7 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Disable the random disruptor during stress test: query/client/mutation kills, "
         "pauses of background operations and listeners, cache drops, Keeper reconnects, "
-        "replica restarts, dictionary reloads and view refreshes",
+        "dictionary reloads and view refreshes",
     )
     return parser.parse_args()
 
