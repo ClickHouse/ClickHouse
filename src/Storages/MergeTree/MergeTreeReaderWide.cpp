@@ -312,15 +312,17 @@ namespace
 /// A chain of defaults ends in a default that uses one of `columns` directly, so the chains are not followed.
 bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NameSet & columns)
 {
-    auto uses_column = [&](const String & name)
+    /// Any part of an identifier is compared: a column can be named with the table, such as `tab.vec`, and a subcolumn
+    /// uses its column, such as `vec.size0`. An identifier that only contains the name of such a column, such as the
+    /// parameter of a lambda, disables the reads as well.
+    auto uses_column = [&](const ASTIdentifier & identifier)
     {
-        /// A subcolumn, such as `vec.size0`, uses its column.
-        for (const auto & column : columns)
+        for (const auto & part : identifier.name_parts)
         {
-            if (name == column || (name.starts_with(column) && name.size() > column.size() && name[column.size()] == '.'))
+            if (columns.contains(part))
                 return true;
         }
-        return false;
+        return columns.contains(identifier.name());
     };
 
     for (const auto & [name, column_default] : table_columns.getDefaults())
@@ -333,7 +335,7 @@ bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NameS
         {
             const IAST * node = nodes.back();
             nodes.pop_back();
-            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && uses_column(identifier->name()))
+            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && uses_column(*identifier))
                 return true;
             for (const auto & child : node->children)
                 nodes.push_back(child.get());

@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS tab_prefetch;
 DROP TABLE IF EXISTS tab_conversion;
 DROP TABLE IF EXISTS tab_rename_reuse;
 DROP TABLE IF EXISTS tab_other_default;
+DROP TABLE IF EXISTS tab_qualified;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -248,13 +249,37 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, m.d.x FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- A default expression naming the vector column with a qualifier, the only one of the table that uses it. A default
+-- expression is checked against a table named `dummy`, so `dummy.vec` is accepted and resolves to the column.
+CREATE TABLE tab_qualified
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
+
+INSERT INTO tab_qualified SELECT id, vec FROM tab;
+ALTER TABLE tab_qualified ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.vec));
+
+SELECT 'qualified default, setting on';
+WITH (SELECT vec FROM tab_qualified WHERE id = 123) AS ref
+SELECT id, d FROM tab_qualified ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_qualified_default_on';
+
+SELECT 'qualified default, setting off';
+WITH (SELECT vec FROM tab_qualified WHERE id = 123) AS ref
+SELECT id, d FROM tab_qualified ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on', '05618_nested_default_on',
-        '05618_nested_tuple_default_on')
+        '05618_nested_tuple_default_on', '05618_qualified_default_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
@@ -264,3 +289,4 @@ DROP TABLE tab_prefetch;
 DROP TABLE tab_conversion;
 DROP TABLE tab_rename_reuse;
 DROP TABLE tab_other_default;
+DROP TABLE tab_qualified;
