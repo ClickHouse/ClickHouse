@@ -7,6 +7,12 @@ format version: 1
 6	39
 1	202401	3
 2	202402	3
+-- table functions do not take partition moves and do not create them
+is not supported by table function
+is not supported by table function
+is not supported by table function
+is not supported by table function
+partition_moves
 -- the copy on the destination is skipped while queries read the source
 6	39
 1	202401	3

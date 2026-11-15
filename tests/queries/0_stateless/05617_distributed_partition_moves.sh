@@ -65,6 +65,15 @@ $CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves 1 -q "CREATE
 $CLICKHOUSE_CLIENT -q "SELECT value FROM system.zookeeper WHERE path = '$MOVES_PARENT' AND name = 'partition_moves' FORMAT TSVRaw"
 show_rows
 
+echo '-- table functions do not take partition moves and do not create them'
+for allow_experimental in 0 1; do
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves $allow_experimental -q "SELECT * FROM cluster(test_cluster_two_shards_different_databases, shard_0.data, x, SETTINGS partition_moves_zookeeper_path = '${MOVES_PARENT}/function_partition_moves')" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+    $CLICKHOUSE_CLIENT --allow_experimental_distributed_partition_moves $allow_experimental -q "SELECT * FROM remote('127.0.0.{1,2}', shard_0.data, x, SETTINGS partition_moves_zookeeper_path = '${MOVES_PARENT}/function_partition_moves')" 2>&1 \
+        | grep -o -m1 'is not supported by table function'
+done
+$CLICKHOUSE_CLIENT -q "SELECT name FROM system.zookeeper WHERE path = '$MOVES_PARENT' ORDER BY name"
+
 echo '-- the copy on the destination is skipped while queries read the source'
 set_moves 'format version: 1\n202401 1 2 source\n'
 wait_for_version 1
