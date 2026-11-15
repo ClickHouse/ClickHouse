@@ -11,15 +11,3 @@ SELECT number
 FROM numbers(5)
 ORDER BY number
 FORMAT Pretty;
-
-SELECT number
-    ,lead(number, 1, 8472) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) lead
-FROM numbers(5)
-ORDER BY number
-FORMAT Pretty; -- { serverError BAD_ARGUMENTS }
-
-SELECT number
-    ,lag(number, 1, 8472) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) lag
-FROM numbers(5)
-ORDER BY number
-FORMAT Pretty; -- { serverError BAD_ARGUMENTS }

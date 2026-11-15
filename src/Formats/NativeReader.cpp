@@ -64,12 +64,16 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    NativeReaderTypeCache * type_cache_,
+    ISerialization::KindSet allowed_kinds_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , block_missing_values(block_missing_values_)
+    , type_cache(type_cache_)
+    , allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -151,11 +155,24 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+DataTypePtr NativeReader::getTypeByName(const String & type_name)
+{
+    if (type_cache)
+    {
+        if (auto it = type_cache->find(type_name); it != type_cache->end())
+            return it->second;
+    }
+
+    auto type = DataTypeFactory::instance().get(type_name);
+    setVersionToAggregateFunctions(type, true, server_revision);
+    if (type_cache)
+        type_cache->emplace(type_name, type);
+    return type;
+}
+
 Block NativeReader::read()
 {
     Block res;
-
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     if (use_index && index_block_it == index_block_end)
         return res;
@@ -221,14 +238,13 @@ Block NativeReader::read()
         {
             column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
             type_name = column.type->getName();
+            setVersionToAggregateFunctions(column.type, true, server_revision);
         }
         else
         {
             readStringBinaryGrowing(type_name, istr);
-            column.type = data_type_factory.get(type_name);
+            column.type = getTypeByName(type_name);
         }
-
-        setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
         MutableColumnPtr read_column;
@@ -369,7 +385,15 @@ Block NativeReader::read()
             }
             else
             {
-                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+                MutableColumnPtr column;
+                if (col.type->isDefaultInsertTrivial())
+                    column = col.type->createColumn()->cloneResized(rows);
+                else
+                {
+                    column = col.type->createColumn();
+                    col.type->insertManyDefaultsInto(*column, rows);
+                }
+                tmp_res.insert({std::move(column), col.type, col.name});
                 if (block_missing_values)
                     block_missing_values->setBits(column_i, rows);
             }

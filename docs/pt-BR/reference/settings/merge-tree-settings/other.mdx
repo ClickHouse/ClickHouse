@@ -459,6 +459,34 @@ isto é, uma tabela com poucos valores distintos de chave primária.
 Não se espera que chaves primárias de alta cardinalidade, por exemplo, envolvendo colunas de timestamp do tipo
 `DateTime64`, se beneficiem dessa configuração.
 
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar automaticamente a otimização da ordem das linhas em tabelas comuns da família MergeTree sem sorting key."}]}]} />
+
+Controla se a otimização da ordem das linhas (consulte `optimize_row_order`) é aplicada
+automaticamente na inserção em tabelas com sorting key vazia, ou seja, tabelas
+declaradas com `ORDER BY ()` ou `ORDER BY tuple()`.
+
+Desabilitada por padrão. Habilite-a em tabelas nas quais melhorar a compressibilidade
+das partes recém-inseridas com LZ4 ou ZSTD for mais importante do que preservar
+a ordem de inserção e a vazão de insert.
+
+Assim como ocorre com `optimize_row_order`, os inserts têm um custo adicional de CPU para analisar e
+otimizar a ordem das linhas dos novos dados. Desative esta configuração se preservar a
+ordem original de inserção das linhas ou maximizar a vazão de insert for mais importante
+do que a compressão.
+
+Um `optimize_row_order = 0` definido explicitamente tem precedência: nesse caso, a tabela
+nunca terá a ordem das linhas otimizada, independentemente desta configuração.
+
+Assim como ocorre com `optimize_row_order`, a otimização se aplica apenas a tabelas comuns
+da família `MergeTree`, incluindo `ReplicatedMergeTree`. Motores especializados
+da família, como `ReplacingMergeTree`,
+`CollapsingMergeTree` ou `AggregatingMergeTree`, nunca têm a ordem das linhas otimizada
+e preservam a ordem das linhas inseridas.
+
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />

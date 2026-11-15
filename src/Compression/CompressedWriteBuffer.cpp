@@ -6,11 +6,19 @@
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+
+namespace ProfileEvents
+{
+extern const Event CompressedWriteBufferBlocks;
+extern const Event CompressedWriteBufferBytes;
+extern const Event CompressedWriteBufferCompressMicroseconds;
+}
 
 namespace DB
 {
@@ -39,6 +47,9 @@ void CompressedWriteBuffer::nextImpl()
     if (uncompressed_codec)
         compressed_reserve_size = std::max(compressed_reserve_size, uncompressed_codec->getCompressedReserveSize(decompressed_size));
 
+    ProfileEvents::increment(ProfileEvents::CompressedWriteBufferBlocks);
+    ProfileEvents::increment(ProfileEvents::CompressedWriteBufferBytes, decompressed_size);
+
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.
       *
       * If output buffer has necessary capacity, we can compress data directly into the output buffer.
@@ -59,12 +70,16 @@ void CompressedWriteBuffer::nextImpl()
         compressed_ptr = compressed_buffer.data();
     }
 
-    UInt32 compressed_size = frame_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, frame_state);
+    UInt32 compressed_size = 0;
+    {
+        ProfileEventTimeIncrement<Time::Microseconds> watch(ProfileEvents::CompressedWriteBufferCompressMicroseconds);
+        compressed_size = frame_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, frame_state);
 
-    /// The block is stored as is if compression saves less than 1/8 of its size.
-    if (uncompressed_codec && frame_codec == codec.get()
-        && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
-        compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
+        /// The block is stored as is if compression saves less than 1/8 of its size.
+        if (uncompressed_codec && frame_codec == codec.get()
+            && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
+            compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
+    }
 
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_ptr, compressed_size);
 

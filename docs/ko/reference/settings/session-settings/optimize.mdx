@@ -387,6 +387,14 @@ FROM default.fuse_tbl AS __table1
 
 모든 GROUP BY 키가 ORDER BY 접두사에 포함되면 끝부분의 ORDER BY 원소를 제거합니다.
 
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "스레드별 해시 집합을 머지하는 대신 값을 해시 기준으로 파티셔닝하여 `GROUP BY` 없이 단일 `uniqExact` 또는 `count(DISTINCT)`를 계산하는 새로운 설정입니다."}]}]} />
+
+`GROUP BY`가 없는 쿼리에서 단일 `uniqExact`(및 기본적으로 이를 사용하는 `count(DISTINCT)`)를 계산할 때, 스레드별 해시 집합을 머지하는 대신 값을 해시 기준으로 파티셔닝합니다. 각 스레드가 자신의 값을 파티션으로 라우팅하면, 각 파티션은 CPU 캐시에 들어갈 만큼 작은 해시 집합에서 병렬로 중복 제거되며, 최종 결과는 각 파티션 크기의 합이 됩니다. 이 설정은 결과가 동일한 서버에서 완료되는 경우에만 적용되며, 대상은 64비트 이하의 숫자 유형, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, 128비트 정수, `String`, `FixedString` 또는 이들의 `Nullable` 유형으로 된 단일 인수입니다. 각 스레드는 일반 집계와 마찬가지로 집합이 CPU 캐시 크기를 넘어설 때까지 자신의 작은 집합에 계속 삽입하므로, 라우팅은 high-cardinality 입력에서만 동작합니다. 또한 값 대부분이 중복된 것으로 확인되면 해당 스레드는 다시 자신의 집합을 사용합니다.
+
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
