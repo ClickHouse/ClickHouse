@@ -23,6 +23,8 @@
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <Storages/FileLog/FileLogStreamSource.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -77,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -526,6 +529,22 @@ void StorageFileLog::read(
     size_t /* num_streams */)
 
 {
+    if (query_info.isStream())
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+        if (stream_settings.watermark)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine FileLog");
+
+        auto source = std::make_shared<FileLogStreamSource>(
+            *this, storage_snapshot, query_context, column_names, stream_settings, getMaxBlockSize(), getPollTimeoutMillisecond());
+        source->setStorageLimits(query_info.storage_limits);
+
+        auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        step->setStepDescription("Read from FileLog STREAM");
+        query_plan.addStep(std::move(step));
+        return;
+    }
+
     query_plan.addStep(
         std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
@@ -1230,6 +1249,34 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
         }
     }
     it->second = FileContext{.inode = inode};
+}
+
+Names StorageFileLog::listStreamFiles() const
+{
+    if (!path_is_directory)
+    {
+        const auto file_name = std::filesystem::path(path).filename().string();
+        if (std::filesystem::is_regular_file(getFullDataPath(file_name)))
+            return {file_name};
+        return {};
+    }
+
+    Names result;
+    for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
+    {
+        if (!dir_entry.is_regular_file())
+            continue;
+        String file_name = dir_entry.path().filename();
+        if (fileNameMatches(file_name))
+            result.push_back(std::move(file_name));
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+StreamingHandleErrorMode StorageFileLog::getStreamingHandleErrorMode() const
+{
+    return (*filelog_settings)[FileLogSetting::handle_error_mode];
 }
 
 bool StorageFileLog::fileNameMatches(const String & file_name) const

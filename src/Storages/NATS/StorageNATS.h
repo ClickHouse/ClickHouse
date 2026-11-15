@@ -44,6 +44,10 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
+    /// A streaming query reads a JetStream stream with its own ephemeral consumer, see `NATSStreamSource`.
+    /// The core NATS has no persistence, so there is nothing to stream from with a cursor.
+    bool supportsStreaming() const override { return !getStreamName().empty(); }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -161,7 +165,14 @@ private:
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode, bool is_jet_stream);
+
+    void readStream(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr local_context);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;

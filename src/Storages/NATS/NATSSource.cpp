@@ -287,6 +287,10 @@ Chunk NATSSource::generateImpl()
                 }
             }
 
+            /// The stream sequence is known only to a streaming query, see `NATSStreamSource`.
+            if (virtual_header.columns() && virtual_header.getByPosition(virtual_header.columns() - 1).name == "_sequence")
+                virtual_columns.back()->insertManyDefaults(new_rows);
+
             total_rows = total_rows + new_rows;
         }
 
