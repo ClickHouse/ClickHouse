@@ -9888,6 +9888,12 @@ If enabled and the schema-id of an Iceberg manifest file is already registered f
 The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0, \
         {"26.10", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}) \
+    DECLARE(Bool, optimize_aggregation_in_order_by_current_time, true, R"(
+Use aggregation in order when a `GROUP BY` key is the current time computed for every block (`nowInBlock`, `nowInBlock64`, or a monotonic function of them, such as `toStartOfMinute(nowInBlock())`).
+
+The value of such a key does not decrease within every stream of data, so the aggregation does not keep a hash table of all groups: it emits the result of every group as soon as the time changes. This is useful for long-running and streaming queries, which return partial results continuously instead of only at the end.
+)", 0, \
+        {"26.11", false, true, "New setting."}) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
