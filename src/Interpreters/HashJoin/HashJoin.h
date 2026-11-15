@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <bit>
 #include <deque>
 #include <memory>
@@ -30,6 +31,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
+#include <Interpreters/HashJoin/NativeFingerprintJoinMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
 namespace DB
@@ -183,7 +185,8 @@ public:
         size_t reserve_num_,
         const String & instance_id_,
         HashJoinBuildLayout build_layout_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        std::optional<UInt64> estimated_probe_rows_ = {});
 
     /// A join without a reserve or an instance id.
     static std::shared_ptr<HashJoin> create(
@@ -191,7 +194,8 @@ public:
         SharedHeader right_sample_block,
         HashJoinBuildLayout build_layout_,
         bool any_take_last_row_ = false,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {})
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        std::optional<UInt64> estimated_probe_rows_ = {})
     {
         return std::make_shared<HashJoin>(
             std::move(table_join_),
@@ -200,7 +204,7 @@ public:
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
             build_layout_,
-            stats_collecting_params_);
+            stats_collecting_params_, estimated_probe_rows_);
     }
 
     ~HashJoin() override;
@@ -290,6 +294,11 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
+    /// Planning only: filtering or early termination invalidates the automatic lookup budget, not other estimates.
+    void invalidateAutoFingerprintProbeEstimate()
+    {
+        estimated_probe_rows.reset();
+    }
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
@@ -356,7 +365,9 @@ public:
         M(range17_key64)               \
         M(range18_key64)               \
         M(two_level_key_packed_string) \
-        M(key_packed_string)
+        M(key_packed_string)           \
+        M(fingerprint_key64)           \
+        M(scalar_fingerprint_key64)
 
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
@@ -378,7 +389,9 @@ public:
         M(keys128)                             \
         M(keys256)                             \
         M(low_cardinality_key_string)          \
-        M(low_cardinality_key_fixed_string)
+        M(low_cardinality_key_fixed_string)    \
+        M(fingerprint_key64)                   \
+        M(scalar_fingerprint_key64)
 
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
         M(two_level_key8 __VA_OPT__(,) __VA_ARGS__)             \
@@ -516,6 +529,9 @@ public:
         /// A single `String` key as a `PackedStringJoinKey`, see `enable_packed_string_keys_in_hash_join`.
         std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
         std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
+
+        std::shared_ptr<NativeFingerprintJoinMap<Mapped, true>> fingerprint_key64;
+        std::shared_ptr<NativeFingerprintJoinMap<Mapped, false>> scalar_fingerprint_key64;
 
         void create(Type which, bool robin_hood_allowed)
         {
@@ -763,7 +779,8 @@ private:
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
     {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_);
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id, build_layout_,
+            HashJoinStatsCollectingParams{}, estimated_probe_rows);
     }
 
     std::shared_ptr<TableJoin> table_join;
@@ -777,6 +794,14 @@ private:
     const size_t reserve_num;
     const String instance_id;
     const HashJoinBuildLayout build_layout;
+
+    bool auto_fingerprint = false;
+    std::optional<UInt64> estimated_probe_rows;
+    std::once_flag auto_fingerprint_once;
+    std::exception_ptr auto_fingerprint_exception;
+
+    void selectAutoFingerprints(const ScatteredBlock & block);
+    void monitorAutoFingerprints(const ScatteredBlock & block);
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 

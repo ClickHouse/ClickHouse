@@ -1,0 +1,45 @@
+<test run_all_queries="1">
+    <!-- Default automatic lookup versus master. `Memory` holds precomputed keys so timed queries include build, preparation and real payload consumption. Cover both useful 0/1% presence and the 100% guard; no new setting is sent to the reference server. -->
+    <settings>
+        <max_threads>2</max_threads>
+        <max_block_size>65536</max_block_size>
+        <join_algorithm>hash</join_algorithm>
+        <hash_join_layout>serial</hash_join_layout>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <enable_join_runtime_filters_index_analysis>0</enable_join_runtime_filters_index_analysis>
+        <enable_join_fixed_hash_table_conversion>0</enable_join_fixed_hash_table_conversion>
+        <enable_join_key_only_hash_tables>1</enable_join_key_only_hash_tables>
+        <collect_hash_table_stats_during_joins>0</collect_hash_table_stats_during_joins>
+        <max_bytes_before_external_join>0</max_bytes_before_external_join>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_optimize_join_order_limit>1</query_plan_optimize_join_order_limit>
+        <query_plan_convert_join_to_in>0</query_plan_convert_join_to_in>
+        <join_use_nulls>0</join_use_nulls>
+        <use_query_cache>0</use_query_cache>
+    </settings>
+    <create_query>CREATE TABLE auto_fp_uniform_262144_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE auto_fp_uniform_262144_probe (id UInt64, k0 UInt64, k1 UInt64, k100 UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO auto_fp_uniform_262144_build SELECT intHash64(number + 17), number FROM numbers(262144)</fill_query>
+    <fill_query>INSERT INTO auto_fp_uniform_262144_probe SELECT number, intHash64(262144 + number + 17), if(number % 100 = 0, intHash64(number % 262144 + 17), intHash64(262144 + number + 17)), intHash64(number % 262144 + 17) FROM numbers(4194304)</fill_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_uniform_262144_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_uniform_262144_build</drop_query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_262144_probe AS l ALL INNER JOIN auto_fp_uniform_262144_build AS r ON l.k0 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_262144_probe AS l LEFT SEMI JOIN auto_fp_uniform_262144_build AS r ON l.k0 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_262144_probe AS l ALL INNER JOIN auto_fp_uniform_262144_build AS r ON l.k1 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_262144_probe AS l LEFT SEMI JOIN auto_fp_uniform_262144_build AS r ON l.k1 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_262144_probe AS l ALL INNER JOIN auto_fp_uniform_262144_build AS r ON l.k100 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_262144_probe AS l LEFT SEMI JOIN auto_fp_uniform_262144_build AS r ON l.k100 = r.k</query>
+    <create_query>CREATE TABLE auto_fp_uniform_1048576_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE auto_fp_uniform_1048576_probe (id UInt64, k0 UInt64, k1 UInt64, k100 UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO auto_fp_uniform_1048576_build SELECT intHash64(number + 17), number FROM numbers(1048576)</fill_query>
+    <fill_query>INSERT INTO auto_fp_uniform_1048576_probe SELECT number, intHash64(1048576 + number + 17), if(number % 100 = 0, intHash64(number % 1048576 + 17), intHash64(1048576 + number + 17)), intHash64(number % 1048576 + 17) FROM numbers(16777216)</fill_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_uniform_1048576_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_uniform_1048576_build</drop_query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_1048576_probe AS l ALL INNER JOIN auto_fp_uniform_1048576_build AS r ON l.k0 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_1048576_probe AS l LEFT SEMI JOIN auto_fp_uniform_1048576_build AS r ON l.k0 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_1048576_probe AS l ALL INNER JOIN auto_fp_uniform_1048576_build AS r ON l.k1 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_1048576_probe AS l LEFT SEMI JOIN auto_fp_uniform_1048576_build AS r ON l.k1 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_uniform_1048576_probe AS l ALL INNER JOIN auto_fp_uniform_1048576_build AS r ON l.k100 = r.k</query>
+    <query>SELECT count(), sum(l.id) FROM auto_fp_uniform_1048576_probe AS l LEFT SEMI JOIN auto_fp_uniform_1048576_build AS r ON l.k100 = r.k</query>
+</test>

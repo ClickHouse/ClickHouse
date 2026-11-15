@@ -563,6 +563,21 @@
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
     M(JoinSpillingHashJoinSwitchedToMergeJoin, "Number of times a HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.", ValueType::Number) \
+    M(HashJoinFingerprintTables, "Number of join tables whose numeric fingerprint read index was built.", ValueType::Number) \
+    M(HashJoinFingerprintSIMDTables, "Number of join tables using SIMD fingerprint probing.", ValueType::Number) \
+    M(HashJoinFingerprintRows, "Number of keys in join tables indexed by numeric fingerprints.", ValueType::Number) \
+    M(HashJoinFingerprintBytes, "Bytes allocated for numeric join fingerprint read indexes, including wraparound padding.", ValueType::Bytes) \
+    M(HashJoinAutoFingerprintCandidates, "Number of eligible joins considered for automatic fingerprint lookup.", ValueType::Number) \
+    M(HashJoinAutoFingerprintSelected, "Number of joins whose probe estimate and key sample selected SIMD fingerprint lookup.", ValueType::Number) \
+    M(HashJoinAutoFingerprintRejected, "Number of automatic fingerprint candidates that retained the existing post-build lookup method.", ValueType::Number) \
+    M(HashJoinAutoFingerprintDisabled, "Number of automatic fingerprint indexes disabled by the probe monitor; allocated metadata remains owned until destruction.", ValueType::Number) \
+    M(HashJoinAutoFingerprintSampleRows, "Number of actual probe rows sampled for automatic fingerprint decisions.", ValueType::Number) \
+    M(HashJoinAutoFingerprintSampleHits, "Number of sampled probe keys present in the build table, without duplicate fanout.", ValueType::Number) \
+    M(HashJoinAutoFingerprintInitialSampleRows, "Number of probe rows in initial automatic fingerprint samples, excluding later monitoring.", ValueType::Number) \
+    M(HashJoinAutoFingerprintInitialSampleHits, "Number of matching probe keys in initial automatic fingerprint samples, excluding later monitoring.", ValueType::Number) \
+    M(HashJoinAutoFingerprintInitialDistinctKeys, "Number of distinct keys in initial automatic fingerprint samples.", ValueType::Number) \
+    M(HashJoinAutoFingerprintProbeEstimate, "Sum of available probe-row estimates considered by automatic fingerprint candidates.", ValueType::Number) \
+    M(HashJoinAutoFingerprintCapacity, "Sum of ordinary table capacities considered by automatic fingerprint candidates.", ValueType::Number) \
     M(HashJoinBuiltWithParallelLayout, "Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.", ValueType::Number) \
     M(HashJoinBuiltWithSerialLayout, "Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \

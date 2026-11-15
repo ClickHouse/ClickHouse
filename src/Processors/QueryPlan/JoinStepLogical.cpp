@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/JSONBuilder.h>
+#include <Common/CurrentThread.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -91,6 +92,11 @@ constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
 }
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 experimental_join_fingerprint_mode;
+}
 
 namespace ErrorCodes
 {
@@ -2600,6 +2606,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
+void JoinStepLogical::invalidateAutoFingerprintProbeEstimate()
+{
+    auto_fingerprint_probe_estimate_disabled = true;
+    if (join_algorithm_params)
+        join_algorithm_params->probe_rows_estimation.reset();
+}
+
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -2641,6 +2654,18 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        if (auto query_context = CurrentThread::tryGetQueryContext();
+            !join_step->auto_fingerprint_probe_estimate_disabled
+            && query_context && query_context->getSettingsRef()[Setting::experimental_join_fingerprint_mode] == 4)
+        {
+            /// Estimate the probe relation rather than join output fanout.
+            /// The optimizer separately invalidates this hint for plans with filters or early termination.
+            auto probe_rows = join_step->left_relation.estimated_rows;
+            if (!probe_rows)
+                probe_rows = QueryPlanOptimizations::estimateReadRowsCount(*node.children[0]).estimated_rows;
+            join_step->join_algorithm_params->probe_rows_estimation = probe_rows;
+        }
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3126,6 +3151,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->auto_fingerprint_probe_estimate_disabled = auto_fingerprint_probe_estimate_disabled;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;

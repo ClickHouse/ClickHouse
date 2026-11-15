@@ -1,0 +1,33 @@
+<test>
+    <!-- Repeated absent keys are not uniformly beneficial. Keep the 2,048-key regression, the diversity guard, moderate reuse and the diverse-to-hot miss phase alongside improvements. The ordered phase includes the same sorting cost on both servers. -->
+    <settings>
+        <max_threads>2</max_threads>
+        <max_block_size>65536</max_block_size>
+        <join_algorithm>hash</join_algorithm>
+        <hash_join_layout>serial</hash_join_layout>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <enable_join_runtime_filters_index_analysis>0</enable_join_runtime_filters_index_analysis>
+        <enable_join_fixed_hash_table_conversion>0</enable_join_fixed_hash_table_conversion>
+        <enable_join_key_only_hash_tables>1</enable_join_key_only_hash_tables>
+        <collect_hash_table_stats_during_joins>0</collect_hash_table_stats_during_joins>
+        <max_bytes_before_external_join>0</max_bytes_before_external_join>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <query_plan_optimize_join_order_limit>1</query_plan_optimize_join_order_limit>
+        <query_plan_convert_join_to_in>0</query_plan_convert_join_to_in>
+        <join_use_nulls>0</join_use_nulls>
+        <use_query_cache>0</use_query_cache>
+    </settings>
+    <create_query>CREATE TABLE auto_fp_reuse_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE auto_fp_reuse_probe (id UInt64, k128 UInt64, k2048 UInt64, k4096 UInt64, k8192 UInt64, k65536 UInt64, k_unique UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO auto_fp_reuse_build SELECT intHash64(number + 17), number FROM numbers(1048576)</fill_query>
+    <fill_query>INSERT INTO auto_fp_reuse_probe SELECT number, intHash64(1048576 + number % 128 + 17), intHash64(1048576 + number % 2048 + 17), intHash64(1048576 + number % 4096 + 17), intHash64(1048576 + number % 8192 + 17), intHash64(1048576 + number % 65536 + 17), intHash64(1048576 + number + 17) FROM numbers(16777216)</fill_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_reuse_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS auto_fp_reuse_build</drop_query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_reuse_probe AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k128 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_reuse_probe AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k2048 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_reuse_probe AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k4096 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_reuse_probe AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k8192 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM auto_fp_reuse_probe AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k65536 = r.k</query>
+    <query>SELECT count(), sum(l.id), sum(r.v) FROM (SELECT id, if(id &lt; 65536, k_unique, k128) AS k FROM auto_fp_reuse_probe ORDER BY id) AS l ALL INNER JOIN auto_fp_reuse_build AS r ON l.k = r.k SETTINGS max_threads = 1</query>
+</test>
