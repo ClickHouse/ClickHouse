@@ -1413,15 +1413,16 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     auto all_host_ids = getAllHostIDsFromClusters();
 
     // Add interserver IO host IDs for Replicated DBs
+    String interserver_host;
     try
     {
-        auto host_port = context->getInterserverIOAddress();
-        HostID interserver_io_host_id = {host_port.first, port};
+        interserver_host = context->getInterserverIOAddress().first;
+        HostID interserver_io_host_id = {interserver_host, port};
         all_host_ids.emplace(interserver_io_host_id.toString());
         LOG_INFO(log, "Add interserver IO host ID {}", interserver_io_host_id.toString());
         if (maybe_secure_port)
         {
-            HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
+            HostID interserver_io_secure_host_id = {interserver_host, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
             LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
@@ -1429,6 +1430,27 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     catch (const Exception & e)
     {
         LOG_INFO(log, "Unable to get interserver IO address, error {}", e.what());
+    }
+
+    /// The cluster of a Replicated DB lists this server under its advertised host: `replica_host` if it is set,
+    /// otherwise the interserver IO host, with a bare IPv6 literal in brackets. Claim that host ID too,
+    /// otherwise the first `ON CLUSTER` query may see this replica as inactive.
+    String replica_host;
+    if (context->hasReplicaHost())
+        replica_host = HostID::bracketIPv6Host(context->getReplicaHost());
+
+    const String advertised_host = context->hasReplicaHost() ? replica_host : HostID::bracketIPv6Host(interserver_host);
+    if (!advertised_host.empty() && advertised_host != interserver_host)
+    {
+        HostID advertised_host_id = {advertised_host, port};
+        all_host_ids.emplace(advertised_host_id.toString());
+        LOG_INFO(log, "Add advertised replica host ID {}", advertised_host_id.toString());
+        if (maybe_secure_port)
+        {
+            HostID advertised_secure_host_id = {advertised_host, *maybe_secure_port};
+            all_host_ids.emplace(advertised_secure_host_id.toString());
+            LOG_INFO(log, "Add advertised replica secure host ID {}", advertised_secure_host_id.toString());
+        }
     }
 
     createReplicaDirs(zookeeper, all_host_ids);
@@ -1460,7 +1482,14 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             HostID host = HostID::fromString(host_id);
             checking_host_ids.insert(host.toString());
 
-            is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
+            /// With an explicit `distributed_ddl.host_name`, `DDLTask::findCurrentHostID` accepts `replica_host` by name
+            /// without resolving it, so apply the same rule here: otherwise this replica executes the tasks addressed
+            /// to `replica_host` but is never marked active under it.
+            if (config_host_name && !replica_host.empty() && host.host_name == replica_host
+                && (host.port == port || (maybe_secure_port && host.port == *maybe_secure_port)))
+                is_self_host = true;
+            else
+                is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
         }
         catch (const Exception & e)
         {

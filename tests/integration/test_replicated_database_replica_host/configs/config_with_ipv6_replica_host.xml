@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- A bare IPv6 literal as the advertised address (documentation prefix, never routed) -->
+    <replica_host>2001:db8::1</replica_host>
+
+    <!-- Disable async loading for deterministic testing -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
