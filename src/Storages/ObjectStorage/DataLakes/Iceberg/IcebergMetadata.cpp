@@ -82,6 +82,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -130,6 +131,12 @@ extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_truncate_lose_metadata_write_response[];
 }
 
 namespace FailPoints
@@ -813,6 +820,252 @@ void IcebergMetadata::mutate(
         write_format,
         format_settings,
         catalog);
+}
+
+void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & storage_id)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg truncate is experimental. "
+            "To allow its usage, enable setting allow_insert_into_iceberg");
+
+    checkTableRootIsQueriedPath("TRUNCATE");
+
+    // Iceberg tables that are pinned to a specific metadata file via iceberg_metadata_file_path
+    // freeze reads to the table at the specific state of the metadata file for time-travel and
+    // reproducible reads. A truncate operation would generate a new metadata file that would not
+    // be read by future readers making the truncate invisible to readers, so we are disallowing it
+    if (!catalog && (*data_lake_settings)[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Cannot truncate Iceberg table {} with iceberg_metadata_file_path set. Remove iceberg_metadata_file_path from the table configuration to truncate", persistent_components.table_path);
+
+    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+
+    // Iceberg commits use optimistic concurrency: the commit asserts the table's current
+    // snapshot ref (catalog assert-ref-snapshot-id, or the metadata version on the filesystem)
+    // and fails if a concurrent writer advanced it in the meantime. Retry the whole truncate
+    // against freshly-read state on such a conflict, mirroring the insert (IcebergStorageSink)
+    // and mutation (mutate) write paths. Truncate is a replace-all operation, so rebuilding the
+    // snapshot against a newer parent on each attempt is always valid.
+    constexpr int max_transaction_retries = 100;
+    int retries_left = max_transaction_retries;
+    while (--retries_left > 0)
+    {
+        // Always read the freshest, catalog-authoritative metadata.
+        // In REST catalog the current snapshot is whatever the catalog points at, and a
+        // retry must observe the winning writer's snapshot to advance past it.
+        const auto [last_version, metadata_file_path, compression_method, base_catalog_metadata_location]
+            = getLatestMetadataFileAndVersionWithCatalog(
+                object_storage,
+                catalog,
+                storage_id.getTableName(),
+                persistent_components.table_path,
+                *data_lake_settings,
+                persistent_components.metadata_cache,
+                context,
+                log.get(),
+                persistent_components.table_uuid,
+                persistent_components.metadata_compression_method,
+                /* ignore_metadata_pointer_overrides */ true);
+
+        auto metadata_object = deepCopy(getMetadataJSONObject(
+            metadata_file_path,
+            object_storage,
+            persistent_components.metadata_cache,
+            context,
+            log,
+            compression_method,
+            persistent_components.table_uuid));
+
+        // Use -1 as the Iceberg spec sentinel for "no parent snapshot"
+        Int64 parent_snapshot_id = -1;
+        if (metadata_object->has(Iceberg::f_current_snapshot_id) && !metadata_object->isNull(Iceberg::f_current_snapshot_id))
+        {
+            Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+            if (current_snapshot_id >= 0)
+                parent_snapshot_id = current_snapshot_id;
+        }
+
+        FileNamesGenerator filename_generator(
+            persistent_components.path_resolver.getTableLocation(),
+            catalog_writes_metadata_file,
+            compression_method,
+            write_format);
+
+        Int32 new_metadata_version = last_version + 1;
+        filename_generator.setVersion(new_metadata_version);
+
+        auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        auto storage_metadata_name = persistent_components.path_resolver.resolve(metadata_info.path);
+
+        auto result = MetadataGenerator(metadata_object).generateNextMetadata(
+            filename_generator, metadata_info.path, parent_snapshot_id,
+            /* added_files */ 0, /* added_records */ 0, /* added_files_size */ 0,
+            /* num_partitions */ 0, /* added_delete_files */ 0, /* num_deleted_rows */ 0,
+            std::nullopt, std::nullopt, MetadataGenerator::SnapshotOperation::Delete);
+
+        auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
+
+        bool metadata_written = false;
+
+        // remove_objects=false preserves the written manifest list / metadata file. Used when the
+        // catalog commit result is unknown and a now-live snapshot may already reference them; the
+        // local cache is still dropped so the next attempt re-reads authoritative catalog state.
+        auto cleanup = [&](bool metadata_was_written, bool remove_objects = true)
+        {
+            try
+            {
+                if (remove_objects)
+                {
+                    object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+                    // Only remove the metadata file if this session is known to have written it. When the
+                    // metadata write reports a failure, storage_metadata_name may belong to another writer.
+                    if (metadata_was_written)
+                        object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                }
+                persistent_components.invalidateMetadataCache();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Iceberg truncate cleanup failed"); // Ok to swallow — best-effort cleanup
+            }
+        };
+
+        // Set true only while a commit point is in flight: the metadata file PUT or the catalog commit.
+        // If an exception escapes with this still set, the commit result is unknown (the metadata file
+        // may have landed, or the catalog may have applied it, despite the error), so the written
+        // artifacts must be preserved rather than deleted.
+        bool commit_result_unknown = false;
+        try
+        {
+            auto write_settings = context->getWriteSettings();
+            auto buf = object_storage->writeObject(
+                StoredObject(storage_manifest_list_name),
+                WriteMode::Rewrite, std::nullopt,
+                DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+
+            generateManifestList(
+                persistent_components.path_resolver, metadata_object, object_storage, context,
+                {}, result.snapshot, {}, *buf, Iceberg::FileContentType::DATA, /*use_previous_snapshots=*/false);
+            buf->finalize();
+
+            if (!catalog_writes_metadata_file)
+            {
+                String metadata_content = dumpMetadataObjectToString(metadata_object);
+                auto hint_path = filename_generator.generateVersionHint();
+                const bool use_version_hint = (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint];
+
+                // Without a transactional catalog, the conditional PUT of the metadata file is the commit
+                // point. From here until its outcome is known, a failure does not prove that the snapshot
+                // is not live, so an escaping exception must preserve the written artifacts.
+                commit_result_unknown = true;
+                bool metadata_file_written = writeMetadataFileAndVersionHint(
+                    persistent_components.path_resolver,
+                    metadata_info,
+                    metadata_content,
+                    hint_path,
+                    object_storage,
+                    context,
+                    use_version_hint);
+                fiu_do_on(FailPoints::iceberg_truncate_lose_metadata_write_response, { metadata_file_written = false; });
+
+                if (!metadata_file_written)
+                {
+                    // `false` is either a lost version race or an unknown outcome: the PUT may have been
+                    // applied with its response lost. Our snapshot id is random, so the file at this
+                    // version tells whose commit it is.
+                    if (!object_storage->exists(StoredObject(storage_metadata_name)))
+                    {
+                        // Nothing has landed. Keep the empty manifest list in case a delayed PUT still
+                        // lands; otherwise orphan-file cleanup reclaims it.
+                        cleanup(/* metadata_was_written */ false, /* remove_objects */ false);
+                        continue;
+                    }
+
+                    const auto landed_metadata = getMetadataJSONObject(
+                        storage_metadata_name,
+                        object_storage,
+                        /* metadata_cache */ nullptr,
+                        context,
+                        log,
+                        metadata_info.compression_method,
+                        persistent_components.table_uuid);
+                    const Int64 our_snapshot_id = result.snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                    const bool landed_metadata_is_ours = landed_metadata->has(Iceberg::f_current_snapshot_id)
+                        && !landed_metadata->isNull(Iceberg::f_current_snapshot_id)
+                        && landed_metadata->getValue<Int64>(Iceberg::f_current_snapshot_id) == our_snapshot_id;
+
+                    if (!landed_metadata_is_ours)
+                    {
+                        // Proven conflict: another writer owns this version and nothing references our
+                        // manifest list. Discard our artifacts and retry against freshly-read state.
+                        commit_result_unknown = false;
+                        cleanup(/* metadata_was_written */ false);
+                        continue;
+                    }
+
+                    // Our metadata file landed although the write reported a failure, so the truncate is
+                    // committed. Finish the version hint update that was skipped after the failure.
+                    LOG_INFO(log, "Metadata file {} was written by this truncate despite the reported failure", storage_metadata_name);
+                    (void)tryWriteVersionHintFile(
+                        persistent_components.path_resolver,
+                        metadata_info,
+                        hint_path,
+                        object_storage,
+                        context,
+                        /* create */ use_version_hint,
+                        /* assert_version_exactly */ false);
+                }
+
+                commit_result_unknown = false;
+                metadata_written = true;
+            }
+
+            if (catalog)
+            {
+                // Transactional catalogs require a fully-qualified blob URI so the catalog
+                // can resolve the metadata location independently of local path configuration.
+                auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(metadata_info.path);
+                const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+                // The commit is now in flight. updateMetadata returns false ONLY on a proven 409
+                // conflict; any ambiguous failure throws (see RestCatalog::updateMetadata).
+                commit_result_unknown = true;
+                if (!catalog->updateMetadata(
+                        namespace_name, table_name, catalog_filename, base_catalog_metadata_location, result.snapshot, metadata_object))
+                {
+                    // Proven optimistic-concurrency conflict (assert-ref-snapshot-id failed because
+                    // a concurrent writer advanced the ref): the snapshot did not become live, so
+                    // it is safe to discard our artifacts and retry against freshly-read state.
+                    commit_result_unknown = false;
+                    cleanup(metadata_written);
+                    continue;
+                }
+                commit_result_unknown = false; // committed
+            }
+        }
+        catch (...)
+        {
+            // If a commit point was in flight when this threw, we cannot prove it failed — our
+            // metadata file may have landed, or the catalog may already point at our snapshot. Fail
+            // closed: keep the objects (a leaked empty manifest list is reclaimed by standard Iceberg
+            // orphan-file GC) and drop only the local cache. Otherwise (pre-commit error or proven
+            // conflict) delete the artifacts.
+            cleanup(metadata_written, /*remove_objects=*/!commit_result_unknown);
+            throw;
+        }
+
+        // Invalidate the metadata cache so that subsequent operations on this table see the
+        // schema and empty snapshot we just wrote.
+        // See `PersistentTableComponents::invalidateMetadataCache` for the rationale.
+        persistent_components.invalidateMetadataCache();
+        // Commit succeeded.
+        return;
+    }
+
+    throw Exception(
+        ErrorCodes::LIMIT_EXCEEDED,
+        "Too many unsuccessful retries to commit Iceberg truncate due to concurrent modifications");
 }
 
 void IcebergMetadata::checkTableRootIsQueriedPath(std::string_view operation) const

@@ -43,6 +43,8 @@ public:
     {
         Append,
         Replace,
+        /// `TRUNCATE`: adds nothing and drops every row the parent snapshot held.
+        Delete,
     };
 
     NextMetadataResult generateNextMetadata(

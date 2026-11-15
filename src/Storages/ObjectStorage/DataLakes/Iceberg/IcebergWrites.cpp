@@ -1605,7 +1605,7 @@ bool IcebergStorageSink::initializeMetadata()
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
-    auto cleanup = [&] (bool retry_because_of_metadata_conflict)
+    auto cleanup = [&] (bool retry_because_of_metadata_conflict, bool remove_objects = true)
     {
         auto best_effort_remove = [&](const String & path)
         {
@@ -1619,11 +1619,14 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
-        if (!retry_because_of_metadata_conflict)
-            removeDataFilesAndManifests();
+        if (remove_objects)
+        {
+            /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
+            if (!retry_because_of_metadata_conflict)
+                removeDataFilesAndManifests();
 
-        best_effort_remove(storage_manifest_list_name);
+            best_effort_remove(storage_manifest_list_name);
+        }
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1675,7 +1678,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// The partition spec stays as on the first attempt. The manifests are already written with it.
         }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         /// On a retry the manifests are reused and only the manifest list is written.
@@ -1848,15 +1851,17 @@ bool IcebergStorageSink::initializeMetadata()
             if (catalog)
             {
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
-
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
                 {
+                    commit_result_unknown = false;
                     if (!catalog_writes_metadata_file)
                         removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                     cleanup(true);
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
 
@@ -1865,8 +1870,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
-        cleanup(false);
+        cleanup(false, /*remove_objects =*/!commit_result_unknown);
         throw;
     }
     return true;
