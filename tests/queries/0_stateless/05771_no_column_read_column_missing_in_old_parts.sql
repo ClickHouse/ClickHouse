@@ -107,3 +107,23 @@ ALTER TABLE t_recalculated UPDATE k = k, s = concat(s, 'x') WHERE 1 SETTINGS mut
 SELECT count() FROM t_recalculated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_recalculated SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_recalculated;
+
+DROP TABLE IF EXISTS t_update_target;
+CREATE TABLE t_update_target (k UInt8, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_update_target;
+INSERT INTO t_update_target SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_update_target UPDATE k = k WHERE 1 SETTINGS mutations_sync = 0;
+SELECT count() FROM t_update_target SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_update_target SETTINGS apply_mutations_on_fly = 1, query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+DROP TABLE t_update_target;
+
+DROP TABLE IF EXISTS t_patch_target;
+CREATE TABLE t_patch_target (k UInt8, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_patch_target;
+INSERT INTO t_patch_target SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+UPDATE t_patch_target SET k = k + 1 WHERE 1 SETTINGS enable_lightweight_update = 1;
+SELECT count() FROM t_patch_target SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_patch_target SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+DROP TABLE t_patch_target;

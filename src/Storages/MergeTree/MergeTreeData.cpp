@@ -80,7 +80,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -9916,61 +9915,31 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
 
 NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     const NamesAndTypesList & columns,
-    const ColumnsDescription & table_columns,
     const RangesInDataParts & parts,
     const MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & query_context)
 {
+    /// Only a pending drop or rename of a column or of its Nested parent changes what a part stores under its name.
     NameSet changed_on_fly;
-    if (mutations_snapshot)
+    if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
         changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
 
-    /// A pending data mutation recalculates on read a MATERIALIZED column whose expression reads a changed column.
-    if (mutations_snapshot && mutations_snapshot->hasDataMutations())
+    const bool resolve_per_part = std::ranges::any_of(columns, [&](const auto & column)
     {
-        MaterializedColumnDependencies dependencies(table_columns, query_context);
-        NameSet recalculated;
-        for (const auto & column : table_columns.getMaterialized())
-            if (!dependencies.findColumnsToRecalculate(column.name, changed_on_fly).empty())
-                recalculated.insert(column.name);
-        changed_on_fly.merge(recalculated);
-    }
-
-    /// A pending mutation of a column or of its Nested parent can change what a part stores under its name.
-    auto is_changed = [&](const String & name_in_storage)
-    {
+        const auto name_in_storage = column.getNameInStorage();
         const auto dot = name_in_storage.find('.');
         return changed_on_fly.contains(name_in_storage)
             || (dot != String::npos && changed_on_fly.contains(name_in_storage.substr(0, dot)));
-    };
+    });
 
     /// Parts with the same columns share one interned set of column positions, so each set is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
-    for (const auto & part : parts)
-        part_columns.insert(&part.data_part->getColumnPositions());
-
-    NamesAndTypesList result;
-    bool has_changed_columns = false;
-    for (const auto & column : columns)
-    {
-        const auto name_in_storage = column.getNameInStorage();
-        if (is_changed(name_in_storage))
-            has_changed_columns = true;
-        else if (std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
-            result.push_back(column);
-    }
-
-    if (!result.empty() || !has_changed_columns)
-        return result;
-
-    part_columns.clear();
     std::vector<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
 
-    const bool has_metadata_mutations = mutations_snapshot->hasMetadataMutations();
     for (const auto & part : parts)
     {
         MutationCommands metadata_commands;
-        if (has_metadata_mutations)
+        if (resolve_per_part)
         {
             for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
                 if (AlterConversions::isSupportedMetadataMutation(command.type))
@@ -10002,12 +9971,10 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
         });
     };
 
+    NamesAndTypesList result;
     for (const auto & column : columns)
-    {
-        const auto name_in_storage = column.getNameInStorage();
-        if (is_changed(name_in_storage) && is_stored(name_in_storage))
+        if (is_stored(column.getNameInStorage()))
             result.push_back(column);
-    }
     return result;
 }
 

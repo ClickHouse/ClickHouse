@@ -1340,12 +1340,10 @@ public:
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    /// The columns of `columns` that every part of `parts` stores, preferring those no pending mutation changes and
-    /// resolving pending drops and renames of the others as the reader does. Elsewhere the read computes the column's
-    /// default, which can read other columns and throw.
+    /// The columns of `columns` that every part of `parts` stores, resolving pending drops and renames as the reader
+    /// does. Elsewhere the read computes the column's default, which can read other columns and throw.
     static NamesAndTypesList getColumnsStoredInAllParts(
         const NamesAndTypesList & columns,
-        const ColumnsDescription & table_columns,
         const RangesInDataParts & parts,
         const MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & query_context);
