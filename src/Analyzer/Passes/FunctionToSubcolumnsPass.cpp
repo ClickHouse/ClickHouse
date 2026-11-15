@@ -1237,6 +1237,15 @@ bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
     return function_name != "distinctJSONPaths";
 }
 
+bool hidesFixedSortingKeyConstraint(const DataTypePtr & column_type, const String & function_name)
+{
+    /// `appendFixedColumnsFromFilterExpression` recognizes `empty(s)` on String / Nullable(String)
+    /// as fixing `s` to `''`. Rewriting `empty(s)` to `s.size = 0` drops the reference to `s`
+    /// and hides that fixed-column constraint from read-in-order and aggregation-in-order analysis
+    /// when `s` is in the sorting key outside a shortened primary key.
+    return function_name == "empty" && isString(removeNullable(column_type));
+}
+
 /// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
 /// from the same table) down to the underlying storage column. Used to let the function-to-subcolumn
 /// rewrite see through `c ALIAS some_storage_column` (possibly chained) and rewrite as if the query
@@ -1581,8 +1590,11 @@ public:
         return result;
     }
 
+    ColumnInSourceSet takeSortingKeyColumns() { return std::move(sorting_key_columns); }
+
 private:
     ColumnInSourceSet all_key_columns;
+    ColumnInSourceSet sorting_key_columns;
     ColumnInSourceMap<UInt64> identifiers_count;
     ColumnInSourceMap<UInt64> optimized_identifiers_count;
     /// Counts only uses of transformers from `transformers_safe_with_indexes`.
@@ -1631,6 +1643,9 @@ private:
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
             add_key_columns(index.expression->getRequiredColumns());
+
+        for (const auto & column_name : metadata_snapshot->getColumnsRequiredForSortingKey())
+            sorting_key_columns.insert(makeColumnInSource(column_source, column_name));
     }
 
     void enterImpl(const ColumnNode & column_node)
@@ -1664,6 +1679,12 @@ private:
         /// for the subcolumn in a join that carries the whole column - the query fails with
         /// `NOT_FOUND_COLUMN_IN_BLOCK`. Leave every use of such a column alone.
         if (correlated_columns.contains(qualified_name))
+            return;
+
+        /// `WITH` and `SELECT` are visited before `JOIN_TREE`, so populate `sorting_key_columns` eagerly.
+        enterColumnSource(column_source);
+        if (sorting_key_columns.contains(qualified_name)
+            && hidesFixedSortingKeyConstraint(column.type, function_node.getFunctionName()))
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
@@ -1718,6 +1739,7 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 {
 private:
     IdentifiersToOptimize identifiers_to_optimize;
+    ColumnInSourceSet sorting_key_columns;
     std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
 
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
@@ -1733,9 +1755,11 @@ public:
 
     FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
         IdentifiersToOptimize identifiers_to_optimize_,
+        ColumnInSourceSet sorting_key_columns_,
         std::unordered_set<const IQueryTreeNode *> outer_joined_tables_)
         : Base(std::move(context_))
         , identifiers_to_optimize(std::move(identifiers_to_optimize_))
+        , sorting_key_columns(std::move(sorting_key_columns_))
         , outer_joined_tables(std::move(outer_joined_tables_))
     {
     }
@@ -1785,6 +1809,10 @@ public:
             /// The first pass never counts a correlated use, but the identifier can still be in
             /// `filter_only` because of a use of the same column in the outer query's WHERE.
             if (correlated_columns.contains(qualified_name))
+                return;
+
+            if (sorting_key_columns.contains(qualified_name)
+                && hidesFixedSortingKeyConstraint(column.type, function_node->getFunctionName()))
                 return;
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
@@ -1931,7 +1959,11 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     /// Therefore, functions on Nullable columns from outer-joined tables cannot be optimized.
     GetOuterJoinedTablesVisitor outer_join_visitor(context);
     outer_join_visitor.visit(query_tree_node);
-    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize), std::move(outer_join_visitor.outer_joined_tables));
+    FunctionToSubcolumnsVisitorSecondPass second_visitor(
+        std::move(context),
+        std::move(identifiers_to_optimize),
+        first_visitor.takeSortingKeyColumns(),
+        std::move(outer_join_visitor.outer_joined_tables));
     second_visitor.visit(query_tree_node);
 }
 

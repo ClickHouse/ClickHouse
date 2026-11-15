@@ -424,6 +424,12 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                     addFixedColumn(maybe_fixed_column, fixed_columns);
             }
+            else if (name == "empty")
+            {
+                if (node->children.size() == 1 && !node->children[0]->column
+                    && isStringOrFixedString(removeNullable(removeLowCardinality(node->children[0]->result_type))))
+                    addFixedColumn(node->children[0], fixed_columns);
+            }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
                 if (node->children.size() == 2 && !node->children[0]->column
