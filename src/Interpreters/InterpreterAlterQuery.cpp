@@ -38,6 +38,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
@@ -57,6 +58,8 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+
+#include <unordered_set>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -204,7 +207,10 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 }
 
 /// The resolved type is spelled out in the query, so the hosts that replay it do not depend on the setting.
-void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
+/// `deferred_declarations` are the column declarations that keep the DEFAULT expressions inside their type,
+/// because they are going to be normalized on the hosts (see `pullUpTupleElementDefaultsInAlterQuery`).
+void applyDataTypeDefaultNullableToColumnDeclarations(
+    ASTAlterQuery & alter, const std::unordered_set<const IAST *> & deferred_declarations)
 {
     for (const auto & child : alter.command_list->children)
     {
@@ -216,6 +222,26 @@ void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
         auto & col_decl = command->col_decl->as<ASTColumnDeclaration &>();
         if (!col_decl.getType() || col_decl.null_modifier)
             continue;
+
+        if (deferred_declarations.contains(&col_decl))
+        {
+            /// The data type cannot be built while it carries DEFAULT expressions, so it is built from a copy
+            /// with the defaults pulled up (the references in the defaults do not matter for the type). The
+            /// type is wrapped in `Nullable` as written, which the pull-up on the hosts treats as transparent.
+            auto normalized = col_decl.clone();
+            pullUpTupleElementDefaults(
+                normalized->as<ASTColumnDeclaration &>(),
+                is_add ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::AsWritten,
+                [](const String &) { return true; });
+            DataTypePtr type = DataTypeFactory::instance().get(normalized->as<ASTColumnDeclaration &>().getType());
+            if (!type->isNullable())
+            {
+                /// Throws for a type that cannot be inside `Nullable`, as for any other declaration.
+                makeNullable(type);
+                col_decl.setType(makeASTDataType("Nullable", col_decl.getType()));
+            }
+            continue;
+        }
 
         /// Like `AlterCommand::parse`, only `ADD COLUMN` pins the current aggregate function state version.
         DataTypePtr type = is_add
@@ -234,10 +260,15 @@ using CommandSegments = std::vector<CommandSegment>;
 /// to have after the query tell a reference to an independent column with a dotted name (`c.a`) from a
 /// reference to a subcolumn of the column the default is written in. The table schema is consulted only
 /// after `check_access` succeeds, so that an unauthorized query cannot learn which columns exist.
-void pullUpTupleElementDefaultsInAlterQuery(
+/// An `ON CLUSTER` query may be submitted from a host that does not have the table. Then a declaration
+/// whose defaults need the schema is left as written: each host normalizes it against its own table when it
+/// executes the query, as this function runs there as well. Returns such declarations.
+std::unordered_set<const IAST *> pullUpTupleElementDefaultsInAlterQuery(
     ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, const std::function<void()> & check_access)
 {
     const auto & commands = alter.command_list->children;
+    const bool defer_to_hosts = !table && !alter.cluster.empty();
+    std::unordered_set<const IAST *> deferred_declarations;
 
     /// The columns of the table after the query, and the renames the query makes: the position of the
     /// command, the old name and the new name.
@@ -354,6 +385,7 @@ void pullUpTupleElementDefaultsInAlterQuery(
         if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
             continue;
 
+        bool needs_schema = false;
         auto is_table_column = [&, i](const String & name)
         {
             /// Checked even if the table does not exist, so that the outcome does not reveal whether it exists.
@@ -364,7 +396,12 @@ void pullUpTupleElementDefaultsInAlterQuery(
             }
 
             if (!table)
-                return false;
+            {
+                /// The missing table on this host does not mean that the name is not a column on the hosts.
+                /// The answer only lets the probe below complete; its result is discarded.
+                needs_schema = true;
+                return defer_to_hosts;
+            }
 
             if (!resulting_schema)
                 resulting_schema = build_resulting_schema();
@@ -380,13 +417,26 @@ void pullUpTupleElementDefaultsInAlterQuery(
 
         /// `AlterCommand::parse` pins the current state version for `ADD COLUMN` (on the workers as
         /// well), while `MODIFY COLUMN` keeps the version as written.
-        if (command.type == ASTAlterCommand::ADD_COLUMN)
-            pullUpTupleElementDefaults(
-                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent, is_table_column);
-        else
-            pullUpTupleElementDefaults(
-                command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten, is_table_column);
+        const auto state_version = command.type == ASTAlterCommand::ADD_COLUMN
+            ? TupleElementDefaultStateVersion::PinCurrent
+            : TupleElementDefaultStateVersion::AsWritten;
+        auto & col_decl = command.col_decl->as<ASTColumnDeclaration &>();
+
+        if (defer_to_hosts)
+        {
+            /// Probe a copy to find out whether the declaration needs the schema. Other errors are reported here.
+            auto probe = col_decl.clone();
+            pullUpTupleElementDefaults(probe->as<ASTColumnDeclaration &>(), state_version, is_table_column);
+            if (needs_schema)
+            {
+                deferred_declarations.insert(&col_decl);
+                continue;
+            }
+        }
+
+        pullUpTupleElementDefaults(col_decl, state_version, is_table_column);
     }
+    return deferred_declarations;
 }
 
 struct SegmentsHolder
@@ -811,7 +861,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// from the declaration and would reject a type that still carries element defaults.
     /// The schema of the table is consulted only for the privileges this query requires anyway (as checked
     /// below, or by `executeDDLQueryOnCluster`), so that the outcome does not reveal it to an unauthorized user.
-    pullUpTupleElementDefaultsInAlterQuery(
+    const auto deferred_declarations = pullUpTupleElementDefaultsInAlterQuery(
         query_ptr->as<ASTAlterQuery &>(),
         table,
         getContext(),
@@ -823,7 +873,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
         && !getContext()->getClientInfo().is_shared_catalog_internal)
-        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
+        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>(), deferred_declarations);
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
