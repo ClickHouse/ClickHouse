@@ -46,6 +46,13 @@ struct IdentifierLookup
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
 
+    /// Join tree resolution of an expression identifier that binds to columns of several joined tables
+    /// returns a result with `ambiguous_in_join_tree` set instead of throwing `AMBIGUOUS_IDENTIFIER`.
+    /// The caller decides whether another resolution path (aliases) can take over.
+    /// Participates in comparison and hashing, so such a lookup does not share an identifier resolve
+    /// cache entry with an ordinary expression lookup.
+    bool allow_ambiguous_join_tree_identifier = false;
+
     bool isExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::EXPRESSION;
@@ -69,7 +76,9 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName() && lhs.lookup_context == rhs.lookup_context;
+    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.allow_ambiguous_join_tree_identifier == rhs.allow_ambiguous_join_tree_identifier;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -81,7 +90,9 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName()) ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+            ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
+            ^ (static_cast<size_t>(identifier_lookup.allow_ambiguous_join_tree_identifier) << 9);
     }
 };
 
@@ -119,6 +130,15 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
+
+    /// Only for lookups with `allow_ambiguous_join_tree_identifier`: the identifier binds to columns
+    /// of several joined tables, so `resolved_identifier` is empty and no join tree column may win.
+    bool ambiguous_in_join_tree = false;
+
+    static IdentifierResolveResult ambiguousInJoinTree()
+    {
+        return { .resolved_identifier = nullptr, .resolve_place = IdentifierResolvePlace::NONE, .ambiguous_in_join_tree = true };
+    }
 
     explicit operator bool() const
     {
@@ -160,7 +180,7 @@ struct IdentifierResolveResult
     {
         if (!resolved_identifier)
         {
-            buffer << "unresolved";
+            buffer << (ambiguous_in_join_tree ? "ambiguous" : "unresolved");
             return;
         }
 
