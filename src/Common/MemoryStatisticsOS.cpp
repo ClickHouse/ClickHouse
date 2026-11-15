@@ -8,6 +8,9 @@
 #include <sys/sysctl.h>
 #include <sys/user.h>
 #endif
+#if defined(OS_DARWIN)
+#include <mach/mach.h>
+#endif
 #if defined(OS_SUNOS)
 #include <procfs.h>
 #endif
@@ -149,6 +152,26 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     data.resident = kp.ki_rssize * pagesize;
     data.code = kp.ki_tsize * pagesize;
     data.data_and_stack = (kp.ki_dsize + kp.ki_ssize) * pagesize;
+
+    return data;
+}
+
+#endif
+
+#if defined(OS_DARWIN)
+
+MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
+{
+    struct mach_task_basic_info info{};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+
+    kern_return_t res = task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &count);
+    if (res != KERN_SUCCESS)
+        throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Cannot get task_info(MACH_TASK_BASIC_INFO): {}", mach_error_string(res));
+
+    Data data{};
+    data.virt = info.virtual_size;
+    data.resident = info.resident_size;
 
     return data;
 }

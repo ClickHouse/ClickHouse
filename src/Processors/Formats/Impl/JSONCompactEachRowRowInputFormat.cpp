@@ -108,10 +108,10 @@ void JSONCompactEachRowFormatReader::skipRow()
     JSONUtils::skipRowForJSONCompactEachRow(*in);
 }
 
-std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
+VectorWithMemoryTracking<String> JSONCompactEachRowFormatReader::readHeaderRow()
 {
     skipRowStartDelimiter();
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     String field;
     do
     {
@@ -261,7 +261,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<JSONCompactEachRowRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), with_names, with_types, yield_strings, settings);
-            });
+            }, /*supports_reset_parser=*/ true);
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);

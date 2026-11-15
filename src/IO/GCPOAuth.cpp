@@ -1,5 +1,9 @@
 #include <IO/GCPOAuth.h>
 
+#include "config.h"
+
+#include <chrono>
+#include <sstream>
 #include <fmt/format.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -7,9 +11,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/URI.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <IO/HTTPCommon.h>
+
+#if USE_SSL
+#    include <Common/Crypto/KeyPair.h>
+#    include <Common/OpenSSLHelpers.h>
+#endif
 
 namespace DB
 {
@@ -17,10 +27,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+
+constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 GCPOAuthToken postTokenRequest(
     const std::string & token_endpoint,
@@ -69,12 +84,16 @@ GCPOAuthToken postTokenRequest(
     String token_json_raw;
     readStringUntilEOF(token_json_raw, *response_body);
 
+    /// The error response of the token endpoint (RFC 6749, section 5.2) carries `error` and `error_description`,
+    /// e.g. `invalid_grant` for an expired refresh token or an unknown service account, and no credentials.
+    static constexpr size_t max_error_response_size = 1024;
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(
             ErrorCodes::AUTHENTICATION_FAILED,
-            "Failed to obtain GCP access token: {} (HTTP {})",
+            "Failed to obtain GCP access token: {} (HTTP {}): {}",
             response.getReason(),
-            static_cast<int>(response.getStatus()));
+            static_cast<int>(response.getStatus()),
+            std::string_view(token_json_raw).substr(0, max_error_response_size));
 
     Poco::JSON::Parser parser;
     auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
@@ -144,6 +163,71 @@ GCPOAuthToken fetchGCPOAuthTokenWithJWTAssertion(
         encoded_assertion);
 
     return postTokenRequest(token_endpoint, body, timeouts, group);
+}
+
+GCPServiceAccountAssertion makeGCPServiceAccountAssertion(
+    const std::string & service_account_key,
+    [[maybe_unused]] const std::string & scope, /// Unused without SSL.
+    const std::string & token_endpoint_override)
+{
+    Poco::JSON::Object::Ptr key_object;
+    try
+    {
+        Poco::JSON::Parser parser;
+        key_object = parser.parse(service_account_key).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse Google service account key: {}", e.displayText());
+    }
+
+    if (!key_object || !key_object->has("client_email") || !key_object->has("private_key"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Google service account key must be a JSON object with 'client_email' and 'private_key' "
+            "(the content of a key file downloaded from Google Cloud IAM)");
+
+    const auto client_email = key_object->getValue<String>("client_email");
+    const auto private_key = key_object->getValue<String>("private_key");
+    String token_endpoint = GOOGLE_OAUTH2_TOKEN_ENDPOINT;
+    if (key_object->has("token_uri"))
+        token_endpoint = key_object->getValue<String>("token_uri");
+    if (!token_endpoint_override.empty())
+        token_endpoint = token_endpoint_override;
+
+#if USE_SSL
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    /// The claim set of a service account JWT, as specified in
+    /// https://developers.google.com/identity/protocols/oauth2/service-account#authorizingrequests (section "Creating a JWT"):
+    /// `iss` is the email of the service account, `scope` the requested scopes, `aud` the token endpoint,
+    /// `iat` and `exp` the issue and expiration times (seconds since the epoch, at most one hour apart).
+    Poco::JSON::Object claims;
+    claims.set("iss", client_email);
+    claims.set("scope", scope);
+    claims.set("aud", token_endpoint);
+    claims.set("iat", now);
+    claims.set("exp", now + 3600);
+
+    std::ostringstream claims_stream;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    claims.stringify(claims_stream);
+
+    static constexpr auto header = R"({"alg":"RS256","typ":"JWT"})";
+    String to_sign = fmt::format(
+        "{}.{}",
+        base64Encode(header, /*url_encoding*/ true, /*no_padding*/ true),
+        base64Encode(claims_stream.str(), /*url_encoding*/ true, /*no_padding*/ true));
+
+    auto key_pair = KeyPair::fromPEMString(private_key);
+    String signature = rsaSHA256Sign(static_cast<EVP_PKEY *>(key_pair), to_sign);
+
+    String assertion = fmt::format("{}.{}", to_sign, base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true));
+    return {std::move(assertion), std::move(token_endpoint)};
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Authentication with a Google service account key requires ClickHouse to be built with SSL support");
+#endif
 }
 
 }

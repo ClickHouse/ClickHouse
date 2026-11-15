@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -70,7 +71,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -222,7 +223,9 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        /// A write to a local shard runs this sink in a nested pipeline that a `KILL` of the query does not cancel.
+        auto query_status = context->getProcessListElementSafe();
+        storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
         is_first_chunk = false;
     }
 
@@ -496,7 +499,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
+                        context->getProcessListElementSafe()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }
