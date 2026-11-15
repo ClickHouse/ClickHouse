@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS tab_conversion;
 DROP TABLE IF EXISTS tab_rename_reuse;
 DROP TABLE IF EXISTS tab_other_default;
 DROP TABLE IF EXISTS tab_qualified;
+DROP TABLE IF EXISTS tab_dotted;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -120,8 +121,9 @@ WITH (SELECT vec FROM tab_renamed WHERE id = 123) AS ref
 SELECT id, e FROM tab_renamed ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
--- A default expression that does not use the vector column does not matter: the vectors are read only for the candidates.
--- It is a table of its own: a default expression that uses the vector column anywhere in a table disables the reads.
+-- A column that a part does not have is filled from its default expression before the candidates are filtered, so the
+-- vectors are read whole, even if the default does not use them. Once the column is materialized, only the candidates
+-- are read.
 CREATE TABLE tab_other_default
 (
     id UInt32,
@@ -143,6 +145,13 @@ SELECT 'other default, setting off';
 WITH (SELECT vec FROM tab_other_default WHERE id = 123) AS ref
 SELECT id, f FROM tab_other_default ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
+ALTER TABLE tab_other_default MATERIALIZE COLUMN f SETTINGS mutations_sync = 2;
+
+SELECT 'other default materialized, setting on';
+WITH (SELECT vec FROM tab_other_default WHERE id = 123) AS ref
+SELECT id, f FROM tab_other_default ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_other_default_materialized_on';
 
 -- With few prefetches allowed, a reader prefetched for one task is reused for the next tasks, and must read past the end
 -- of the range of the first task. The query must not fail; which rows the approximate index returns is not checked.
@@ -249,8 +258,8 @@ WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, m.d.x FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
--- A default expression naming the vector column with a qualifier, the only one of the table that uses it. A default
--- expression is checked against a table named `dummy`, so `dummy.vec` is accepted and resolves to the column.
+-- A default expression naming the vector column with a qualifier. A default expression is checked against a table named
+-- `dummy`, so `dummy.vec` is accepted and resolves to the column.
 CREATE TABLE tab_qualified
 (
     id UInt32,
@@ -273,13 +282,44 @@ WITH (SELECT vec FROM tab_qualified WHERE id = 123) AS ref
 SELECT id, d FROM tab_qualified ORDER BY cosineDistance(vec, ref) LIMIT 10
 SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- A column with a dot in its name, and later a default expression naming it with a qualifier. The indexed column is read
+-- as usual, and the column `a.b` only for the candidates until the default is added.
+CREATE TABLE tab_dotted
+(
+    id UInt32,
+    vec Array(Float32),
+    `a.b` Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128, share_nested_offsets = 0;
+
+INSERT INTO tab_dotted SELECT id, vec, vec FROM tab;
+
+SELECT 'dotted column, setting on';
+WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
+SELECT id, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_dotted_on';
+
+ALTER TABLE tab_dotted ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.a.b));
+
+SELECT 'dotted default, setting on';
+WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
+SELECT id, d, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_dotted_default_on';
+
+SELECT 'dotted default, setting off';
+WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
+SELECT id, d, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on', '05618_rename_reuse_on', '05618_nested_default_on',
-        '05618_nested_tuple_default_on', '05618_qualified_default_on')
+        '05618_nested_tuple_default_on', '05618_qualified_default_on', '05618_other_default_materialized_on', '05618_dotted_on', '05618_dotted_default_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
@@ -290,3 +330,4 @@ DROP TABLE tab_conversion;
 DROP TABLE tab_rename_reuse;
 DROP TABLE tab_other_default;
 DROP TABLE tab_qualified;
+DROP TABLE tab_dotted;

@@ -119,6 +119,17 @@ other default, setting off
 121	242
 680	1360
 101	202
+other default materialized, setting on
+123	246
+337	674
+1846	3692
+1571	3142
+1237	2474
+1107	2214
+413	826
+121	242
+680	1360
+101	202
 reused reader
 ok
 ok
@@ -219,13 +230,49 @@ qualified default, setting off
 121	1
 680	1
 101	1
+dotted column, setting on
+123	-0.74
+337	-0.246
+1846	-0.987
+1571	0.687
+1237	-0.399
+1107	-0.691
+413	-0.23
+121	-0.225
+680	-0.851
+101	-0.074
+dotted default, setting on
+123	1	-0.74
+337	1	-0.246
+1846	1	-0.987
+1571	1	0.687
+1237	1	-0.399
+1107	1	-0.691
+413	1	-0.23
+121	1	-0.225
+680	1	-0.851
+101	1	-0.074
+dotted default, setting off
+123	1	-0.74
+337	1	-0.246
+1846	1	-0.987
+1571	1	0.687
+1237	1	-0.399
+1107	1	-0.691
+413	1	-0.23
+121	1	-0.225
+680	1	-0.851
+101	1	-0.074
 05618_conversion_on	0
 05618_default_on	0
+05618_dotted_default_on	0
+05618_dotted_on	1
 05618_nested_default_on	0
 05618_nested_tuple_default_on	0
 05618_off	0
 05618_on	1
-05618_other_default_on	1
+05618_other_default_materialized_on	1
+05618_other_default_on	0
 05618_qualified_default_on	0
 05618_readded_on	0
 05618_rename_reuse_on	0

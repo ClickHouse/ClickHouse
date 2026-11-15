@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/MergeTreeOneRowPerBlockLayout.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnArray.h>
@@ -302,50 +301,6 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
-namespace
-{
-
-/// Whether a default expression of any column of the table uses one of `columns`. A default expression can be evaluated
-/// before the filter that keeps the selected rows, for a column that is not read from the part, and it would then use the
-/// placeholder values of the rows that are not selected. Which columns are computed from their defaults depends on how
-/// the requested columns are named (members of `Nested`, subcolumns, pending renames), so every default is checked.
-/// A chain of defaults ends in a default that uses one of `columns` directly, so the chains are not followed.
-bool defaultExpressionsUse(const ColumnsDescription & table_columns, const NameSet & columns)
-{
-    /// Any part of an identifier is compared: a column can be named with the table, such as `tab.vec`, and a subcolumn
-    /// uses its column, such as `vec.size0`. An identifier that only contains the name of such a column, such as the
-    /// parameter of a lambda, disables the reads as well.
-    auto uses_column = [&](const ASTIdentifier & identifier)
-    {
-        for (const auto & part : identifier.name_parts)
-        {
-            if (columns.contains(part))
-                return true;
-        }
-        return columns.contains(identifier.name());
-    };
-
-    for (const auto & [name, column_default] : table_columns.getDefaults())
-    {
-        if (!column_default.expression)
-            continue;
-
-        std::vector<const IAST *> nodes{column_default.expression.get()};
-        while (!nodes.empty())
-        {
-            const IAST * node = nodes.back();
-            nodes.pop_back();
-            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && uses_column(*identifier))
-                return true;
-            for (const auto & child : node->children)
-                nodes.push_back(child.get());
-        }
-    }
-    return false;
-}
-
-}
-
 void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 {
     one_row_per_block_readers.clear();
@@ -370,29 +325,42 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
 
     const auto & metadata = *storage_snapshot->metadata;
 
-    /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
-    std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
-    NameSet columns_with_placeholders;
+    /// A column of the table that the part does not have completely is filled after the read, and its default expression
+    /// is evaluated before the filter that keeps the selected rows, so it could use the placeholder values of the rows that
+    /// are not selected. Whether a default uses a column is not checked: a column can be named in many ways in an
+    /// expression. Virtual columns, such as `_part_offset`, are not in the part either, but are not computed from defaults.
+    if (!data_part_info_for_read->getSerializationInfos().getMissingColumns().empty())
+        return;
     auto requested_column = getColumns().begin();
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
     {
+        const bool is_virtual = !metadata.getColumns().has(requested_column->name) && metadata.virtuals.has(requested_column->name);
+        if (!is_virtual && (isColumnSkipped(pos) || isColumnAbsentFromPart(pos) || isColumnPartiallyRead(pos)))
+            return;
+    }
+
+    /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
+    std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
+    bool has_layouts = false;
+    requested_column = getColumns().begin();
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
+    {
         const auto & column = columns_to_read[pos];
-        if (column.isSubcolumn() || isColumnSkipped(pos) || isColumnAbsentFromPart(pos))
+        if (column.isSubcolumn())
             continue;
 
         /// A column with another type in the part than requested, during a pending `MODIFY COLUMN`, is converted
         /// before the filter, and the conversion could fail on the placeholder values. A column with another name in
-        /// the part, during a pending rename, would be checked below against the metadata and the default expressions
-        /// of another column, which can have its old name.
+        /// the part, during a pending rename, would be checked below against the metadata of another column, which can
+        /// have its old name.
         if (!column.type->equals(*requested_column->type) || column.getNameInStorage() != requested_column->getNameInStorage())
             continue;
 
         layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);
-        if (layouts[pos])
-            columns_with_placeholders.insert(column.getNameInStorage());
+        has_layouts = has_layouts || layouts[pos].has_value();
     }
 
-    if (columns_with_placeholders.empty() || defaultExpressionsUse(metadata.getColumns(), columns_with_placeholders))
+    if (!has_layouts)
         return;
 
     std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> readers(columns_to_read.size());
