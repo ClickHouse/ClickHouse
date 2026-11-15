@@ -41,7 +41,7 @@ send_filter()
     ${CLICKHOUSE_CLIENT} --query "
         SELECT sum(id) FROM remote('127.0.0.2', currentDatabase(), ${view_name}, '$2', '$3')
         SETTINGS cluster_table_function_pushed_down_filter = '$1', serialize_query_plan = 0, enable_parallel_replicas = 0" 2>&1 \
-        | grep -o -m1 -E 'has no value|has no record|only a set of values is allowed|is not a StorageSet|UNKNOWN_TABLE|ACCESS_DENIED' || true
+        | grep -o -m1 -E 'has no value|has no record|but its child has type|cannot have the node|only a set of values is allowed|is not a StorageSet|UNKNOWN_TABLE|ACCESS_DENIED' || true
 }
 
 # `base64Encode` is not in every build, so the bytes are encoded by `base64`.
@@ -60,6 +60,12 @@ send_filter 'AwACaWQEAAABAXMhAAMBAQIDBAUGBwgJCgsMDQ4PEAQBZgECAAEAAmluAQABAgA=' d
 set_hash="0102030405060708090a0b0c0d0e0f10"
 other_set_hash="1112131415161718191a1b1c1d1e1f20"
 send_filter "$(hex_filter "0201017321000101${set_hash}01017421000101${other_set_hash}00010001${set_hash}020101040100000000000000")" default ''
+
+# `equals(a, t)`, where `a` is an alias of type `Tuple(UInt64)` of a constant `n` of type `UInt64`, and `t` is a tuple constant.
+send_filter 'BAEBbgQAAwEAAAAAAAAAAgFhHwEEAQAAAQF0HwEEAAMBAAAAAAAAAAQBZgECAQIABmVxdWFscwABAwA=' default ''
+
+# `arrayJoin` of a constant `[1]` of type `Array(UInt8)`, as the only output. It is well-formed, but no initiator sends it.
+send_filter "$(hex_filter "020101631e010003010103016a0101000000010100")" default ''
 
 # One `COLUMN` node `s` of type `Set`, as the only output, and the record of its set, which starts with its kind:
 # 1 is a `StorageSet` named by the string that follows, 3 is a plan of a subquery.

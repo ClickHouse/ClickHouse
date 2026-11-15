@@ -173,6 +173,10 @@ void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & c
     QueryPlan::deserializeAndMakeSets(registry, in, context, max_type_complexity);
     if (filter.getOutputs().size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "A filter pushed down by the initiator must have one output, got {}", filter.getOutputs().size());
+    /// The initiator sends no lambda and no `arrayJoin` (see `isSerializableFilterNode`), so neither is accepted from a client.
+    for (const auto & node : filter.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN || WhichDataType(node.result_type).isFunction())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A filter pushed down by the initiator cannot have the node {}", node.result_name);
 
     const auto header = query_plan.getCurrentHeader();
     std::unordered_map<String, const ActionsDAG::Node *> inputs;
