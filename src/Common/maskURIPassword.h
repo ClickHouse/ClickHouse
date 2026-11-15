@@ -154,69 +154,186 @@ inline std::pair<size_t, size_t> findURIPasswordRange(std::string_view text, std
 /// Replace the passwords `findURIPasswordRange` finds with `[HIDDEN]`. Returns whether anything was masked.
 inline bool maskURIPassword(std::string & uri, std::string_view authority_terminators = "/")
 {
-    bool on_url_start = true;
-    std::string result;
-    auto current = std::string_view(uri);
-    size_t uncopied_start = 0;
-    size_t uncopied_end = 0;
-    const size_t original_size = uri.size();
-    while (uncopied_end < original_size)
+    constexpr std::string_view url_legal_delimiters = "-._~!$&'()*+,;=";
+    const auto original_size = uri.size();
+    size_t uncopied_offset = 0;
+    auto parse_schema = [&](size_t offset) -> size_t
     {
-        current = std::string_view(uri).substr(uncopied_end);
-        size_t url_end = current.find("|");
-        if (url_end != std::string::npos)
+        size_t initial_offset = offset;
+        while (offset < original_size - 3)
         {
-            current = current.substr(0, url_end);
-            url_end = uncopied_end + url_end;
-        }
-
-        auto [password_begin, password_end] = findURIPasswordRange(current, authority_terminators);
-        if (password_begin == std::string::npos)
-        {
-            if (!on_url_start)
+            if (const char c = uri[offset]; ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '+' || c == '.' || c == '-' || ('0' <= c && c <= '9'))
             {
-                if (url_end != std::string::npos)
-                {
-                    uncopied_end = url_end + 1;
-                    on_url_start = true;
-                    continue;
-                }
-                break;
+                ++offset;
             }
-            if (current.starts_with("//"))
+            else if (c == ':' && uri[offset + 1] == '/' && uri[offset + 2] == '/')
             {
-                std::tie(password_begin, password_end) = findURIPasswordRange(current.substr(2), authority_terminators, true);
-                if (password_begin != std::string::npos)
-                {
-                    password_begin += 2;
-                    password_end += 2;
-                }
+                return offset + 3;
             } else
             {
-                std::tie(password_begin, password_end) = findURIPasswordRange(current, authority_terminators, true);
-            }
-            if (password_begin == std::string::npos)
-            {
-                if (url_end != std::string::npos)
+                if (!url_legal_delimiters.contains(c))
                 {
-                    uncopied_end = url_end + 1;
+                    ++offset;
                     continue;
                 }
                 break;
             }
         }
-        uncopied_end += password_begin;
-        result.append(uri, uncopied_start, uncopied_end - uncopied_start);
-        result.append(HIDDEN_SECRET);
-        on_url_start = false;
-        uncopied_end += password_end - password_begin;
-        uncopied_start = uncopied_end;
+        return initial_offset;
+    };
+    auto parse_schema_from_root = [&](this auto & self, size_t offset) -> size_t
+    {
+        size_t initial_offset = offset;
+        if (offset < original_size - 2 && uri[offset] == '/' && uri[offset + 1] == '/')
+        {
+            return offset + 2;
+        }
+        while (offset < original_size - 3)
+        {
+            if (const char c = uri[offset]; ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '+' || c == '.' || c == '-' || ('0' <= c && c <= '9'))
+            {
+                ++offset;
+            }
+            else if (c == ':')
+            {
+                if (uri[offset + 1] == '/' && uri[offset + 2] == '/')
+                {
+                    return offset + 3;
+                }
+                break;
+            } else
+            {
+                if (!url_legal_delimiters.contains(c))
+                {
+                    if (c == '@')
+                    {
+                        break;
+                    }
+                    if (c =='|')
+                    {
+                        return self(offset + 1);
+                    }
+                    return parse_schema(offset + 1);
+                }
+                break;
+            }
+        }
+        return initial_offset;
+    };
+    std::string result;
+    auto parse_userinfo = [&](size_t offset) -> size_t
+    {
+        const size_t initial_offset = offset;
+        size_t last_at = std::string_view::npos;
+        size_t first_colon = std::string_view::npos;
+        while (offset < original_size)
+        {
+            if (const char c = uri[offset]; c == '@')
+            {
+                last_at = offset;
+            }
+            else if (c == ':' && first_colon == std::string_view::npos)
+            {
+                first_colon = offset;
+            }
+            else if (authority_terminators.contains(c))
+            {
+                if (first_colon == std::string_view::npos || (last_at != std::string::npos && first_colon < last_at) || isURIHostAndPort(std::string_view(uri).substr(initial_offset, offset - initial_offset)))
+                {
+                    break;
+                }
+            } else if (c == '|' && first_colon == std::string_view::npos)
+            {
+                break;
+            }
+            offset++;
+        }
+        if (last_at != std::string_view::npos)
+        {
+            if (first_colon == std::string_view::npos)
+            {
+                first_colon = initial_offset - 1;
+            }
+            result.append(uri, uncopied_offset, first_colon - uncopied_offset + 1);
+            result.append(HIDDEN_SECRET);
+            uncopied_offset = last_at;
+        }
+        return offset;
+    };
+    for (size_t i = 0; i < original_size;) {
+        i = parse_schema_from_root(i);
+        if (i < original_size)
+        {
+            i = parse_userinfo(i);
+        }
+        if (i < original_size)
+        {
+            if (uri[i] == '/')
+            {
+                const auto query_or_next_url = uri.find_first_of("?|", i + 1);
+                if (query_or_next_url == std::string_view::npos)
+                {
+                    const size_t s = i + 1;
+                    i = parse_schema(s);
+                    if (i == s)
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                if (uri[query_or_next_url] == '?')
+                {
+                    const auto next_param_val = uri.find_first_of("=|", query_or_next_url + 1);
+                    if (next_param_val == std::string_view::npos)
+                    {
+                        break;
+                    }
+                    if (uri[next_param_val] == '|')
+                    {
+                        i = next_param_val + 1;
+                    } else
+                    {
+                        i = next_param_val + 1;
+                        const auto param_schema_len = parse_schema_from_root(i) - i;
+                        if (param_schema_len > 2)
+                        {
+                            i = parse_userinfo(i + param_schema_len);
+                        } else
+                        {
+                            //TODO
+                            break;
+                        }
+                    }
+                } else
+                {
+                    i = query_or_next_url + 1;
+                }
+            }
+            else if (uri[i] == '|')
+            {
+                i++;
+            }
+            else if (!url_legal_delimiters.contains(uri[i]))
+            {
+                const size_t s = i + 1;
+                i = parse_schema(s);
+                if (i == s)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                // TODO
+                break;
+            }
+        }
     }
-    if (uncopied_start == 0)
+    if (uncopied_offset == 0)
     {
         return false;
     }
-    result.append(uri, uncopied_start, original_size - uncopied_start);
+    result.append(uri, uncopied_offset);
     uri = result;
     return true;
 }
