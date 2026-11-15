@@ -1255,6 +1255,10 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
 
         /// `serializeDynamicPathsAndSharedDataIntoArena` writes every path of a row once. A path repeated
         /// in the row would get several values in a column of a dynamic path, or break the order of shared data.
+        /// Typed paths are deserialized before, so a typed path here would be a second value of it.
+        if (typed_paths.contains(path))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Typed path '{}' in dynamic paths of a serialized value of JSON column", path);
+
         /// Check if we have this path in dynamic paths.
         if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
         {
