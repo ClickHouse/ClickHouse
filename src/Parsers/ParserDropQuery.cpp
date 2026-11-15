@@ -492,6 +492,7 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 <Note>
 For non-replicated `MergeTree` tables the removed parts stay on disk as inactive parts for `old_parts_lifetime` seconds. Use `SETTINGS truncate_removes_parts_immediately = 1` to remove them at once.
+For `ReplicatedMergeTree` tables the removed parts are deleted at once, because `TRUNCATE` is executed on every replica as a `DROP_RANGE` log entry, like `DROP PARTITION`.
 </Note>
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
