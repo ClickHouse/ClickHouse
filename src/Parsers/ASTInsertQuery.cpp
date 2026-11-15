@@ -18,7 +18,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/CompressionMethod.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -405,7 +405,7 @@ CompressionMethod ASTInsertQuery::resolveCompressionMethod(CompressionMethod aut
     String compression_method_string = compression_method_node.value.safeGet<std::string>();
     /// `chooseCompressionMethod` matches every hint case-insensitively; do the same for 'auto' so
     /// `COMPRESSION 'AUTO'` uses `auto_fallback` instead of silently resolving to `None`.
-    boost::algorithm::to_lower(compression_method_string);
+    toLowerASCII(compression_method_string);
     if (compression_method_string == "auto")
         return auto_fallback;
     return chooseCompressionMethod("", compression_method_string);
