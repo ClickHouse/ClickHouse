@@ -21,7 +21,6 @@ CREATE TABLE t_autopr_skip_index (key UInt64, np UInt64, INDEX ix_np np TYPE min
 INSERT INTO t_autopr_skip_index SELECT number, number FROM numbers(400000);
 OPTIMIZE TABLE t_autopr_skip_index FINAL;
 
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;

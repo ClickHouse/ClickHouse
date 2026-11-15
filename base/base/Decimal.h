@@ -92,8 +92,8 @@ struct Decimal
     template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
-    /// Adds with wrap-around and without UB (e.g. for `timestamp`).
-    void NO_SANITIZE_UNDEFINED addOverflow(const T & x);
+    /// Adds with wrap-around and without UB (e.g. for `timestamp`). Defined here rather than in Decimal.cpp so that it can be inlined.
+    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
 
     T value;
 };

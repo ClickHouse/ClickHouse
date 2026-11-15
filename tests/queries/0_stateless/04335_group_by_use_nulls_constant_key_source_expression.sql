@@ -10,7 +10,6 @@
 -- projection of `a` must keep `toUInt8` as its source, so `toUInt8` appears as a source expression
 -- twice (the projection of `a` and the GROUP BY key `a`). When mis-bound it appears only once.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 SELECT countIf(explain LIKE '%function_name: toUInt8%') AS toUInt8_source_count

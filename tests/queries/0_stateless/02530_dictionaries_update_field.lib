@@ -49,7 +49,7 @@ function run_test_with_layout()
 
             INSERT INTO table_for_update_field_dictionary VALUES (1, 'First', now());"
 
-        while true
+        while clickhouse_test_time_left
         do
             $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'First' && break;
             sleep .1;
@@ -57,7 +57,7 @@ function run_test_with_layout()
 
         $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now()+5);"
 
-        while true
+        while clickhouse_test_time_left
         do
             $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'Second' && break;
             sleep .1;
@@ -65,7 +65,7 @@ function run_test_with_layout()
 
         $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now()+10), (3, 'Third', now()+10)"
 
-        while true
+        while clickhouse_test_time_left
         do
             $CLICKHOUSE_CLIENT --query "SELECT key, value FROM $dictionary_name ORDER BY key ASC" | grep -A10 -B10 'SecondUpdated' && break;
             sleep .1;

@@ -6,6 +6,7 @@
 #include <Client/IServerConnection.h>
 #include <Client/LocalConnection.h>
 #include <Client/LineReader.h>
+#include <Common/ThreadWithStackSize.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ConnectionTimeouts.h>
 #include <atomic>
@@ -59,7 +60,13 @@ private:
     void fillWordsFromBlock(const Block & block);
 
     /// Words are fetched asynchronously.
-    std::thread loading_thread;
+    /// `clickhouse-local` runs the suggestion query in this thread, which needs more than macOS' 512 KiB `std::thread` stack.
+#if defined(OS_DARWIN)
+    using LoadingThread = ThreadWithStackSize;
+#else
+    using LoadingThread = std::thread;
+#endif
+    LoadingThread loading_thread;
 
     std::atomic<int> last_error { -1 };
 

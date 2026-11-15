@@ -59,10 +59,19 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
         findSecretSettingArguments(spec);
 }
 
-void FunctionSecretArgumentsFinder::maskEveryArgument()
+void FunctionSecretArgumentsFinder::maskEveryArgument(bool keep_identifier_keys)
 {
     for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
-        markSecretArgument(i);
+    {
+        bool named = false;
+        if (keep_identifier_keys)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            named = equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2
+                && equals->arguments->at(0)->isIdentifier();
+        }
+        markSecretArgument(i, named);
+    }
 }
 
 bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFunction & function)

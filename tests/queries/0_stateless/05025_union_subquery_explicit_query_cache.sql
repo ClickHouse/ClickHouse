@@ -7,7 +7,9 @@
 -- for a plain subquery - otherwise the explicit opt-in is silently ignored for the union as a whole and
 -- only the last arm (which also stores the clause, so that the AST round-trip keeps it) gets cached.
 
-SET allow_experimental_analyzer = 1;
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 SYSTEM DROP QUERY CACHE TAG '05025_union_in';
 SYSTEM DROP QUERY CACHE TAG '05025_union_out';

@@ -19,7 +19,6 @@ SELECT count() FROM t_memory_count WHERE k < 100;
 
 -- A materialized CTE is filled during query execution, so its count() must not be
 -- served from the (empty at planning time) storage metadata.
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 WITH cte AS MATERIALIZED (SELECT number FROM numbers(42)) SELECT count() FROM cte;
 

@@ -179,8 +179,6 @@ DROP TABLE pipe_settings_view;
 -- SETTINGS goes before INTERPOLATE in the generated wrapper, as in an ordinary SELECT query
 SELECT 1 AS x, 10 AS y |> ORDER BY x WITH FILL FROM 1 TO 4 INTERPOLATE (y AS y + 1) SETTINGS max_threads = 1;
 
-SET enable_analyzer = 1;
-
 SELECT '-- The resulting AST is the same as with nested subqueries';
 EXPLAIN SYNTAX oneline = 1 FROM orders |> WHERE cancelled = 0 |> AGGREGATE sum(amount) AS total GROUP BY customer |> ORDER BY total DESC |> LIMIT 3;
 EXPLAIN SYNTAX oneline = 1 FROM orders |> SET amount = amount + 1 |> DROP cancelled |> AS t |> LEFT JOIN big_orders AS b USING (customer);

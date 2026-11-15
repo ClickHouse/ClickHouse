@@ -369,7 +369,7 @@ SELECT tupleElement(accurateCastOrNull(tuple(3, 4), 'Point'), 1), tupleElement(a
 -- Nullable target elements inside Tuple.
 SELECT accurateCastOrNull(tuple(1, 2), 'Tuple(Nullable(Float64), Nullable(Float64))') AS r, toTypeName(r);
 SELECT toTypeName(accurateCastOrNull(tuple(1, 2), 'Tuple(Nullable(Float64), Nullable(Float64))'));
-SELECT accurateCastOrNull((SELECT modulo(intDiv(intDiv(plus((SELECT DISTINCT toInt128(2147483646) QUALIFY minus(256, -1) LIMIT 100, 7), accurateCastOrNull('\'', 'Int8')), (SELECT 1023 GROUP BY 1)), intDiv(-2147483648, 100)), NULL), -9223372036854775808 LIMIT -2147483647), 'Point') AS r, toTypeName(r) SETTINGS enable_analyzer = 1;
+SELECT accurateCastOrNull((SELECT modulo(intDiv(intDiv(plus((SELECT DISTINCT toInt128(2147483646) QUALIFY minus(256, -1) LIMIT 100, 7), accurateCastOrNull('\'', 'Int8')), (SELECT 1023 GROUP BY 1)), intDiv(-2147483648, 100)), NULL), -9223372036854775808 LIMIT -2147483647), 'Point') AS r, toTypeName(r);
 
 -- =====================
 -- LowCardinality inside Tuple.

@@ -11,7 +11,6 @@
 
 -- The guards live in the analyzer pass and the planner, and the `QUALIFY` query below
 -- does not even parse into a plan with the old analyzer.
-SET enable_analyzer = 1;
 
 SET optimize_trivial_group_by_limit_query = 1;
 SET max_threads = 16;

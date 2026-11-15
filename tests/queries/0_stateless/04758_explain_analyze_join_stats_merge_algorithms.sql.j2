@@ -10,8 +10,6 @@
 -- side is already sorted, hence `optimize_read_in_order = 0`. `ASOF` is never sharded, its trailing key
 -- is an inequality, so it gets its own case asserting the group is absent.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 CREATE TABLE t1 (x UInt64, t UInt64) ENGINE = MergeTree ORDER BY x;

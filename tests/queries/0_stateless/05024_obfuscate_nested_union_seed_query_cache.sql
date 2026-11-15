@@ -14,8 +14,6 @@
 --
 -- `obfuscate` is an effectively infinite, repeating source, so every read of it needs an explicit `LIMIT`.
 
-SET allow_experimental_analyzer = 1;
-
 -- A unique `query_cache_tag` keeps the entry isolated from other tests sharing the server-global cache.
 SYSTEM DROP QUERY CACHE TAG '05024_obfuscate_nested_union';
 
