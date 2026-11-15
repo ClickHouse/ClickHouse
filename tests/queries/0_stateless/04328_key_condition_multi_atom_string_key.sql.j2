@@ -1,0 +1,64 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+-- The sparsity-stats trivial count would answer both counts of the `empty(s)` / `notEmpty(s)` checks from
+-- per-column counters, with neither index analysis nor a scan, so they would not test the key condition.
+SET optimize_trivial_count_with_sparsity_filter = 0;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_str_sub (s String) ENGINE = MergeTree ORDER BY (substring(s, 1, 2), s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_str_sub VALUES (''), ('aaa'), ('aab'), ('ab_'), ('aba'), ('abc'), ('abcz'), ('abz'), ('aca'), ('acd'), ('baa'), ('xyz');
+
+-- Equality produces an exact atom on `s` and a relaxed atom on `substring(s, 1, 2)`.
+-- The direct atom preserves exactness while both atoms contribute to pruning.
+{{ check('test_str_sub', "s = 'abc'", condition = true) }}
+{{ check('test_str_sub', "s IN ('abc', 'xyz')") }}
+-- Pattern functions: perfect prefix.
+{{ check('test_str_sub', "s LIKE 'ab%'") }}
+{{ check('test_str_sub', "startsWith(s, 'ab')") }}
+{{ check('test_str_sub', "match(s, '^ab')") }}
+-- Common prefix of alternation branches.
+{{ check('test_str_sub', "match(s, '^(abc|abd)')") }}
+-- notLike requires a perfect prefix and produces an exact complement range.
+{{ check('test_str_sub', "s NOT LIKE 'ab%'") }}
+-- Imperfect prefix: the atom is relaxed; results must stay exact.
+{{ check('test_str_sub', "s LIKE 'ab%z'") }}
+-- No extractable prefix: full scan.
+{{ check('test_str_sub', "s LIKE '%ab'") }}
+-- has(const_array, key) builds wrapped set atoms for the substring key column too.
+{{ check('test_str_sub', "has(['abc', 'xyz'], s)", condition = true) }}
+-- Constant on the left: inequality is mirrored.
+{{ check('test_str_sub', "'ab' < s") }}
+-- empty/notEmpty over the String key column.
+{{ check('test_str_sub', "empty(s)") }}
+{{ check('test_str_sub', "notEmpty(s)") }}
+
+-- Key is only a non-injective hash of the column: equality prunes through the hash,
+-- negated equality is relaxed and must not prune away rows.
+CREATE TABLE test_str_hash (s String) ENGINE = MergeTree ORDER BY cityHash64(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_str_hash VALUES ('a'), ('b'), ('c'), ('d');
+
+{{ check('test_str_hash', "s = 'a'", condition = true) }}
+{{ check('test_str_hash', "s != 'a'") }}
+
+-- Mixed key: the direct column plus a non-injective hash of it. IN and has build the
+-- direct set atom on s plus the wrapped set atom on cityHash64(s).
+CREATE TABLE test_str_mixed (s String) ENGINE = MergeTree ORDER BY (cityHash64(s), s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_str_mixed VALUES ('a'), ('b'), ('c'), ('d'), ('e'), ('f');
+
+{{ check('test_str_mixed', "s IN ('b', 'e')", condition = true) }}
+{{ check('test_str_mixed', "has(['b', 'e'], s)") }}

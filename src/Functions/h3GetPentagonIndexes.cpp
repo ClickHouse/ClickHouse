@@ -19,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -40,16 +39,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 1, getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(UInt8) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -127,9 +119,9 @@ Returns all the pentagon [H3](#h3-index) indices at the specified resolution.
             "Get all pentagon indices at resolution 3",
             "SELECT h3GetPentagonIndexes(3) AS indexes",
             R"(
-┌─indexes────────────────────────────────────────────────────────┐
-│ [590112357393367039,590464201114255359,590816044835143679,...] │
-└────────────────────────────────────────────────────────────────┘
+┌─indexes───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,591308626044387327,591695654137364479,592012313486163967,592188235346608127,592504894695407615,592891922788384767,593384503997628415,593736347718516735,594088191439405055] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"
         }
     };

@@ -8,7 +8,6 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 03775_join, 03775_data"
 
 # Check with both temporary and regular tables
 # Explicitly set settings:
-# - enable_analyzer = 1 -- old analyzer rewrites table identifiers to use current database before resolving them in joinGet
 # - enable_parallel_replicas = 0 -- temporary table won't be available for secondary parallel replicas queries
 $CLICKHOUSE_CLIENT -nm -q "
     CREATE TABLE 03775_data (key UInt32) ENGINE = MergeTree ORDER BY tuple() AS SELECT number FROM numbers(5);
@@ -19,8 +18,8 @@ $CLICKHOUSE_CLIENT -nm -q "
     SELECT '-- Assert joinGet table resolved to temporary';
     SELECT joinGet('03775_join', 'val', 1::UInt32);
     SELECT joinGet('03775_join', 'val', 2::UInt32);
-    SELECT joinGet(03775_join, 'val', 3::UInt32) SETTINGS enable_analyzer = 1;
-    SELECT joinGet(03775_join, 'val', 4::UInt32) SETTINGS enable_analyzer = 1;
+    SELECT joinGet(03775_join, 'val', 3::UInt32);
+    SELECT joinGet(03775_join, 'val', 4::UInt32);
 
     SELECT '----';
     SELECT key, joinGet('03775_join', 'val', key) FROM 03775_data ORDER BY 1 SETTINGS enable_parallel_replicas = 0;

@@ -9,14 +9,21 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com) هي منصة تحليلات مضمّنة تتيح لك إنشاء لوحات معلومات تفاعلية ومقاييس وتصورات للبيانات ومشاركتها مع عملائك. يتصل Databrain بـ ClickHouse عبر واجهة HTTPS، مما يسهّل تصور بياناتك في ClickHouse وتحليلها من خلال واجهة حديثة وسهلة الاستخدام.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -31,75 +38,93 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 * مساحة عمل في Databrain لربط مصدر البيانات.
 
 <div id="steps-to-connect-databrain-to-clickhouse">
-  ## خطوات ربط Databrain بـ ClickHouse
+  ## خطوات توصيل Databrain بـ ClickHouse
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. جهّز تفاصيل الاتصال الخاصة بك
-</div>
+<Steps>
+  <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="اسمح بعناوين IP الخاصة بـ Databrain (إذا لزم الأمر)" id="2-allow-databrain-ip-addresses">
+    إذا كان IP filtering مفعّلًا في مثيل ClickHouse لديك، فستحتاج إلى إضافة عناوين IP الخاصة بـ Databrain إلى القائمة المسموح بها.
 
-<div id="2-allow-databrain-ip-addresses">
-  ### 2. السماح بعناوين IP الخاصة بـ Databrain (عند الحاجة)
-</div>
+    لمستخدمي ClickHouse Cloud:
 
-إذا كانت تصفية IP مفعّلة على مثيل ClickHouse لديك، فستحتاج إلى إدراج عناوين IP الخاصة بـ Databrain في قائمة السماح.
+    1. انتقل إلى خدمتك في ClickHouse Cloud console
+    2. انتقل إلى **Settings** → **Security**
+    3. أضف عناوين IP الخاصة بـ Databrain إلى allow list
 
-لمستخدمي ClickHouse Cloud:
+    <Tip>
+      ارجع إلى [وثائق السماح لعناوين IP الخاصة بـ Databrain](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip) للاطلاع على القائمة الحالية لعناوين IP التي يجب إضافتها إلى القائمة المسموح بها.
+    </Tip>
+  </Step>
 
-1. انتقل إلى خدمتك في وحدة تحكم ClickHouse Cloud
-2. انتقل إلى **Settings** → **Security**
-3. أضف عناوين IP الخاصة بـ Databrain إلى قائمة السماح
+  <Step title="أضف ClickHouse كمصدر بيانات في Databrain" id="3-add-clickhouse-as-a-data-source">
+    1. سجّل الدخول إلى حسابك في Databrain، ثم انتقل إلى مساحة العمل التي تريد إضافة مصدر البيانات إليها.
 
-<Tip>
-  راجع [وثائق Databrain الخاصة بإضافة عناوين IP إلى قائمة السماح](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip) للاطلاع على القائمة الحالية لعناوين IP التي يجب إدراجها في قائمة السماح.
-</Tip>
+    2. انقر على **Data Sources** في قائمة التنقل.
 
-<div id="3-add-clickhouse-as-a-data-source">
-  ### 3. أضف ClickHouse كمصدر بيانات في Databrain
-</div>
+    <div className="ch-image-md">
 
-1. سجّل الدخول إلى حسابك في Databrain، ثم انتقل إلى مساحة العمل التي تريد إضافة مصدر البيانات إليها.
+    <Frame>
 
-2. انقر على **Data Sources** في قائمة التنقل.
+    ![قائمة مصادر البيانات في Databrain](/images/integrations/data-visualization/databrain_02.webp)
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="قائمة مصادر البيانات في Databrain" border />
+    </Frame>
 
-3. انقر على **Add a Data Source** أو **Connect Data Source**.
+    </div>
 
-4. حدّد **ClickHouse** من قائمة الموصلات المتاحة.
+    3. انقر على **Add a Data Source** أو **Connect Data Source**.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="اختيار الموصل في Databrain مع ظهور خيار ClickHouse" border />
+    4. حدّد **ClickHouse** من قائمة الموصلات المتاحة.
 
-5. املأ تفاصيل الاتصال:
-   * **Destination Name**: أدخل اسمًا وصفيًا لهذا الاتصال (مثل: &quot;ClickHouse للإنتاج&quot; أو &quot;Analytics DB&quot;)
-   * **Host**: أدخل عنوان URL لمضيف ClickHouse (مثل: `https://your-instance.region.aws.clickhouse.cloud`)
-   * **Port**: أدخل `8443` (منفذ HTTPS الافتراضي لـ ClickHouse)
-   * **Username**: أدخل اسم مستخدم ClickHouse
-   * **Password**: أدخل كلمة مرور ClickHouse
+    <div className="ch-image-md">
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="نموذج اتصال ClickHouse في Databrain مع حقول الإعداد" border />
+    <Frame>
 
-6. انقر على **Test Connection** للتحقق من أن Databrain يمكنه الاتصال بمثيل ClickHouse لديك.
+    ![اختيار الموصل في Databrain مع ظهور خيار ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
 
-7. بعد نجاح الاتصال، انقر على **Save** أو **Connect** لإضافة مصدر البيانات.
+    </Frame>
 
-<div id="4-configure-user-permissions">
-  ### 4. إعداد أذونات المستخدم
-</div>
+    </div>
 
-تأكد من أن مستخدم ClickHouse الذي تتصل باستخدامه لديه الأذونات اللازمة:
+    5. املأ تفاصيل الاتصال:
+       * **Destination Name**: أدخل اسمًا وصفيًا لهذا الاتصال (مثل: &quot;ClickHouse للإنتاج&quot; أو &quot;Analytics DB&quot;)
+       * **Host**: أدخل عنوان URL لمضيف ClickHouse (مثل: `https://your-instance.region.aws.clickhouse.cloud`)
+       * **Port**: أدخل `8443` (منفذ HTTPS الافتراضي لـ ClickHouse)
+       * **Username**: أدخل اسم مستخدم ClickHouse
+       * **Password**: أدخل كلمة مرور ClickHouse
 
-```sql
--- Grant permissions to read schema information
-GRANT SELECT ON information_schema.* TO your_databrain_user;
+    <div className="ch-image-md">
 
--- Grant read access to your database and tables
-GRANT SELECT ON your_database.* TO your_databrain_user;
-```
+    <Frame>
 
-استبدل `your_databrain_user` و`your_database` باسم المستخدم واسم قاعدة البيانات الفعليَّين لديك.
+    ![نموذج اتصال ClickHouse في Databrain مع حقول الإعداد](/images/integrations/data-visualization/databrain_04.webp)
+
+    </Frame>
+
+    </div>
+
+    6. انقر على **Test Connection** للتحقق من أن Databrain يمكنه الاتصال بمثيل ClickHouse لديك.
+
+    7. بعد نجاح الاتصال، انقر على **Save** أو **Connect** لإضافة مصدر البيانات.
+  </Step>
+
+  <Step title="اضبط أذونات المستخدم" id="4-configure-user-permissions">
+    تأكد من أن مستخدم ClickHouse الذي تتصل باستخدامه لديه الأذونات اللازمة:
+
+    ```sql
+    -- امنح أذونات لقراءة معلومات المخطط
+    GRANT SELECT ON information_schema.* TO your_databrain_user;
+
+    -- امنح صلاحية القراءة لقاعدة البيانات والجداول الخاصة بك
+    GRANT SELECT ON your_database.* TO your_databrain_user;
+    ```
+
+    استبدل `your_databrain_user` و `your_database` باسم المستخدم واسم قاعدة البيانات الفعليين لديك.
+  </Step>
+</Steps>
 
 <div id="using-databrain-with-clickhouse">
   ## استخدام Databrain مع ClickHouse
@@ -113,7 +138,15 @@ GRANT SELECT ON your_database.* TO your_databrain_user;
 
 2. سترى جداول ClickHouse مدرجة في مستكشف البيانات.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="مستكشف البيانات في Databrain يعرض جداول ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![مستكشف البيانات في Databrain يعرض جداول ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
+
+</Frame>
+
+</div>
 
 3. انقر على أحد الجداول لاستكشاف المخطط ومعاينة البيانات.
 
@@ -143,7 +176,15 @@ GRANT SELECT ON your_database.* TO your_databrain_user;
 
 3. خصّص تخطيط لوحة المعلومات ومظهرها.
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="لوحة معلومات Databrain تضم عدة تصورات من ClickHouse" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![لوحة معلومات Databrain تضم عدة تصورات من ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
+
+</Frame>
+
+</div>
 
 4. شارك لوحة المعلومات الخاصة بك مع فريقك أو ضمّنها في تطبيقك.
 
@@ -195,5 +236,5 @@ GRANT SELECT ON your_database.* TO your_databrain_user;
 
 * [وثائق Databrain](https://docs.usedatabrain.com/)
 * [دليل ClickHouse Integration](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
-* [إنشاء لوحات المعلومات](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
-* [إنشاء المقاييس](https://docs.usedatabrain.com/guides/metrics/create-metrics)
+* [إنشاء لوحات المعلومات](https://docs.usedatabrain.com/getting-started/core-concepts/dashboards)
+* [إنشاء المقاييس](https://docs.usedatabrain.com/getting-started/core-concepts/metrics)

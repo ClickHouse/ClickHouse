@@ -13,15 +13,15 @@ doc_type: 'reference'
 
 أُضيفت في: v23.4.0
 
-تحسب [`الكمّ`](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية باستخدام خوارزمية [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf).
+تحسب [`الكمّ المئيني`](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية باستخدام خوارزمية [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf).
 
-خوارزمية Greenwald-Khanna هي خوارزمية تُستخدم لحساب الكمّات على تدفق من البيانات بكفاءة عالية جدًا.
+خوارزمية Greenwald-Khanna هي خوارزمية تُستخدم لحساب الكمّات المئينية على تدفق من البيانات بكفاءة عالية جدًا.
 وقد طرحها Michael Greenwald وSanjeev Khanna في عام 2001.
-وتُستخدم على نطاق واسع في قواعد البيانات وأنظمة البيانات الضخمة عندما يكون من الضروري حساب الكمّات بدقة على تدفق كبير من البيانات في الوقت الفعلي.
+وتُستخدم على نطاق واسع في قواعد البيانات وأنظمة البيانات الضخمة عندما يكون من الضروري حساب الكمّات المئينية بدقة على تدفق كبير من البيانات في الوقت الفعلي.
 وتتميّز الخوارزمية بكفاءة عالية جدًا، إذ لا تتطلب سوى مساحة O(log n) وزمن O(log log n) لكل عنصر (حيث إن n هو حجم المُدخلات).
-كما أنها عالية الدقة، إذ توفّر قيمة الكمّ تقريبية باحتمال مرتفع.
+كما أنها عالية الدقة، إذ توفّر قيمة الكمّ المئيني تقريبية باحتمال مرتفع.
 
-تختلف `quantileGK` عن دوال الكمّ الأخرى في ClickHouse، لأنها تُمكّن المستخدم من التحكم في دقة نتيجة الكمّ التقريبية.
+تختلف `quantileGK` عن دوال الكمّ المئيني الأخرى في ClickHouse، لأنها تُمكّن المستخدم من التحكم في دقة نتيجة الكمّ المئيني التقريبية.
 
 **الصيغة**
 
@@ -33,20 +33,20 @@ quantileGK(accuracy, level)(expr)
 
 **المعلمات**
 
-* `accuracy` — دقة الكمّ. عدد صحيح موجب ثابت. كلما زادت قيمة الدقة، قلّ الخطأ. على سبيل المثال، إذا ضُبطت وسيطة الدقة على 100، فسيكون للكمّ المحسوب خطأ لا يتجاوز 1% باحتمال مرتفع. توجد مفاضلة بين دقة القيم الكمية المحسوبة والتعقيد الحسابي للخوارزمية. فالدقة الأعلى تتطلب مزيدًا من الذاكرة والموارد الحسابية لحساب الكمّ بدقة، بينما تتيح وسيطة الدقة الأقل تنفيذ الحساب بشكل أسرع وبكفاءة أعلى في استخدام الذاكرة، لكن بدقة أقل قليلًا. [`UInt*`](/ar/reference/data-types/int-uint)
-* `level` — اختياري. مستوى الكمّ. عدد ثابت بفاصلة عائمة من 0 إلى 1. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
+* `accuracy` — دقة الكمّ المئيني. عدد صحيح موجب ثابت. كلما زادت قيمة الدقة، قلّ الخطأ. على سبيل المثال، إذا ضُبطت وسيطة الدقة على 100، فسيكون للكمّ المئيني المحسوب خطأ لا يتجاوز 1% باحتمال مرتفع. توجد مفاضلة بين دقة القيم الكمية المحسوبة والتعقيد الحسابي للخوارزمية. فالدقة الأعلى تتطلب مزيدًا من الذاكرة والموارد الحسابية لحساب الكمّ المئيني بدقة، بينما تتيح وسيطة الدقة الأقل تنفيذ الحساب بشكل أسرع وبكفاءة أعلى في استخدام الذاكرة، لكن بدقة أقل قليلًا. [`UInt*`](/ar/reference/data-types/int-uint)
+* `level` — اختياري. مستوى الكمّ المئيني. عدد ثابت بفاصلة عائمة من 0 إلى 1. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
 
 **الوسائط**
 
-* `expr` — تعبير على قيم العمود ينتج عنه أنواع بيانات رقمية أو Date أو DateTime. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `expr` — تعبير على قيم العمود ينتج عنه أنواع بيانات رقمية أو `Date` أو `DateTime` أو `DateTime64`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Int128`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`Int256`](/ar/reference/data-types/int-uint) أو [`UInt256`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **القيمة المعادة**
 
-تعيد الكمّ عند المستوى والدقة المحددين. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+تعيد الكمّ المئيني عند المستوى والدقة المحددين. بالنسبة إلى أنواع البيانات الرقمية، يطابق تنسيق الإخراج تنسيق الإدخال. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Int128`](/ar/reference/data-types/int-uint) أو [`UInt128`](/ar/reference/data-types/int-uint) أو [`Int256`](/ar/reference/data-types/int-uint) أو [`UInt256`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 
 **أمثلة**
 
-**حساب الكمّ بمستويات دقة مختلفة**
+**حساب الكمّ المئيني بمستويات دقة مختلفة**
 
 ```sql title=Query
 SELECT quantileGK(1, 0.25)(number + 1) FROM numbers(1000);

@@ -1,0 +1,35 @@
+oracle	1	1	100
+oracle	2	2	\N
+oracle	3	3	\N
+-- dictionary, join_use_nulls = 1 --
+default list	1	1	100
+default list	2	2	\N
+default list	3	3	\N
+hash	1	1	100
+hash	2	2	\N
+hash	3	3	\N
+parallel_hash	1	1	100
+parallel_hash	2	2	\N
+parallel_hash	3	3	\N
+grace_hash	1	1	100
+grace_hash	2	2	\N
+grace_hash	3	3	\N
+LEFT ALL	1	1	100
+LEFT ALL	2	2	\N
+LEFT ALL	3	3	\N
+LEFT SEMI	1	1
+LEFT ANTI	2	2
+LEFT ANTI	3	3
+INNER ALL	1	1	100
+-- dictionary, join_use_nulls = 0: unmatched rows get the attribute default, not NULL --
+default list	1	1	100
+default list	2	2	0
+default list	3	3	0
+hash	1	1	100
+hash	2	2	0
+hash	3	3	0
+-- a plain equi join onto the dictionary still uses the direct join --
+direct	1
+direct value	1	1	100
+direct value	2	2	20
+direct value	3	3	\N

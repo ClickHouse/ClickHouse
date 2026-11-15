@@ -19,7 +19,7 @@ Los datos externos pueden cargarse mediante el cliente de línea de comandos (en
 En el cliente de línea de comandos, puede especificar una sección de parámetros con el formato
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
 ```
 
 Puede haber varias secciones como esta, según la cantidad de tablas que se estén transmitiendo.
@@ -30,6 +30,7 @@ Solo se puede leer una tabla desde stdin.
 
 Los siguientes parámetros son opcionales: **–name**– Nombre de la tabla. Si se omite, se usa &#95;data.
 **–format** – Formato de los datos en el archivo. Si se omite, se usa TabSeparated.
+**–scalar** – Envía los datos como un escalar en lugar de una tabla temporal. Los datos deben contener exactamente una fila; si contienen varias columnas, se empaquetan en una sola tupla. Se puede acceder al valor en la consulta mediante `__getScalar('name')`.
 
 Se requiere uno de los siguientes parámetros:**–types** – Una lista de tipos de columna separados por comas. Por ejemplo: `UInt64,String`. Las columnas se llamarán &#95;1, &#95;2, ...
 **–structure**– La estructura de la tabla en el formato`UserID UInt64`, `URL String`. Define los nombres y tipos de las columnas.
@@ -47,6 +48,8 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
+$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
+42
 ```
 
 Al usar la interfaz HTTP, los datos externos se envían en formato multipart/form-data. Cada tabla se transmite como un archivo independiente. El nombre de la tabla se toma del nombre del archivo. A `query_string` se le pasan los parámetros `name_format`, `name_types` y `name_structure`, donde `name` es el nombre de la tabla a la que corresponden estos parámetros. El significado de estos parámetros es el mismo que al usar el cliente de línea de comandos.

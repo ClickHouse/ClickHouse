@@ -11,9 +11,7 @@ doc_type: 'guide'
 > В этом руководстве рассказывается, как использовать MCP-сервер ClickHouse с Ollama.
 
 <Steps>
-  <Step>
-    ## Установка Ollama
-
+  <Step title="Установка Ollama" id="install-ollama">
     Ollama — это библиотека для запуска больших языковых моделей (LLM) на вашем компьютере.
     Для неё доступен [широкий выбор моделей](https://ollama.com/library), и ей легко пользоваться.
 
@@ -84,9 +82,7 @@ doc_type: 'guide'
     Как видно из этого вывода, модель qwen3 по умолчанию имеет чуть более 8 миллиардов параметров.
   </Step>
 
-  <Step>
-    ## Установка MCPHost
-
+  <Step title="Установка MCPHost" id="install-mcphost">
     На момент написания текста (июль 2025 года) нативной возможности использовать Ollama с MCP-серверами нет.
     Однако можно использовать [MCPHost](https://github.com/mark3labs/mcphost), чтобы запускать модели Ollama с MCP-серверами.
 
@@ -100,9 +96,7 @@ doc_type: 'guide'
     Бинарный файл будет установлен в `~/go/bin`, поэтому нужно убедиться, что этот каталог указан в переменной PATH.
   </Step>
 
-  <Step>
-    ## Настройка MCP-сервера ClickHouse
-
+  <Step title="Настройка MCP-сервера ClickHouse" id="configure-clickhouse-mcp-server">
     MCP-серверы можно настраивать с помощью MCPHost в YAML- или JSON‑файлах.
     MCPHost будет искать файлы конфигурации в вашем домашнем каталоге в следующем порядке:
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## Запуск MCPHost
-
+  <Step title="Запуск MCPHost" id="running-mcphost">
     После настройки MCP-сервера ClickHouse вы можете запустить MCPHost, выполнив следующую команду:
 
     ```bash
@@ -187,7 +179,7 @@ doc_type: 'guide'
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
-      Enter your prompt (Введите /help для списка команд, Ctrl+C для выхода, ESC для отмены генерации)
+      Enter your prompt (Type /help for commands, Ctrl+C to quit, ESC to cancel generation)
     ```
 
     Мы можем использовать команду `/servers`, чтобы просмотреть список MCP-серверов:

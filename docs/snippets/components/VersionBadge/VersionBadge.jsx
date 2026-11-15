@@ -6,7 +6,7 @@
  * Usage:
  *   <VersionBadge minVersion="25.4" />
  */
-const VersionBadge = ({ minVersion }) => (
+export const VersionBadge = ({ minVersion }) => (
   <div className="versionBadge">
     <div className="versionIcon" style={{ marginRight: "8px", marginTop: "4px" }}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

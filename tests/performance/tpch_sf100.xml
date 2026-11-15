@@ -1,0 +1,73 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 100 -->
+<test run_all_queries="1" max_query_seconds="300">
+
+<tags><tag>long</tag></tags>
+
+<settings file="../benchmarks/tpc-h/settings.json"/>
+<settings>
+    <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    <max_execution_time>0</max_execution_time>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>table</name>
+        <values>
+            <value>nation</value>
+            <value>region</value>
+            <value>part</value>
+            <value>supplier</value>
+            <value>partsupp</value>
+            <value>customer</value>
+            <value>orders</value>
+            <value>lineitem</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<!-- The DDL of tests/benchmarks/tpc-h/init.sql -->
+<create_query>CREATE TABLE nation (n_nationkey UInt32, n_name FixedString(25), n_regionkey UInt32, n_comment String) PRIMARY KEY (n_nationkey)</create_query>
+<create_query>CREATE TABLE region (r_regionkey UInt32, r_name FixedString(25), r_comment String) PRIMARY KEY (r_regionkey)</create_query>
+<create_query>CREATE TABLE part (p_partkey UInt32, p_name String, p_mfgr FixedString(25), p_brand FixedString(10), p_type String, p_size Int32, p_container FixedString(10), p_retailprice Decimal(12,2), p_comment String) PRIMARY KEY (p_partkey)</create_query>
+<create_query>CREATE TABLE supplier (s_suppkey UInt32, s_name FixedString(25), s_address String, s_nationkey UInt32, s_phone FixedString(15), s_acctbal Decimal(12,2), s_comment String) PRIMARY KEY (s_suppkey)</create_query>
+<create_query>CREATE TABLE partsupp (ps_partkey UInt32, ps_suppkey UInt32, ps_availqty Int32, ps_supplycost Decimal(12,2), ps_comment String) PRIMARY KEY (ps_partkey, ps_suppkey)</create_query>
+<create_query>CREATE TABLE customer (c_custkey UInt32, c_name String, c_address String, c_nationkey UInt32, c_phone FixedString(15), c_acctbal Decimal(12,2), c_mktsegment FixedString(10), c_comment String) PRIMARY KEY (c_custkey)</create_query>
+<create_query>CREATE TABLE orders (o_orderkey UInt32, o_custkey UInt32, o_orderstatus FixedString(1), o_totalprice Decimal(12,2), o_orderdate Date, o_orderpriority FixedString(15), o_clerk FixedString(15), o_shippriority Int32, o_comment String) PRIMARY KEY (o_orderkey)</create_query>
+<create_query>CREATE TABLE lineitem (l_orderkey UInt32, l_partkey UInt32, l_suppkey UInt32, l_linenumber Int32, l_quantity Decimal(12,2), l_extendedprice Decimal(12,2), l_discount Decimal(12,2), l_tax Decimal(12,2), l_returnflag FixedString(1), l_linestatus FixedString(1), l_shipdate Date, l_commitdate Date, l_receiptdate Date, l_shipinstruct FixedString(25), l_shipmode FixedString(10), l_comment String) PRIMARY KEY (l_orderkey, l_linenumber)</create_query>
+
+<fill_query>INSERT INTO {table} SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/{table}.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter='|', input_format_defaults_for_omitted_fields=1, input_format_csv_empty_as_default=1, max_insert_threads=16</fill_query>
+<fill_query>ALTER TABLE {table} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE {table} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<!-- Before STOP MERGES, which also blocks the mutation. -->
+<fill_query>ALTER TABLE {table} MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1</fill_query>
+<fill_query>SYSTEM STOP MERGES {table}</fill_query>
+<fill_query>SELECT throwIf(count() != map('nation', 25, 'region', 5, 'part', 20000000, 'supplier', 1000000, 'partsupp', 80000000, 'customer', 15000000, 'orders', 150000000, 'lineitem', 600037902)['{table}']) FROM {table}</fill_query>
+<fill_query>SELECT throwIf(count() != 1) FROM system.parts WHERE database = 'default' AND table = '{table}' AND active</fill_query>
+
+<!-- Q1 -->  <query file="../benchmarks/tpc-h/queries/query_01.sql"/>
+<!-- Q2 -->  <query file="../benchmarks/tpc-h/queries/query_02.sql"/>
+<!-- Q3 -->  <query file="../benchmarks/tpc-h/queries/query_03.sql"/>
+<!-- Q4 -->  <query file="../benchmarks/tpc-h/queries/query_04.sql"/>
+<!-- Q5 -->  <query file="../benchmarks/tpc-h/queries/query_05.sql"/>
+<!-- Q6 -->  <query file="../benchmarks/tpc-h/queries/query_06.sql"/>
+<!-- Q7 -->  <query file="../benchmarks/tpc-h/queries/query_07.sql"/>
+<!-- Q8 -->  <query file="../benchmarks/tpc-h/queries/query_08.sql"/>
+<!-- Q9 -->  <query file="../benchmarks/tpc-h/queries/query_09.sql"/>
+<!-- Q10 --> <query file="../benchmarks/tpc-h/queries/query_10.sql"/>
+<!-- Q11 --> <query file="../benchmarks/tpc-h/queries/query_11_sf100.sql"/>
+<!-- Q12 --> <query file="../benchmarks/tpc-h/queries/query_12.sql"/>
+<!-- Q13 --> <query file="../benchmarks/tpc-h/queries/query_13.sql"/>
+<!-- Q14 --> <query file="../benchmarks/tpc-h/queries/query_14.sql"/>
+<!-- Q15 --> <query file="../benchmarks/tpc-h/queries/query_15.sql"/>
+<!-- Q16 --> <query file="../benchmarks/tpc-h/queries/query_16.sql"/>
+<!-- Q17 --> <query file="../benchmarks/tpc-h/queries/query_17.sql"/>
+<!-- Q18 --> <query file="../benchmarks/tpc-h/queries/query_18.sql"/>
+<!-- Q19 --> <query file="../benchmarks/tpc-h/queries/query_19.sql"/>
+<!-- Q20 --> <query file="../benchmarks/tpc-h/queries/query_20.sql"/>
+<!-- Q21 --> <query file="../benchmarks/tpc-h/queries/query_21.sql"/>
+<!-- Q22 --> <query file="../benchmarks/tpc-h/queries/query_22.sql"/>
+
+<drop_query>DROP TABLE IF EXISTS {table} SYNC</drop_query>
+
+</test>

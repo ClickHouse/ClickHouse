@@ -7,8 +7,6 @@ keywords: ['مفتاح التقسيم']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Info>
   **أسلوب لإدارة البيانات**
 
@@ -32,9 +30,17 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-كلما أُدرجت مجموعة من الصفوف في الجدول، فبدلاً من إنشاء (على[ الأقل](/ar/reference/settings/session-settings#max_insert_block_size)) جزء بيانات واحد يحتوي على جميع الصفوف المُدرجة (كما هو موضح [هنا](/ar/concepts/core-concepts/parts))، ينشئ ClickHouse جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
+كلما أُدرجت مجموعة من الصفوف في الجدول، فبدلاً من إنشاء (على[ الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size)) جزء بيانات واحد يحتوي على جميع الصفوف المُدرجة (كما هو موضح [هنا](/ar/concepts/core-concepts/parts))، ينشئ ClickHouse جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
-<Image img="/images/bestpractices/partitions.webp" size="lg" alt="الأقسام" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![الأقسام](/images/bestpractices/partitions.webp)
+
+</Frame>
+
+</div>
 
 يقوم خادم ClickHouse أولاً بتقسيم الصفوف في مثال الإدراج ذي الصفوف الأربعة الموضَّح في المخطط أعلاه وفقًا لقيمة مفتاح التقسيم `toStartOfMonth(date)`. ثم، لكل قسم تم تحديده، تُعالَج الصفوف كالمعتاد[ هنا](/ar/concepts/core-concepts/parts) عبر تنفيذ عدة خطوات متسلسلة (① الفرز، ② التقسيم إلى أعمدة، ③ الضغط، ④ الكتابة إلى القرص).
 
@@ -42,7 +48,15 @@ PARTITION BY toStartOfMonth(date)
 
 عند تمكين التقسيم، لا يدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل الأقسام نفسها، وليس عبر الأقسام المختلفة. نوضّح ذلك تخطيطيًا لجدول المثال أعلاه:
 
-<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="الأقسام" />
+<div className="ch-image-md">
+
+<Frame>
+
+![الأقسام](/images/bestpractices/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <div id="applications-of-partitioning">
   ## تطبيقات التقسيم
@@ -62,7 +76,7 @@ PARTITION BY toStartOfMonth(date)
   ## اختر مفتاح تقسيم منخفض الكاردينالية
 </div>
 
-من المهم ملاحظة أن زيادة عدد الأجزاء تؤثر سلبًا في أداء الاستعلامات. لذلك، سيردّ ClickHouse على عمليات الإدراج بخطأ [“too many parts”](/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) إذا تجاوز عدد الأجزاء الحدود المحددة، سواء [إجمالًا](/ar/reference/settings/merge-tree-settings#max_parts_in_total) أو [لكل قسم](/ar/reference/settings/merge-tree-settings#parts_to_throw_insert).
+من المهم ملاحظة أن زيادة عدد الأجزاء تؤثر سلبًا في أداء الاستعلامات. لذلك، سيردّ ClickHouse على عمليات الإدراج بخطأ [“too many parts”](/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) إذا تجاوز عدد الأجزاء الحدود المحددة، سواء [إجمالًا](/ar/reference/settings/merge-tree-settings/max-parts#max_parts_in_total) أو [لكل قسم](/ar/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
 
 إن اختيار **الكاردينالية** المناسبة لمفتاح التقسيم أمر بالغ الأهمية. فمفتاح التقسيم عالي الكاردينالية — حيث يكون عدد قيم الأقسام المميزة كبيرًا — قد يؤدي إلى تكاثر الأجزاء. وبما أن ClickHouse لا يدمج الأجزاء عبر الأقسام، فإن كثرة الأقسام ستؤدي إلى كثرة الأجزاء غير المدمجة، مما يتسبب في النهاية في ظهور خطأ “Too many parts”. وتُعد [عمليات الدمج أساسية](/ar/concepts/core-concepts/merges) لتقليل تجزؤ التخزين وتحسين سرعة الاستعلامات، لكن مع الأقسام عالية الكاردينالية تضيع إمكانية الدمج هذه.
 

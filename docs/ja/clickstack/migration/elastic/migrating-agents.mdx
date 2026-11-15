@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## Elasticからのagentsの移行
 </div>
@@ -62,14 +60,20 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
 以下では、これら 2 つのアーキテクチャを示します。
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="エージェントの移行" size="lg" background />
+<div className="ch-image-lg">
+
+<Frame>
+
+![エージェントの移行](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</Frame>
+
+</div>
 
 以下の例では、Lumberjack プロトコル経由で Filebeat からログイベントを受信するように Vector を設定するための最初の手順を示します。また、受信した ECS イベントを OTel 仕様にマッピングするための VRL も示し、その後、それらを OTLP 経由で ClickStack OpenTelemetry collector に送信します。Kafka からイベントを取り込むユーザーは、Vector の Logstash source を [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) に置き換えることができます。その他の手順はすべて同じです。
 
 <Steps>
-  <Step>
-    ### Vector をインストールする
-
+  <Step title="Vector をインストールする" id="install-vector">
     [公式インストールガイド](https://vector.dev/docs/setup/installation/)に従って Vector をインストールします。
 
     Elastic Stack OTel collector と同じインスタンスにインストールできます。
@@ -77,9 +81,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
     [Vector を本番環境に移行する](https://vector.dev/docs/setup/going-to-prod/)際は、アーキテクチャとセキュリティに関するベストプラクティスに従ってください。
   </Step>
 
-  <Step>
-    ### vectorの設定
-
+  <Step title="vectorの設定" id="configure-vector">
     VectorをLumberjackプロトコル経由でイベントを受信するように設定し、Logstashインスタンスとして動作させます。これは、Vector用に[`logstash` ログソース](https://vector.dev/docs/reference/configuration/sources/logstash/)を設定することで実現できます。
 
     ```yaml
@@ -88,8 +90,8 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLSを使用する場合はtrueに設定してください
-          # 以下のファイルは https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs の手順に従って生成されます
+          enabled: false  # Set to true if you're using TLS
+          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -116,29 +118,29 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
     <Accordion title="VRL - ECS から OTel への移行">
       ```javascript
-      # ルートレベルで無視するキーを定義する
+      # Define keys to ignore at root level
       ignored_keys = ["@metadata"]
 
-      # リソースキーのプレフィックスを定義する
+      # Define resource key prefixes
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # リソースフィールドとログレコードフィールド用に別々のオブジェクトを作成する
+      # Create separate objects for resource and log record fields
       resource_obj = {}
       log_record_obj = {}
 
-      # 無視されていないすべてのルートキーを適切なオブジェクトにコピーする
+      # Copy all non-ignored root keys to appropriate objects
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # これがリソースフィールドかどうかを確認する
+                  # Check if this is a resource field
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # 適切なオブジェクトに追加する
+                  # Add to appropriate object
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -148,11 +150,11 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # 両方のオブジェクトを個別にフラット化する
+      # Flatten both objects separately
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # リソース属性を処理する
+      # Process resource attributes
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -170,7 +172,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # ログレコード属性を処理する
+      # Process log record attributes
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -188,14 +190,14 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # timeUnixNano 用のタイムスタンプを取得する（ナノ秒に変換）
+      # Get timestamp for timeUnixNano (convert to nanoseconds)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # メッセージ/ボディフィールドを取得する
+      # Get message/body field
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -204,7 +206,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           ""
       }
 
-      # OpenTelemetry 構造を作成する
+      # Create the OpenTelemetry structure
       . = {
           "resourceLogs": [
               {
@@ -239,10 +241,10 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # remapトランスフォームからイベントを受信する - 以下を参照
+        inputs: [remap_filebeat] # receives events from a remap transform - see below
         protocol:
-          type: http  # ポート4317の場合は "grpc" を使用
-          uri: http://localhost:4318/v1/logs # OTel collectorのlogsエンドポイント 
+          type: http  # Use "grpc" for port 4317
+          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
           method: post
           encoding:
             codec: json
@@ -255,7 +257,15 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
     ここで使用する `YOUR_INGESTION_API_KEY` は ClickStack によって生成されます。このキーは ClickStack の UI (HyperDX) の `Team Settings → API Keys` から確認できます。
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
+
+    </Frame>
+
+    </div>
 
     最終的な完全なconfigurationを以下に示します：
 
@@ -265,7 +275,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLSを使用する場合はtrueに設定してください
+          enabled: false  # Set to true if you're using TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -282,7 +292,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # ポート4317を使用する場合は"grpc"を指定してください
+          type: http  # Use "grpc" for port 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -294,25 +304,23 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
     ```
   </Step>
 
-  <Step>
-    ### Filebeat を設定する
-
+  <Step title="Filebeat を設定する" id="configure-filebeat">
     既存の Filebeat インストールでは、イベントの送信先が Vector になるよう設定を変更するだけで済みます。そのためには Logstash 出力を設定する必要があります。ここでも、必要に応じて TLS を設定できます。
 
     ```yaml
-    # ------------------------------ Logstash 出力 -------------------------------
+    # ------------------------------ Logstash Output -------------------------------
     output.logstash:
-      # Logstash ホスト
+      # The Logstash hosts
       hosts: ["localhost:5044"]
 
-      # SSL はオプションです。デフォルトは無効です。
-      # HTTPS サーバー検証用のルート証明書のリスト
+      # Optional SSL. By default is off.
+      # List of root certificates for HTTPS server verifications
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # SSL クライアント認証用の証明書
+      # Certificate for SSL client authentication
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # クライアント証明書の秘密鍵
+      # Client Certificate Key
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -336,24 +344,36 @@ Elastic Agent をデプロイしているユーザーには、いくつかの移
 </div>
 
 <Steps>
-  <Step>
-    #### Vector をインストールして設定する
-
+  <Step title="Vector をインストールして設定する" id="install-configure-vector">
     Filebeat からの移行について記載されている[同じ手順](#install-vector)で、Vector をインストールして設定します。
   </Step>
 
-  <Step>
-    #### Elastic Agent を設定する
-
+  <Step title="Elastic Agent を設定する" id="configure-elastic-agent">
     Elastic Agent は、Logstash プロトコルの Lumberjack 経由でデータを送信するよう設定する必要があります。これは[サポートされているデプロイパターン](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge)であり、一元的に設定することも、Fleet を使用せずにデプロイする場合は [エージェント の設定ファイル `elastic-agent.yaml` を使って](https://www.elastic.co/docs/reference/fleet/logstash-output)設定することもできます。
 
     Kibana から一元的に設定するには、[Fleet に Output を追加](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)します。
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Logstash output を追加" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Logstash output を追加](/images/use-cases/observability/add-logstash-output.webp)
+
+    </Frame>
+
+    </div>
 
     この Output は、[エージェント policy](https://www.elastic.co/docs/reference/fleet/agent-policy) で使用できます。これにより、そのポリシーを使用するすべての エージェント は自動的に Vector にデータを送信するようになります。
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent の設定" size="md" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![Agent の設定](/images/use-cases/observability/agent-output-settings.webp)
+
+    </Frame>
+
+    </div>
 
     これには TLS による安全な通信の設定が必要なため、Vector インスタンスを Logstash の役割を担うものとして、ガイド[「Configure SSL/TLS for the Logstash output」](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)に従うことを推奨します。
 
@@ -391,7 +411,7 @@ EDOT collector とともに Elastic Agent を実行するには、[Elastic の�
 
 ```yaml
 exporters:
-  # ログとメトリクスをElasticsearch Managed OTLP Inputに送信するエクスポーター
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -408,13 +428,21 @@ exporters:
 
 ここでの `YOUR_INGESTION_API_KEY` は ClickStack で生成されるものです。キーは ClickStack の UI の `Team Settings → API Keys` で確認できます。
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
+
+</Frame>
+
+</div>
 
 Vector が相互 TLS を使用するように設定されており、証明書と秘密鍵がガイド [&quot;Logstash 出力用に SSL/TLS を設定する&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) の手順で生成されている場合は、`otlp` エクスポーターもそれに合わせて設定する必要があります。たとえば次のようになります。
 
 ```yaml
 exporters:
-  # ログとメトリクスを Elasticsearch Managed OTLP Input に送信するエクスポーター
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

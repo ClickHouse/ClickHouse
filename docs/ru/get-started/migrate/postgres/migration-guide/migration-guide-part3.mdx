@@ -8,8 +8,6 @@ sidebarTitle: 'Часть 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > Это **Часть 3** руководства по миграции с PostgreSQL на ClickHouse. На практическом примере здесь показано, как моделировать данные в ClickHouse при миграции с PostgreSQL.
 
 Мы рекомендуем пользователям, переходящим с Postgres, прочитать [руководство по моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design). В этом руководстве используется тот же набор данных Stack Overflow и рассматриваются несколько подходов с использованием возможностей ClickHouse.
@@ -32,13 +30,29 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 За дополнительными подробностями рекомендуем обратиться к этому [подробному руководству](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Индекс B-Tree в PostgreSQL" />
+<div className="ch-image-lg">
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Разреженный индекс в PostgreSQL" />
+<Frame>
+
+![Индекс B-Tree в PostgreSQL](/images/migrations/postgres-b-tree.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Разреженный индекс в PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</Frame>
+
+</div>
 
 Выбранный ключ в ClickHouse определяет не только индекс, но и порядок, в котором данные записываются на диск. Поэтому он может существенно влиять на степень сжатия, а это, в свою очередь, сказывается на производительности запросов. Ключ сортировки, при котором значения большинства столбцов записываются подряд, позволяет выбранному алгоритму сжатия (и кодекам) эффективнее сжимать данные.
 
-> Все столбцы в таблице будут отсортированы по значению указанного ключа сортировки, независимо от того, входят ли они в сам ключ. Например, если в качестве ключа используется `CreationDate`, порядок значений во всех остальных столбцах будет соответствовать порядку значений в столбце `CreationDate`. Можно указать несколько ключей сортировки — в этом случае сортировка будет выполняться по тем же правилам, что и clause `ORDER BY` в запросе `SELECT`.
+> Все столбцы в таблице будут отсортированы по значению указанного ключа сортировки, независимо от того, входят ли они в сам ключ. Например, если в качестве ключа используется `CreationDate`, порядок значений во всех остальных столбцах будет соответствовать порядку значений в столбце `CreationDate`. Можно указать несколько ключей сортировки — в этом случае сортировка будет выполняться по тем же правилам, что и предложение `ORDER BY` в запросе `SELECT`.&quot;
 
 <div id="choosing-an-ordering-key">
   ### Выбор ключа сортировки
@@ -56,7 +70,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В ClickHouse партиционирование задается для таблицы при ее первоначальном определении с помощью предложения `PARTITION BY`. Это предложение может содержать SQL-выражение по любым столбцам, результат которого определяет, в какую партицию будет отправлена строка.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Партиции PostgreSQL в партиции ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Партиции PostgreSQL в партиции ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</Frame>
+
+</div>
 
 Части данных на диске логически связаны с каждой партицией и могут запрашиваться изолированно. В примере ниже мы партиционируем таблицу `posts` по годам с помощью выражения `toYear(CreationDate)`. По мере вставки строк в ClickHouse это выражение будет вычисляться для каждой строки, и строка будет направляться в соответствующую партицию, если она уже существует (если строка для данного года первая, партиция будет создана).
 
@@ -274,7 +296,15 @@ WHERE UserId = 8592047
 таблице, а проекции по возможности будут использоваться для сокращения
 времени отклика.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Проекции PostgreSQL в ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Проекции PostgreSQL в ClickHouse](/images/migrations/postgres-projections.webp)
+
+</Frame>
+
+</div>
 
 В отличие от materialized views, здесь пользователю не нужно выбирать
 подходящую оптимизированную целевую таблицу или переписывать запрос в зависимости от фильтров.
@@ -305,8 +335,8 @@ WHERE UserId = 8592047
   ## Денормализация
 </div>
 
-Поскольку Postgres — реляционная база данных, её модель данных обычно сильно [нормализована](https://en.wikipedia.org/wiki/Database_normalization) и нередко включает сотни таблиц. В ClickHouse денормализация иногда бывает полезна для оптимизации производительности JOIN.
+Поскольку Postgres — реляционная база данных, её модель данных в значительной степени [нормализована](https://en.wikipedia.org/wiki/Database_normalization) и часто включает сотни таблиц. В ClickHouse денормализация иногда помогает оптимизировать производительность JOIN.
 
-Вы можете обратиться к этому [руководству](/ru/guides/clickhouse/data-modelling/denormalization), где показаны преимущества денормализации набора данных Stack Overflow в ClickHouse.
+Вы можете обратиться к этому [руководству](/ru/guides/clickhouse/data-modelling/denormalization), в котором показаны преимущества денормализации набора данных Stack Overflow в ClickHouse.
 
-На этом наше базовое руководство для тех, кто переходит с Postgres на ClickHouse, заканчивается. Мы рекомендуем прочитать [руководство по моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design), чтобы больше узнать о расширенных возможностях ClickHouse.
+На этом наше вводное руководство для тех, кто переходит с Postgres на ClickHouse, завершается. Чтобы больше узнать о расширенных возможностях ClickHouse, рекомендуем прочитать [руководство по моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design).

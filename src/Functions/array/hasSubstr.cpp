@@ -43,7 +43,11 @@ Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do 
         {"Arrays with valid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'b'])", "1"},
         {"Arrays with invalid ordering", "SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])", "0"},
         {"Array of arrays", "SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])", "1"},
-        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])", "Raises a `NO_COMMON_TYPE` exception"},
+        {"Arrays without a common type", "SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])",
+         R"(
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
+        )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

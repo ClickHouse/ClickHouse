@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '会话回放', 'browser sdk', '演示', '可观测性', '插桩']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   **摘要**
 
@@ -43,32 +41,34 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 克隆代码仓库
-
+  <Step title="克隆代码仓库" id="clone-repository">
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step>
-    ### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step>
-    ### 获取 API key
-
+  <Step title="获取 API key" id="get-api-key">
     1. 在 [http://localhost:8080](http://localhost:8080) 打开 HyperDX
     2. 创建账号，或根据需要登录
     3. 前往 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ClickStack API key](/images/clickstack/api-key.webp)
+
+    </Frame>
+
+    </div>
 
     5. 将其设置为环境变量：
 
@@ -77,9 +77,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 启动演示应用
-
+  <Step title="启动演示应用" id="start-demo-app">
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -90,21 +88,43 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     在浏览器中打开 [http://localhost:3000](http://localhost:3000) 并与应用交互——搜索主题、按类别过滤、查看代码示例，以及收藏条目。
 
-    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="会话回放演示应用" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![会话回放演示应用](/images/clickstack/session-replay/demo-app.webp)
+
+    </Frame>
+
+    </div>
 
     所有交互都会由 ClickStack Browser SDK 自动记录。
   </Step>
 
-  <Step>
-    ### 查看你的会话回放
+  <Step title="查看你的会话回放" id="view-session-replay">
+    返回 [http://localhost:8080](http://localhost:8080) 中的 HyperDX，然后在左侧边栏中前往 **Client Sessions**。
 
-    返回 HyperDX ([http://localhost:8080](http://localhost:8080)) ，然后在左侧边栏中前往 **Client Sessions**。
+    <div className="ch-image-lg">
 
-    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索" />
+    <Frame>
+
+    ![会话回放搜索](/images/clickstack/session-replay/replay-search-view.webp)
+
+    </Frame>
+
+    </div>
 
     你应该会看到自己的会话已列出，并显示其耗时和事件数量。点击 ▶️ 按钮即可回放。
 
-    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="会话回放" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![会话回放](/images/clickstack/session-replay/session-replay.webp)
+
+    </Frame>
+
+    </div>
 
     在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间轴上的详细程度。
   </Step>
@@ -192,7 +212,7 @@ docker-compose down -v
   ## 了解更多
 </div>
 
-* [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项及隐私控制
-* [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
-* [ClickStack 入门](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取您的第一批数据
-* [所有示例数据集](/zh/clickstack/example-datasets/index) — 其他示例数据集及相关指南
+* [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项和隐私控制
+* [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项及高级配置
+* [ClickStack 快速开始](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取您的第一批数据
+* [所有示例数据集](/zh/clickstack/example-datasets/index) — 其他示例数据集和相关指南
