@@ -9970,6 +9970,8 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     {
         if (!std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
             return false;
+        if (converted_parts.empty())
+            return true;
 
         const bool default_reads_columns = defaultReadsColumns(table_columns, name_in_storage);
         return std::ranges::all_of(converted_parts, [&](const auto & part)

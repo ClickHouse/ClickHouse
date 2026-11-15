@@ -19,6 +19,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -175,13 +176,8 @@ bool injectRequiredColumnsRecursively(
 
 bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name)
 {
-    auto column_default = columns.getDefault(column_name);
-    if (!column_default || !column_default->expression)
-        return false;
-
-    IdentifierNameSet identifiers;
-    column_default->expression->collectIdentifierNames(identifiers);
-    return !identifiers.empty();
+    const auto * column = columns.tryGet(column_name);
+    return column && column->default_desc.expression && !getStorageColumnsReadByDefault(columns, *column).empty();
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)

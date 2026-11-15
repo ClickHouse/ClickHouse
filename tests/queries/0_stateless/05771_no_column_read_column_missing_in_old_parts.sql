@@ -1,6 +1,6 @@
 -- A read that needs no column does not use a column that some parts do not store, or that a pending mutation drops
 -- there if its default reads other columns: computing it reads them and can throw. A dropped column whose default reads
--- no column is still used (t_clear, t_literal, t_constant), and so is a column that old parts store under its name
+-- no column is still used (t_clear, t_literal, t_constant, t_lambda), and so is a column that old parts store under its name
 -- before a pending rename (t_rename_insert, t_rename_readd).
 
 DROP TABLE IF EXISTS t_materialized;
@@ -172,6 +172,17 @@ SELECT count() FROM t_constant SETTINGS query_plan_remove_unused_columns = 1, op
 SELECT count() FROM t_constant SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
 SELECT count() FROM t_constant WHERE _part_offset % 2 = 0 SETTINGS max_bytes_to_read = 100000;
 DROP TABLE t_constant;
+
+DROP TABLE IF EXISTS t_lambda;
+CREATE TABLE t_lambda (k UInt8 DEFAULT arraySum(arrayMap(x -> x, [toUInt8(0)])), s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_lambda;
+INSERT INTO t_lambda SELECT 0, repeat(hex(sipHash128(number)), 30) FROM numbers(1000);
+ALTER TABLE t_lambda CLEAR COLUMN k IN PARTITION ID 'all' SETTINGS alter_sync = 0;
+SELECT count() FROM t_lambda SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_lambda SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, max_bytes_to_read = 100000;
+SELECT count() FROM t_lambda WHERE _part_offset % 2 = 0 SETTINGS max_bytes_to_read = 100000;
+DROP TABLE t_lambda;
 
 DROP TABLE IF EXISTS t_rename_readd;
 CREATE TABLE t_rename_readd (k UInt8, s String) ENGINE = MergeTree ORDER BY tuple()

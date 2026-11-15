@@ -19,7 +19,7 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
-/// Whether filling the column from its default reads other columns: the identifiers of the default expression.
+/// Whether filling the column from its default reads columns of the table.
 bool defaultReadsColumns(const ColumnsDescription & columns, const String & column_name);
 
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
