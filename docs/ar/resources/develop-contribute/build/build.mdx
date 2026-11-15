@@ -53,7 +53,7 @@ sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm y
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 بالنسبة إلى توزيعات Linux الأخرى، تحقّق مما إذا كان بإمكانك تثبيت أيٍّ من [الحزم الجاهزة مسبقًا الخاصة بـ LLVM](https://releases.llvm.org/download.html).
@@ -66,8 +66,8 @@ sudo ./llvm.sh 21
 </div>
 
 <Note>
-تُعد Rust تبعية اختيارية لـ ClickHouse.
-إذا لم تكن Rust مثبّتة، فستُستبعَد بعض ميزات ClickHouse من عملية البناء.
+  تُعد Rust تبعية اختيارية لـ ClickHouse.
+  إذا لم تكن Rust مثبّتة، فستُستبعَد بعض ميزات ClickHouse من عملية البناء.
 </Note>
 
 أولًا، اتبع الخطوات الواردة في [وثائق Rust الرسمية](https://www.rust-lang.org/tools/install) لتثبيت `rustup`.
@@ -83,23 +83,23 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-## بناء ClickHouse
+  ## بناء ClickHouse
 </div>
 
-نوصي بإنشاء مجلد منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
+نوصي بإنشاء دليل منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
 
 ```sh
 mkdir build
 cd build
 ```
 
-يمكنك استخدام عدة مجلدات مختلفة (مثل `build_release` و`build_debug` وما إلى ذلك) لأنواع البناء المختلفة.
+يمكنك استخدام عدة أدلة مختلفة (مثل `build_release` و`build_debug` وما إلى ذلك) لأنواع البناء المختلفة.
 
 اختياري: إذا كان لديك عدة إصدارات من المصرّف مثبّتة، يمكنك أيضًا تحديد المصرّف المطلوب استخدامه بدقة.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 لأغراض التطوير، يُوصى باستخدام بُنى تصحيح الأخطاء.
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
+  إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
 </Note>
 
 شغّل ninja لإتمام عملية البناء:
@@ -133,16 +133,16 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
+  تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
 </Note>
 
 <Tip>
-يوفّر CMake اختصارات للأوامر أعلاه:
+  يوفّر CMake اختصارات للأوامر المذكورة أعلاه:
 
-```sh
-cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
-cmake --build build  # تجميع
-```
+  ```sh
+  cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
+  cmake --build build  # تجميع
+  ```
 </Tip>
 
 <div id="running-the-clickhouse-executable">

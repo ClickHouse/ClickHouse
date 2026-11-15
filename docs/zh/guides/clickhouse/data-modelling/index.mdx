@@ -1,18 +1,52 @@
 ---
 slug: /data-modeling/overview
-title: '数据建模概述'
-description: '数据建模概述'
-keywords: ['数据建模', 'schema 设计', '字典', 'materialized view', '数据压缩', '数据非规范化']
+title: '数据建模概览'
+description: '数据建模概览'
+keywords: ['数据建模', 'schema 设计', '字典', 'materialized view', '数据压缩', '数据反规范化']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 本节介绍 ClickHouse 中的数据建模，包含以下主题：
 
-| Page                                                                                        | Description                                                    |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| [Schema Design](/zh/guides/clickhouse/data-modelling/schema-design)                            | 介绍 ClickHouse 的 schema 设计，以及如何结合查询、数据更新、延迟和数据量等因素实现最佳性能。       |
-| [Dictionary](/zh/concepts/features/dictionaries/index)                                         | 说明如何定义和使用字典，以提升查询性能并丰富数据。                                      |
-| [Materialized Views](/zh/concepts/features/materialized-views/index)                           | 介绍 ClickHouse 中的 materialized views 和可刷新materialized views。    |
-| [Projections](/zh/concepts/features/projections/projections)                                   | 介绍 ClickHouse 中的 Projections。                                  |
-| [Data Compression](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | 介绍 ClickHouse 中的各种压缩模式，以及如何为特定数据类型和工作负载选择合适的压缩方法，以优化数据存储和查询性能。 |
-| [Denormalizing Data](/zh/guides/clickhouse/data-modelling/denormalization)                     | 介绍 ClickHouse 中使用的数据非规范化方法，其目标是通过将相关数据存储在单个表中来提升查询性能。          |
+<CardGroup cols={2}>
+  <Card title="Schema 设计" icon="pen-ruler" href="/zh/guides/clickhouse/data-modelling/schema-design">
+    面向最佳性能的 ClickHouse schema 设计，需要综合考虑查询、数据更新、延迟和数据量等因素。
+  </Card>
+
+  <Card title="稀疏主索引" icon="key" href="/zh/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    实用介绍 ClickHouse 中的主索引。
+  </Card>
+
+  <Card title="数据反规范化" icon="table-list" href="/zh/guides/clickhouse/data-modelling/denormalization">
+    通过将相关数据存储在单个表中来提升查询性能的数据反规范化方法。
+  </Card>
+
+  <Card title="数据回填" icon="clock-rotate-left" href="/zh/guides/clickhouse/data-modelling/backfilling">
+    高效向 ClickHouse 表回填数据的方法。
+  </Card>
+
+  <Card title="Merge 表函数" icon="code-merge" href="/zh/guides/clickhouse/data-modelling/merge-table-function">
+    使用 `merge` 表函数将多个表作为一个表来查询。
+  </Card>
+
+  <Card title="存储过程和预处理语句" icon="database" href="/zh/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    ClickHouse 中的存储过程和查询参数。
+  </Card>
+
+  <Card title="生成测试数据" icon="flask" href="/zh/guides/clickhouse/data-modelling/generating-test-data">
+    如何在 ClickHouse 中生成随机测试数据。
+  </Card>
+
+  <Card title="数据压缩" icon="file-zipper" href="/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    ClickHouse 中的压缩、可用的压缩模式，以及如何为数据类型和工作负载选择合适的模式。
+  </Card>
+
+  <Card title="使用数组" icon="list-ol" href="/zh/guides/clickhouse/working-with-arrays">
+    在 ClickHouse 中使用数组。
+  </Card>
+
+  <Card title="使用 JOIN" icon="link" href="/zh/guides/clickhouse/working-with-joins">
+    在 ClickHouse 中使用 JOIN。
+  </Card>
+</CardGroup>

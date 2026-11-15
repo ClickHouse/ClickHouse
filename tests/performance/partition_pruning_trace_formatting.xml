@@ -1,0 +1,25 @@
+<test>
+    <settings>
+        <max_partitions_per_insert_block>8192</max_partitions_per_insert_block>
+        <max_threads>1</max_threads>
+        <use_statistics>0</use_statistics>
+        <use_statistics_for_part_pruning>0</use_statistics_for_part_pruning>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <send_logs_level>none</send_logs_level>
+    </settings>
+    <create_query>
+        CREATE TABLE partition_pruning_trace_formatting (tenant String, day Date, value UInt64)
+        ENGINE = MergeTree PARTITION BY (tenant, toYYYYMM(day)) ORDER BY tuple()
+    </create_query>
+    <fill_query>
+        INSERT INTO partition_pruning_trace_formatting
+        SELECT concat('tenant_', toString(number)), toDate('2026-09-01'), number
+        FROM numbers(5000)
+    </fill_query>
+    <!-- The nonmonotonic hash cannot prune min/max ranges, but can reject fixed partition values.
+         `EXPLAIN indexes = 1` shows min/max keeping 5000/5000 parts and partition pruning keeping
+         47/5000, so the formatting that used to run for every one of the ~4950 rejected partitions
+         dominates the query. -->
+    <query>SELECT sum(value) FROM partition_pruning_trace_formatting WHERE cityHash64(tenant) % 100 = 0</query>
+    <drop_query>DROP TABLE partition_pruning_trace_formatting</drop_query>
+</test>

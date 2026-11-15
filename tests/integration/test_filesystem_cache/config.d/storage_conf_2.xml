@@ -10,6 +10,8 @@
                 <disk>hdd_blob</disk>
                 <path>/var/lib/clickhouse/tmp_dsk/cache1/</path>
                 <max_size>1Mi</max_size>
+                <max_file_segment_size>256Ki</max_file_segment_size>
+                <boundary_alignment>256Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <!-- These caches are tiny (1Mi). Disable reserve-ahead so the default
                      reserve_granularity does not try to reserve a whole granule (4Mi),
@@ -22,6 +24,8 @@
                 <disk>hdd_blob</disk>
                 <path>/var/lib/clickhouse/tmp_dsk/cache1/</path>
                 <max_size>1Mi</max_size>
+                <max_file_segment_size>256Ki</max_file_segment_size>
+                <boundary_alignment>256Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <reserve_granularity>0</reserve_granularity>
             </cache2>

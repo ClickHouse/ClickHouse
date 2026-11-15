@@ -1,0 +1,4 @@
+numbers	10240	104857600	10240	spilled	1	while built 0, while used 1
+numbers_threads	10240	104857600	10240	spilled	1	while built 0, while used 1
+explicit_elements	10000	99990000	10000	selected marks	20	spilled	1	while built 0, while used 1
+small	19480	208705960	19480	spilled	0	while built 0, while used 0

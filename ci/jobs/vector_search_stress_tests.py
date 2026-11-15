@@ -65,8 +65,35 @@ NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
 USE_RAW_BYTES_FOR_QUERY_VECTOR = "use_raw_bytes_for_query_vector"
 
+SEARCH_METHOD = "search_method"
+SESSION_SETTINGS = "session_settings"
+QBIT_COLUMN = "qbit_column"
+QBIT_PRECISIONS = "qbit_precisions"
+QBIT_STRIDE = "qbit_stride"
+QBIT_USED_DIMS = "qbit_used_dims"
+FETCH_MULTIPLIERS = "fetch_multipliers"
+
 TRUTH_SET_QUERY_SOURCE_ID = "id"
 TRUTH_SET_QUERY_SOURCE_VECTOR = "vector"
+
+# How the ANN query finds its candidates
+SEARCH_METHOD_INDEX = "vector_similarity_index"
+SEARCH_METHOD_QUANTIZED_CODEC = "quantized_codec"
+SEARCH_METHOD_QBIT = "qbit"
+
+# Seed of the rotation shared by the stored QBit(Int8) codes and the query vector
+QBIT_ROTATION_SEED = 0
+
+def rotate_for_qbit(expression, dimension):
+    rotated = f"randomHadamardTransform(L2Normalize(CAST({expression} AS Array(Float32))), {QBIT_ROTATION_SEED})"
+    return f"arrayMap(x -> x * sqrt({dimension}), {rotated})"
+
+
+def quantize_for_qbit(expression, dimension, stride=None):
+    codes = f"quantizeBFloat16ToInt8(CAST({rotate_for_qbit(expression, dimension)} AS Array(BFloat16)))"
+    qbit_type = f"QBit(Int8, {dimension})" if stride is None else f"QBit(Int8, {dimension}, {stride})"
+    return f"CAST({codes} AS {qbit_type})"
+
 
 dataset_hackernews_openai = {
     TABLE: "hackernews_openai",
@@ -81,7 +108,7 @@ dataset_hackernews_openai = {
         url           String,
         title         String,
         text          String,
-        vector        Array(Float32)
+        vector        Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -97,7 +124,7 @@ dataset_cohere_wiki_20m = {
     ],
     SCHEMA: """
         id            UInt32,
-        vector        Array(Float32)
+        vector        Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
@@ -141,11 +168,89 @@ dataset_laion_5b_mini_for_quick_test = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(Float32)
+        vector Array(BFloat16)  CODEC(NONE)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     SOURCE_SELECT_LIST: "id, vector",  # Columns to select from the source Parquet file
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 768,
+}
+
+# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index
+dataset_laion_5b_10m_quantized_rabitq = {
+    TABLE: "laion_10m_rabitq",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
+    SCHEMA: """
+        id Int32,
+        vector Array(BFloat16) CODEC(Quantized('rabitq', 768))
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",
+    SOURCE_SELECT_LIST: "id, vector",
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 768,
+}
+
+# Same LAION 10m, with the 2 bits per coordinate Turboquant codes
+dataset_laion_5b_10m_quantized_turboquant = {
+    TABLE: "laion_10m_turboquant",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
+    SCHEMA: """
+        id Int32,
+        vector Array(BFloat16) CODEC(Quantized('turboquant', 768))
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",
+    SOURCE_SELECT_LIST: "id, vector",
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 768,
+}
+
+# 10 million LAION vectors, searched using a QBit(Int8) column type
+dataset_laion_5b_10m_qbit_int8 = {
+    TABLE: "laion_10m_qbit",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
+    SCHEMA: """
+        id Int32,
+        vector Array(BFloat16) CODEC(NONE),
+        vector_qbit QBit(Int8, 768)
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",  # full precision, used for the truth set
+    QBIT_COLUMN: "vector_qbit",
+    SOURCE_SELECT_LIST: "id, vector, "
+    + quantize_for_qbit("CAST(vector AS Array(BFloat16))", 768)
+    + " AS vector_qbit",
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 768,
+}
+
+# Same QBit(Int8) codes, but split into 4 stride groups of 192 dimensions, each stored in its own stream, so a
+# search over only the leading 192 dimensions reads a quarter of the planes (Matryoshka-style prefix search)
+dataset_laion_5b_10m_qbit_int8_strided = {
+    TABLE: "laion_10m_qbit_strided",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
+    SCHEMA: """
+        id Int32,
+        vector Array(BFloat16) CODEC(NONE),
+        vector_qbit QBit(Int8, 768, 192)
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",  # full precision, used for the truth set
+    QBIT_COLUMN: "vector_qbit",
+    QBIT_STRIDE: 192,
+    SOURCE_SELECT_LIST: "id, vector, "
+    + quantize_for_qbit("CAST(vector AS Array(BFloat16))", 768, 192)
+    + " AS vector_qbit",
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
 }
@@ -201,13 +306,103 @@ test_params_laion_5b_1m = {
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: True,  # Will take some time!
-    TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
+    TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
+test_params_laion_5b_10m_quantized_rabitq = {
+    LIMIT_N: 10000000,  # enough granules to avoid a full rescore re-read
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: None,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 100,
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_10m_100_rabitq",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+    SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
+    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    FETCH_MULTIPLIERS: [1, 5, 10],
+}
+
+test_params_laion_5b_10m_quantized_turboquant = {
+    LIMIT_N: 10000000,  # see rabitq params
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: None,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 100,
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_10m_100_turboquant",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+    SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
+    SESSION_SETTINGS: "enable_quantized_codec = 1",
+    FETCH_MULTIPLIERS: [1, 5, 10],
+}
+
+test_params_laion_5b_10m_qbit_int8 = {
+    LIMIT_N: 10000000,  # match the codec runs
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: None,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 100,
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+    SEARCH_METHOD: SEARCH_METHOD_QBIT,
+    SESSION_SETTINGS: None,
+    QBIT_PRECISIONS: [1, 8],
+}
+
+test_params_laion_5b_10m_qbit_int8_strided = {
+    LIMIT_N: 10000000,  # match the other runs
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: None,
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 100,
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit_strided",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+    SEARCH_METHOD: SEARCH_METHOD_QBIT,
+    SESSION_SETTINGS: None,
+    QBIT_PRECISIONS: [1, 8],
+    # Read one of the four stride groups; recall is still measured against the full 768-dimension truth set
+    QBIT_USED_DIMS: 192,
 }
 
 test_params_hackernews_10m = {
@@ -254,6 +449,25 @@ test_params_cohere_wiki_20m = {
 }
 
 
+# One entry per (test, search variant), rendered as a table at the end of the job
+SUMMARY_ROWS = []
+
+
+class phase_timer:
+
+    def __init__(self, store, key):
+        self._store = store
+        self._key = key
+
+    def __enter__(self):
+        self._start = time.time()
+        return self
+
+    def __exit__(self, *unused):
+        self._store[self._key] = time.time() - self._start
+        return False
+
+
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
@@ -287,10 +501,84 @@ class RunTest:
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
 
+        self._search_method = test_params.get(SEARCH_METHOD, SEARCH_METHOD_INDEX)
+
+        self._rows_inserted = 0
+        self._timings = {}
+        self._variant_results = []
+
         self._truth_set = []
         self._result_set = {}
         self._query_source_warning_logged = False
         self._vector_serialization_warning_logged = False
+
+        self.apply_session_settings(chclient)
+
+    def apply_session_settings(self, chclient):
+        session_settings = self._test_params.get(SESSION_SETTINGS)
+        if session_settings is not None:
+            chclient.query(f"SET {session_settings}")
+
+    def uses_vector_index(self):
+        return self._search_method == SEARCH_METHOD_INDEX
+
+    def search_column(self):
+        if self._search_method == SEARCH_METHOD_QBIT:
+            return self._dataset[QBIT_COLUMN]
+        return self._vector_column
+
+    def capture_column_size(self):
+        column = self.search_column()
+        result = self._chclient.query(
+            f"SELECT count(), sum(column_bytes_on_disk), formatReadableSize(sum(column_bytes_on_disk)) "
+            f"FROM system.parts_columns WHERE database = currentDatabase() "
+            f"AND table = '{self._table}' AND column = '{column}' AND active"
+        )
+        # okay if nothing found
+        if not result.result_rows or not result.result_rows[0][0]:
+            self._column_bytes = None
+            self._column_size = "-"
+            self._column_bytes_per_row = None
+            logger(f"No size found for column {column} of {self._table}")
+            return
+
+        self._column_bytes = result.result_rows[0][1]
+        self._column_size = result.result_rows[0][2]
+        self._column_bytes_per_row = (
+            round(self._column_bytes / self._rows_inserted) if self._rows_inserted else None
+        )
+        logger(
+            f"Column {column} occupies {self._column_size} ({self._column_bytes_per_row} bytes/row)"
+        )
+
+    # One (label, parameter) pair per configuration we want recall and latency for
+    def search_variants(self):
+        if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
+            return [
+                (f"codes, mult {m}", m) for m in self._test_params[FETCH_MULTIPLIERS]
+            ]
+        if self._search_method == SEARCH_METHOD_QBIT:
+            used_dims = self._test_params.get(QBIT_USED_DIMS)
+            dims_label = "" if used_dims is None else f", {used_dims}/{self._dimension} dims"
+            return [
+                (f"QBit {p}bit{dims_label}", p)
+                for p in self._test_params[QBIT_PRECISIONS]
+            ]
+        return [("vector similarity index", None)]
+
+    def ann_search_query(self, query_source, variant):
+        if self._search_method == SEARCH_METHOD_QBIT:
+            qbit_column = self._dataset[QBIT_COLUMN]
+            reference = rotate_for_qbit(query_source, self._dimension)
+            used_dims = self._test_params.get(QBIT_USED_DIMS)
+            dims_argument = "" if used_dims is None else f", {used_dims}"
+            distance = f"{self._distance_metric}TransposedQuantized({qbit_column}, {reference}, {variant}{dims_argument})"
+            return f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {distance} AS distance LIMIT {self._k}"
+
+        query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
+        if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
+            query += f" SETTINGS vector_search_use_quantized_codes = 1, vector_search_index_fetch_multiplier = {variant}"
+        return query
 
     def load_data(self):
         logger(f"Begin loading data into {self._table}")
@@ -309,9 +597,6 @@ class RunTest:
             if configured_select_list is not None:
                 select_list = configured_select_list
 
-            # Public clickhouse-datasets bucket: read with NOSIGN so the query
-            # does not fall back to server-managed credentials (rejected in user
-            # queries by default). NOSIGN is the 2nd positional s3() argument.
             source = f"s3('{url}', NOSIGN)"
             source_format = self._dataset.get(SOURCE_FORMAT)
             if source_format is not None:
@@ -658,8 +943,9 @@ class RunTest:
         self._save_truth_records(name)
 
     # Run ANN on the query vectors in the truth set
-    def run_search_for_truth_set(self, use_chclient=None):
+    def run_search_for_truth_set(self, variant=None, use_chclient=None):
         runtime = 0
+        read_bytes = 0
         result_set = []
         if use_chclient is not None:
             chclient = use_chclient
@@ -674,8 +960,9 @@ class RunTest:
 
         while True:
             try:
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {warmup_query_source} ) AS distance LIMIT {self._k}"
-                result = chclient.query(ann_search_query)
+                result = chclient.query(
+                    self.ann_search_query(warmup_query_source, variant)
+                )
                 logger("Vector indexes have loaded!")
                 break
             except Exception:
@@ -691,17 +978,19 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k}"
+                query_source = "reinterpret($search_vector_binary$, 'Array(Float32)')"
+                ann_search_query = self.ann_search_query(query_source, variant)
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
+                ann_search_query = self.ann_search_query(query_source, variant)
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
+            read_bytes = read_bytes + int((result.summary or {}).get("read_bytes", 0))
 
             neighbours = []
             distances = []
@@ -723,11 +1012,27 @@ class RunTest:
 
         # self._result_set = result_set
         logger(f"Runtime for ANN : {runtime / 1000} seconds")
+        self._last_search_ms = runtime / len(result_set) if result_set else 0.0
+        self._last_read_mib = read_bytes / len(result_set) / 1048576 if result_set else 0.0
+        if result_set:
+            logger(f"Average latency per query : {self._last_search_ms} ms")
+            logger(f"Average bytes read per query : {self._last_read_mib} MiB")
         return result_set
+
+    # Recall and latency for every search variant of the current truth set
+    def run_search_variants_and_calculate_recall(self):
+        for label, variant in self.search_variants():
+            logger(f"Running ANN search : {label}")
+            result_set = self.run_search_for_truth_set(variant)
+            recall = self.calculate_recall(result_set)
+            self._variant_results.append(
+                (label, recall, self._last_search_ms, self._last_read_mib)
+            )
 
     def run_search_and_calculate_recall_mt(self, thread_number):
         chclient = get_new_connection()
-        result_set = self.run_search_for_truth_set(chclient)
+        self.apply_session_settings(chclient)
+        result_set = self.run_search_for_truth_set(use_chclient=chclient)
         self.calculate_recall(result_set)
 
     # Calculate the recall using the original truth set and passed in result_set
@@ -774,6 +1079,101 @@ class RunTest:
         )
 
 
+def record_summary(test_name, dataset, test_runner, ok):
+    timings = test_runner._timings if test_runner else {}
+    variants = (test_runner._variant_results if test_runner else None) or [
+        ("(no search ran)", None, None, None)
+    ]
+    for label, recall, latency_ms, read_mib in variants:
+        SUMMARY_ROWS.append(
+            {
+                "test": test_name,
+                "table": test_runner._table if test_runner else dataset[TABLE],
+                "rows": test_runner._rows_inserted if test_runner else 0,
+                "vec_size": getattr(test_runner, "_column_size", "-") if test_runner else "-",
+                "vec_bytes": (
+                    getattr(test_runner, "_column_bytes_per_row", None)
+                    if test_runner
+                    else None
+                ),
+                "load": timings.get("load"),
+                "merge": timings.get("merge"),
+                "index": timings.get("index"),
+                "truth_set": timings.get("truth_set"),
+                "variant": label,
+                "recall": recall,
+                "latency_ms": latency_ms,
+                "read_mib": read_mib,
+                "ok": ok,
+            }
+        )
+
+
+def print_summary():
+    """Two narrow tables: the log viewer wraps anything much wider than 100 columns."""
+    if not SUMMARY_ROWS:
+        logger("Summary: no runs were recorded")
+        return
+
+    def table(title, columns, rows):
+        header = "  ".join(
+            name.ljust(width) if left else name.rjust(width)
+            for name, _, width, left in columns
+        )
+        logger(title)
+        print(header)
+        print("-" * len(header))
+        for row in rows:
+            cells = []
+            for _, key, width, left in columns:
+                value = row[key]
+                if key == "ok":
+                    text = "ok" if value else "FAIL"
+                elif value is None:
+                    text = "-"
+                elif key == "recall":
+                    text = f"{value:.4f}"
+                elif isinstance(value, float):
+                    text = f"{value:.1f}"
+                else:
+                    text = str(value)
+                cells.append(text.ljust(width) if left else text.rjust(width))
+            print("  ".join(cells).rstrip())
+        print()
+
+    datasets = []
+    for row in SUMMARY_ROWS:
+        if not datasets or datasets[-1]["table"] != row["table"]:
+            datasets.append(row)
+
+    table(
+        "Summary - datasets:",
+        [
+            ("Table", "table", 22, True),
+            ("Rows", "rows", 9, False),
+            ("Vector col", "vec_size", 10, False),
+            ("Vec B/row", "vec_bytes", 9, False),
+            ("Load s", "load", 7, False),
+            ("Merge s", "merge", 7, False),
+            ("Index s", "index", 7, False),
+            ("Truth s", "truth_set", 7, False),
+            ("Status", "ok", 6, True),
+        ],
+        datasets,
+    )
+    table(
+        "Summary - searches:",
+        [
+            ("Table", "table", 22, True),
+            ("Search variant", "variant", 24, True),
+            ("Recall", "recall", 6, False),
+            ("ms/query", "latency_ms", 8, False),
+            ("MiB/query", "read_mib", 9, False),
+        ],
+        SUMMARY_ROWS,
+    )
+
+
 def run_single_test(test_name, dataset, test_params):
     chclient = None
     test_runner = None
@@ -782,19 +1182,25 @@ def run_single_test(test_name, dataset, test_params):
         chclient = get_new_connection()
         test_runner = RunTest(chclient, dataset, test_params)
 
-        test_runner.load_data()
-        test_runner.optimize_table()
+        timings = test_runner._timings
+        with phase_timer(timings, "load"):
+            test_runner.load_data()
+        with phase_timer(timings, "merge"):
+            test_runner.optimize_table()
+        test_runner.capture_column_size()
 
         # Run KNN queries first before building the index.
         if test_runner._test_params[GENERATE_TRUTH_SET]:
-            test_runner.generate_truth_set()
+            with phase_timer(timings, "truth_set"):
+                test_runner.generate_truth_set()
             test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
-        test_runner.build_index()
+        if test_runner.uses_vector_index():
+            with phase_timer(timings, "index"):
+                test_runner.build_index()
 
         if test_runner._test_params[GENERATE_TRUTH_SET]:
-            result_set = test_runner.run_search_for_truth_set()
-            test_runner.calculate_recall(result_set)
+            test_runner.run_search_variants_and_calculate_recall()
 
         # Run ANN search using pre-generated truth sets and calculate recall
         if test_runner._test_params[TRUTH_SET_FILES] and len(
@@ -803,8 +1209,7 @@ def run_single_test(test_name, dataset, test_params):
             for tf in test_runner._test_params[TRUTH_SET_FILES]:
                 generated_truth_set = test_runner.load_truth_set(tf)
                 test_runner._truth_set = generated_truth_set
-                result_set = test_runner.run_search_for_truth_set()
-                test_runner.calculate_recall(result_set)
+                test_runner.run_search_variants_and_calculate_recall()
 
         # Run concurrency test on the current truth set
         if test_runner._test_params[CONCURRENCY_TEST]:
@@ -813,6 +1218,7 @@ def run_single_test(test_name, dataset, test_params):
         print(traceback.format_exc(), file=sys.stdout)
         result = False
     finally:
+        record_summary(test_name, dataset, test_runner, result)
         if test_runner is not None:
             try:
                 test_runner.drop_table()
@@ -851,6 +1257,26 @@ TESTS_TO_RUN = [
         test_params_laion_5b_1m,
     ),
     (
+        "Test using the laion dataset with the rabitq quantized codec",
+        dataset_laion_5b_10m_quantized_rabitq,
+        test_params_laion_5b_10m_quantized_rabitq,
+    ),
+    (
+        "Test using the laion dataset with the turboquant quantized codec",
+        dataset_laion_5b_10m_quantized_turboquant,
+        test_params_laion_5b_10m_quantized_turboquant,
+    ),
+    (
+        "Test using the laion dataset with a QBit(Int8) column",
+        dataset_laion_5b_10m_qbit_int8,
+        test_params_laion_5b_10m_qbit_int8,
+    ),
+    (
+        "Test using the laion dataset with a strided QBit(Int8) column",
+        dataset_laion_5b_10m_qbit_int8_strided,
+        test_params_laion_5b_10m_qbit_int8_strided,
+    ),
+    (
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
         test_params_hackernews_10m,
@@ -864,6 +1290,10 @@ TESTS_TO_RUN = [
 
 
 def main():
+    logger("CPU:\n" + os.popen("lscpu | grep -Ei 'model name|vendor|cpu family|^model:|stepping|^cpu.s.:|bogomips|cache|numa node.s.|implementer|^architecture|variant|^cpu part|revision'").read())
+    logger("MEM: " + os.popen("grep -E 'MemTotal|Hugepagesize' /proc/meminfo | tr -s ' ' | paste -sd'; '").read().strip())
+    logger("CPUSTAT begin: " + os.popen("head -1 /proc/stat").read().strip())
+
     test_results = install_clickhouse()
 
     if not test_results[-1].is_ok():
@@ -893,6 +1323,10 @@ def main():
         test_results.append(
             Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
+
+    logger("CPUSTAT end: " + os.popen("head -1 /proc/stat").read().strip())
+
+    print_summary()
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"

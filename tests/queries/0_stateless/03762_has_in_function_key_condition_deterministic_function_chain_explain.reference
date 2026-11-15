@@ -137,7 +137,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               toString(intDiv(x, 10))
-            Condition: not((toString(intDiv(x, 10)) in 5-element set))
+            Condition: (toString(intDiv(x, 10)) notIn 5-element set)
             Parts: 1/1
             Granules: 17/17
             Search Algorithm: generic exclusion search
@@ -226,7 +226,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               reverse(lower(s))
-            Condition: not((reverse(lower(s)) in 5-element set))
+            Condition: (reverse(lower(s)) notIn 5-element set)
             Parts: 1/1
             Granules: 17/17
             Search Algorithm: generic exclusion search
@@ -251,6 +251,8 @@ Expression ((Project names + Projection))
           Ranges: 1
 SET use_variant_as_common_type=1;
 DROP TABLE IF EXISTS table_json;
+-- `json.b` is a `Dynamic` path, and `has` compares it per stored type: `has(['042'], json.b)` matches a stored `42`.
+-- A transform of it renders each value from its own type instead, so the `json.b` part of the key is not used.
 CREATE TABLE table_json (id UInt64, json JSON(a UInt32)) ENGINE = MergeTree ORDER BY (json.a, json.b::String) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))) FROM numbers(4);
 INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2 + 4, 'b', 'str_' || number % 3 + 4, 'c', range(number % 10))) FROM numbers(4, 4);
@@ -265,11 +267,10 @@ Expression (Project names)
           PrimaryKey
             Keys:
               json.a
-              CAST(json.b, \'String\')
-            Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
+            Condition: (json.a in [0, 0])
             Parts: 1/2
-            Granules: 1/8
-            Search Algorithm: generic exclusion search
+            Granules: 2/8
+            Search Algorithm: binary search
           Ranges: 1
 EXPLAIN indexes = 1
 SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
@@ -282,11 +283,10 @@ Expression (Project names)
           PrimaryKey
             Keys:
               json.a
-              CAST(json.b, \'String\')
-            Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
+            Condition: (json.a in [0, 0])
             Parts: 1/2
             Granules: 2/8
-            Search Algorithm: generic exclusion search
+            Search Algorithm: binary search
           Ranges: 1
 DROP TABLE IF EXISTS table_json_or_null;
 CREATE TABLE table_json_or_null (id UInt64, json JSON(a UInt32))
@@ -310,11 +310,10 @@ Expression (Project names)
           PrimaryKey
             Keys:
               json.a
-              CAST(json.b, \'UInt64\')
-            Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
+            Condition: (json.a in [0, 0])
             Parts: 1/1
-            Granules: 3/8
-            Search Algorithm: generic exclusion search
+            Granules: 4/8
+            Search Algorithm: binary search
           Ranges: 1
 -- Not supported yet
 DROP TABLE IF EXISTS table_json_nested_cast;

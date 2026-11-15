@@ -2,15 +2,21 @@
 title: 移行ガイド
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="introduction">
   ## はじめに
 </div>
 
 [Amazon Redshift](https://aws.amazon.com/redshift/) は、Amazon Web Services が提供する人気の高いクラウドデータウェアハウスソリューションです。このガイドでは、Redshift インスタンスから ClickHouse へデータを移行するためのさまざまな方法を紹介します。ここでは、次の 3 つの選択肢を取り上げます。
 
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Redshift から ClickHouse への移行オプション" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Redshift から ClickHouse への移行オプション](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse インスタンスの観点では、次のいずれかの方法を選択できます。
 
@@ -28,9 +34,17 @@ ClickHouse インスタンスの観点では、次のいずれかの方法を選
   ## Push で Redshift から ClickHouse にデータを送る
 </div>
 
-Push シナリオでは、サードパーティ製のツールやサービス (カスタムコード、または [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) を利用して、データを ClickHouse インスタンスに送信します。たとえば、[Airbyte](https://www.airbyte.com/) のようなソフトウェアを使用すると、Redshift インスタンスをソース、ClickHouse を宛先として、両者の間でデータを移動できます ([Airbyte のインテグレーションガイドをご覧ください](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse)) 。
+Push シナリオでは、サードパーティ製のツールやサービス (カスタムコード、または [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) を利用して、データを ClickHouse インスタンスに送信します。たとえば、[Airbyte](https://www.airbyte.com/) のようなソフトウェアを使用すると、Redshift インスタンスをソース、ClickHouse を宛先として、両者の間でデータを移動できます ([Airbyte のインテグレーションガイドをご覧ください](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="PUSH Redshift から ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![PUSH Redshift から ClickHouse](/images/integrations/data-ingestion/redshift/push.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -51,9 +65,17 @@ Push シナリオでは、サードパーティ製のツールやサービス (�
   ## Redshift から ClickHouse へデータを Pull する
 </div>
 
-Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
+Pull シナリオでは、ClickHouse JDBC Bridge を利用して、ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift から ClickHouse への PULL" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Redshift から ClickHouse への PULL](/images/integrations/data-ingestion/redshift/pull.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -79,9 +101,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
 このオプションを使用するには、ClickHouse JDBC Bridge をセットアップする必要があります。ClickHouse JDBC Bridge は、JDBC 接続を処理し、ClickHouse インスタンスとデータソースの間のプロキシとして機能するスタンドアロンの Java アプリケーションです。このチュートリアルでは、[サンプルデータベース](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html) が事前に格納された Redshift インスタンスを使用します。
 
 <Steps>
-  <Step>
-    #### ClickHouse JDBC Bridge をデプロイする
-
+  <Step title="ClickHouse JDBC Bridge をデプロイする" id="deploy-clickhouse-jdbc-bridge">
     ClickHouse JDBC Bridge をデプロイします。詳細については、[外部データソース向け JDBC](/ja/integrations/connectors/data-ingestion/jdbc-with-clickhouse) に関するユーザーガイドを参照してください。
 
     <Note>
@@ -89,9 +109,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
     </Note>
   </Step>
 
-  <Step>
-    #### Redshift データソースを設定する
-
+  <Step title="Redshift データソースを設定する" id="configure-your-redshift-datasource">
     ClickHouse JDBC Bridge 用に Redshift データソースを設定します。たとえば、`/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json ` です。
 
     ```json
@@ -113,9 +131,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
     ```
   </Step>
 
-  <Step>
-    #### ClickHouse から Redshift インスタンスにクエリを実行する
-
+  <Step title="ClickHouse から Redshift インスタンスにクエリを実行する" id="query-your-redshift-instance-from-clickhouse">
     ClickHouse JDBC Bridge のデプロイと起動が完了したら、ClickHouse から Redshift インスタンスに対してクエリを実行できます
 
     ```sql
@@ -153,9 +169,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
     ```
   </Step>
 
-  <Step>
-    #### Redshift から ClickHouse にデータをインポートする
-
+  <Step title="Redshift から ClickHouse にデータをインポートする" id="import-data-from-redshift-to-clickhouse">
     以下では、`INSERT INTO ... SELECT` ステートメントを使用したデータのインポート方法を示します
 
     ```sql
@@ -199,7 +213,15 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
 
 このシナリオでは、まずデータを中間の Pivot 形式で S3 にエクスポートし、次に S3 から ClickHouse に読み込みます。
 
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="S3 を使用した Redshift からの PIVOT" />
+<div className="ch-image-md">
+
+<Frame>
+
+![S3 を使用した Redshift からの PIVOT](/images/integrations/data-ingestion/redshift/pivot.webp)
+
+</Frame>
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -221,21 +243,33 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
 </div>
 
 <Steps>
-  <Step>
-    #### UNLOAD を使用してデータを S3 バケットにエクスポートする
-
+  <Step title="UNLOAD を使用してデータを S3 バケットにエクスポートする" id="export-data-into-an-s3-bucket-using-unload">
     Redshift の [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 機能を使用して、既存のプライベート S3 バケットにデータをエクスポートします。
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="Redshift から S3 への UNLOAD" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+
+    <Frame>
+
+    ![Redshift から S3 への UNLOAD](/images/integrations/data-ingestion/redshift/s3-1.webp)
+
+    </Frame>
+
+    </div>
 
     これにより、S3 に生データを含む part ファイルが生成されます。
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3 内のデータ" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+
+    <Frame>
+
+    ![S3 内のデータ](/images/integrations/data-ingestion/redshift/s3-2.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
-  <Step>
-    #### ClickHouse にテーブルを作成する
-
+  <Step title="ClickHouse にテーブルを作成する" id="create-the-table-in-clickhouse">
     ClickHouse にテーブルを作成します。
 
     ```sql
@@ -261,9 +295,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
     これは特に、Parquet のようにデータ型に関する情報を含むフォーマットのデータで効果的です。
   </Step>
 
-  <Step>
-    #### S3 ファイルを ClickHouse に読み込む
-
+  <Step title="S3 ファイルを ClickHouse に読み込む" id="load-s3-files-into-clickhouse">
     `INSERT INTO ... SELECT` ステートメントを使用して、S3 ファイルを ClickHouse に読み込みます。
 
     ```sql
@@ -280,7 +312,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
     ```
 
     <Note>
-      この例では、中間フォーマットとして CSV を使用しました。ただし、本番ワークロードでは、大規模な移行に最適な選択肢として Apache Parquet を推奨します。圧縮に対応しているため、転送時間を短縮しながらストレージコストをある程度削減できるからです。 (デフォルトでは、各行グループは SNAPPY で圧縮されます。) また、ClickHouse は Parquet のカラム指向も活用してデータインジェストを高速化します。
+      この例では、Pivot 形式として CSV を使用しました。ただし、本番ワークロードでは、大規模な移行に最適な選択肢として Apache Parquet を推奨します。圧縮に対応しているため、転送時間を短縮しながらストレージコストをある程度削減できるからです。 (デフォルトでは、各行グループは SNAPPY で圧縮されます。) また、ClickHouse は Parquet のカラム指向も活用してデータインジェストを高速化します。
     </Note>
   </Step>
 </Steps>

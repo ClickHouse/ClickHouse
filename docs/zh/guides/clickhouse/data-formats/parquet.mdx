@@ -161,7 +161,7 @@ FORMAT Parquet
   ## ClickHouse 和 Parquet 数据类型
 </div>
 
-ClickHouse 和 Parquet 的数据类型大多相同，但仍[略有差异](/zh/reference/formats/Parquet/Parquet#data-types-matching-parquet)。例如，ClickHouse 会将 `DateTime` 类型导出为 Parquet 的 `int64`。如果再将其导入回 ClickHouse，我们看到的将是数字 ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)) ：
+ClickHouse 和 Parquet 的数据类型大多相同，但仍[略有差异](/zh/reference/formats/Parquet/Parquet#data-types-matching-parquet)。例如，ClickHouse 会将 `DateTime` 类型导出为 Parquet 的 `int64`。如果再将其导入回 ClickHouse，我们看到的将是数字 ([time.parquet file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet))：
 
 ```sql
 SELECT * FROM file('time.parquet', Parquet);
@@ -182,7 +182,7 @@ SELECT * FROM file('time.parquet', Parquet);
 ```sql
 SELECT
     n,
-    toDateTime(time)                 <--- 整数转时间
+    toDateTime(time)                 <--- int to time
 FROM file('time.parquet', Parquet);
 ```
 
@@ -209,4 +209,4 @@ ClickHouse 支持多种格式，包括文本格式和二进制格式，以适应
 * [Native 和二进制格式](/zh/guides/clickhouse/data-formats/binary)
 * [SQL 格式](/zh/guides/clickhouse/data-formats/sql)
 
-另外，也可以查看 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)——这是一个便携且功能完整的工具，可用于处理本地/远程文件，无需 ClickHouse server。
+另外，也可以查看 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)——这是一个便携且功能完整的工具，可用于处理本地/远程文件，无需 ClickHouse 服务器。

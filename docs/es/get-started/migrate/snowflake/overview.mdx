@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 > Este documento ofrece una introducción a la migración de datos de Snowflake a ClickHouse.
 
 Snowflake es un data warehouse en la nube centrado principalmente en migrar a la nube cargas de trabajo heredadas de data warehousing on-premise.
@@ -51,7 +49,15 @@ resiliencia y garantías de rendimiento escalable.
 La siguiente imagen de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 muestra esta arquitectura:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Arquitectura de Snowflake" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Arquitectura de Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+
+</Frame>
+
+</div>
 
 Por el contrario, como producto de código abierto y alojado en la nube, ClickHouse puede implementarse
 tanto en arquitecturas de disco compartido como sin recursos compartidos. Esta última es típica de las
@@ -70,7 +76,15 @@ de disco compartido (cuellos de botella de E/S de disco y red) al garantizar que
 disponible para los nodos actuales de un clúster no se vea afectado a medida que se añaden
 nodos adicionales.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Arquitectura de ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Arquitectura de ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+
+</Frame>
+
+</div>
 
 <div id="differences">
   ### Diferencias
@@ -150,9 +164,9 @@ ClickHouse supera a Snowflake en aplicaciones de analítica en tiempo real en la
   específica de cada nodo y no es [transactionally consistent](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   lo que la hace [más adecuada ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   para la analítica en tiempo real. Los usuarios también tienen un control granular sobre su uso,
-  ya que pueden controlarla [por consulta](/es/reference/settings/session-settings#use_query_cache),
-  su [tamaño preciso](/es/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  si una [consulta se almacena en caché](/es/reference/settings/session-settings#enable_writes_to_query_cache)
+  ya que pueden controlarla [por consulta](/es/reference/settings/session-settings/use-query#use_query_cache),
+  su [tamaño preciso](/es/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  si una [consulta se almacena en caché](/es/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (límites de duración o número mínimo de ejecuciones), y si
   solo se [usa pasivamente](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

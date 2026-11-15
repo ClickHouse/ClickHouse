@@ -1,39 +1,35 @@
 ---
 title: هل يمكنك استخدام PIVOT في ClickHouse؟
-description: "لا يوفّر ClickHouse بند PIVOT، لكن يمكننا الاقتراب من هذه الإمكانية باستخدام مُركِّبات الدوال التجميعية. لِنرَ كيف نفعل ذلك باستخدام مجموعة بيانات أسعار المنازل في المملكة المتحدة."
+description: "لا تتضمن ClickHouse عبارة PIVOT، لكن يمكننا الاقتراب من هذه الإمكانية باستخدام مُعدِّلات الدوال التجميعية. لِنَرَ كيف نفعل ذلك باستخدام مجموعة بيانات أسعار المساكن في المملكة المتحدة."
 date: 2024-12-11
-tags: ['نمذجة البيانات', 'المفاهيم الأساسية للبيانات']
-keywords: ['PIVOT', 'مُركِّبات الدوال التجميعية']
+tags: ['نمذجة البيانات', 'مفاهيم البيانات الأساسية']
+keywords: ['PIVOT', 'مُعدِّلات الدوال التجميعية']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="introduction">
-  ## مقدمة
+  ## المقدمة
 </div>
 
-لا يتضمن ClickHouse عامل PIVOT، لكن يمكننا تحقيق سلوك مشابه باستخدام [مُركِّبات الدوال التجميعية](/ar/reference/functions/aggregate-functions/combinators)، وبالأخص تلك التي تحمل اللاحقة [`-Map`](/ar/reference/functions/aggregate-functions/combinators#-map).
+لا يتضمن ClickHouse عامل pivot، لكن يمكننا تحقيق سلوك مماثل باستخدام [مُعدِّلات الدوال التجميعية](/ar/reference/functions/aggregate-functions/combinators)، وتحديدًا تلك التي تحمل [اللاحقة `-Map`](/ar/reference/functions/aggregate-functions/combinators#-map).
 
-في هذه المقالة، سنتعلّم كيفية تنفيذ ذلك.
+في هذه المقالة، سنتعلّم كيفية القيام بذلك.
 يوجد أيضًا فيديو يشرح المحتوى نفسه، ويمكنك مشاهدته أدناه:
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/nlRMOmwYtF4?si=0TZSNg-uo7zjiO52" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/nlRMOmwYtF4?si=0TZSNg-uo7zjiO52" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 <div id="understanding-aggregate-function-combinators">
   ## فهم مُعدِّلات الدوال التجميعية
 </div>
 
-لنبدأ بمثال بسيط. سنستخدم [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، ويمكنك تشغيله بتنفيذ الأمر التالي:
+لنبدأ بمثال بسيط. سنستخدم [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، ويمكنك تشغيله بتنفيذ ما يلي:
 
 ```bash
 clickhouse -m --output_format_pretty_row_numbers=0
 ```
 
-يستدعي الاستعلام التالي الدالة `sumMap`، التي تأخذ قيمة من النوع `Map` وتجمع قيم كل مفتاح:
+يستدعي الاستعلام التالي الدالة `sumMap`، التي تستقبل `map` وتجمع قيم كل مفتاح:
 
 ```sql
 SELECT sumMap(map('ClickHouse', 1, 'ClickBench', 2));
@@ -45,8 +41,8 @@ SELECT sumMap(map('ClickHouse', 1, 'ClickBench', 2));
 └───────────────────────────────────────────────┘
 ```
 
-هذا المثال ليس مثيرًا للاهتمام كثيرًا، لأنه يعيد قيمة `Map` نفسها التي مررناها.
-لنستدعِ الآن `sumMap` على عدة صفوف من قيم `Map`;
+هذا ليس مثالًا مثيرًا للاهتمام كثيرًا، لأنه يعيد قيمة Map نفسها التي مررناها.
+لنستدعِ الآن `sumMap` على عدة صفوف من قيم Map؛
 
 ```sql
 WITH values AS (
@@ -64,7 +60,7 @@ FROM values;
 └─────────────────────────────────┘
 ```
 
-ظهر المفتاح `ClickHouse` في كلا الصفَّين، وجُمِعت قيمه. أمّا المفتاح `ClickBench` فلم يظهر إلا في صف واحد، لذا تُجمَع له قيمة واحدة فقط، فتكون النتيجة هي تلك القيمة نفسها!
+ظهر المفتاح `ClickHouse` في كلا الصفّين، وجُمعت قيمه. أما المفتاح `ClickBench` فلم يظهر إلا في أحد الصفّين، لذا تُجمع قيمة واحدة فقط، فتكون النتيجة هي تلك القيمة نفسها!
 
 يمكننا أيضًا استخدام `maxMap` للعثور على القيم العظمى لكل مفتاح:
 
@@ -84,7 +80,7 @@ FROM values;
 └─────────────────────────────────┘
 ```
 
-أو يمكننا استخدام `avgMap` لحساب متوسط القيم لكل مفتاح:
+أو يمكننا استخدام `avgMap` لحساب متوسط القيمة لكل مفتاح:
 
 ```sql
 WITH values AS (
@@ -102,15 +98,15 @@ FROM values;
 └───────────────────────────────────┘
 ```
 
-نأمل أن تكون قد تكوّنت لديك الآن فكرة عن كيفية عمل مُركِّبات الدوال هذه.
+نأمل أن يكون هذا قد أعطاك فكرة عن كيفية عمل مُعدِّلات الدوال التجميعية.
 
 <div id="real-world-application-uk-housing-prices-dataset">
-  ## تطبيق عملي: مجموعة بيانات أسعار المساكن في المملكة المتحدة
+  ## تطبيق عملي واقعي: مجموعة بيانات أسعار المساكن في المملكة المتحدة
 </div>
 
-سنستخدمها الآن مع مجموعة بيانات أكبر في [ClickHouse SQL playground](https://clickhouse.com/blog/announcing-the-new-sql-playground).
+سنستخدم ما سبق الآن على مجموعة بيانات أكبر في [ClickHouse SQL playground](https://clickhouse.com/blog/announcing-the-new-sql-playground).
 
-يمكننا الاتصال ببيئة التشغيل التفاعلية باستخدام `clickhouse-client`:
+يمكننا الاتصال بـ ClickHouse SQL playground باستخدام `clickhouse-client`:
 
 ```bash
 clickhouse client -m \
@@ -119,7 +115,7 @@ clickhouse client -m \
   --secure
 ```
 
-سنُجري استعلامًا على جدول `uk_price_paid`، لذا دعونا نستعرض البيانات في هذا الجدول:
+سنُجري استعلامًا على الجدول `uk_price_paid`، لذا فلنستعرض البيانات في هذا الجدول:
 
 ```sql
 SELECT * FROM uk.uk_price_paid LIMIT 1 FORMAT Vertical;
@@ -145,13 +141,13 @@ county:    NORTH YORKSHIRE
 category:  0
 ```
 
-نرى أعلاه أن الجدول يتضمن حقولًا متعددة تتعلق بمبيعات العقارات في المملكة المتحدة.
+يمكننا أن نرى أعلاه أن الجدول يضم حقولًا متنوعة تتعلق بمبيعات العقارات في المملكة المتحدة.
 
 <div id="grouping-and-aggregating-by-decade">
-  ### التجميع والعمليات التجميعية حسب العقد الزمني
+  ### التجميع والتلخيص حسب العقد الزمني
 </div>
 
-لنحسب الأسعار الوسيطة، مجمّعة حسب المقاطعة لكل عقد زمني في مجموعة البيانات:
+لنحسب وسيط الأسعار بحسب المقاطعة لكل عقد زمني في مجموعة البيانات:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -183,7 +179,7 @@ LIMIT 10;
   ### تصفية النتائج
 </div>
 
-يمكننا تصفية النتائج بحيث لا تشمل سوى البيانات اعتبارًا من عام 2010:
+يمكننا تصفية النتائج بحيث تشمل فقط البيانات من عام 2010 فصاعدًا:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -213,10 +209,10 @@ LIMIT 10;
 ```
 
 <div id="combining-multiple-aggregations">
-  ## دمج عمليات تجميع متعددة
+  ## دمج عدة عمليات تجميع
 </div>
 
-وإذا أردنا العثور على أعلى سعر لكل عقد زمني، فيمكننا فعل ذلك باستخدام الدالة `maxMap` التي رأيناها سابقًا:
+وإذا أردنا العثور على أعلى سعر لكل عقد زمني، يمكننا فعل ذلك باستخدام الدالة `maxMap` التي رأيناها سابقًا:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -247,11 +243,11 @@ LIMIT 10;
 ```
 
 <div id="applying-functions-to-map-values">
-  ## تطبيق الدوال على قيم Map
+  ## تطبيق الدوال على قيم `map`
 </div>
 
-بدلًا من ذلك، يمكننا احتساب متوسط السعر باستخدام `avgMap`.
-تحتوي هذه القيم على عدد كبير من الخانات العشرية، ويمكننا تبسيطها باستخدام الدالة [`mapApply`](/ar/reference/functions/regular-functions/tuple-map-functions#mapApply) لاستدعاء الدالة [`floor`](/ar/reference/functions/regular-functions/rounding-functions#floor) على كل قيمة في Map:
+بدلًا من ذلك، يمكننا حساب متوسط السعر باستخدام `avgMap`.
+تحتوي هذه القيم على الكثير من الأرقام بعد الفاصلة العشرية، ويمكننا تبسيطها باستخدام الدالة [`mapApply`](/ar/reference/functions/regular-functions/tuple-map-functions#mapApply) لاستدعاء الدالة [`floor`](/ar/reference/functions/regular-functions/rounding-functions#floor) على كل قيمة في `map`:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -286,7 +282,7 @@ LIMIT 10;
 </div>
 
 لنجرّب التجميع حسب بعض الحقول المختلفة.
-هذه المرة سنحسب الوسيط السعري لكل عقد، مع التجميع حسب المقاطعة والمنطقة:
+هذه المرة سنحسب السعر الوسيط لكل عقد زمني مع التجميع حسب المقاطعة والمنطقة:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
@@ -316,7 +312,7 @@ LIMIT 10
     └────────────────────┴────────────────────────┴─────────────────────────────┘
 ```
 
-يمكننا أيضًا اختيار التجميع حسب السنة، ثم دمج `postcode1` و`postcode2` في الـ map:
+يمكننا أيضًا اختيار التجميع حسب السنة ثم دمج `postcode1` و`postcode2` في الـ map:
 
 ```sql
 WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year

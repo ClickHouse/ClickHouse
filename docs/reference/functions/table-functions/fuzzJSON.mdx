@@ -34,7 +34,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 | `min_key_length` (UInt64)          | The minimum key length. Should be at least 1.                                               |
 | `max_key_length` (UInt64)          | The maximum key length. Should be greater or equal than the `min_key_length`, if specified. |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with a single column containing perturbed JSON strings.
 

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Voici un guide expliquant comment configurer Supabase Postgres pour l&#39;utiliser avec ClickPipes.
 
 <Note>
@@ -62,7 +60,7 @@ Connectez-vous à votre instance Supabase en tant qu’utilisateur admin, puis e
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de modification générés à partir des tables spécifiées, et sera ensuite utilisée pour ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront diffusés vers ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES` sauf si vous avez l’intention de répliquer chaque table, car inclure des tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
 
 <div id="increase-max_slot_wal_keep_size">
   ## Augmentez `max_slot_wal_keep_size`
@@ -84,7 +82,15 @@ Rendez-vous dans `Project Settings` -&gt; `Database` de votre projet Supabase (s
 
 **Important** : désactivez `Display connection pooler` sur cette page, puis accédez à la section `Connection parameters` et notez ou copiez les paramètres.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="Localiser les informations de connexion Supabase" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Localiser les informations de connexion Supabase](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
+
+</Frame>
+
+</div>
 
 <Info>
   Le pooler de connexions n’est pas pris en charge pour la réplication basée sur le CDC. Il doit donc être désactivé.

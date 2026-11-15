@@ -14,6 +14,6 @@ bool isLimitAggregationOperator(std::string_view operator_name);
 
 /// Applies a limit aggregation operator ("topk", "bottomk", or "limitk").
 SQLQueryPiece applyLimitAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

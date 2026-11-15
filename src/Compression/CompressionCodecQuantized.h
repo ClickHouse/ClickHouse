@@ -30,6 +30,7 @@ public:
     explicit CompressionCodecQuantized(const QuantizedCodecParams & params_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
     const QuantizedCodecParams & getParams() const { return params; }
@@ -41,7 +42,6 @@ protected:
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isNone() const override { return true; } /// see the class-level comment
-    bool isExperimental() const override { return true; }
 
     String getDescription() const override
     {

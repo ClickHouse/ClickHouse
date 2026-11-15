@@ -177,7 +177,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 يشغّل هذا الأمر الخادم كتطبيق تفاعلي باستخدام المعلمات الافتراضية لبرنامج نصي التشغيل التلقائي. في هذا الوضع، يطبع `clickhouse-server` جميع رسائل الأحداث في الطرفية.
 
 <div id="configuration-parameters">
-  ### معلمات التهيئة
+  ### معلمات التكوين
 </div>
 
 تحقّق مما يلي:
@@ -187,7 +187,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
    * إذا كنت تشغّل ClickHouse في Docker ضمن شبكة IPv6، فتأكد من ضبط `network=host`.
 
 2. إعدادات نقطة النهاية.
-   * تحقّق من الإعدادين [listen&#95;host](/ar/reference/settings/server-settings/settings#listen_host) و[tcp&#95;port](/ar/reference/settings/server-settings/settings#tcp_port).
+   * تحقّق من الإعدادين [listen&#95;host](/ar/reference/settings/server-settings/settings/listen#listen_host) و[tcp&#95;port](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port).
    * يقبل خادم ClickHouse، افتراضيًا، الاتصالات عبر localhost فقط.
 
 3. إعدادات بروتوكول HTTP:
@@ -197,8 +197,8 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 4. إعدادات الاتصال الآمن.
 
    * تحقّق من:
-     * الإعداد [tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings#tcp_port_secure).
-     * إعدادات [شهادات SSL](/ar/reference/settings/server-settings/settings#openssl).
+     * الإعداد [tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings/tcp-port#tcp_port_secure).
+     * إعدادات [شهادات SSL](/ar/reference/settings/server-settings/settings/other#openssl).
    * استخدم المعلمات المناسبة عند الاتصال. على سبيل المثال، استخدم المعلمة `port_secure` مع `clickhouse_client`.
 
 5. إعدادات المستخدم:

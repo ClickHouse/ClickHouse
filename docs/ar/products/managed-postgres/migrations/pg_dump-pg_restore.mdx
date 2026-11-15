@@ -7,8 +7,7 @@ keywords: ['postgres', 'postgresql', 'pg_dump', 'pg_restore', 'ترحيل', 'ن�
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يوفّر هذا الدليل إرشادات مفصّلة خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام الأداتين `pg_dump` و`pg_restore`.
 
@@ -27,7 +26,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لتتبّع الخطوات، سنستخدم قاعدة بيانات RDS Postgres تجريبية بوصفها قاعدة البيانات المصدر. على سبيل المثال:
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="إعداد قاعدة بيانات PostgreSQL المصدر" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![إعداد قاعدة بيانات PostgreSQL المصدر](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
+
+</div>
 
 إليك ما نعمل عليه:
 
@@ -62,7 +69,15 @@ pg_dump \
 
 إليك كيف يبدو تشغيل هذا الأمر:
 
-<Image img="/images/managed-postgres/pg_dump_restore/dump-command.webp" alt="تنفيذ أمر pg_dump" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تنفيذ أمر pg_dump](/images/managed-postgres/pg_dump_restore/dump-command.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore">
   ## رحّل ملف تفريغ إلى ClickHouse Managed Postgres
@@ -71,18 +86,26 @@ pg_dump \
 الآن بعد أن أصبح لدينا ملف تفريغ، يمكننا استعادته في مثيل ClickHouse Managed Postgres الخاص بنا باستخدام `pg_restore`.
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### أنشئ مثيلاً من Managed Postgres
+  ### أنشئ مثيل ClickHouse Managed Postgres
 </div>
 
-أولاً، تأكد من إعداد مثيل من Managed Postgres، ويفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع الدليل السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سننشئه في هذا الدليل:
+أولاً، تأكد من إعداد مثيل ClickHouse Managed Postgres، ويفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع الدليل السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سنُنشئه في هذا الدليل:
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="أنشئ مثيلاً من ClickHouse Managed Postgres" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![أنشئ مثيل ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore-dump">
-  ### استعادة ملف التفريغ
+  ### استعادة التفريغ
 </div>
 
-الآن، بالعودة إلى جهازنا المحلي، يمكننا استخدام الأمر `pg_restore` لاستعادة ملف التفريغ إلى مثيل Managed Postgres لدينا:
+الآن، بالعودة إلى جهازنا المحلي، يمكننا استخدام الأمر `pg_restore` لاستعادة التفريغ إلى مثيل ClickHouse Managed Postgres لدينا:
 
 ```shell
 pg_restore \
@@ -91,7 +114,7 @@ pg_restore \
   rds-dump
 ```
 
-يمكنك الحصول على سلسلة الاتصال لمثيل Managed Postgres الخاص بك من وحدة تحكم ClickHouse Cloud، كما هو موضّح ببساطة [هنا](/ar/products/managed-postgres/connection).
+يمكنك الحصول على سلسلة الاتصال لمثيل ClickHouse Managed Postgres الخاص بك من وحدة تحكم ClickHouse Cloud، كما هو موضّح ببساطة [هنا](/ar/products/managed-postgres/connection).
 
 وهنا أيضًا توجد علامتان يجدر الانتباه إليهما:
 
@@ -100,16 +123,32 @@ pg_restore \
 
 في حالتنا، يبدو الأمر كما يلي:
 
-<Image img="/images/managed-postgres/pg_dump_restore/restore-command.webp" alt="تنفيذ أمر pg_restore" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![تنفيذ أمر pg_restore](/images/managed-postgres/pg_dump_restore/restore-command.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-pgdump-pg-restore-verify">
   ## تحقّق من الترحيل
 </div>
 
-بمجرد اكتمال عملية الاستعادة، يمكنك الاتصال بمثيل Managed Postgres لديك والتحقق من ترحيل جميع بياناتك وكائناتك بنجاح. يمكنك استخدام أي عميل PostgreSQL للاتصال وتشغيل الاستعلامات.
-إليك كيف يبدو إعداد Managed Postgres لدينا بعد الترحيل:
+بمجرد اكتمال عملية الاستعادة، يمكنك الاتصال بمثيل ClickHouse Managed Postgres لديك والتحقق من ترحيل جميع بياناتك وكائناتك بنجاح. يمكنك استخدام أي عميل PostgreSQL للاتصال وتشغيل الاستعلامات.
+إليك كيف يبدو إعداد ClickHouse Managed Postgres لدينا بعد الترحيل:
 
-<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="إعداد قاعدة بيانات Managed Postgres المستهدفة" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![إعداد قاعدة بيانات ClickHouse Managed Postgres المستهدفة](/images/managed-postgres/pg_dump_restore/target-setup.webp)
+
+</Frame>
+
+</div>
 
 نرى أن جميع الجداول والفهارس والعروض والتسلسلات موجودة كما هي، مع تطابق أعداد البيانات أيضًا.
 
@@ -128,6 +167,6 @@ pg_restore \
   ## الخطوات التالية
 </div>
 
-تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام `pg_dump` و`pg_restore`. وأصبحت الآن جاهزًا تمامًا للتعرّف على ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لمساعدتك على الانطلاق:
+تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأصبحت الآن جاهزًا تمامًا لاستكشاف ميزات ClickHouse Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لمساعدتك على الانطلاق:
 
-* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [دليل البدء السريع لـ ClickHouse Managed Postgres](/ar/products/managed-postgres/quickstart)

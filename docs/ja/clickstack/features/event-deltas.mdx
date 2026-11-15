@@ -7,15 +7,21 @@ doc_type: 'guide'
 keywords: ['clickstack', 'イベントデルタ', 'ヒートマップ', '属性分布', 'トレース分析', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 イベントデルタでは、レイテンシヒートマップと属性の自動分析を組み合わせることで、クエリを書かなくてもトレースデータの傾向を把握し、遅いスパンがなぜ異なるのかを特定できます。使い方は 3 つあります。
 
 * **分布モード (常時有効)&#x20;**: ヒートマップ上で選択範囲がない場合、現在のスパン集団における各属性の値の分布が表示されます。支配的な値や、異常にまれな値 (カーディナリティの外れ値) を見つけるのに役立ちます。
 * **比較モード**: ヒートマップ上で長方形をドラッグすると、その内側のスパン (Selection) と外側のすべて (Background) を比較できます。偏りや逸脱の切り分けに役立ちます。
 * **反復的ドリルダウン**: 任意のバーをクリックすると、その値で絞り込み (または除外) できます。ヒートマップは絞り込み後の集団に対して再描画されるため、原因が明らかになるまでさらに絞り込めます。
 
-<Image img="/images/clickstack/event-deltas/overview.webp" alt="payment service 上のイベントデルタの概要。ウィンドウ中央で明るい帯が上昇し、表示範囲内では回復していない" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![payment service 上のイベントデルタの概要。ウィンドウ中央で明るい帯が上昇し、表示範囲内では回復していない](/images/clickstack/event-deltas/overview.webp)
+
+</Frame>
+
+</div>
 
 上のスクリーンショットでは、ヒートマップの右端は、午前中ずっと維持されていた 1 ms のベースラインには戻らず、およそ 10 ms に達しています。劣化はまだ進行中で、インシデントのただ中を捉えています。
 
@@ -76,7 +82,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ヒートマップで、時間の経過とともにレイテンシが上方へずれていく様子が見える場合 (遅い帯が厚くなる、明るい帯が上にせり上がる、あるいは正常な期間と劣化した期間の境目に明確な変曲点がある場合) は、その立ち上がりの変曲点から表示範囲の右端まで長方形をドラッグします。比較をより明確にするには、長方形の下端を軸の最下端ではなく正常時のベースラインに合わせてください。こうすることで、劣化した時間帯の中でも、実際に通常より遅いスパンだけを切り出せます。同じ時間範囲に含まれているだけの、まだ正常な高速スパンを拾わずに済みます。
 
-<Image img="/images/clickstack/event-deltas/before-after.webp" alt="payment service の比較モード。立ち上がりの変曲点から右端まで長方形を描き、下端を 1 ms のベースラインに合わせた状態" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![payment service の比較モード。立ち上がりの変曲点から右端まで長方形を描き、下端を 1 ms のベースラインに合わせた状態](/images/clickstack/event-deltas/before-after.webp)
+
+</Frame>
+
+</div>
 
 ヒートマップの下にある属性バーは、差分が大きいものから順にソートされています。この例では、最上段のチャートが最も強いシグナルを示しています。`SpanKind`、`SpanName`、`ScopeName` はいずれも、遅い `Selection` と正常な `Background` の間で、オレンジと緑がくっきり分かれています。これらを合わせて見ると、変曲点で何が変わったのかを特定できます。
 
@@ -88,13 +102,21 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ヒートマップで、duration 軸上にはっきり分離した 2 つのレイテンシ集団が見えている場合は、時間範囲全体にまたがりつつ、上側の明確に分離された帯だけを含む幅広い長方形をドラッグします。遅い集団が Selection になり、速い大半が Background になります。
 
-<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="frontend-proxy 上の slow と fast の比較。長方形は、密集した大部分から十分に離れた、明確に分離された上側の帯だけを囲っています" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![frontend-proxy 上の slow と fast の比較。長方形は、密集した大部分から十分に離れた、明確に分離された上側の帯だけを囲っています](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</Frame>
+
+</div>
 
 長方形は上側の帯をぴったり囲むように描き、その帯と密集した大部分の間に、水平の隙間がはっきり見えるようにしてください。速い集団にはみ出すような大まかな長方形だと、違いがぼやけてしまいます。
 
-100 s の上限線は、それ自体が有益な手がかりです。切りのよい値に現れる一定の水平線は、固定 timeout の典型的な兆候です。2 つの集団を明確に分ける スパン attribute が見つからない場合も、それは有用な結果です。その場合、原因は スパン attribute ではなく、ホストレベルや runtime レベルのメトリクス (GC pause、I/O 競合、scheduler latency、cold-cache の影響、noisy neighbor) にあることを示唆します。
+100 s の上限線は、それ自体が有益な手がかりです。切りのよい値に現れる一定の水平線は、固定 timeout の典型的な兆候です。2 つの集団を明確に分ける スパン 属性 が見つからない場合も、それは有用な結果です。その場合、原因は スパン 属性 ではなく、ホストレベルや runtime レベルのメトリクス (GC pause、I/O 競合、scheduler latency、cold-cache の影響、noisy neighbor) にあることを示唆します。
 
-これは、特定の異常を追いかけるのではなく、「遅い スパンs は速い スパンs と何が違うのか」を知りたいときに適した形です。違いのある attribute はコードパスや入力要因を示し、差が出ない比較はシステム全体の要因を示します。
+これは、特定の異常を追いかけるのではなく、「遅い スパン は速い スパン と何が違うのか」を知りたいときに適した形です。違いのある 属性 はコードパスや入力要因を示し、差が出ない比較はシステム全体の要因を示します。
 
 <div id="drill-down">
   ## 段階的なドリルダウン
@@ -102,19 +124,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 比較モードと分布モードは、組み合わせて使うと真価を発揮します。任意のバーをクリックすると、3 つのアクションを含むポップオーバーが表示されます。
 
-* **Filter**: この値を持つ スパン のみを残します
-* **Exclude**: この値を持つ スパン を除外します
+* **Filter**: この値を持つスパンのみを残します
+* **Exclude**: この値を持つスパンを除外します
 * **Copy**: 値をクリップボードにコピーします
 
-<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="ScopeVersion バーのポップオーバーをクリックすると、Selection と Background の割合、および filter、exclude、copy アクションが表示される" size="lg" />
+<div className="ch-image-lg">
 
-filter または exclude を適用すると、ヒートマップの選択はクリアされ、ヒートマップは新しい母集団に対して再描画され、分布モードはそのフィルタ済みのセットを対象に再開されます。ヒートマップの形がどう変わるかを確認してください。filter がうまく機能すると、遅い帯域が目に見えて消えたり、二峰性の分離が収束したり、右肩上がりの傾向が平坦になったりします。これを繰り返します。次に疑わしい値を見つけて filter し、新しいヒートマップを見て、新しい分布を確認します。通常は数回繰り返すだけで、リグレッションの原因を 1 つか 2 つの attribute に絞り込めます。
+<Frame>
+
+![ScopeVersion バーのポップオーバーをクリックすると、Selection と Background の割合、および filter、exclude、copy アクションが表示される](/images/clickstack/event-deltas/drill-down.webp)
+
+</Frame>
+
+</div>
+
+filter または exclude を適用すると、ヒートマップの選択はクリアされ、ヒートマップは新しい母集団に対して再描画され、分布モードはそのフィルタ済みのセットを対象に再開されます。ヒートマップの形がどう変わるかを確認してください。filter がうまく機能すると、遅い帯域が目に見えて消えたり、二峰性の分離が収束したり、右肩上がりの傾向が平坦になったりします。これを繰り返します。次に疑わしい値を見つけて filter し、新しいヒートマップを見て、新しい分布を確認します。通常は数回繰り返すだけで、リグレッションの原因を 1 つか 2 つの属性に絞り込めます。
 
 <Note>
   出現頻度の低い値をまとめた集計 **Other (N)** バケットはクリックできません。そのバケット内の特定の値でフィルタするには、[検索バー](/ja/clickstack/features/search) を直接使用してください。
 </Note>
 
-母集団が十分に小さくなったら、**Results Table** タブに切り替えて個々の traces を確認します。フィルタはそのまま引き継がれます。
+母集団が十分に小さくなったら、**Results Table** タブに切り替えて個々のトレースを確認します。フィルタはそのまま引き継がれます。
 
 <div id="customize">
   ## ヒートマップをカスタマイズする
@@ -122,12 +152,20 @@ filter または exclude を適用すると、ヒートマップの選択はク�
 
 ヒートマップ右上の歯車アイコンをクリックすると、**表示設定**ドロワーが開きます。
 
-<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Scale、Value、Count のフィールドがある表示設定ドロワー" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Scale、Value、Count のフィールドがある表示設定ドロワー](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</Frame>
+
+</div>
 
 | パラメーター    | デフォルト            | 説明                                                                                                  |
 | --------- | ---------------- | --------------------------------------------------------------------------------------------------- |
-| **Scale** | Log              | Log は広い latency の範囲に適しています。狭く uniform な分布には Linear のほうが適しています。                                      |
-| **Value** | `(Duration)/1e6` | レスポンスサイズ、エラー率、カスタムの スパン attribute など、任意の数値 expression を指定できます。                                     |
+| **Scale** | Log              | Log は広い レイテンシ の範囲に適しています。狭く uniform な分布には Linear のほうが適しています。                                      |
+| **Value** | `(Duration)/1e6` | レスポンスサイズ、エラー率、カスタムの スパン attribute など、任意の数値 expression を指定できます。                                      |
 | **Count** | `count()`        | 色分けに使う aggregation です。`avg()`、`sum()`、`p95()`、または `countDistinct(field)` のような expression に切り替えられます。 |
 
 ヒートマップを更新するには **Apply** をクリックします。下の attribute 分析もそれに合わせて更新されます。
@@ -135,14 +173,14 @@ filter または exclude を適用すると、ヒートマップの選択はク�
 <Tip>
   **ダッシュボード上のヒートマップ**
 
-  同じヒートマップは [dashboard tile](/ja/clickstack/features/dashboards/overview#create-a-tile-heatmap) としても利用できます。イベントデルタ の ドリルダウン フローの外で、時間の経過に伴う distribution の形状を監視したい場合に便利です。
+  同じヒートマップは [dashboard tile](/ja/clickstack/features/dashboards/overview#create-a-tile-heatmap) としても利用できます。イベントデルタ の ドリルダウン フローの外で、時間の経過に伴う 分布 の形状を監視したい場合に便利です。
 </Tip>
 
 これらのデフォルト値を変更したくなる一般的なケースは次のとおりです。
 
-* latency の範囲が狭い場合 (たとえば、すべての スパンs が 5～50 ms で実行される service) には、**Scale を Linear に切り替えます**。Log スケールでは、データが存在しない上側の領域に縦方向の表示範囲が無駄に使われます。
+* レイテンシ の範囲が狭い場合 (たとえば、すべての スパン が 5～50 ms で実行される service) には、**Scale を Linear に切り替えます**。Log スケールでは、データが存在しない上側の領域に縦方向の表示範囲が無駄に使われます。
 * **Y 軸に Duration 以外をプロットします。** **Value** を `SpanAttributes.http.response.size` に設定すると、低速で*サイズの大きい*レスポンスを調査できます。`if(StatusCode = 'Error', 1, 0)` のような expression を使うと、services 全体にわたる時間経過ごとのエラー頻度をプロットできます。
-* **count 以外で色分けします。** **Count** を `p95(Duration)` に設定すると、各 bucket は件数ではなく tail latency に応じて色分けされるため、count ベースのビューでは埋もれてしまう、まれでも低速な領域を浮かび上がらせることができます。`countDistinct(TraceId)` を使うと、1 つの trace が多数の スパンs を生成する場合に、trace volume と span volume を区別できます。
+* **count 以外で色分けします。** **Count** を `p95(Duration)` に設定すると、各 bucket は件数ではなく tail latency に応じて色分けされるため、count ベースのビューでは埋もれてしまう、まれでも低速な領域を浮かび上がらせることができます。`countDistinct(TraceId)` を使うと、1 つの trace が多数の スパン を生成する場合に、trace volume と span volume を区別できます。
 
 <div id="tips">
   ## 効果的に使うためのヒント

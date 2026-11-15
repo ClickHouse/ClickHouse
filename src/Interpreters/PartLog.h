@@ -91,7 +91,7 @@ struct PartLogElement
     /// Mutation IDs for MUTATE_PART events (array of all mutation IDs applied)
     Strings mutation_ids;
 
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
 
     std::map<String, UInt64> projections_duration_ms;
 

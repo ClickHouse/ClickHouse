@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +20,6 @@ write() { # $1=select-expr
         SELECT $1 FROM numbers(6)
         SETTINGS allow_experimental_variant_type = 1,
                  output_format_arrow_low_cardinality_as_dictionary = 1,
-                 output_format_arrow_use_native_writer = 1,
                  output_format_arrow_string_as_string = 1,
                  output_format_arrow_compression_method = 'none',
                  engine_file_truncate_on_insert = 1
@@ -39,7 +37,7 @@ for LABEL in "Variant(Array(LowCardinality))::${VARIANT_ARRAY}" \
     expr="${LABEL#*::}"
     write "$expr"
     echo "--- ${name}: native writer + native reader round-trip ---"
-    ${CLICKHOUSE_LOCAL} --query "SELECT v FROM file('${DATA_FILE}', 'Arrow') ORDER BY toString(v) SETTINGS input_format_arrow_use_native_reader = 1, allow_experimental_variant_type = 1"
+    ${CLICKHOUSE_LOCAL} --query "SELECT v FROM file('${DATA_FILE}', 'Arrow') ORDER BY toString(v) SETTINGS allow_experimental_variant_type = 1"
 done
 
 rm -f "${DATA_FILE}"

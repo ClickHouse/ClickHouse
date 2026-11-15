@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 In this guide, you will learn how you can explore a dataset on ClickHouse Cloud data in Marimo notebook with the help of [chDB](/chdb/index) - a fast in-process SQL OLAP Engine powered by ClickHouse.
 
 **Prerequisites:**
@@ -38,15 +36,39 @@ To add this dataset to an existing ClickHouse Cloud service, login to [console.c
 
 In the left hand menu, click on `Data sources`. Then click `Predefined sample data`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Add example data set"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Add example data set](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</Frame>
+
+</div>
 
 Select `Get started` in the UK property price paid data (4GB) card:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Select UK price paid dataset"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Select UK price paid dataset](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</Frame>
+
+</div>
 
 Then click `Import dataset`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Import UK price paid dataset"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Import UK price paid dataset](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse will automatically create the `pp_complete` table in the `default` database and fill the table with 28.92 million rows of price point data.
 
@@ -83,7 +105,15 @@ marimo edit clickhouse_exploration.py
 
 A new browser window should open with the Marimo interface on localhost:2718:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo interface"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo interface](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</Frame>
+
+</div>
 
 Marimo notebooks are stored as pure Python files, making them easy to version control and share with others.
 
@@ -112,7 +142,15 @@ result
 
 You should see the result shown underneath the cell you just ran:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</Frame>
+
+</div>
 
 ## Exploring the data {#exploring-the-data}
 
@@ -187,7 +225,15 @@ fig
 
 Perhaps unsurprisingly, property prices in London have increased substantially over time.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimo data visualization"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo data visualization](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</Frame>
+
+</div>
 
 One of Marimo's strengths is its reactive execution model. Let's create an interactive widget to select different towns dynamically.
 
@@ -246,7 +292,15 @@ fig_reactive
 
 Now when you select a town from the drop-down the chart will update dynamically:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo dynamic chart"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo dynamic chart](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</Frame>
+
+</div>
 
 ### Exploring price distributions with interactive box plots {#exploring-price-distributions}
 
@@ -319,7 +373,15 @@ If you select the options button in the top right hand of the cell, you can hide
 the code.
 As you move the slider, the plot will automatically update thanks to Marimo's reactive execution:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo dynamic chart"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Marimo dynamic chart](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</Frame>
+
+</div>
 
 ## Summary {#summary}
 
