@@ -126,6 +126,10 @@ public:
     /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
     std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
+    /// Publishes that this replica tried and failed to take any partition this refresh round.
+    void markDemandInKeeper();
+    /// Removes the published demand once this replica holds partitions again.
+    void removeDemandInKeeper();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.
@@ -167,6 +171,8 @@ private:
         UInt64 active_replica_count{0};
         /// Active replicas currently holding no partition lock.
         std::vector<String> lockless_active_replicas;
+        /// Those of them that have published a demand (tried and not yet satisfied).
+        std::unordered_set<String> demanding_lockless_replicas;
     };
 
     std::filesystem::path keeper_path;
@@ -200,6 +206,9 @@ private:
     /// Rounds each still-active replica has been lockless; resets when it takes locks or disappears.
     std::unordered_map<String, size_t> TSA_GUARDED_BY(topic_partition_locks_mutex) lockless_rounds_by_replica;
 
+    /// Whether this consumer currently keeps a demand node in Keeper.
+    bool demand_published = false;
+
     std::atomic<UInt64> last_poll_timestamp = 0;
     std::atomic<UInt64> last_commit_timestamp = 0;
     std::atomic<UInt64> num_commits = 0;
@@ -218,7 +227,7 @@ private:
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, size_t node_quota, const std::vector<String> & lockless_active_replicas, const std::unordered_set<String> & demanding_lockless_replicas) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.

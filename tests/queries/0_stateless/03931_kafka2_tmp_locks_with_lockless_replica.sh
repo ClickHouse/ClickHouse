@@ -16,7 +16,7 @@ KEEPER_PATH="/clickhouse/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 PARTITIONS=4
 MESSAGES_PER_PARTITION=2
-MAX_MESSAGES_PER_PARTITION=4
+MAX_MESSAGES_PER_PARTITION=6
 # Refresh rounds are counted in polls (stream_kafka_locks_refresh_polls=15);
 # short poll + fast reschedule keep a refresh round at a few seconds (the combination the integration quota tests use).
 POLL_TIMEOUT_MS=50
@@ -36,6 +36,9 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_broken" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_r4" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4" 2>/dev/null
     timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
     exit $exit_code
@@ -129,7 +132,7 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
 # (4 / 2 = 2 permanent locks plus at most one rotating temporary lock), so the
 # topic was never fully covered.
 ghost_registered=0
-deadline=$((SECONDS + 20))
+deadline=$((SECONDS + 15))
 while [ "$SECONDS" -lt "$deadline" ]; do
     if $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas', 'ghost', '')" 2>/dev/null \
         && $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas/ghost', 'is_active', 'ghost')" 2>/dev/null; then
@@ -142,6 +145,27 @@ if [ "$ghost_registered" -ne 1 ]; then
     echo "Failed to register the ghost replica in Keeper" >&2
     exit 1
 fi
+
+# A fourth replica is created now but starts consuming only in the last act: its
+# is_active exists (the activating task creates it without a view), so by then it
+# is the same long-lockless identity recovering, not a fresh replica.
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4 (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '$KAFKA_BROKER',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${KAFKA_GROUP}_r4',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'r4';
+ "
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4 (id UInt64, data String)
+    ENGINE = MergeTree ORDER BY id;
+ "
 
 # Destination table and the materialized view start the consumer threads
 $CLICKHOUSE_CLIENT -q "
@@ -165,7 +189,7 @@ lock_count() {
 # runner's per-test timeout, so failures are always explicit messages, never a silent
 # timeout.
 locks=0
-deadline=$((SECONDS + 150))
+deadline=$((SECONDS + 120))
 while [ "$SECONDS" -lt "$deadline" ]; do
     locks=$(lock_count)
     if [ "$locks" -ge "$PARTITIONS" ]; then
@@ -180,14 +204,14 @@ fi
 
 # Produce two messages into every partition: with full lock coverage all of them must be
 # consumed. One shared produce budget covers all partitions.
-produce_deadline=$((SECONDS + 45))
+produce_deadline=$((SECONDS + 40))
 for p in $(seq 0 $((PARTITIONS - 1))); do
     produce_into_partition $p $produce_deadline $MESSAGES_PER_PARTITION
 done
 
 expected=$((PARTITIONS * MESSAGES_PER_PARTITION))
 count=0
-deadline=$((SECONDS + 60))
+deadline=$((SECONDS + 50))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count" -ge "$expected" ]; then
@@ -230,7 +254,7 @@ $CLICKHOUSE_CLIENT -q "
  "
 
 # Let the stuck replica's lockless streak age past the yield window.
-sleep 35
+sleep 30
 
 # A fresh healthy replica starts: it is lockless and young, so the healthy first replica
 # must yield the free partitions to it even though the stuck r2 (and the ghost) exist.
@@ -253,7 +277,7 @@ $CLICKHOUSE_CLIENT -q "
  "
 
 recovered=0
-deadline=$((SECONDS + 75))
+deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
     recovered=$($CLICKHOUSE_CLIENT -q "SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b' SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$recovered" -ge 1 ]; then
@@ -267,13 +291,13 @@ if [ "$recovered" -lt 1 ]; then
 fi
 
 # Produce one more message per partition: the fresh replica must consume its share.
-produce_deadline=$((SECONDS + 45))
+produce_deadline=$((SECONDS + 35))
 for p in $(seq 0 $((PARTITIONS - 1))); do
     produce_into_partition $p $produce_deadline $MAX_MESSAGES_PER_PARTITION
 done
 
 count_b=0
-deadline=$((SECONDS + 60))
+deadline=$((SECONDS + 45))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count_b=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count_b" -ge 1 ]; then
@@ -287,5 +311,48 @@ if [ "$count_b" -lt 1 ]; then
 fi
 
 echo "--- Act 2 done: the fresh replica acquired partitions and consumes despite a stuck lockless replica ---"
+
+# Act 3: the same long-lockless replica r4 finally starts consuming (view attached).
+# Nothing is free, so its first attempts fail and publish demand; the others must then
+# reserve free partitions for it until it acquires them.
+$CLICKHOUSE_CLIENT -q "
+    CREATE MATERIALIZED VIEW ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_r4 TO ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4 AS
+    SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4;
+ "
+
+recovered4=0
+deadline=$((SECONDS + 40))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    recovered4=$($CLICKHOUSE_CLIENT -q "SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_r4' SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    if [ "$recovered4" -ge 1 ]; then
+        break
+    fi
+    sleep 2
+done
+if [ "$recovered4" -lt 1 ]; then
+    echo "FAIL: the same aged lockless replica did not acquire partitions after it started consuming (no demand handoff)" >&2
+    exit 1
+fi
+
+produce_deadline=$((SECONDS + 30))
+for p in $(seq 0 $((PARTITIONS - 1))); do
+    produce_into_partition $p $produce_deadline $MAX_MESSAGES_PER_PARTITION
+done
+
+count_r4=0
+deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    count_r4=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_r4 SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    if [ "$count_r4" -ge 1 ]; then
+        break
+    fi
+    sleep 2
+done
+if [ "$count_r4" -lt 1 ]; then
+    echo "FAIL: the recovered aged replica acquired partitions but consumed nothing" >&2
+    exit 1
+fi
+
+echo "--- Act 3 done: the same aged replica recovered via the demand handoff ---"
 echo "--- Consumed rows ---"
 $CLICKHOUSE_CLIENT -q "SELECT id, data FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst WHERE id <= $((PARTITIONS * MESSAGES_PER_PARTITION)) ORDER BY id"
