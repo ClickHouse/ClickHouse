@@ -1212,11 +1212,24 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
         && isStringOrFixedString(actual_type);
 }
 
+/// The `Field` of a `Variant` or `Dynamic` constant is the value of its active member without that member's type,
+/// which a conversion to a date or time needs: a day number and a second count are both plain integers.
+static bool isTypeErasedConstantForDate(const DataTypePtr & value_type, const DataTypePtr & date_type)
+{
+    if (!value_type)
+        return false;
+    const DataTypePtr value = removeLowCardinalityAndNullable(value_type);
+    return (isVariant(value) || isDynamic(value)) && isDateOrDate32OrDateTimeOrDateTime64(date_type);
+}
+
 /// The search functions compare a `Date32` with a `DateTime` as their least supertype, a `DateTime64` in the
 /// session time zone, while a direct conversion to the `DateTime` reads the date in that type's time zone.
 static Field convertConstantLikeSearchFunction(
     const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
 {
+    if (isTypeErasedConstantForDate(value_type, actual_type))
+        return {};
+
     const DataTypePtr value = value_type ? removeLowCardinalityAndNullable(value_type) : nullptr;
     if (cast_to_supertype && value && isDate32(value) && isDateTime(actual_type))
     {
@@ -1267,7 +1280,7 @@ static Field convertConstantForArrayIndexFunction(
 static ColumnPtr createColumnFromConstantArray(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
 {
-    if (value_field.getType() != Field::Types::Array)
+    if (value_field.getType() != Field::Types::Array || isTypeErasedConstantForDate(value_type, actual_type))
         return nullptr;
 
     /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
@@ -1698,6 +1711,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull())
                         return false;
                 }
+                else if (isTypeErasedConstantForDate(value_type, map_value_type))
+                    return false;
             }
 
             size_t position = 0;

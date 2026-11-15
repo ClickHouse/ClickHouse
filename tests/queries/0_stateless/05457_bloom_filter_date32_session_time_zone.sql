@@ -40,6 +40,12 @@ SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDate('2024-01-05');
 -- A missing key yields `1970-01-01 00:00:00`, which equals this constant.
 SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDate32('1970-01-01');
 SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDateTime64('2024-01-02 00:00:00', 0, 'UTC');
+-- A `Variant` or `Dynamic` constant holds the day number of its `Date` member without the type. Part pruning by
+-- statistics still drops the row for such a `Date32` constant, so it is off for these two queries.
+SELECT count() FROM t_bf_date32_tz WHERE dt = CAST(toDate32('2024-01-02') AS Dynamic) SETTINGS use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_bf_date32_tz WHERE dt = CAST(toDate32('2024-01-02') AS Variant(Date32, String)) SETTINGS use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_bf_date32_tz WHERE hasAny(arr, CAST([toDate('2024-01-05')] AS Dynamic));
+SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = CAST(toDate('2024-01-05') AS Dynamic);
 
 DROP TABLE t_bf_date32_tz;
 
