@@ -10,6 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --ignore-error -m --pager head -q "
     select * from numbers(1e6); -- { clientError CANNOT_WRITE_TO_FILE_DESCRIPTOR }
     select * from numbers(1e6); -- { clientError CANNOT_WRITE_TO_FILE_DESCRIPTOR }
+    select * from numbers(1e6) settings output_format_parallel_formatting = 0 format JSON; -- { clientError CANNOT_WRITE_TO_FILE_DESCRIPTOR }
 "
 
 exit 0

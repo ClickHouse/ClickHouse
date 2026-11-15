@@ -1,0 +1,4 @@
+local_query_local_dialect	1
+local_query_local_dialect_prql	2
+client_query_local_dialect	3
+kusto_after_set

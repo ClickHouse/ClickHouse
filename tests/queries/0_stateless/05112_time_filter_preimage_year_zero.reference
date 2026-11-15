@@ -1,0 +1,23 @@
+0000-01-01 00:00:00	0	1
+0000-12-31 00:00:00	0	12
+0001-01-01 00:00:00	1	101
+1970-01-01 00:00:00	1970	197001
+toYear
+2
+2
+2
+2
+2
+2
+toYYYYMM
+1
+1
+1
+1
+1
+1
+Date32 has no year-zero special case, so the rewrite still applies
+1
+1
+1
+1

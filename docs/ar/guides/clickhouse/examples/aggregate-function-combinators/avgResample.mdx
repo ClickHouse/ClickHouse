@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'مثال على استخدام المُركِّب Resample مع avg'
+keywords: ['avg', 'Resample', 'مُركِّب', 'أمثلة', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'مرجع'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Resample`](/ar/reference/functions/aggregate-functions/combinators#-resample)
+على دالة التجميع [`count`](/ar/reference/functions/aggregate-functions/count)
+لعدّ قيم عمود المفتاح المحدد ضمن عدد ثابت
+من الفترات (`N`).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="basic-example">
+  ### مثال أساسي
+</div>
+
+لنلقِ نظرة على مثال. سننشئ جدولًا يضم `name` و`age` و
+`wage` للموظفين، وسنُدرِج فيه بعض البيانات:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+لنحسب متوسط أجور الأشخاص الذين تقع أعمارهم ضمن الفترتين `[30,60)`
+و`[60,75)` (حيث إن `[` غير شامل و`)` شامل). وبما أننا نستخدم تمثيل العمر
+كعدد صحيح، فستكون الأعمار ضمن الفترتين `[30, 59]` و`[60,74]`.
+وللقيام بذلك، نطبّق المُركِّب `Resample` على الدالة التجميعية `avg`.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`count`](/ar/reference/functions/aggregate-functions/count)
+* [`Resample مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-resample)

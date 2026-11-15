@@ -19,14 +19,15 @@ using Pos = const char *;
 class SplitByAlphaImpl
 {
 private:
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     static constexpr auto name = "alphaTokens";
+    static constexpr auto signature = "(String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
 

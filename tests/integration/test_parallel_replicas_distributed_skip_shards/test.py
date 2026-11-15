@@ -71,7 +71,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
-    expected_result = f"2003\t-999\t999\t3\n"
+    expected_result = "2003\t-999\t999\t3\n"
 
     # w/o parallel replicas
     assert (
@@ -140,7 +140,7 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
-    expected_result = f"2003\t-999\t999\t3\n"
+    expected_result = "2003\t-999\t999\t3\n"
 
     # w/o parallel replicas
     assert (

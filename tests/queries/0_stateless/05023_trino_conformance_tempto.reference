@@ -1,0 +1,835 @@
+-- aggregate
+TESTING	AGAIN
+3309.4	50.126459999999994
+-- array_functions
+5	0
+-- convertion_functions
+10
+10	\N
+-- distinct
+0
+1
+2
+3
+4
+-- empty_table
+0
+0
+\N	\N
+\N
+0
+0
+-- functions
+33
+-- group-by
+0	0
+1	0
+2	0
+3	0
+4	0
+0
+1	0	0
+1	0	5
+1	0	14
+1	0	15
+1	0	16
+1	1	1
+1	1	2
+1	1	3
+1	1	17
+1	1	24
+-- horology_functions
+5	0
+22
+-- limit
+24
+23
+22
+21
+20
+-- map_functions
+4
+-- math_functions
+4	3	9	4	2
+-- set_operation
+CHINA
+PERU
+VIETNAM
+CHINA
+PERU
+VIETNAM
+1
+3
+6
+10
+\N
+CHINA
+INDIA
+INDONESIA
+JAPAN
+PERU
+VIETNAM
+2
+4
+5
+7
+8
+9
+\N
+-- union
+0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
+0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
+1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
+1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
+2	BRAZIL	1	y alongside of the pending deposits. carefully special packages are about the ironic forges. slyly special 
+2	BRAZIL	1	y alongside of the pending deposits. carefully special packages are about the ironic forges. slyly special 
+3	CANADA	1	eas hang ironic, silent packages. slyly regular packages are furiously over the tithes. fluffily bold
+3	CANADA	1	eas hang ironic, silent packages. slyly regular packages are furiously over the tithes. fluffily bold
+4	EGYPT	4	y above the carefully unusual theodolites. final dugouts are quickly across the furiously regular d
+4	EGYPT	4	y above the carefully unusual theodolites. final dugouts are quickly across the furiously regular d
+5	ETHIOPIA	0	ven packages wake quickly. regu
+5	ETHIOPIA	0	ven packages wake quickly. regu
+6	FRANCE	3	refully final requests. regular, ironi
+6	FRANCE	3	refully final requests. regular, ironi
+7	GERMANY	3	l platelets. regular accounts x-ray: unusual, regular acco
+7	GERMANY	3	l platelets. regular accounts x-ray: unusual, regular acco
+8	INDIA	2	ss excuses cajole slyly across the packages. deposits print aroun
+8	INDIA	2	ss excuses cajole slyly across the packages. deposits print aroun
+9	INDONESIA	2	 slyly express asymptotes. regular deposits haggle slyly. carefully ironic hockey players sleep blithely. carefull
+9	INDONESIA	2	 slyly express asymptotes. regular deposits haggle slyly. carefully ironic hockey players sleep blithely. carefull
+10	IRAN	4	efully alongside of the slyly final dependencies. 
+10	IRAN	4	efully alongside of the slyly final dependencies. 
+11	IRAQ	4	nic deposits boost atop the quickly final requests? quickly regula
+11	IRAQ	4	nic deposits boost atop the quickly final requests? quickly regula
+12	JAPAN	2	ously. final, express gifts cajole a
+12	JAPAN	2	ously. final, express gifts cajole a
+13	JORDAN	4	ic deposits are blithely about the carefully regular pa
+13	JORDAN	4	ic deposits are blithely about the carefully regular pa
+14	KENYA	0	 pending excuses haggle furiously deposits. pending, express pinto beans wake fluffily past t
+14	KENYA	0	 pending excuses haggle furiously deposits. pending, express pinto beans wake fluffily past t
+15	MOROCCO	0	rns. blithely bold courts among the closely regular packages use furiously bold platelets?
+15	MOROCCO	0	rns. blithely bold courts among the closely regular packages use furiously bold platelets?
+16	MOZAMBIQUE	0	s. ironic, unusual asymptotes wake blithely r
+16	MOZAMBIQUE	0	s. ironic, unusual asymptotes wake blithely r
+17	PERU	1	platelets. blithely pending dependencies use fluffily across the even pinto beans. carefully silent accoun
+17	PERU	1	platelets. blithely pending dependencies use fluffily across the even pinto beans. carefully silent accoun
+18	CHINA	2	c dependencies. furiously express notornis sleep slyly regular accounts. ideas sleep. depos
+18	CHINA	2	c dependencies. furiously express notornis sleep slyly regular accounts. ideas sleep. depos
+19	ROMANIA	3	ular asymptotes are about the furious multipliers. express dependencies nag above the ironically ironic account
+19	ROMANIA	3	ular asymptotes are about the furious multipliers. express dependencies nag above the ironically ironic account
+20	SAUDI ARABIA	4	ts. silent requests haggle. closely express packages sleep across the blithely
+20	SAUDI ARABIA	4	ts. silent requests haggle. closely express packages sleep across the blithely
+21	VIETNAM	2	hely enticingly express accounts. even, final 
+21	VIETNAM	2	hely enticingly express accounts. even, final 
+22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint
+22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint
+23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
+23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
+24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
+24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
+0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
+1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
+2	BRAZIL	1	y alongside of the pending deposits. carefully special packages are about the ironic forges. slyly special 
+3	CANADA	1	eas hang ironic, silent packages. slyly regular packages are furiously over the tithes. fluffily bold
+4	EGYPT	4	y above the carefully unusual theodolites. final dugouts are quickly across the furiously regular d
+5	ETHIOPIA	0	ven packages wake quickly. regu
+6	FRANCE	3	refully final requests. regular, ironi
+7	GERMANY	3	l platelets. regular accounts x-ray: unusual, regular acco
+8	INDIA	2	ss excuses cajole slyly across the packages. deposits print aroun
+9	INDONESIA	2	 slyly express asymptotes. regular deposits haggle slyly. carefully ironic hockey players sleep blithely. carefull
+10	IRAN	4	efully alongside of the slyly final dependencies. 
+11	IRAQ	4	nic deposits boost atop the quickly final requests? quickly regula
+12	JAPAN	2	ously. final, express gifts cajole a
+13	JORDAN	4	ic deposits are blithely about the carefully regular pa
+14	KENYA	0	 pending excuses haggle furiously deposits. pending, express pinto beans wake fluffily past t
+15	MOROCCO	0	rns. blithely bold courts among the closely regular packages use furiously bold platelets?
+16	MOZAMBIQUE	0	s. ironic, unusual asymptotes wake blithely r
+17	PERU	1	platelets. blithely pending dependencies use fluffily across the even pinto beans. carefully silent accoun
+18	CHINA	2	c dependencies. furiously express notornis sleep slyly regular accounts. ideas sleep. depos
+19	ROMANIA	3	ular asymptotes are about the furious multipliers. express dependencies nag above the ironically ironic account
+20	SAUDI ARABIA	4	ts. silent requests haggle. closely express packages sleep across the blithely
+21	VIETNAM	2	hely enticingly express accounts. even, final 
+22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint
+23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
+24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
+0
+0
+0
+0
+0
+1
+1
+1
+1
+1
+2
+2
+2
+2
+2
+3
+3
+3
+3
+3
+4
+4
+4
+4
+4
+25
+47
+50
+58
+68
+77
+77
+68
+58
+50
+47
+25
+4
+4
+4
+4
+4
+3
+3
+3
+3
+3
+2
+2
+2
+2
+2
+1
+1
+1
+1
+1
+0
+0
+0
+0
+0
+25
+47
+50
+58
+68
+77
+-- with_clause
+25
+-- presto
+3566.3333333333335	50.65743333333333
+15	15	14	14	14	15
+9	9	10	8	7	2
+14	99.8777	3309.4
+0.13594342884406985	-0.036003632737573774
+3037.0783723835643	35.210273031542
+3145.0576394647455	40.09062957713574
+3143.6747787081463	36.44609513116207
+3335.837376132116	42.52253405404598
+49641	751.8969
+32097	455.9169
+9223845.04	1239.763326955734
+9891387.555555556	1607.2585798911111
+9882691.114285713	1328.3178503097151
+11127811	1808.1659023775
+9882691.114285713	1328.3178503097151
+11127811	1808.1659023775
+5	25	0
+5	5
+5	25
+0	4
+1	5
+2	5
+3	5
+4	5
+0	5
+1	5
+2	5
+3	5
+AFRICA
+AMERICA
+ASIA
+EUROPE
+MIDDLE EAST
+0
+1
+2
+3
+4
+25	25	0	4	50
+2	5
+3	5
+0	5	50
+1	5	47
+2	5	68
+3	5	77
+4	5	58
+3	5	15
+4	5	20
+0	\N
+2
+0
+1
+2
+14
+1
+1
+1
+1
+1
+1
+1
+1
+2
+2
+1
+1
+1
+1
+1
+1
+1
+1
+4
+\N	4
+2	2
+5	2
+\N	2
+25
+ALGERIA	AFRICA
+ALGERIA	AMERICA
+ALGERIA	ASIA
+ALGERIA	EUROPE
+ALGERIA	MIDDLE EAST
+ARGENTINA	AFRICA
+ARGENTINA	AMERICA
+ARGENTINA	ASIA
+ARGENTINA	EUROPE
+ARGENTINA	MIDDLE EAST
+BRAZIL	AFRICA
+BRAZIL	AMERICA
+BRAZIL	ASIA
+BRAZIL	EUROPE
+BRAZIL	MIDDLE EAST
+CANADA	AFRICA
+CANADA	AMERICA
+CANADA	ASIA
+CANADA	EUROPE
+CANADA	MIDDLE EAST
+CHINA	AFRICA
+CHINA	AMERICA
+CHINA	ASIA
+CHINA	EUROPE
+CHINA	MIDDLE EAST
+EGYPT	AFRICA
+EGYPT	AMERICA
+EGYPT	ASIA
+EGYPT	EUROPE
+EGYPT	MIDDLE EAST
+ETHIOPIA	AFRICA
+ETHIOPIA	AMERICA
+ETHIOPIA	ASIA
+ETHIOPIA	EUROPE
+ETHIOPIA	MIDDLE EAST
+FRANCE	AFRICA
+FRANCE	AMERICA
+FRANCE	ASIA
+FRANCE	EUROPE
+FRANCE	MIDDLE EAST
+GERMANY	AFRICA
+GERMANY	AMERICA
+GERMANY	ASIA
+GERMANY	EUROPE
+GERMANY	MIDDLE EAST
+INDIA	AFRICA
+INDIA	AMERICA
+INDIA	ASIA
+INDIA	EUROPE
+INDIA	MIDDLE EAST
+INDONESIA	AFRICA
+INDONESIA	AMERICA
+INDONESIA	ASIA
+INDONESIA	EUROPE
+INDONESIA	MIDDLE EAST
+IRAN	AFRICA
+IRAN	AMERICA
+IRAN	ASIA
+IRAN	EUROPE
+IRAN	MIDDLE EAST
+IRAQ	AFRICA
+IRAQ	AMERICA
+IRAQ	ASIA
+IRAQ	EUROPE
+IRAQ	MIDDLE EAST
+JAPAN	AFRICA
+JAPAN	AMERICA
+JAPAN	ASIA
+JAPAN	EUROPE
+JAPAN	MIDDLE EAST
+JORDAN	AFRICA
+JORDAN	AMERICA
+JORDAN	ASIA
+JORDAN	EUROPE
+JORDAN	MIDDLE EAST
+KENYA	AFRICA
+KENYA	AMERICA
+KENYA	ASIA
+KENYA	EUROPE
+KENYA	MIDDLE EAST
+MOROCCO	AFRICA
+MOROCCO	AMERICA
+MOROCCO	ASIA
+MOROCCO	EUROPE
+MOROCCO	MIDDLE EAST
+MOZAMBIQUE	AFRICA
+MOZAMBIQUE	AMERICA
+MOZAMBIQUE	ASIA
+MOZAMBIQUE	EUROPE
+MOZAMBIQUE	MIDDLE EAST
+PERU	AFRICA
+PERU	AMERICA
+PERU	ASIA
+PERU	EUROPE
+PERU	MIDDLE EAST
+ROMANIA	AFRICA
+ROMANIA	AMERICA
+ROMANIA	ASIA
+ROMANIA	EUROPE
+ROMANIA	MIDDLE EAST
+RUSSIA	AFRICA
+RUSSIA	AMERICA
+RUSSIA	ASIA
+RUSSIA	EUROPE
+RUSSIA	MIDDLE EAST
+SAUDI ARABIA	AFRICA
+SAUDI ARABIA	AMERICA
+SAUDI ARABIA	ASIA
+SAUDI ARABIA	EUROPE
+SAUDI ARABIA	MIDDLE EAST
+UNITED KINGDOM	AFRICA
+UNITED KINGDOM	AMERICA
+UNITED KINGDOM	ASIA
+UNITED KINGDOM	EUROPE
+UNITED KINGDOM	MIDDLE EAST
+UNITED STATES	AFRICA
+UNITED STATES	AMERICA
+UNITED STATES	ASIA
+UNITED STATES	EUROPE
+UNITED STATES	MIDDLE EAST
+VIETNAM	AFRICA
+VIETNAM	AMERICA
+VIETNAM	ASIA
+VIETNAM	EUROPE
+VIETNAM	MIDDLE EAST
+ALGERIA	AFRICA
+ARGENTINA	AMERICA
+BRAZIL	AMERICA
+CANADA	AMERICA
+CHINA	ASIA
+EGYPT	MIDDLE EAST
+ETHIOPIA	AFRICA
+FRANCE	EUROPE
+GERMANY	EUROPE
+INDIA	ASIA
+INDONESIA	ASIA
+IRAN	MIDDLE EAST
+IRAQ	MIDDLE EAST
+JAPAN	ASIA
+JORDAN	MIDDLE EAST
+KENYA	AFRICA
+MOROCCO	AFRICA
+MOZAMBIQUE	AFRICA
+PERU	AMERICA
+ROMANIA	EUROPE
+RUSSIA	EUROPE
+SAUDI ARABIA	MIDDLE EAST
+UNITED KINGDOM	EUROPE
+UNITED STATES	AMERICA
+VIETNAM	ASIA
+25
+0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai	0	AFRICA	lar deposits. blithely final packages cajole. regular waters are final requests. regular accounts are according to 
+1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon	1	AMERICA	hs use ironic, even requests. s
+2	BRAZIL	1	y alongside of the pending deposits. carefully special packages are about the ironic forges. slyly special 	1	AMERICA	hs use ironic, even requests. s
+3	CANADA	1	eas hang ironic, silent packages. slyly regular packages are furiously over the tithes. fluffily bold	1	AMERICA	hs use ironic, even requests. s
+4	EGYPT	4	y above the carefully unusual theodolites. final dugouts are quickly across the furiously regular d	4	MIDDLE EAST	uickly special accounts cajole carefully blithely close requests. carefully final asymptotes haggle furiousl
+5	ETHIOPIA	0	ven packages wake quickly. regu	0	AFRICA	lar deposits. blithely final packages cajole. regular waters are final requests. regular accounts are according to 
+6	FRANCE	3	refully final requests. regular, ironi	3	EUROPE	ly final courts cajole furiously final excuse
+7	GERMANY	3	l platelets. regular accounts x-ray: unusual, regular acco	3	EUROPE	ly final courts cajole furiously final excuse
+8	INDIA	2	ss excuses cajole slyly across the packages. deposits print aroun	2	ASIA	ges. thinly even pinto beans ca
+9	INDONESIA	2	 slyly express asymptotes. regular deposits haggle slyly. carefully ironic hockey players sleep blithely. carefull	2	ASIA	ges. thinly even pinto beans ca
+10	IRAN	4	efully alongside of the slyly final dependencies. 	4	MIDDLE EAST	uickly special accounts cajole carefully blithely close requests. carefully final asymptotes haggle furiousl
+11	IRAQ	4	nic deposits boost atop the quickly final requests? quickly regula	4	MIDDLE EAST	uickly special accounts cajole carefully blithely close requests. carefully final asymptotes haggle furiousl
+12	JAPAN	2	ously. final, express gifts cajole a	2	ASIA	ges. thinly even pinto beans ca
+13	JORDAN	4	ic deposits are blithely about the carefully regular pa	4	MIDDLE EAST	uickly special accounts cajole carefully blithely close requests. carefully final asymptotes haggle furiousl
+14	KENYA	0	 pending excuses haggle furiously deposits. pending, express pinto beans wake fluffily past t	0	AFRICA	lar deposits. blithely final packages cajole. regular waters are final requests. regular accounts are according to 
+15	MOROCCO	0	rns. blithely bold courts among the closely regular packages use furiously bold platelets?	0	AFRICA	lar deposits. blithely final packages cajole. regular waters are final requests. regular accounts are according to 
+16	MOZAMBIQUE	0	s. ironic, unusual asymptotes wake blithely r	0	AFRICA	lar deposits. blithely final packages cajole. regular waters are final requests. regular accounts are according to 
+17	PERU	1	platelets. blithely pending dependencies use fluffily across the even pinto beans. carefully silent accoun	1	AMERICA	hs use ironic, even requests. s
+18	CHINA	2	c dependencies. furiously express notornis sleep slyly regular accounts. ideas sleep. depos	2	ASIA	ges. thinly even pinto beans ca
+19	ROMANIA	3	ular asymptotes are about the furious multipliers. express dependencies nag above the ironically ironic account	3	EUROPE	ly final courts cajole furiously final excuse
+20	SAUDI ARABIA	4	ts. silent requests haggle. closely express packages sleep across the blithely	4	MIDDLE EAST	uickly special accounts cajole carefully blithely close requests. carefully final asymptotes haggle furiousl
+21	VIETNAM	2	hely enticingly express accounts. even, final 	2	ASIA	ges. thinly even pinto beans ca
+22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint	3	EUROPE	ly final courts cajole furiously final excuse
+23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull	3	EUROPE	ly final courts cajole furiously final excuse
+24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be	1	AMERICA	hs use ironic, even requests. s
+EGYPT	MIDDLE EAST
+ETHIOPIA	AFRICA
+FRANCE	EUROPE
+GERMANY	EUROPE
+INDIA	ASIA
+INDONESIA	ASIA
+IRAN	MIDDLE EAST
+IRAQ	MIDDLE EAST
+JAPAN	ASIA
+JORDAN	MIDDLE EAST
+KENYA	AFRICA
+MOROCCO	AFRICA
+MOZAMBIQUE	AFRICA
+PERU	AMERICA
+ROMANIA	EUROPE
+RUSSIA	EUROPE
+SAUDI ARABIA	MIDDLE EAST
+UNITED KINGDOM	EUROPE
+UNITED STATES	AMERICA
+VIETNAM	ASIA
+ALGERIA	AFRICA
+ARGENTINA	AMERICA
+BRAZIL	AMERICA
+CANADA	AMERICA
+CHINA	ASIA
+EGYPT	MIDDLE EAST
+ETHIOPIA	AFRICA
+FRANCE	EUROPE
+GERMANY	EUROPE
+INDIA	ASIA
+INDONESIA	ASIA
+IRAN	MIDDLE EAST
+IRAQ	MIDDLE EAST
+JAPAN	ASIA
+JORDAN	MIDDLE EAST
+KENYA	AFRICA
+MOROCCO	AFRICA
+MOZAMBIQUE	AFRICA
+PERU	AMERICA
+ROMANIA	EUROPE
+RUSSIA	EUROPE
+SAUDI ARABIA	MIDDLE EAST
+UNITED KINGDOM	EUROPE
+UNITED STATES	AMERICA
+VIETNAM	ASIA
+ALGERIA	AMERICA
+ALGERIA	ASIA
+ALGERIA	EUROPE
+ALGERIA	MIDDLE EAST
+ARGENTINA	ASIA
+ARGENTINA	EUROPE
+ARGENTINA	MIDDLE EAST
+BRAZIL	EUROPE
+BRAZIL	MIDDLE EAST
+CANADA	MIDDLE EAST
+ALGERIA	AMERICA
+ALGERIA	ASIA
+ALGERIA	EUROPE
+ALGERIA	MIDDLE EAST
+ARGENTINA	AFRICA
+ARGENTINA	ASIA
+ARGENTINA	EUROPE
+ARGENTINA	MIDDLE EAST
+BRAZIL	AFRICA
+BRAZIL	AMERICA
+BRAZIL	EUROPE
+BRAZIL	MIDDLE EAST
+CANADA	AFRICA
+CANADA	AMERICA
+CANADA	ASIA
+CANADA	MIDDLE EAST
+CHINA	AFRICA
+CHINA	AMERICA
+CHINA	ASIA
+CHINA	EUROPE
+CHINA	MIDDLE EAST
+EGYPT	AFRICA
+EGYPT	AMERICA
+EGYPT	ASIA
+EGYPT	EUROPE
+ETHIOPIA	AFRICA
+ETHIOPIA	AMERICA
+ETHIOPIA	ASIA
+ETHIOPIA	EUROPE
+ETHIOPIA	MIDDLE EAST
+FRANCE	AFRICA
+FRANCE	AMERICA
+FRANCE	ASIA
+FRANCE	EUROPE
+FRANCE	MIDDLE EAST
+GERMANY	AFRICA
+GERMANY	AMERICA
+GERMANY	ASIA
+GERMANY	EUROPE
+GERMANY	MIDDLE EAST
+INDIA	AFRICA
+INDIA	AMERICA
+INDIA	ASIA
+INDIA	EUROPE
+INDIA	MIDDLE EAST
+INDONESIA	AFRICA
+INDONESIA	AMERICA
+INDONESIA	ASIA
+INDONESIA	EUROPE
+INDONESIA	MIDDLE EAST
+IRAN	AFRICA
+IRAN	AMERICA
+IRAN	ASIA
+IRAN	EUROPE
+IRAN	MIDDLE EAST
+IRAQ	AFRICA
+IRAQ	AMERICA
+IRAQ	ASIA
+IRAQ	EUROPE
+IRAQ	MIDDLE EAST
+JAPAN	AFRICA
+JAPAN	AMERICA
+JAPAN	ASIA
+JAPAN	EUROPE
+JAPAN	MIDDLE EAST
+JORDAN	AFRICA
+JORDAN	AMERICA
+JORDAN	ASIA
+JORDAN	EUROPE
+JORDAN	MIDDLE EAST
+KENYA	AFRICA
+KENYA	AMERICA
+KENYA	ASIA
+KENYA	EUROPE
+KENYA	MIDDLE EAST
+MOROCCO	AFRICA
+MOROCCO	AMERICA
+MOROCCO	ASIA
+MOROCCO	EUROPE
+MOROCCO	MIDDLE EAST
+MOZAMBIQUE	AFRICA
+MOZAMBIQUE	AMERICA
+MOZAMBIQUE	ASIA
+MOZAMBIQUE	EUROPE
+MOZAMBIQUE	MIDDLE EAST
+PERU	AFRICA
+PERU	AMERICA
+PERU	ASIA
+PERU	EUROPE
+PERU	MIDDLE EAST
+ROMANIA	AFRICA
+ROMANIA	AMERICA
+ROMANIA	ASIA
+ROMANIA	EUROPE
+ROMANIA	MIDDLE EAST
+RUSSIA	AFRICA
+RUSSIA	AMERICA
+RUSSIA	ASIA
+RUSSIA	EUROPE
+RUSSIA	MIDDLE EAST
+SAUDI ARABIA	AFRICA
+SAUDI ARABIA	AMERICA
+SAUDI ARABIA	ASIA
+SAUDI ARABIA	EUROPE
+SAUDI ARABIA	MIDDLE EAST
+UNITED KINGDOM	AFRICA
+UNITED KINGDOM	AMERICA
+UNITED KINGDOM	ASIA
+UNITED KINGDOM	EUROPE
+UNITED KINGDOM	MIDDLE EAST
+UNITED STATES	AFRICA
+UNITED STATES	AMERICA
+UNITED STATES	ASIA
+UNITED STATES	EUROPE
+UNITED STATES	MIDDLE EAST
+VIETNAM	AFRICA
+VIETNAM	AMERICA
+VIETNAM	ASIA
+VIETNAM	EUROPE
+VIETNAM	MIDDLE EAST
+BRAZIL	2	R&D	5000
+BRAZIL	2	R&D	5000
+EGYPT	4	IT	4000
+ETHIOPIA	5	HR	2000
+ETHIOPIA	5	HR	2000
+GERMANY	7	CustomerService	2300
+INDIA	8	Production	2400
+INDONESIA	9	Quality	3400
+IRAQ	11	\N	\N
+JAPAN	12	\N	\N
+EGYPT	MIDDLE EAST
+ALGERIA
+ARGENTINA
+BRAZIL
+CANADA
+EGYPT
+CHINA
+ETHIOPIA
+FRANCE
+GERMANY
+INDIA
+INDONESIA
+IRAN
+IRAQ
+JAPAN
+JORDAN
+KENYA
+MOROCCO
+MOZAMBIQUE
+PERU
+ROMANIA
+RUSSIA
+SAUDI ARABIA
+UNITED KINGDOM
+UNITED STATES
+VIETNAM
+ALGERIA	AFRICA
+ARGENTINA	AMERICA
+BRAZIL	ASIA
+CANADA	EUROPE
+CHINA	\N
+EGYPT	MIDDLE EAST
+ETHIOPIA	\N
+FRANCE	\N
+GERMANY	\N
+INDIA	\N
+INDONESIA	\N
+IRAN	\N
+IRAQ	\N
+JAPAN	\N
+JORDAN	\N
+KENYA	\N
+MOROCCO	\N
+MOZAMBIQUE	\N
+PERU	\N
+ROMANIA	\N
+RUSSIA	\N
+SAUDI ARABIA	\N
+UNITED KINGDOM	\N
+UNITED STATES	\N
+VIETNAM	\N
+BRAZIL	2	R&D	5000
+BRAZIL	2	R&D	5000
+EGYPT	4	IT	4000
+ETHIOPIA	5	HR	2000
+ETHIOPIA	5	HR	2000
+GERMANY	7	CustomerService	2300
+INDIA	8	Production	2400
+INDONESIA	9	Quality	3400
+IRAQ	11	\N	\N
+JAPAN	12	\N	\N
+\N	\N	Finance	3000
+\N	\N	Marketing	4000
+\N	\N	PR	3000
+\N	\N	Sales	3500
+ALGERIA	AFRICA
+ARGENTINA	AMERICA
+BRAZIL	ASIA
+CANADA	EUROPE
+CHINA	\N
+EGYPT	MIDDLE EAST
+ETHIOPIA	\N
+FRANCE	\N
+GERMANY	\N
+INDIA	\N
+INDONESIA	\N
+IRAN	\N
+IRAQ	\N
+JAPAN	\N
+JORDAN	\N
+KENYA	\N
+MOROCCO	\N
+MOZAMBIQUE	\N
+PERU	\N
+ROMANIA	\N
+RUSSIA	\N
+SAUDI ARABIA	\N
+UNITED KINGDOM	\N
+UNITED STATES	\N
+VIETNAM	\N
+ALGERIA
+ARGENTINA
+BRAZIL
+CANADA
+EGYPT
+0
+1
+2
+2
+5	4
+5	3
+5	0
+5	1
+5
+0
+10
+1
+\N
+\N
+1
+1
+\N
+1
+\N
+\N
+1
+1
+\N
+\N
+1
+1
+\N
+1	50	90
+1	1.1	509.99999999999994	a	dummy values	true	false
+10	2	false	true
+10	3
+-5
+1
+2
+20
+1
+0	1
+0	0
+5	0
+14	0
+15	0
+16	0
+625
+1	AMERICA
+ALGERIA	ALGERIA
+ALGERIA	ETHIOPIA
+ALGERIA	KENYA
+ALGERIA	MOROCCO
+ALGERIA	MOZAMBIQUE
+ARGENTINA	ARGENTINA
+ARGENTINA	BRAZIL
+ARGENTINA	CANADA
+ARGENTINA	PERU
+ARGENTINA	UNITED STATES
+BRAZIL	CHINA
+BRAZIL	INDIA
+BRAZIL	INDONESIA
+BRAZIL	JAPAN
+BRAZIL	VIETNAM
+CANADA	FRANCE
+CANADA	GERMANY
+CANADA	ROMANIA
+CANADA	RUSSIA
+CANADA	UNITED KINGDOM
+EGYPT	EGYPT
+EGYPT	IRAN
+EGYPT	IRAQ
+EGYPT	JORDAN
+EGYPT	SAUDI ARABIA
+0	0	ALGERIA
+1	1	ARGENTINA
+2	1	BRAZIL
+3	1	CANADA
+4	4	EGYPT
+ALGERIA
