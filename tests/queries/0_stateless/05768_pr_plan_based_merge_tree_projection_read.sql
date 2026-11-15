@@ -34,6 +34,19 @@ SELECT count(), uniqExact(_parent_part_offset) FROM mergeTreeProjection(currentD
 SELECT sum(l._part_offset = r._parent_part_offset)
 FROM t_pr_projection_offset AS l JOIN mergeTreeProjection(currentDatabase(), t_pr_projection_offset, p) AS r USING (a);
 
+SELECT '--- an IN set built from the projection';
+-- Every replica builds the set by running its plan, so a read through `mergeTreeProjection` there keeps the fragment local too.
+SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))
+SETTINGS optimize_use_projections = 0;
+SELECT count() FROM t_pr_projection_read WHERE a NOT IN (SELECT a FROM mergeTreeProjection(currentDatabase(), t_pr_projection_read, p))
+SETTINGS optimize_use_projections = 0;
+SELECT count() FROM t_pr_projection_offset WHERE _part_offset IN (SELECT _parent_part_offset FROM mergeTreeProjection(currentDatabase(), t_pr_projection_offset, p))
+SETTINGS optimize_use_projections = 0;
+
+SELECT '--- an IN set built from a table is still shipped';
+SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT toUInt32(a) FROM t_pr_projection_offset);
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT toUInt32(a) FROM t_pr_projection_offset));
+
 SELECT '--- a read of the table that the optimizer answers from the projection';
 SELECT count(), sum(a) FROM t_pr_projection_read WHERE b = 3 AND a % 10 = 0 SETTINGS optimize_use_projections = 1, parallel_replicas_local_plan = 1;
 

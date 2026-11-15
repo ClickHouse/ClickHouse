@@ -262,6 +262,15 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
             return true;
         }
 
+        /// Every replica runs this plan to build the set, so its reads must pass the rules of the fragment's own reads.
+        if (subtreeHasUnshippableRead(subquery_plan->getRootNode()))
+        {
+            LOG_DEBUG(
+                getLogger("ApplyParallelReplicas"),
+                "Keeping the plan fragment local: an IN-subquery set reads a table that cannot be read on a replica");
+            return true;
+        }
+
         /// `dagContainsNonDeterministicFunction` asks for determinism *within* one query, which is the right
         /// question here: `now()` and friends are folded to their value on the initiator and the value is
         /// what gets serialized, so only a function which is recomputed per row - and therefore per replica -
