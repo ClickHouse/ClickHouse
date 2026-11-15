@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,9 +39,26 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "現在時刻を含む条件（例: `WHERE time >= now() - INTERVAL 10 DAY`）について、時刻定数をグリッド上に丸めた決定論的な条件を導出することで、クエリ条件cacheがそれらの条件を扱えるようにする新しい設定です。デフォルトで有効です。previous_value=false のため、以前のバージョンを指定した `compatibility` では、従来どおりこのような条件はcacheされません。"}]}]} />
+
+`MergeTree` テーブルからの読み取り時に、現在時刻を含む条件 (例: `WHERE time >= now() - INTERVAL 10 DAY`) に対して[クエリ条件cache](/ja/concepts/features/performance/caches/query-condition-cache)を有効化します。ファイルやオブジェクトストレージ (`file`、`s3` など) からの読み取りでは、クエリ条件cacheは決定論的な条件にのみ使用されるため、この設定の影響を受けません。
+
+このような条件は時計の進行に伴って変化する非決定的な条件であるため、そのままではcacheできません。そこで、畳み込まれた現在時刻の定数を時間グリッド上に丸めることで、決定論的な条件を導出します。たとえば、`WHERE time >= '2026-08-09 12:34:56'` は `WHERE time >= '2026-08-09 00:00:00'` になります (cacheの健全性を保つため、cacheの読み取り時には切り捨て、書き込み時には切り上げを行います) 。グリッドの刻み幅は定数と現在時刻との差に比例し ([`query_condition_cache_time_condition_grid_factor`](/ja/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor) を参照) 、1 秒から 1 日の範囲に制限されます。
+
+定数がすでにグリッドに揃っている場合 (例: `WHERE time >= today() - 10` や `WHERE time >= toStartOfDay(now())`) 、cacheはグリッドのセル全体にわたって (たとえばその日の終わりまで) 有効です。揃っていない場合、cacheが再利用されるのは時刻の下限条件 (例: `WHERE time >= now() - INTERVAL 10 DAY`) に限られ、あるグリッドセルの期間中に書き込まれた cache エントリが次のセルの期間中に使用されます。`WHERE time < now()` のようなグリッドに揃っていない上限条件は、単独で使われる場合も、`WHERE time >= now() - INTERVAL 10 DAY AND time < now()` のようなスライディングウィンドウの一部として使われる場合も、後続のクエリでは再利用されません。後続クエリの条件が、以前のクエリの条件に包含されないためです。
+
+この設定は、`use_query_condition_cache` も有効になっている場合にのみ効果があります。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +66,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `ORDER BY <column> LIMIT n` (TopK) 最適化 (動的フィルタリングまたはスキップ索引ベース) を使用するクエリで、[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効にします。無効の場合、このような読み取りではcacheの参照も格納も行いません。
 
-このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセットごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
+このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセット (`File` テーブルの場合は、読み取られるファイルのセットとそのバージョン、データレイクテーブルの場合はそのスナップショット) ごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
 
 設定可能な値:
 

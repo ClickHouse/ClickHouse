@@ -27,6 +27,8 @@ t	Default
 data
 105	105
 --- a renamed column with a stale type ---
+empty parts left by DETACH
+0
 part type before the rewrite
 d	String
 part type after the rewrite

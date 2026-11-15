@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['fragmentación', 'escalado horizontal', 'datos distribuidos', 'configuración del clúster', 'distribución de datos']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/es/_config_explanation.mdx';
 import ListenHost from '/snippets/es/_listen_host.mdx';
 import ServerParameterTable from '/snippets/es/_server_parameter_table.mdx';
@@ -17,6 +15,7 @@ import KeeperConfigExplanation from '/snippets/es/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/es/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/es/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/es/_working_example.mdx';
+
 import CloudTip from '/snippets/es/_cloud_tip.mdx';
 
 > En este ejemplo, aprenderás a configurar un clúster sencillo de ClickHouse que
@@ -25,7 +24,15 @@ import CloudTip from '/snippets/es/_cloud_tip.mdx';
 
 La arquitectura del clúster que configurarás se muestra a continuación:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/sharding.webp" size="md" alt="Diagrama de arquitectura para 2 segmentos y 1 réplica" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Diagrama de arquitectura para 2 segmentos y 1 réplica](/images/deployment-guides/replication-sharding-examples/sharding.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

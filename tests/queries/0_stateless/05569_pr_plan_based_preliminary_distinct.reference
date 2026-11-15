@@ -1,0 +1,10 @@
+100
+1
+Distinct (DISTINCT)
+ReadFromParallelReplicas
+Limit (local LIMIT)
+Distinct (local DISTINCT)
+Distinct (Preliminary DISTINCT)
+ReadFromMergeTree
+3
+1

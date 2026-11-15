@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -34,7 +35,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Разрешает удалять старые файлы данных во время compaction в Iceberg.
+Разрешает удалять старые файлы данных во время компакции в Iceberg.
+
+После компакции запускается очистка `iceberg_compaction_data_cleanup`. Она удаляет снимки, устаревшие в результате компакции, так же,
+как `expire_snapshots`: исключает их из метаданных таблицы и удаляет файлы, на которые не ссылается ни один другой снимок. Для таблиц
+с версией формата 1 или таблиц, работающих через транзакционный каталог, удаляются только файлы, а снимки остаются в метаданных.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,11 +109,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Диалект Kusto Query Language (KQL) переведён в статус бета."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
 Включает диалект Kusto Query Language (KQL) — альтернативу SQL.
 

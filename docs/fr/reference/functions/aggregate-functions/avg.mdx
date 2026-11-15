@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 ## avg {#avg}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Calcule la moyenne arithmétique.
 
@@ -25,7 +25,7 @@ avg(x)
 
 **Valeur renvoyée**
 
-Renvoie la moyenne arithmétique. Pour un `x` numérique, le résultat est de type `Float64`, ou `NaN` si `x` est vide. Pour un `x` de type date, heure ou intervalle, le résultat conserve le type de `x` : la moyenne est arrondie à la valeur représentable la plus proche, et un `x` vide renvoie la valeur zéro de ce type. [`Float64`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64(P)`](/fr/reference/data-types/datetime64) ou [`Time`](/fr/reference/data-types/time) ou [`Time64(P)`](/fr/reference/data-types/time64) ou [`Interval`](/fr/reference/data-types/special-data-types/interval)
+Renvoie la moyenne arithmétique. Pour un `x` numérique, le résultat est de type `Float64`, ou `NaN` si `x` est vide. Pour un `x` de type date, heure ou intervalle, le résultat conserve le type de `x` : la moyenne est arrondie à la valeur représentable la plus proche, et un `x` vide renvoie la valeur zéro de ce type. Si `x` est [`Nullable`](/fr/reference/data-types/nullable), le type de résultat est `Nullable(T)`, où `T` est le type de résultat obtenu pour le même `x` non `Nullable` (`Float64` pour les entrées numériques) ; une entrée vide renvoie `NULL`. [`Float64`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`Date32`](/fr/reference/data-types/date32) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64(P)`](/fr/reference/data-types/datetime64) ou [`Time`](/fr/reference/data-types/time) ou [`Time64(P)`](/fr/reference/data-types/time64) ou [`Interval`](/fr/reference/data-types/special-data-types/interval)
 
 **Exemples**
 

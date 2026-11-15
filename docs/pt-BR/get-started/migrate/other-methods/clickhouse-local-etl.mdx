@@ -7,11 +7,17 @@ description: 'Guia sobre como migrar para o ClickHouse usando o clickhouse-local
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/pt-BR/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Migrando o ClickHouse autogerenciado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrando o ClickHouse autogerenciado](/images/integrations/migration/ch-local-01.webp)
+
+</Frame>
+
+</div>
 
 Você pode usar o ClickHouse ou, mais especificamente, o [`clickhouse-local`](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local)
 como uma ferramenta de ETL para migrar dados do seu sistema de banco de dados atual para o ClickHouse Cloud, desde que, para esse sistema, exista um
@@ -27,7 +33,15 @@ Para todos os outros sistemas de banco de dados populares, há JDBC driver ou OD
   ## O que é clickhouse-local?
 </div>
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Migrando ClickHouse autogerenciado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrando ClickHouse autogerenciado](/images/integrations/migration/ch-local-02.webp)
+
+</Frame>
+
+</div>
 
 Normalmente, o ClickHouse é executado na forma de um cluster, em que várias instâncias do engine de banco de dados ClickHouse são executadas de maneira distribuída em diferentes servidores.
 
@@ -95,7 +109,15 @@ Nessa máquina host, baixe a compilação apropriada do `clickhouse-local` com b
 Usaremos o [motor de tabela de integração](/pt-BR/reference/engines/table-engines/integrations/mysql) (criado dinamicamente pela [função de tabela mysql](/pt-BR/reference/functions/table-functions/mysql)) para ler dados do banco de dados MySQL de origem e usaremos a [função de tabela remoteSecure](/pt-BR/reference/functions/table-functions/remote)
 para gravar os dados em uma tabela de destino no seu serviço ClickHouse Cloud.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Migrando o ClickHouse autogerenciado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrando o ClickHouse autogerenciado](/images/integrations/migration/ch-local-03.webp)
+
+</Frame>
+
+</div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### No serviço de destino do ClickHouse Cloud:

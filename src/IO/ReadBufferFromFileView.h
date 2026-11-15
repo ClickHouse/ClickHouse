@@ -60,7 +60,7 @@ private:
     /// file offsets and there may be logic that requires these
     /// offsets and the size of buffer to be consistent
     /// (e.g. optimizations of seeks).
-    Buffer original_working_buffer;
+    WorkingBuffer original_working_buffer;
 
     /// Executes `op` on @impl with the original buffer, then takes the end of the buffer from @impl
     /// and clamps the buffer to the right bound again. Every operation with @impl must go through it.

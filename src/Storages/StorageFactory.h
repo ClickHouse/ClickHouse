@@ -19,6 +19,10 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
@@ -75,6 +79,11 @@ public:
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
+
+        /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
+        /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
+        DiskPtr getDisk(const String & name) const;
+        StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -106,6 +115,11 @@ public:
         IsInheritedSettingFn * is_inherited_setting_fn = nullptr;
         SettingsFromEngineArgumentsFn * settings_from_engine_arguments_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+
+        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        bool stores_data_on_disk = false;
+        /// Whether the engine may back a temporary table (opt-in).
+        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -129,6 +143,10 @@ public:
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
 
+    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
+    void checkEngineFeatures(
+        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
+
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
     void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
@@ -149,6 +167,8 @@ public:
         .is_inherited_setting_fn = nullptr,
         .settings_from_engine_arguments_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .stores_data_on_disk = false,
+        .supports_temporary = false,
     }, Documentation documentation = {});
 
     /// Whether a table of the engine takes the setting from elsewhere when its definition does not state it: a format
@@ -187,6 +207,9 @@ public:
     std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
