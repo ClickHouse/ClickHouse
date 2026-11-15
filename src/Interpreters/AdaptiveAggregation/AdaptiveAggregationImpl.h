@@ -341,8 +341,7 @@ public:
     ALWAYS_INLINE void incrementCount(size_t i) { ++multiplicities[i]; }
     ALWAYS_INLINE void incrementLastCount() { ++multiplicities.back(); }
 
-    /// Counts a skipped row that repeats the keys and arguments of the last record: the thaw evidence charges it as
-    /// that record (see `Aggregator::accountStagedBatch`).
+    /// Counts a skipped row that repeats the keys and arguments of the last record.
     ALWAYS_INLINE void addRepeatOfLast()
     {
         chassert(!empty());

@@ -65,7 +65,6 @@ namespace
             return std::false_type{};
     }
 
-    /// A column of the rows that a repeat compares: the bytes of a fixed-width value or of a `String`.
     struct AdaptiveRepeatColumn
     {
         const char * data = nullptr;
@@ -73,7 +72,6 @@ namespace
         const ColumnString * string = nullptr;
     };
 
-    /// Adds the column to the compared ones, or returns false if its values are neither fixed-width nor `String`.
     bool addAdaptiveRepeatColumn(const IColumn & column, std::vector<AdaptiveRepeatColumn> & columns)
     {
         if (const auto * string = typeid_cast<const ColumnString *>(&column))
@@ -88,7 +86,6 @@ namespace
         return true;
     }
 
-    /// Whether the row has the same keys and arguments as the previous row.
     bool ALWAYS_INLINE rowRepeatsPrevious(const std::vector<AdaptiveRepeatColumn> & columns, size_t row)
     {
         for (const auto & column : columns)
@@ -116,8 +113,7 @@ namespace
         return true;
     }
 
-    /// A block stops the repeat checks when under half of its first 256 checks find a repeat, or when under 32 checks
-    /// were made by its 256th staged row.
+    /// A block stops its repeat checks when under half of its first 256 find a repeat, or under 32 ran by its 256th staged row.
     constexpr size_t adaptive_repeat_check_sample = 256;
 
     /// Whether a batch that keeps the bytes of its keys holds as many of them as it may, so that the kernel stages it
@@ -849,7 +845,6 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     const auto & repeated_records = misses.getRepeatedRecords();
     size_t next_repeat = 0;
     size_t repeat_bytes = 0;
-    /// A skipped repeat of a record costs the thaw evidence the bytes of that record.
     const auto account_repeats = [&](size_t record, size_t bytes) ALWAYS_INLINE
     {
         for (; next_repeat < repeated_records.size() && repeated_records[next_repeat] == record; ++next_repeat)
