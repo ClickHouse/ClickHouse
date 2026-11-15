@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Индексы пропуска данных стоит рассматривать после того, как уже выполнены основные рекомендации: оптимизированы типы, выбран подходящий первичный ключ и использованы materialized views. Если вы только начинаете знакомиться с индексами пропуска данных, хорошей отправной точкой будет [это руководство](/ru/concepts/features/performance/skip-indexes/skipping-indexes).
 
 Эти типы индексов могут ускорить выполнение запросов, если применять их осознанно и понимать, как именно они работают.
@@ -192,7 +190,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 Следующая анимация показывает, как для таблицы из примера строится наш minmax-индекс пропуска данных, отслеживающий минимальные и максимальные значения `ViewCount` для каждого блока строк (гранулы) в таблице:
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Построение индексов пропуска данных" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Построение индексов пропуска данных](/images/bestpractices/building_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 Повторив предыдущий запрос, можно увидеть заметное повышение производительности. Обратите внимание на уменьшение числа просканированных строк:
 
@@ -257,7 +263,15 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 Мы также показываем анимацию того, как minmax индекс пропуска данных отбрасывает все блоки строк, которые заведомо не могут содержать совпадений с предикатом `ViewCount` &gt; 10,000,000 в нашем примере запроса:
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Использование индексов пропуска данных" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Использование индексов пропуска данных](/images/bestpractices/using_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 <div id="related-docs">
   ## Связанные документы

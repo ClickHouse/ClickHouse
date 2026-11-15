@@ -57,8 +57,9 @@ determinado por &#39;timeout&#95;overflow&#95;mode&#39;, que, por padrão, é de
 
 <Note>
   O timeout é verificado, e a consulta só pode ser interrompida em pontos específicos durante o processamento de dados.
-  Atualmente, ela não pode ser interrompida durante a mesclagem de estados de agregação nem durante a análise da consulta,
-  e o tempo real de execução será maior que o valor dessa configuração.
+  Atualmente, ela não pode ser interrompida durante a mesclagem de estados de agregação nem durante a maior parte da análise da consulta
+  (estabelecer uma conexão com uma réplica remota é um dos pontos em que ela pode ser interrompida), e o tempo real de execução
+  será maior que o valor dessa configuração.
 </Note>
 
 <div id="max_execution_time_leaf">

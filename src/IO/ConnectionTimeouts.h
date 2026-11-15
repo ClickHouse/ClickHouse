@@ -58,7 +58,6 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, const ServerSettings & server_settings);
 
 #if ENABLE_DISTRIBUTED_CACHE
-    /// Defined in DistributedCache/Utils.cpp, which exists only in the private repo.
     static ConnectionTimeouts getDistributedCacheTimeouts(const Settings & settings);
 #endif
 

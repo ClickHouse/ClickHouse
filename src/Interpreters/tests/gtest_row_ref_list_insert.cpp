@@ -2,7 +2,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/RowRefs.h>
 
+#include <base/defines.h>
+
 #include <gtest/gtest.h>
+
+#include <limits>
 
 using namespace DB;
 
@@ -136,6 +140,31 @@ TEST(RowRefList, CountSaturationStillIteratesEveryRow)
     EXPECT_EQ(seen_xor, expected_xor);
 }
 
+TEST(RowRefList, SaturatedCountIsNotTruncatedTo32Bits)
+{
+    Arena pool;
+
+    /// `Batch::total_rows` is 56 bits, so a saturated count above 2^32 must survive `rows` intact:
+    /// a caller sizing an exact allocation from it writes one value per ref, so a narrowed count
+    /// under-allocates. Inserting that many refs is not feasible, so the field is set directly.
+    RowRefList list(/*block_no=*/0, /*row_no=*/0);
+    for (size_t row = 1; row < RowRefList::COUNT_SAT + 2; ++row)
+        list.insert(RowRef(0, row).encode(), pool);
+    ASSERT_FALSE(list.isInline());
+    ASSERT_EQ((list.word >> RowRefList::COUNT_SHIFT) & RowRefList::COUNT_SAT, RowRefList::COUNT_SAT);
+
+    static constexpr UInt64 big = (1ull << 32) + 7;
+    list.asBatch()->total_rows = big;
+    EXPECT_EQ(list.rows(), big);
+    EXPECT_EQ(refWordRows(list.word), big);
+
+    /// The widest value the field can hold must also come back whole.
+    static constexpr UInt64 widest = (1ull << 56) - 1;
+    list.asBatch()->total_rows = widest;
+    EXPECT_EQ(list.rows(), widest);
+    EXPECT_EQ(refWordRows(list.word), widest);
+}
+
 TEST(RowRefList, RangeRepresentation)
 {
     Arena pool;
@@ -164,3 +193,62 @@ TEST(RowRefList, RangeRepresentation)
     EXPECT_EQ(single.rows(), 1u);
     EXPECT_EQ(refWordRowNo(single.firstWord()), 7u);
 }
+
+TEST(RowRefList, RangeIterationIsNotTruncatedTo32Bits)
+{
+    Arena pool;
+
+    /// `rows` sizes the destination and the iterator fills it, so both have to read the same 56-bit
+    /// `Batch::total_rows`. Building a run that long is not feasible, so the field is set directly. The
+    /// range is made long enough for the in-word count to saturate. Only then does `rows` read the node.
+    RowRefList list;
+    list.setRange(RowRef(/*block_no=*/3, /*row_no=*/0).encode(), RowRefList::COUNT_SAT + 2, pool);
+    ASSERT_FALSE(list.isInline());
+    ASSERT_TRUE(list.asBatch()->is_range);
+    ASSERT_EQ((list.word >> RowRefList::COUNT_SHIFT) & RowRefList::COUNT_SAT, RowRefList::COUNT_SAT);
+
+    /// A 32-bit counter would keep only the low half of the count and run out after `low_half` steps.
+    static constexpr size_t low_half = 7;
+    static constexpr UInt64 big = (1ull << 32) + low_half;
+    list.asBatch()->total_rows = big;
+    ASSERT_EQ(list.rows(), big);
+
+    auto it = list.begin();
+    for (size_t step = 0; step < low_half; ++step)
+    {
+        ASSERT_TRUE(it.ok());
+        ++it;
+    }
+    EXPECT_TRUE(it.ok());
+}
+
+TEST(RowRefList, RangeWithinOneBlockIsAccepted)
+{
+    Arena pool;
+
+    static constexpr size_t last_row = std::numeric_limits<UInt32>::max();
+
+    RowRefList fits;
+    fits.setRange(RowRef(/*block_no=*/1, last_row - 1).encode(), /*rows_=*/2, pool);
+    EXPECT_EQ(fits.rows(), 2u);
+}
+
+/// `LOGICAL_ERROR` aborts instead of unwinding in debug and sanitizer builds, and those are the only
+/// builds CI runs unit tests in. So the rejection is a death test, not an `EXPECT_THROW`.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+TEST(RowRefListDeathTest, RangeLeavingItsBlockIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    Arena pool;
+
+    static constexpr size_t last_row = std::numeric_limits<UInt32>::max();
+
+    RowRefList overruns;
+    EXPECT_DEATH(
+        overruns.setRange(RowRef(/*block_no=*/1, last_row - 1).encode(), /*rows_=*/3, pool),
+        "does not end in the same block");
+}
+
+#endif

@@ -1,0 +1,8 @@
+<clickhouse>
+    <backups>
+        <!-- Needed by the File() destination of test_backup_on_cluster_internal_writer_fsyncs.
+             The existing cases all use Disk('backups', ...), which is checked against
+             'backups.allowed_disk' on a separate code path, so this is additive. -->
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>

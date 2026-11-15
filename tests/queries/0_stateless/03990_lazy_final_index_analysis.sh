@@ -9,12 +9,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-settings="--enable_analyzer=1"
-
 ## Test 1: Single-column PK
 echo "=== Single-column PK ==="
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_final_index;
     CREATE TABLE t_lazy_final_index
     (
@@ -38,11 +36,11 @@ $CLICKHOUSE_CLIENT $settings -q "
 "
 
 echo "-- correctness"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_index FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
 
 echo "-- index analysis"
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_index FINAL WHERE status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000
 " --send_logs_level='debug' 2>&1 \
@@ -50,13 +48,13 @@ $CLICKHOUSE_CLIENT $settings -q "
     | sed 's/.*Selected /Selected /' \
     | head -1
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_index"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_index"
 
 
 ## Test 2: Tuple PK (multi-column primary key)
 echo "=== Tuple PK ==="
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_final_tuple_pk;
     CREATE TABLE t_lazy_final_tuple_pk
     (
@@ -82,11 +80,11 @@ $CLICKHOUSE_CLIENT $settings -q "
 "
 
 echo "-- correctness"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_tuple_pk FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_tuple_pk FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_tuple_pk FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_tuple_pk FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
 
 echo "-- index analysis"
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_tuple_pk FINAL WHERE status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000
 " --send_logs_level='debug' 2>&1 \
@@ -94,13 +92,13 @@ $CLICKHOUSE_CLIENT $settings -q "
     | sed 's/.*Selected /Selected /' \
     | head -1
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_tuple_pk"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_tuple_pk"
 
 
 ## Test 3: PK is a prefix of ORDER BY
 echo "=== PK prefix of ORDER BY ==="
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_final_pk_prefix;
     CREATE TABLE t_lazy_final_pk_prefix
     (
@@ -124,11 +122,11 @@ $CLICKHOUSE_CLIENT $settings -q "
 "
 
 echo "-- correctness"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_pk_prefix FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
-$CLICKHOUSE_CLIENT $settings -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_pk_prefix FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_pk_prefix FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 0"
+$CLICKHOUSE_CLIENT -q "SELECT count(), sum(length(payload)) FROM t_lazy_final_pk_prefix FINAL WHERE status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000"
 
 echo "-- index analysis (PK is only category, so set has fewer columns)"
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_pk_prefix FINAL WHERE status = 'target'
     SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0
 " --send_logs_level='debug' 2>&1 \
@@ -136,4 +134,4 @@ $CLICKHOUSE_CLIENT $settings -q "
     | sed 's/.*Selected /Selected /' \
     | head -1
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_pk_prefix"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_pk_prefix"

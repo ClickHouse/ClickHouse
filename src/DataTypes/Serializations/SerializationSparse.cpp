@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 
 #include <Columns/ColumnConst.h>
@@ -20,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -47,9 +49,6 @@ constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
-    /// Column offsets from previous read.
-    /// Used only in SerializationSparseNullMap.
-    ColumnPtr column_offsets;
     /// Number of default values, that remain from previous read.
     size_t num_trailing_defaults = 0;
     /// Do we have non-default value after @num_trailing_defaults?
@@ -62,23 +61,11 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         has_value_after_defaults = false;
     }
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeStateSparse>(*this);
-        new_state->nested = nested ? nested->clone() : nullptr;
+        new_state->nested = nested ? nested->clone(context) : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column_offsets)
-            callback(column_offsets);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (nested)
-            callback(nested);
     }
 };
 
@@ -104,15 +91,10 @@ size_t deserializeOffsets(
     IColumn::Offsets & offsets,
     ReadBuffer & istr,
     size_t start,
-    size_t offset,
     size_t limit,
-    size_t & skipped_values_rows,
     DeserializeStateSparse & state)
 {
-    skipped_values_rows = 0;
-    size_t max_rows_to_read = offset + limit;
-
-    if (max_rows_to_read == 0)
+    if (limit == 0)
         return 0;
 
     /// Hoist state into locals so the inner loop avoids two redundant memory writes
@@ -120,9 +102,9 @@ size_t deserializeOffsets(
     size_t num_trailing_defaults = state.num_trailing_defaults;
     bool has_value_after_defaults = state.has_value_after_defaults;
 
-    if (num_trailing_defaults >= max_rows_to_read)
+    if (num_trailing_defaults >= limit)
     {
-        state.num_trailing_defaults = num_trailing_defaults - max_rows_to_read;
+        state.num_trailing_defaults = num_trailing_defaults - limit;
         return limit;
     }
 
@@ -130,46 +112,36 @@ size_t deserializeOffsets(
     offsets.reserve(offsets.size()
         + static_cast<size_t>(static_cast<double>(limit) * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
-    bool first = true;
+    /// The row of the next value: the column's current size before the first value of this read
+    /// (it can have some defaults after its last offset), otherwise the row after the previous value.
+    size_t start_of_group = start;
     size_t total_rows = num_trailing_defaults;
-    size_t tmp_offset = offset;
     if (has_value_after_defaults)
     {
-        if (num_trailing_defaults >= tmp_offset)
-        {
-            offsets.push_back(start + num_trailing_defaults - tmp_offset);
-            tmp_offset = 0;
-            first = false;
-        }
-        else
-        {
-            ++skipped_values_rows;
-            tmp_offset -= num_trailing_defaults + 1;
-        }
+        offsets.push_back(start + num_trailing_defaults);
+        start_of_group = start + num_trailing_defaults + 1;
 
         has_value_after_defaults = false;
         num_trailing_defaults = 0;
         ++total_rows;
     }
 
-    size_t group_size = 0;
-    while (!istr.eof())
+    /// A group is the defaults before a value, or the defaults at the end of a granule. Returns true when the read is done.
+    auto add_group = [&](size_t group_size) ALWAYS_INLINE
     {
-        readVarUInt(group_size, istr);
-
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
         group_size &= ~END_OF_GRANULE_FLAG;
 
         size_t next_total_rows = total_rows + group_size;
         group_size += num_trailing_defaults;
 
-        if (unlikely(next_total_rows >= max_rows_to_read))
+        if (unlikely(next_total_rows >= limit))
         {
             /// If it was not last group in granule,
             /// we have to add current non-default value at further reads.
-            state.num_trailing_defaults = next_total_rows - max_rows_to_read;
+            state.num_trailing_defaults = next_total_rows - limit;
             state.has_value_after_defaults = !end_of_granule;
-            return limit;
+            return true;
         }
 
         if (unlikely(end_of_granule))
@@ -179,47 +151,57 @@ size_t deserializeOffsets(
         }
         else
         {
-            /// If we add value to column for first time in current read,
-            /// start from column's current size, because it can have some defaults after last offset,
-            /// otherwise just start from previous offset.
-            /// After the first push `first` is false and `offsets` is non-empty, so the
-            /// `!offsets.empty()` guard from the original is redundant and dropped here.
-            size_t start_of_group = first ? start : offsets.back() + 1;
-
-            if (group_size >= tmp_offset)
-            {
-                offsets.push_back(start_of_group + group_size - tmp_offset);
-                tmp_offset = 0;
-                first = false;
-            }
-            else
-            {
-                ++skipped_values_rows;
-                tmp_offset -= group_size + 1;
-            }
+            offsets.push_back(start_of_group + group_size);
+            start_of_group += group_size + 1;
 
             num_trailing_defaults = 0;
             ++next_total_rows;
         }
 
         total_rows = next_total_rows;
+        return false;
+    };
+
+    while (!istr.eof())
+    {
+        /// Fast path: decode from a local pointer while a whole VarUInt is in the buffer.
+        const char * pos = istr.position();
+        const char * const buffer_end = istr.buffer().end();
+        while (buffer_end - pos >= static_cast<ssize_t>(VAR_UINT_MAX_SIZE))
+        {
+            UInt64 group_size = 0;
+            pos = readVarUInt(group_size, pos, VAR_UINT_MAX_SIZE);
+            if (add_group(group_size))
+            {
+                istr.position() = const_cast<char *>(pos);
+                return limit;
+            }
+        }
+        istr.position() = const_cast<char *>(pos);
+
+        /// The last bytes of the buffer: a VarUInt here can continue in the next buffer.
+        if (istr.eof())
+            break;
+
+        UInt64 group_size = 0;
+        readVarUInt(group_size, istr);
+        if (add_group(group_size))
+            return limit;
     }
 
     state.num_trailing_defaults = num_trailing_defaults;
     state.has_value_after_defaults = has_value_after_defaults;
-    return total_rows > offset ? total_rows - offset : 0;
+    return total_rows;
 }
 
 size_t readOrGetCachedSparseOffsets(
-    ColumnPtr & offsets_column,
+    IColumn & offsets_column,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache,
     DeserializeStateSparse & state_sparse,
     size_t prev_size,
-    size_t rows_offset,
     size_t limit,
-    size_t & read_rows,
-    size_t & skipped_values_rows)
+    size_t & read_rows)
 {
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
     const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
@@ -230,24 +212,23 @@ size_t readOrGetCachedSparseOffsets(
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
         num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
-        skipped_values_rows = cached_offsets_element.skipped_values_rows;
-        ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+        ISerialization::insertDataFromCachedColumn(offsets_column, cached_offsets_element.offsets, num_read_offsets);
     }
     else if (auto * stream = settings.getter(settings.path))
     {
         if (!settings.continuous_reading)
             state_sparse.reset();
 
-        auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
+        auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column).getData();
         size_t old_size = offsets_data.size();
-        read_rows = deserializeOffsets(offsets_data, *stream, prev_size, rows_offset, limit, skipped_values_rows, state_sparse);
+        read_rows = deserializeOffsets(offsets_data, *stream, prev_size, limit, state_sparse);
 
         ISerialization::addElementToSubstreamsCache(
             cache,
             settings.path,
-            std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column, old_size, read_rows, skipped_values_rows));
+            std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column.getPtr(), old_size, read_rows));
 
-        num_read_offsets = offsets_column->size() - old_size;
+        num_read_offsets = offsets_column.size() - old_size;
     }
 
     settings.path.pop_back();
@@ -271,6 +252,11 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
     auto kind_stack = nested->getKindStack();
     kind_stack.push_back(Kind::SPARSE);
     return kind_stack;
+}
+
+MutableColumnPtr SerializationSparse::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    return ColumnSparse::create(nested->wrapColumnForDeserialization(std::move(column)));
 }
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
@@ -302,7 +288,6 @@ void SerializationSparse::enumerateStreams(
 
     settings.path.push_back(Substream::SparseOffsets);
     auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
-                            .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                             .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
                             .withSerializationInfo(data.serialization_info);
 
@@ -357,7 +342,9 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
 
     settings.path.push_back(Substream::SparseOffsets);
-    if (auto * stream = settings.getter(settings.path))
+    auto * stream = settings.getter(settings.path);
+    /// An empty range writes nothing, not even the end of granule marker: it only completes a granule.
+    if (stream && offset < size)
     {
         size_t end = limit && offset + limit < size ? offset + limit : size;
         serializeOffsets(offsets_data, *stream, offset, end);
@@ -417,8 +404,7 @@ void SerializationSparse::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -427,42 +413,32 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
     /// Reading SparseOffsets first.
-    auto mutable_column = column->assumeMutable();
-    auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-    auto & offsets_column = column_sparse.getOffsetsPtr();
+    auto & column_sparse = assert_cast<ColumnSparse &>(column);
+    auto & offsets_column = column_sparse.getOffsetsColumn();
     size_t prev_size = column_sparse.size();
     size_t read_rows = 0;
-    size_t skipped_values_rows = 0;
     size_t num_read_offsets
-        = readOrGetCachedSparseOffsets(offsets_column, settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
+        = readOrGetCachedSparseOffsets(offsets_column, settings, cache, *state_sparse, prev_size, limit, read_rows);
 
     /// Reading SparseValues and constructing ColumnSparse.
     auto & values_column = column_sparse.getValuesPtr();
 
     settings.path.push_back(Substream::SparseElements);
-    /// We cannot use column from substream cache during deserialization of sparse values column, because
-    /// sparse values column must always contain default value at the first row that is added during ColumnSparse
-    /// creation. Using column from substream cache will lead to loss of this value and unexpected column size.
-    /// So, we should set insert_only_rows_in_current_range_from_substreams_cache flag to true
-    /// to insert only rows in current range from substream cache instead of using the whole cached column if any.
-    auto values_settings = settings;
-    values_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
     nested->deserializeBinaryBulkWithMultipleStreams(
-        values_column, skipped_values_rows, num_read_offsets, values_settings, state_sparse->nested, cache);
+        column_sparse.getValuesColumn(), num_read_offsets, settings, state_sparse->nested, cache);
     settings.path.pop_back();
 
-    if (offsets_column->size() + 1 != values_column->size())
+    if (offsets_column.size() + 1 != values_column->size())
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
-            offsets_column->size(),
+            offsets_column.size(),
             values_column->size());
     }
 
     /// 'insertManyDefaults' just increases size of column.
     column_sparse.insertManyDefaults(read_rows);
-    column = std::move(mutable_column);
 }
 
 /// All methods below just wrap nested serialization.
@@ -656,8 +632,7 @@ void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -666,32 +641,25 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
     auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
     /// Reading SparseOffsets first.
+    auto column_offsets = ColumnUInt64::create();
 
-    /// Initialize offsets column in state if needed.
-    if (!state_sparse->column_offsets || column->empty())
-        state_sparse->column_offsets = ColumnUInt64::create();
-
-    size_t prev_size = column->size();
+    size_t prev_size = column.size();
     size_t read_rows = 0;
-    size_t skipped_values_rows = 0;
     size_t num_read_offsets
-        = readOrGetCachedSparseOffsets(state_sparse->column_offsets, settings, cache, *state_sparse, prev_size, rows_offset, limit, read_rows, skipped_values_rows);
+        = readOrGetCachedSparseOffsets(*column_offsets, settings, cache, *state_sparse, prev_size, limit, read_rows);
 
     /// Converting SparseOffsets to NullMap.
 
     if (read_rows)
     {
-        auto mutable_column = column->assumeMutable();
-        auto & null_map_data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
-        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*state_sparse->column_offsets).getData();
+        auto & null_map_data = assert_cast<ColumnUInt8 &>(column).getData();
+        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*column_offsets).getData();
 
         /// Restore null map from offsets.
         null_map_data.resize_fill(null_map_data.size() + read_rows, static_cast<UInt8>(1));
         size_t total_offsets = offsets_data.size();
         for (size_t i = total_offsets - num_read_offsets; i < total_offsets; ++i)
             null_map_data[offsets_data[i]] = 0;
-
-        column = std::move(mutable_column);
     }
 }
 
