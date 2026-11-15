@@ -65,8 +65,9 @@ macro(clickhouse_split_debug_symbols)
    add_custom_command(TARGET ${STRIP_TARGET} POST_BUILD
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/lib/debug/bin"
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/bin"
-       # Splits debug symbols into separate file, leaves the binary untouched:
-       COMMAND "${OBJCOPY_PATH}" --only-keep-debug "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
+       # Splits debug symbols into separate file, leaves the binary untouched.
+       # The debug sections are compressed: nfpm cannot package files over 4 GiB into rpm.
+       COMMAND "${OBJCOPY_PATH}" --only-keep-debug --compress-debug-sections=zstd "${STRIP_BINARY_PATH}" "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        COMMAND chmod 0644 "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug"
        # Strips binary, sections '.note' & '.comment' are removed in line with Debian's stripping policy: www.debian.org/doc/debian-policy/ch-files.html, section '.clickhouse.hash' is needed for integrity check.
        # Also, after we disabled the export of symbols for dynamic linking, we still to keep a static symbol table for good stack traces.
