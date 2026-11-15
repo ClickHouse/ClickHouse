@@ -2673,16 +2673,20 @@ Use aggregate projections to read distinct grouping keys from local `MergeTree` 
 Supported filters are deterministic `WHERE` and `PREWHERE` expressions on grouping columns. Automatic movement of `WHERE` predicates into `PREWHERE` is supported. The grouping proof can pass through row-preserving view expressions and aliases when the nullable measure remains a direct input and the projection covers the required base grouping columns. Row-level predicates requiring other columns, explicit measure defaults, row policies, sampling, `FINAL`, and unsupported query shapes keep the original read.
 
 Requires a suitable materialized aggregate projection, the conservative minimum-read-byte preflight, and both projection-row cost limits to be satisfied. The feature is disabled by default and can be enabled per query or in a settings profile; it is not a persistent `Merge` engine setting. It does not redistribute Merge child stream budgets.
-)", SettingsTierType::EXPERIMENTAL, {"26.11", false, false, "New setting: use aggregate projections for neutral children of grouped SUM queries through Merge."}) \
+)", SettingsTierType::EXPERIMENTAL, \
+        {"26.11", false, false, "New setting: use aggregate projections for neutral children of grouped SUM queries through Merge."}) \
     DECLARE(UInt64, optimize_merge_neutral_sum_children_min_read_bytes, 3145728, R"(
 Conservative early cost gate for projection-backed neutral SUM reduction, defaulting to 3 MiB per child. Skip speculative projection planning if estimated uncompressed grouping-key bytes are below this limit or cannot be estimated reliably. Compact parts without per-column sizes use fixed-width values; total part bytes can prove a read is small but cannot prove the requested key read is large. Filtered reads without finalized selected ranges retain their ordinary read. Set to 0 to disable only this cost gate for benchmarking; all correctness and projection-cost checks still apply. This heuristic can miss beneficial projections and cannot guarantee faster execution for every workload.
-)", SettingsTierType::EXPERIMENTAL, {"26.11", 3145728, 3145728, "New setting: conservative early cost gate for small or unknown neutral SUM child reads."}) \
+)", SettingsTierType::EXPERIMENTAL, \
+        {"26.11", 3145728, 3145728, "New setting: conservative early cost gate for small or unknown neutral SUM child reads."}) \
     DECLARE(UInt64, optimize_merge_neutral_sum_children_max_rows, 1000000, R"(
 Maximum physical rows across the selected projection parts for `optimize_merge_neutral_sum_children`. This is a conservative part-row estimate, not post-filter cardinality. Zero rejects nonempty candidates.
-)", SettingsTierType::EXPERIMENTAL, {"26.11", 0, 1000000, "New setting limiting estimated rows in a neutral child aggregate projection."}) \
+)", SettingsTierType::EXPERIMENTAL, \
+        {"26.11", 0, 1000000, "New setting limiting estimated rows in a neutral child aggregate projection."}) \
     DECLARE(Float, optimize_merge_neutral_sum_children_max_rows_ratio, 0.1f, R"(
 Maximum ratio of selected projection-part rows to rows in their corresponding parent parts for `optimize_merge_neutral_sum_children`. Parts pruned from the candidate are excluded from both sides. This is physical part-row accounting, not a selectivity-aware estimate of rows surviving a filter.
-)", SettingsTierType::EXPERIMENTAL, {"26.11", 0., 0.1, "New setting limiting the estimated projection-to-base row ratio for neutral Merge children."}) \
+)", SettingsTierType::EXPERIMENTAL, \
+        {"26.11", 0., 0.1, "New setting limiting the estimated projection-to-base row ratio for neutral Merge children."}) \
     DECLARE(Float, max_streams_multiplier_for_merge_tables, 5, R"(
 Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.
 

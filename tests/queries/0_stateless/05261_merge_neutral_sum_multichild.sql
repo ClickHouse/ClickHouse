@@ -32,7 +32,7 @@ SELECT k,sum(pnl) FROM t05261_merge GROUP BY k ORDER BY k LIMIT 2
 SETTINGS log_comment='05261_limit';
 SELECT k,s FROM (SELECT k,sum(pnl) s FROM t05261_view GROUP BY k) WHERE isNull(s) ORDER BY k
 SETTINGS log_comment='05261_having';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
     arraySort(arrayMap(x -> substring(x, position(x,'.')+1), projections)),
     read_rows < 100
@@ -44,7 +44,7 @@ SELECT k,sum(pnl) FROM t05261_merge GROUP BY k ORDER BY k LIMIT 1
 SETTINGS query_plan_enable_optimizations=0,log_comment='05261_disabled';
 SELECT k,sum(pnl) FROM t05261_merge GROUP BY k ORDER BY k LIMIT 1
 SETTINGS optimize_use_projections=0,log_comment='05261_no_projections';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish'
 AND log_comment IN ('05261_disabled','05261_no_projections') ORDER BY log_comment;

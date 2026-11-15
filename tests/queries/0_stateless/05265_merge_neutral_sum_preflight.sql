@@ -26,20 +26,20 @@ SETTINGS optimize_merge_neutral_sum_children=0;
 SELECT arraySort(groupArray(tuple(k,isNull(s),ifNull(s,0)))) FROM
 (SELECT k,sum(pnl) s FROM t05265_merge GROUP BY k)
 SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05265_gate';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x,position(x,'.')+1),projections)) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05265_gate'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT k,sum(pnl) FROM t05265_merge GROUP BY k ORDER BY k
 SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0,log_comment='t05265_no_gate';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x,position(x,'.')+1),projections)) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05265_no_gate'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 -- Stronger limit rejects both candidates before projection planning.
 SELECT k,sum(pnl) FROM t05265_merge GROUP BY k ORDER BY k
 SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=1000000000,log_comment='t05265_all_raw';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05265_all_raw'
 ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -47,7 +47,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- whole-part-byte gate before the final selected marks are known.
 SELECT k,sum(pnl) FROM t05265_merge WHERE k=20 GROUP BY k
 SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05265_selective';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05265_selective'
 ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -66,7 +66,7 @@ SETTINGS optimize_merge_neutral_sum_children=0;
 SELECT arraySort(groupArray(tuple(k,isNull(s)))) FROM
 (SELECT k,sum(pnl) s FROM t05265_string_merge GROUP BY k)
 SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05265_string_gate';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x,position(x,'.')+1),projections)) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05265_string_gate'
 ORDER BY event_time_microseconds DESC LIMIT 1;

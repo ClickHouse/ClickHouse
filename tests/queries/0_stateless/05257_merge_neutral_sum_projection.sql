@@ -68,7 +68,7 @@ FROM
 )
 SETTINGS log_comment = '05257_neutral_sum';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x, position(x, '.') + 1), projections))
 FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
@@ -85,7 +85,7 @@ FROM
 )
 SETTINGS log_comment = '05257_neutral_sum_where';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x, position(x, '.') + 1), projections))
 FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
@@ -112,7 +112,7 @@ FROM
 )
 SETTINGS log_comment = '05257_neutral_sum_in';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayMap(x -> substring(x, position(x, '.') + 1), projections))
 FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'

@@ -26,7 +26,7 @@ SELECT arraySort(groupArray(tuple(k, isNull(s)))) FROM
 (SELECT k, sum(pnl) AS s FROM t05267_merge GROUP BY k)
 SETTINGS optimize_merge_neutral_sum_children = 1, max_rows_in_distinct = 1, max_bytes_in_distinct = 1,
     distinct_overflow_mode = 'break', log_comment = 't05267_break';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, notEmpty(projections) FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('t05267_rows', 't05267_bytes', 't05267_break')

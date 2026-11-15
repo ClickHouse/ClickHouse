@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- The failpoint injects a stateful filter after child creation and is server-global.
 DROP VIEW IF EXISTS t05259_view;
 DROP TABLE IF EXISTS t05259_merge;
@@ -20,7 +20,7 @@ INSERT INTO t05259_values VALUES (9,10),(9,20);
 CREATE TABLE t05259_merge AS t05259_values ENGINE=Merge(currentDatabase(), '^t05259_(values|keys|keys_other)$');
 CREATE VIEW t05259_view AS SELECT * FROM t05259_merge;
 SELECT k,sum(pnl) FROM t05259_view GROUP BY k ORDER BY k SETTINGS log_comment='t05259_before';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT notEmpty(projections), read_rows < 100 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05259_before'
 ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -28,7 +28,7 @@ SYSTEM ENABLE FAILPOINT merge_neutral_sum_late_filter;
 SELECT k, if(k=9, s BETWEEN 10 AND 30, isNull(s)) FROM
 (SELECT k,sum(pnl) AS s FROM t05259_view GROUP BY k) ORDER BY k SETTINGS log_comment='t05259_after';
 SYSTEM DISABLE FAILPOINT merge_neutral_sum_late_filter;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections), read_rows >= 200000 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05259_after'
 ORDER BY event_time_microseconds DESC LIMIT 1;

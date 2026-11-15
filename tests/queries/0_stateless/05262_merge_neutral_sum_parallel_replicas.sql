@@ -27,7 +27,7 @@ FROM (EXPLAIN description=0 SELECT k,sum(pnl) FROM t05262_merge GROUP BY k
 SETTINGS optimize_merge_neutral_sum_children=1);
 SELECT k,sum(pnl) FROM t05262_merge GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=0;
 SELECT k,sum(pnl) FROM t05262_merge GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=1,log_comment='05262_on';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='05262_on' AND is_initial_query
 ORDER BY event_time_microseconds DESC LIMIT 1;

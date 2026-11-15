@@ -16,7 +16,7 @@ SYSTEM STOP MERGES t05260_keys;
 ALTER TABLE t05260_keys UPDATE k=9 WHERE k=1 SETTINGS mutations_sync=0;
 SELECT arraySort(groupArray(k)) FROM (SELECT k,sum(pnl) FROM t05260_merge GROUP BY k)
 SETTINGS apply_mutations_on_fly=1, log_comment='t05260_pending';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05260_pending'
 ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -29,7 +29,7 @@ SELECT count() FROM (SELECT k,sum(pnl) FROM t05260_merge GROUP BY k);
 INSERT INTO t05260_keys SELECT number%2,1,number FROM numbers(100000);
 SELECT count() FROM (SELECT k,sum(pnl) FROM t05260_merge SAMPLE 0.5 GROUP BY k)
 SETTINGS log_comment='t05260_sample';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05260_sample'
 ORDER BY event_time_microseconds DESC LIMIT 1;

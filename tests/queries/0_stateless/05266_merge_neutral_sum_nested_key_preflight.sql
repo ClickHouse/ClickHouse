@@ -29,7 +29,7 @@ SELECT arraySort(groupArray(tuple(k, isNull(s)))) FROM
 (SELECT k, sum(pnl) AS s FROM t05266_merge GROUP BY k)
 SETTINGS optimize_merge_neutral_sum_children = 1,
     optimize_merge_neutral_sum_children_min_read_bytes = 0, log_comment = 't05266_override';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, empty(projections) FROM system.user_query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('t05266_default', 't05266_override')

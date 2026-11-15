@@ -37,7 +37,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_all_off';
 SELECT 'all', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_all';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'all_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_all'
@@ -56,7 +56,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_eq_off';
 SELECT 'eq', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE cob = '2026-09-08' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_eq';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'eq_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_eq'
@@ -75,7 +75,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_range_off';
 SELECT 'range', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE cob >= '2026-09-09' AND cob < '2026-09-11' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_range';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'range_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_range'
@@ -94,7 +94,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_in_off';
 SELECT 'in', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE cob IN ('2026-09-08','2026-09-10') AND desk = '0' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_in';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'in_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_in'
@@ -113,7 +113,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_no_prewhere_
 SELECT 'no_prewhere', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE cob = '2026-09-08' AND desk = '0' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_no_prewhere', optimize_move_to_prewhere=0;
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'no_prewhere_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_no_prewhere'
@@ -132,7 +132,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_explicit_off
 SELECT 'explicit', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge PREWHERE cob = '2026-09-08' AND desk = '0' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_explicit';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'explicit_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_explicit'
@@ -151,7 +151,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_expression_o
 SELECT 'expression', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE length(desk) = 1 AND cob = '2026-09-08' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_expression';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'expression_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_expression'
@@ -170,7 +170,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_empty_off';
 SELECT 'empty', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE cob = '2030-01-01' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_empty';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'empty_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_empty'
@@ -182,7 +182,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_neutral_only
 SELECT 'neutral_only', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE desk = '1' AND cob = '2026-09-10' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_neutral_only';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'neutral_only_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_neutral_only'
@@ -201,7 +201,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_measure_off'
 SELECT 'measure', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE pnl > 0 GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_measure';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'measure_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_measure'
@@ -213,7 +213,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_row_level_of
 SELECT 'row_level', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge WHERE delta > 0 GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_row_level';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'row_level_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_row_level'
@@ -225,7 +225,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_absolute_off
 SELECT 'absolute', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_absolute', optimize_merge_neutral_sum_children_max_rows=1;
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'absolute_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_absolute'
@@ -237,7 +237,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_ratio_off', 
 SELECT 'ratio', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_ratio', optimize_merge_neutral_sum_children_max_rows_ratio=0.000001;
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'ratio_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_ratio'
@@ -249,7 +249,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_default_off'
 SELECT 'default', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_default  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_default';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'default_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_default'
@@ -261,7 +261,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_avg_off';
 SELECT 'avg', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,avg(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_avg';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'avg_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_avg'
@@ -273,7 +273,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_count_off';
 SELECT 'count', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,count() s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_count';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'count_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_count'
@@ -285,7 +285,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_final_off';
 SELECT 'final', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge FINAL  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_final';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'final_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_final'
@@ -298,7 +298,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_policy_off';
 SELECT 'policy', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_policy';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'policy_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_policy'
@@ -312,7 +312,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_view_off';
 SELECT 'view', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_view WHERE cob = '2026-09-08' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_view';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'view_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_view'
@@ -332,7 +332,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_transformed_
 SELECT 'transformed', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_transformed WHERE cob IN ('2026-09-08','2026-09-10') AND desk = '0' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_transformed';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'transformed_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_transformed'
@@ -351,7 +351,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_ordered_off'
 SELECT 'ordered', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_view WHERE cob = '2026-09-08' GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_ordered', optimize_aggregation_in_order=1;
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'ordered_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_ordered'
@@ -370,7 +370,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_view_row_lev
 SELECT 'view_row_level', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_view WHERE delta > 0 GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_view_row_level';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'view_row_level_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_view_row_level'
@@ -382,7 +382,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_view_measure
 SELECT 'view_measure', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_view WHERE pnl > 0 GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_view_measure';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'view_measure_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_view_measure'
@@ -395,7 +395,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_view_compute
 SELECT 'view_computed_measure', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_non_neutral  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_view_computed_measure';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'view_computed_measure_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_view_computed_measure'
@@ -410,7 +410,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_missing_off'
 SELECT 'missing', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_missing';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'missing_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_missing'
@@ -428,7 +428,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_partial_off'
 SELECT 'partial', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_partial';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'partial_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_partial'
@@ -447,7 +447,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_unsuitable_o
 SELECT 'unsuitable', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_unsuitable';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'unsuitable_projection', notEmpty(projections) = 0
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_unsuitable'
@@ -469,7 +469,7 @@ SETTINGS optimize_merge_neutral_sum_children=0, log_comment='t05258_competing_of
 SELECT 'competing', (SELECT toString(arraySort(groupArray(tuple(cob,desk,trader,isNull(s),ifNull(s,0),toTypeName(s))))) FROM (SELECT cob,desk,trader,sum(pnl) s FROM t05258_merge  GROUP BY cob,desk,trader)) = (SELECT rows FROM t05258_expected)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_competing';
 TRUNCATE TABLE t05258_expected;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT 'competing_projection', notEmpty(projections) = 1
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_competing'
@@ -486,7 +486,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1) / 10;
 SELECT count() <= 34 FROM
 (SELECT cob, desk, trader, sum(pnl) FROM t05258_merge WHERE rand64() % 2 = 0 GROUP BY cob, desk, trader)
 SETTINGS optimize_merge_neutral_sum_children=1, log_comment='t05258_random';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT empty(projections)
 FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05258_random'
