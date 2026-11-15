@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_BLOCK_INFO_FIELD;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -50,9 +51,29 @@ void readField(T & value, ReadBuffer & in)
   */
 constexpr size_t MAX_OUT_OF_ORDER_BUCKETS = 256;
 
+/// Bucket numbers are used as indices of the buckets of two-level aggregation (there are 256 of them).
+constexpr Int32 MAX_BUCKET_NUM = 255;
+
+void checkBucketNum(Int32 bucket_num, Int32 min_bucket_num)
+{
+    if (bucket_num < min_bucket_num || bucket_num > MAX_BUCKET_NUM)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Bucket number {} in BlockInfo is out of range, expected a value from {} to {}",
+            bucket_num, min_bucket_num, MAX_BUCKET_NUM);
+}
+
+/// The only `Int32` field is `bucket_num`, which is -1 for a block that does not belong to a bucket.
+void readField(Int32 & value, ReadBuffer & in)
+{
+    readBinary(value, in);
+    checkBucketNum(value, -1);
+}
+
 void readField(VectorWithMemoryTracking<Int32> & value, ReadBuffer & in)
 {
     readVectorBinary(value, in, MAX_OUT_OF_ORDER_BUCKETS);
+    for (Int32 bucket : value)
+        checkBucketNum(bucket, 0);
 }
 
 }

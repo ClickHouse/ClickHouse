@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="are-transaction-rollbacks-replicated">
   ### ¿Se replican en ClickHouse las reversiones de transacciones?
 </div>
@@ -433,7 +431,15 @@ También conviene comprobar lo siguiente:
 
 Sí, en un ClickPipe de Postgres con el modo de replicación configurado como CDC o Snapshot + CDC, puedes hacer que ClickPipes cree un slot de replicación con failover habilitado activando el interruptor que aparece a continuación en la sección `Advanced Settings` al crear el ClickPipe. Ten en cuenta que tu versión de Postgres debe ser 17 o superior para usar esta función.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</Frame>
+
+</div>
 
 Si el origen está configurado correctamente, el slot se conserva tras un failover a una réplica de lectura de Postgres, lo que garantiza la replicación continua de los datos. Más información [aquí](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 
