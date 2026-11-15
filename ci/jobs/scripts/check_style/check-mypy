@@ -3,13 +3,16 @@
 # The mypy supports pyproject.toml, but unfortunately it doesn't support it recursively
 # https://github.com/python/mypy/issues/10613
 #
-# Unless it's done, mypy only runs against tests/ci
+# Unless it's done, mypy only runs against ci/tools
 # Let's leave here a room for improvement and redo it when mypy will test anything else
 
 GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-.}
-CONFIG="$GIT_ROOT/tests/ci/.mypy.ini"
-DIRS=("$GIT_ROOT/tests/ci/" "$GIT_ROOT/tests/ci/"*/)
+CONFIG="$GIT_ROOT/ci/tools/.mypy.ini"
+# `ci/tools/` and its subdirectories are the new home of this tooling. `tests/ci/` is kept
+# in the scope because the synchronized private repository still has its own scripts and
+# self-contained lambda packages there; directories without Python files are skipped below.
+DIRS=("$GIT_ROOT/ci/tools/" "$GIT_ROOT/ci/tools/"*/ "$GIT_ROOT/tests/ci/" "$GIT_ROOT/tests/ci/"*/)
 tmp=$(mktemp)
 
 for dir in "${DIRS[@]}"; do

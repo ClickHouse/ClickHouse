@@ -1,0 +1,42 @@
+-- spark_int96_timestamp: INT96 timestamps at the top level and inside a struct, an array and a map
+writer	Nullable(String)					
+c	Nullable(DateTime64(6))					
+s	Tuple(\n    c Nullable(DateTime64(6)))					
+l	Array(Nullable(DateTime64(6)))					
+m	Map(String, Nullable(DateTime64(6)))					
+duckdb-delta	1767323045123456	1767323045123456	1767323045123456	1767323045123456
+spark-4.2	1767323045123456	1767323045123456	1767323045123456	1767323045123456
+duckdb-delta
+spark-4.2
+-- ict_timetravel: in-commit timestamps, one row added per commit
+12
+10
+11
+-- issue_303_partitioned: filters on an integer partition column
+i	Nullable(Int64)					
+part	Nullable(Int64)					
+16
+16
+16
+16
+16
+0
+-- char_varchar: char(n) and varchar(n) columns, including inside an array and as a partition column
+id	Nullable(Int64)					
+v	Nullable(String)					
+c	Nullable(String)					
+unbounded	Nullable(String)					
+id	Nullable(Int64)					
+arr	Array(Nullable(String))					
+id	Nullable(Int64)					
+p	Nullable(String)					
+v	Nullable(String)					
+0
+-- types that cannot be read are refused
+geography: DELTA_KERNEL_ERROR
+geometry: DELTA_KERNEL_ERROR
+interval_day_time: DELTA_KERNEL_ERROR
+interval_year_month: DELTA_KERNEL_ERROR
+user_defined: DELTA_KERNEL_ERROR
+-- catalog_managed: DELTA_KERNEL_ERROR
+-- variant: NOT_IMPLEMENTED

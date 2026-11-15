@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Sparse-serialized key columns (mostly-default values stored sparsely by MergeTree) must be
 -- densified on input (`removeConstAndSparse`); verified against the cross-join oracle.
 -- `extremes = 1` exercises the extremes drop in the paired join pipeline.

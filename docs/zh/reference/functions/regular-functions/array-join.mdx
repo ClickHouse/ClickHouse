@@ -20,6 +20,8 @@ doc_type: 'reference'
   若要返回仅包含数组类型默认值的一行，可以用 [emptyArrayToSingle](/zh/reference/functions/regular-functions/array-functions#emptyArrayToSingle) 对其进行包装，例如：`arrayJoin(emptyArrayToSingle(...))`。
 </Note>
 
+`unnest` (自 26.5 版本起) 是函数调用形式中 `arrayJoin` 的不区分大小写别名 (`SELECT unnest(arr)`) 。不支持 PostgreSQL 表源语法 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)` 和 `LATERAL`) 。对于此类查询，请使用 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句。
+
 例如：
 
 ```sql title="Query"
@@ -51,6 +53,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
 ```
 
+有一个例外：`arrayJoin` (包括通过其 `unnest` 别名使用) 不能用于在联接期间求值的 `JOIN ON` 条件，因为此类条件必须保持行数不变，且会针对每个联接行批次分别求值。仅适用于一侧的条件，以及基于 `arrayJoin` 的等值键，会在联接前被提取出来，因此不受影响。不含析取条件的 `ALL INNER JOIN` 条件同样不受影响，因为该条件会在联接后应用。如果展开仅依赖于一侧，请在联接前将其移至子查询中的 `ARRAY JOIN`；如果条件中 `arrayJoin` 的参数引用了两侧的列，则必须重构该条件。
+
 一个查询中可以使用多个 `arrayJoin` 函数。在这种情况下，转换会执行多次，行会成倍增加。
 例如：
 
@@ -81,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### 最佳实践
-</div>
+### 行顺序 {#row-order}
+
+对于每个源行，`arrayJoin` 会按照元素在数组中的顺序依次生成这些元素。
+
+如果查询中包含多个参数不同的 `arrayJoin` 调用，结果会为元素的每种组合各生成一行。这些行的顺序无法保证，因为它取决于查询计划。例如，如果 `WHERE` 子句用到了其中某个调用，查询可能会先展开该调用。如需获得确定的顺序，请使用 `ORDER BY`：
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+如果没有 `ORDER BY`，此查询可能会按 `('a', 1)`、`('b', 1)`、`('a', 2)`、`('b', 2)` 的顺序返回行。
+
+如果没有 `ORDER BY`，源行的顺序无法保证。如需稳定的顺序，或需要结合 `LIMIT` 和 `OFFSET` 进行分页，请参阅 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句中的“行顺序与分页”一节。该节中关于 `ORDER BY` 的规则同样适用于 `arrayJoin`。
+
+### 最佳实践 {#important-note}
 
 对同一表达式多次使用 `arrayJoin`，由于公共子表达式消除，可能无法得到预期结果。
 在这种情况下，可以考虑对重复的数组表达式做一些不会影响 JOIN result 的额外处理。例如，`arrayJoin(arraySort(arr))`、`arrayJoin(arrayConcat(arr, []))`

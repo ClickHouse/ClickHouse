@@ -10,7 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
@@ -28,22 +27,54 @@ Looker can connect to ClickHouse Cloud or on-premise deployment via the official
 
 Navigate to Admin -> Database -> Connections and click the "Add Connection" button in the top right corner.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Adding a new connection in Looker's database management interface" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Adding a new connection in Looker's database management interface](/images/integrations/data-visualization/looker_01.webp)
+
+</Frame>
+
+</div>
 <br/>
 
 Choose a name for your data source, and select `ClickHouse` from the dialect drop-down. Enter your credentials in the form.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Specifying your ClickHouse credentials in Looker connection form" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Specifying your ClickHouse credentials in Looker connection form](/images/integrations/data-visualization/looker_02.webp)
+
+</Frame>
+
+</div>
 <br/>
 
 If you're using ClickHouse Cloud or your deployment requires SSL, make sure you have SSL turned on in the additional settings.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Enabling SSL for ClickHouse connection in Looker settings" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Enabling SSL for ClickHouse connection in Looker settings](/images/integrations/data-visualization/looker_03.webp)
+
+</Frame>
+
+</div>
 <br/>
 
 Test your connection first, and, once it is done, connect to your new ClickHouse data source.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Testing and connecting to the ClickHouse data source" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Testing and connecting to the ClickHouse data source](/images/integrations/data-visualization/looker_04.webp)
+
+</Frame>
+
+</div>
 <br/>
 
 Now you should be able to attach ClickHouse Datasource to your Looker project.

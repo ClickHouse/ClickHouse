@@ -7,6 +7,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getConfigPath.h>
 #include <Common/Macros.h>
 #include <DisksClient.h>
 #include <ICommand.h>
@@ -478,9 +479,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
-    if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
+    /// A configuration file can be written in XML or in YAML, so the default one is looked up with
+    /// every supported extension, not only with `.xml`.
+    const bool has_explicit_config = config().has("config-file");
+    const String config_path = has_explicit_config ? config().getString("config-file")
+                                                   : getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
+    if (has_explicit_config || fs::exists(config_path))
     {
-        String config_path = config().getString("config-file", getDefaultConfigFileName());
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
@@ -560,8 +565,12 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
 
         fatal_log = createLogger("DisksApp", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+        /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+        /// for - and the blocking read of that pipe is all the listener thread does.
         signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
         signal_listener_thread.start(*signal_listener);
+#endif
     }
 
     if (config().has("macros"))
@@ -598,8 +607,10 @@ DisksApp::~DisksApp()
 
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)

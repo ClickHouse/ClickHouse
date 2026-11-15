@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-flaky-check
+# Tags: no-fasttest, no-flaky-check, no-llvm-coverage
+# no-llvm-coverage: coverage instrumentation slows the server enough that the global
+# `trace_log` drain exceeds the 180s deadline in `SYSTEM FLUSH LOGS`, so the sampled
+# rows are not yet visible when the assertion runs. Runs in `excluded_from_llvm` instead.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

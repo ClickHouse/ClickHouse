@@ -1,0 +1,22 @@
+-- row policy: the restricted read empties every mark (0)
+0
+-- row policy: and it did write an entry (1)
+1
+-- row policy: the unrestricted read of the same query text is unaffected (50, 50)
+50
+50
+-- row policy: because it keyed on a different condition and found nothing to reuse (0)
+0
+-- skip index on data read: the read writes no entry at all (14, 0)
+14
+0
+-- skip index on data read: so a later indexes-off read cannot be poisoned (14, 14)
+14
+14
+-- without the data-read pruning the same shape writes and is reused (14, 1, 14, 14)
+14
+1
+14
+14
+-- and that reuse really was a cache hit (1)
+1

@@ -61,6 +61,43 @@ UPDATED_DYNAMIC_CONFIG = f"""
 </clickhouse>
 """
 
+SNAPSHOT_VERSION_9_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <write_snapshot_version>9</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+SNAPSHOT_VERSION_INVALID_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <write_snapshot_version>3</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def wait_for_setting(node, name, expected):
+    """Poll the 'conf' 4-letter command until the setting reaches the expected
+    value (the config reloader picks up file changes with a small delay)."""
+    settings = {}
+    for _ in range(30):
+        time.sleep(1)
+        settings = get_coordination_settings(node)
+        if settings.get(name) == expected:
+            return settings
+    assert False, (
+        f"{name} did not change to {expected} after config reload; "
+        f"current value: {settings.get(name)}"
+    )
+
 
 def test_dynamic_settings_hot_reload(started_cluster):
     """Verify that settings marked as HOT_RELOAD are updated after config
