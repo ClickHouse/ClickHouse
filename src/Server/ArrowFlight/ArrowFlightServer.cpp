@@ -1369,8 +1369,6 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
 
     if (action.type() == "CancelFlightInfo")
     {
-        if (action.body().empty())
-            return Status::Invalid("Invalid empty CancelFlightInfo action.");
         protocol::CancelFlightInfoRequest request;
         if (!request.ParseFromString(action.body()))
             return Status::Invalid("Not a valid CancelFlightInfoRequest");
@@ -1396,8 +1394,6 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
     }
     else if (action.type() == "SetSessionOptions")
     {
-        if (action.body().empty())
-            return Status::Invalid("Invalid empty SetSessionOptions action.");
         protocol::SetSessionOptionsRequest request;
         if (!request.ParseFromString(action.body()))
             return Status::Invalid("Not a valid SetSessionOptionsRequest");
@@ -1510,8 +1506,6 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
     }
     else if (action.type() == "CreatePreparedStatement")
     {
-        if (action.body().empty())
-            return Status::Invalid("Invalid empty CreatePreparedStatement action.");
 
         protocol::sql::ActionCreatePreparedStatementRequest request;
         if (!request.ParseFromString(action.body()))
@@ -1625,8 +1619,6 @@ Status ArrowFlightServer::doAction(const AuthMiddleware & auth, const protocol::
     }
     else if (action.type() == "ClosePreparedStatement")
     {
-        if (action.body().empty())
-            return Status::Invalid("Invalid empty ClosePreparedStatement action.");
 
         protocol::sql::ActionClosePreparedStatementRequest request;
         if (!request.ParseFromString(action.body()))

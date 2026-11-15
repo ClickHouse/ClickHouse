@@ -681,11 +681,8 @@ def test_cancellation_during_doget_is_not_lost():
     )
     elapsed = time.time() - start
     assert "TIMEOUT_EXCEEDED" in error, error
-    # The query cannot return before DoGet does, so an earlier return means the cancellation landed
-    # before the read was ever issued and the run says nothing about this frame.
-    assert (
-        elapsed >= DOGET_DELAY_SEC - 0.5
-    ), f"query returned after {elapsed:.1f}s, before DoGet could return"
+    # The cancellation aborts the DoGet call, whether it lands while the call is being made or while
+    # its first message is awaited, so the query ends at its time limit.
     assert elapsed < DOGET_STOP_BOUND_SEC, f"query took {elapsed:.1f}s"
 
 

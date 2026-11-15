@@ -2,6 +2,11 @@
 
 #if USE_ARROW
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/MessageWriter.h>
@@ -15,6 +20,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace DB::ArrowIPC
@@ -151,6 +157,71 @@ String frameFlatBuffer(const uint8_t * data, size_t size)
 
 }
 
+namespace
+{
+
+bool hasArrowMapping(const DataTypePtr & type, const FormatSettings & settings)
+{
+    flatbuffers::FlatBufferBuilder builder;
+    try
+    {
+        buildSchemaMessage(builder, {"c"}, {type}, settings);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            return false;
+        throw;
+    }
+    return true;
+}
+
+/// The innermost part of a column without an Arrow mapping: its path (the names of the tuple elements, joined by
+/// dots) and its type.
+std::pair<String, DataTypePtr> findTypeWithoutArrowMapping(const String & path, const DataTypePtr & type, const FormatSettings & settings)
+{
+    const auto t = removeNullable(removeLowCardinality(type));
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(t.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            if (!hasArrowMapping(tuple->getElement(i), settings))
+                return findTypeWithoutArrowMapping(path + "." + tuple->getNameByPosition(i + 1), tuple->getElement(i), settings);
+    }
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(t.get()))
+    {
+        if (!hasArrowMapping(array->getNestedType(), settings))
+            return findTypeWithoutArrowMapping(path, array->getNestedType(), settings);
+    }
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(t.get()))
+    {
+        for (const auto & element : {map->getKeyType(), map->getValueType()})
+            if (!hasArrowMapping(element, settings))
+                return findTypeWithoutArrowMapping(path, element, settings);
+    }
+    return {path, t};
+}
+
+/// Rejects a type without an Arrow mapping as the Apache Arrow library writer did, naming the column it is in, when
+/// `output_format_arrow_unsupported_types` is `throw`.
+void checkArrowMappings(const Names & names, const DataTypes & types, const FormatSettings & settings)
+{
+    if (settings.arrow.output_unsupported_types != FormatSettings::ArrowUnsupportedTypes::THROW)
+        return;
+    for (size_t i = 0; i < types.size(); ++i)
+    {
+        if (hasArrowMapping(types[i], settings))
+            continue;
+        const auto [path, type] = findTypeWithoutArrowMapping(names[i], types[i], settings);
+        throw Exception(
+            ErrorCodes::UNKNOWN_TYPE,
+            "The type '{}' of a column '{}' is not supported for conversion into Arrow data format. Set "
+            "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
+            type->getName(), path);
+    }
+}
+
+}
+
 String frameMessage(const IPCMessage & message)
 {
     String result;
@@ -166,6 +237,7 @@ String frameMessage(const IPCMessage & message)
 
 EncodedStream encodeStream(const Block & header, const Chunks & chunks, const FormatSettings & settings)
 {
+    checkArrowMappings(header.getNames(), header.getDataTypes(), settings);
     String data;
     {
         WriteBufferFromString out(data);
@@ -244,6 +316,7 @@ String serializeSchemaMessage(const ArrowSchema & schema)
 
 String serializeSchemaMessage(const Names & names, const DataTypes & types, const FormatSettings & settings)
 {
+    checkArrowMappings(names, types, settings);
     flatbuffers::FlatBufferBuilder b;
     buildSchemaMessage(b, names, types, settings);
     return frameFlatBuffer(b.GetBufferPointer(), b.GetSize());

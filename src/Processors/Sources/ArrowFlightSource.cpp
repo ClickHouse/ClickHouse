@@ -211,10 +211,48 @@ bool ArrowFlightSource::nextEndpoint()
         new_call_context->TryCancel();
 
     auto reader = stub->DoGet(new_call_context.get(), ticket);
+
+    /// The first message, the schema, is read here, so that a stream that cannot start is reported as such.
+    auto first = std::make_shared<arrow::flight::protocol::FlightData>();
+    bool has_first = false;
+    while (reader->Read(first.get()))
+    {
+        if (!first->data_header().empty())
+        {
+            has_first = true;
+            break;
+        }
+    }
+    if (!has_first)
+    {
+        auto status = reader->Finish();
+        if (!status.ok() && !isCancelled())
+            throw Exception(
+                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE,
+                "Failed to initialize Arrow Flight stream: {}",
+                ArrowFlightConnection::formatError(status, *new_call_context));
+        if (!status.ok())
+            return false;
+        /// An empty stream: there is nothing to read from this endpoint.
+        {
+            std::lock_guard lock{call_mutex};
+            call_context = nullptr;
+        }
+        ++current_endpoint;
+        return nextEndpoint();
+    }
+
     auto * reader_ptr = reader.get();
     auto * call_ptr = new_call_context.get();
-    startReading([reader_ptr, call_ptr, this](ArrowIPC::IPCMessage & message)
+    startReading([reader_ptr, call_ptr, first, this](ArrowIPC::IPCMessage & message) mutable
     {
+        if (first)
+        {
+            message.header = std::move(*first->mutable_data_header());
+            message.body = std::move(*first->mutable_data_body());
+            first.reset();
+            return true;
+        }
         arrow::flight::protocol::FlightData data;
         while (reader_ptr->Read(&data))
         {
