@@ -214,7 +214,7 @@ ORDER BY ts ASC;
 4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
    └─────────────────────┴─────────┴──────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
 }
 
 }

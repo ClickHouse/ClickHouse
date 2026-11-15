@@ -114,7 +114,7 @@ cume_dist = (number of rows ≤ current row value) / (total number of rows in pa
 ```
 
 Rows with equal values (peers) receive the same cumulative distribution value, which corresponds to the highest position of the peer group.
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
 }
 
 }

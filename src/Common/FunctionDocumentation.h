@@ -134,7 +134,8 @@ struct FunctionDocumentation
 
         /// Other types of functions
         AggregateFunction,
-        TableFunction
+        TableFunction,
+        WindowFunction
     };
 
     using Related = std::vector<String>;

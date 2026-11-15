@@ -154,7 +154,7 @@ FROM salaries;
 ```
 
 Here there are seven rows and four buckets, so the first three buckets contain two rows each and the last bucket contains a single row.
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

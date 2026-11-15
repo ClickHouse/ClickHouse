@@ -125,7 +125,7 @@ FROM salaries;
 7. │ James Henderson │ 140000 │    7 │
    └─────────────────┴────────┴──────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

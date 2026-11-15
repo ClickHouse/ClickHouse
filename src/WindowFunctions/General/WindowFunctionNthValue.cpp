@@ -133,7 +133,7 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
 7. │ Michael Stanley │ 100000 │ Charles Juarez       │
    └─────────────────┴────────┴──────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

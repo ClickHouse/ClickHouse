@@ -188,7 +188,7 @@ ORDER BY date DESC
 5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
    └────────────┴────────┴────────────────────┴───────┴────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, bindLagLeadArgumentTypes});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -263,7 +263,7 @@ ORDER BY date DESC
 5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
    └────────────┴────────┴────────────────────┴───────┴────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -336,7 +336,7 @@ LIMIT 9
 9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
    └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, bindLagLeadArgumentTypes});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -404,7 +404,7 @@ LIMIT 9
 9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
    └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

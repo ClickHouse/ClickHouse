@@ -99,7 +99,7 @@ FROM salaries;
 5. │ Michael Stanley │ 150000 │          5 │
    └─────────────────┴────────┴────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -124,7 +124,7 @@ FROM salaries;
 7. │ James Henderson │ 140000 │          4 │
    └─────────────────┴────────┴────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
 
     factory.registerAlias("dense_rank", "denseRank", WindowFunctionFactory::Case::Insensitive);
 }

@@ -106,7 +106,7 @@ FROM salaries;
    └─────────────────┴────────┴────────────────────┘
 
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}});
 
     factory.registerAlias("percent_rank", "percentRank", WindowFunctionFactory::Case::Insensitive);
 }

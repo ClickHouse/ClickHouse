@@ -411,7 +411,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedSum_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedSum_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedSum_documentation = {exponentialTimeDecayedSum_description, exponentialTimeDecayedSum_syntax, exponentialTimeDecayedSum_arguments, exponentialTimeDecayedSum_parameters, exponentialTimeDecayedSum_returned_value, exponentialTimeDecayedSum_examples, exponentialTimeDecayedSum_introduced_in, exponentialTimeDecayedSum_category};
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
@@ -506,7 +506,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedMax_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedMax_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedMax_documentation = {exponentialTimeDecayedMax_description, exponentialTimeDecayedMax_syntax, exponentialTimeDecayedMax_arguments, exponentialTimeDecayedMax_parameters, exponentialTimeDecayedMax_returned_value, exponentialTimeDecayedMax_examples, exponentialTimeDecayedMax_introduced_in, exponentialTimeDecayedMax_category};
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
@@ -600,7 +600,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedCount_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedCount_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedCount_documentation = {exponentialTimeDecayedCount_description, exponentialTimeDecayedCount_syntax, exponentialTimeDecayedCount_arguments, exponentialTimeDecayedCount_parameters, exponentialTimeDecayedCount_returned_value, exponentialTimeDecayedCount_examples, exponentialTimeDecayedCount_introduced_in, exponentialTimeDecayedCount_category};
     factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
@@ -695,7 +695,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::Category exponentialTimeDecayedAvg_category = FunctionDocumentation::Category::WindowFunction;
     FunctionDocumentation::IntroducedIn exponentialTimeDecayedAvg_introduced_in = {21, 12};
     FunctionDocumentation exponentialTimeDecayedAvg_documentation = {exponentialTimeDecayedAvg_description, exponentialTimeDecayedAvg_syntax, exponentialTimeDecayedAvg_arguments, exponentialTimeDecayedAvg_parameters, exponentialTimeDecayedAvg_returned_value, exponentialTimeDecayedAvg_examples, exponentialTimeDecayedAvg_introduced_in, exponentialTimeDecayedAvg_category};
     factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
