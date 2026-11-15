@@ -171,7 +171,7 @@ void deserializeLargeStringWithinMemoryLimit(
 
     /// A 9 MiB value must fit without allocating a 16 MiB intermediate buffer.
     /// Prepare the serialized input before entering the tracker so only decoding is charged.
-    MemoryTracker tracker(nullptr, VariableContext::Process, false);
+    MemoryTracker tracker(&total_memory_tracker, VariableContext::Process, false);
     tracker.setHardLimit(12 * 1024 * 1024);
     MemoryTrackerSwitcher switcher(&tracker);
 
