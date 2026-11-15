@@ -1343,12 +1343,13 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
 void StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(
     const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database)
 {
+    /// External databases cannot hold the `MergeTree` source of an incremental view, and listing their tables may query a remote catalog.
+    if (database.isExternal())
+        return;
+
     for (auto iterator = database.getTablesIterator(local_context); iterator->isValid(); iterator->next())
         checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->name()), local_context, is_drop_database);
 
-    /// External databases do not track detached tables, and cannot hold the `MergeTree` source of an incremental view.
-    if (database.isExternal())
-        return;
     for (auto iterator = database.getDetachedTablesIterator(local_context, {}, false); iterator->isValid(); iterator->next())
         checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->table()), local_context, is_drop_database);
 }

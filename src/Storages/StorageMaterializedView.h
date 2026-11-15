@@ -112,6 +112,7 @@ public:
 
     /// Runs `checkTableIsNotIncrementalRefreshSource` for every attached and detached table of `database`.
     /// Detached tables are included, because `DROP DATABASE` and `RENAME DATABASE` free their names too.
+    /// External databases are skipped.
     static void checkDatabaseHasNoIncrementalRefreshSources(
         const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database);
 
