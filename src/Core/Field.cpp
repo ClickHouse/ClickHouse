@@ -758,7 +758,10 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     UInt32 scale = 0;
     int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
-    readDigits<true>(buf, value, max_digits, exponent, true);
+    /// Not `digits_only`: the closing quote must stop the parser rather than be rejected as an unexpected symbol,
+    /// otherwise an ordinary dump such as `Decimal32_'2147483647'` cannot be read. Any other trailing symbol
+    /// also stops it and is then rejected by the `assertChar` below.
+    readDigits<true>(buf, value, max_digits, exponent, false);
     /// The exponent comes from the text and can be anything in `int32_t`. A positive one is applied with
     /// `mulPow10AddChecked`, exact for the wide types too (`common::mulOverflow` never reports overflow for them).
     /// A negative one becomes the scale; check it before negating, as `-INT32_MIN` overflows. An out-of-range
