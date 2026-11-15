@@ -10,8 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -27,7 +25,15 @@ import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintain
 
   First, sign up to TABLUM.IO using your email or use a quick-login via accounts in Google or Facebook.
 
-<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="TABLUM.IO login page" />
+<div className="ch-image-md">
+
+<Frame>
+
+![TABLUM.IO login page](/images/integrations/sql-clients/tablum-ch-0.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="Add a ClickHouse connector" id="2-add-a-clickhouse-connector">
@@ -42,14 +48,30 @@ Make sure that you specify the correct **HTTP** port and toggle **SSL** mode acc
 Typically, the port is 8443 when using TLS or 8123 when not using TLS.
 </Tip>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Adding a ClickHouse connector in TABLUM.IO" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Adding a ClickHouse connector in TABLUM.IO](/images/integrations/sql-clients/tablum-ch-1.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="Select the connector" id="3-select-the-connector">
 
 Navigate to the **Dataset** tab. Select recently created ClickHouse connector in the dropdown. In the right panel, you will see the list of available tables and schemas.
 
-<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Selecting the ClickHouse connector in TABLUM.IO" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Selecting the ClickHouse connector in TABLUM.IO](/images/integrations/sql-clients/tablum-ch-2.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="Input a SQL query and run it" id="4-input-a-sql-query-and-run-it">
@@ -60,7 +82,15 @@ Type a query in the SQL Console and press **Run Query**. The results will be dis
 Right-click on the column name to open the dropdown menu with sort, filter and other actions.
 </Tip>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Running a SQL query in TABLUM.IO" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Running a SQL query in TABLUM.IO](/images/integrations/sql-clients/tablum-ch-3.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 With TABLUM.IO you can

@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# 연결 생성 (기본값: 인메모리)
+# 연결 생성 (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
-# 파일 기반 사용 시: conn = chdb.connect("mydata.db")
+# Or use file-based: conn = chdb.connect("mydata.db")
 
-# 쿼리 실행을 위한 커서 생성
+# Create cursor for query execution
 cur = conn.cursor()
 
 # 쿼리 실행
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# 다양한 방식으로 결과 가져오기
-print(cur.fetchone())    # 단일 행: (0, '0')
-print(cur.fetchmany(2))  # 여러 행: ((1, '1'), (2, '2'))
+# 다양한 방식으로 결과 조회
+print(cur.fetchone())    # Single row: (0, '0')
+print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
 
 # 메타데이터 조회
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# 커서를 이터레이터로 사용
+# Use cursor as iterator
 for row in cur:
     print(row)
 
-# 리소스는 반드시 닫기
+# Always close resources
 cur.close()
 conn.close()
 ```
@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### 사용자 정의 함수 (UDF)
+  ### Python 사용자 정의 함수(UDF)
 </div>
 
-사용자 정의 Python 함수로 SQL을 확장합니다:
-
-<div id="basic-udf-usage">
-  #### 기본적인 UDF 사용법
-</div>
+chDB는 형식이 지정된 인수, 자동 유형 추론, 구성 가능한 NULL 및 예외 처리를 지원하는 네이티브 인프로세스 Python UDF를 제공합니다.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# 간단한 수학 함수
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# 문자열 처리 함수
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# JSON 처리 함수  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# 쿼리에서 UDF 사용
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### 사용자 지정 반환 타입을 갖는 고급 UDF
-</div>
-
-```python
-# 특정 반환 유형을 가진 UDF
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # cm를 미터로 변환
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# 데이터 유효성 검사를 위한 UDF
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# 복잡한 쿼리에서 사용
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### UDF 모범 사례
-</div>
-
-1. **상태를 유지하지 않는 함수**: UDF는 부작용이 없는 순수 함수여야 합니다
-2. **함수 내부에서 import**: 필요한 모든 모듈은 UDF 내부에서 import해야 합니다
-3. **String 입출력**: 모든 UDF 매개변수는 문자열입니다(TabSeparated 포맷)
-4. **오류 처리**: 안정적인 UDF를 위해 try-catch 블록을 포함하십시오
-5. **성능**: UDF는 각 행마다 호출되므로 성능을 최적화해야 합니다
-
-```python
-# 오류 처리가 포함된 잘 구조화된 UDF
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# 복잡한 중첩 JSON과 함께 사용
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+등록 방법, 유형 시스템, NULL 처리, 예외 처리, DateTime 지원에 관한 전체 가이드는 [Python UDF 가이드](/ko/chdb/guides/python-udf)를 참조하십시오. 전체 API 참조는 [Python UDF API 참조](/ko/chdb/api/python#user-defined-functions)를 참조하십시오. 기존 `@chdb_udf` 데코레이터도 계속 사용할 수 있지만 이 API로 대체되었습니다. 자세한 내용은 [기존 API](/ko/chdb/api/python#legacy-udf)를 참조하십시오.
 
 <div id="streaming-queries">
   ### 스트리밍 쿼리 처리

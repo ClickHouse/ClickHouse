@@ -10,8 +10,6 @@
 24
 27
 2
-SELECT countIfDistinct(modulo(number, 10), equals(modulo(number, 5), 2))
-FROM numbers(10000)
+SELECT countIfDistinct(modulo(number, 10), equals(modulo(number, 5), 2))\nFROM numbers(10000)
 9
-SELECT sumIfDistinct(modulo(number, 10), equals(modulo(number, 5), 2))
-FROM numbers(10000)
+SELECT sumIfDistinct(modulo(number, 10), equals(modulo(number, 5), 2))\nFROM numbers(10000)

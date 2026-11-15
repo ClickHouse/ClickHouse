@@ -28,14 +28,19 @@ def get_linked_pr_numbers():
     so it is a reliable source for all of them - unlike the head commit message
     or local git state, which only reflect the latest PR.
 
-    The batch's merge commits sit contiguously at the tip of the push, so walk
-    from the head commit backwards and stop at the first commit that is not a
-    merge-queue merge commit. This picks up exactly the batch and avoids matching
-    unrelated commits deeper in the push (e.g. a revert of an old merge commit).
+    The merge commits are NOT contiguous at the tip of the push: GitHub orders
+    "commits" in topological order, and each merge-queue merge commit has the
+    previous merge commit as its first parent and the PR branch tip as its second
+    parent, so every PR's own constituent commits are interleaved right before
+    that PR's merge commit. Walking back from the head and stopping at the first
+    non-merge commit would therefore only ever see the last PR in the batch. So
+    scan the whole "commits" array instead and collect every merge-queue merge
+    commit. MERGE_COMMIT_RE is anchored at the start, so it still excludes a
+    Revert of an old merge commit (`Revert "Merge pull request #..."`).
 
-    The result is returned oldest-to-newest (public batch merge order) so the
-    Sync PRs are replayed into the private repo in the same order they were
-    merged into public master.
+    Iterating "commits" in its natural (oldest-first) order yields the PR numbers
+    oldest-to-newest (public batch merge order), so the Sync PRs are replayed into
+    the private repo in the same order they were merged into public master.
     """
     event_file_path = os.getenv("GITHUB_EVENT_PATH", "")
     if not event_file_path or not Path(event_file_path).is_file():
@@ -55,16 +60,13 @@ def get_linked_pr_numbers():
         return []
 
     pr_numbers = []
-    for commit in reversed(commits):
+    for commit in commits:
         match = MERGE_COMMIT_RE.match(commit.get("message", ""))
         if not match:
-            break
+            continue
         pr_number = int(match.group(1))
         if pr_number not in pr_numbers:
             pr_numbers.append(pr_number)
-    # Collected newest-to-oldest while walking from the head; reverse back to the
-    # public batch merge order (oldest-to-newest) before returning.
-    pr_numbers.reverse()
     return pr_numbers
 
 

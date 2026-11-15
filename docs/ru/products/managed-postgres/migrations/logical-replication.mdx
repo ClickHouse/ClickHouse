@@ -1,14 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/logical-replication
 sidebarTitle: 'Логическая репликация'
-title: 'Переход на Managed Postgres с помощью логической репликации'
+title: 'Переход на ClickHouse Managed Postgres с помощью логической репликации'
 description: 'Узнайте, как перенести данные PostgreSQL в ClickHouse Managed Postgres с помощью логической репликации'
 keywords: ['postgres', 'postgresql', 'логическая репликация', 'миграция', 'перенос данных', 'Managed Postgres']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 В этом руководстве приведены пошаговые инструкции по переносу базы данных PostgreSQL в ClickHouse Managed Postgres с использованием нативной логической репликации Postgres.
 
@@ -20,7 +19,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 * Доступ к исходной базе данных PostgreSQL.
 * На локальной машине должны быть установлены `psql`,`pg_dump` и `pg_restore`. Они нужны для создания пустых таблиц в целевой базе данных. Обычно эти утилиты входят в состав PostgreSQL. Если нет, их можно скачать с [официального сайта PostgreSQL](https://www.postgresql.org/download/).
-* Исходная база данных должна быть доступна из ClickHouse Managed Postgres. Убедитесь, что необходимые правила брандмауэра или настройки группы безопасности разрешают такое подключение. Получить исходящий IP-адрес экземпляра Managed Postgres можно следующим образом:
+* Исходная база данных должна быть доступна из ClickHouse Managed Postgres. Убедитесь, что необходимые правила брандмауэра или настройки группы безопасности разрешают такое подключение. Получить исходящий IP-адрес экземпляра ClickHouse Managed Postgres можно следующим образом:
 
 ```shell
 dig +short <your-managed-postgres-hostname>
@@ -51,7 +50,15 @@ dig +short <your-managed-postgres-hostname>
 
 Убедитесь, что ваша исходная база данных настроена именно так:
 
-<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="Настройка репликации в исходном PostgreSQL" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Настройка репликации в исходном PostgreSQL](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## Дамп схемы исходной базы данных
@@ -76,15 +83,31 @@ pg_dump \
 
 В нашем случае есть две таблицы — `events` и `users`. В `events` миллион строк, а в `users` — тысяча строк.
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Настройка таблиц в исходной базе PostgreSQL" size="xl" border />
+<div className="ch-image-lg">
 
-<div id="migration-pgdump-pg-restore-create-pg">
-  ### Создайте экземпляр Managed Postgres
+<Frame>
+
+![Настройка таблиц в исходной базе PostgreSQL](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
+
 </div>
 
-Сначала убедитесь, что у вас уже настроен экземпляр Managed Postgres, желательно в том же регионе, что и исходный экземпляр. Для этого можно воспользоваться кратким руководством [здесь](/ru/products/managed-postgres/quickstart#create-postgres-database). Для этого руководства мы развернем следующее:
+<div id="migration-pgdump-pg-restore-create-pg">
+  ### Создайте экземпляр ClickHouse Managed Postgres
+</div>
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Создание экземпляра ClickHouse Managed Postgres" size="md" border />
+Сначала убедитесь, что у вас уже настроен экземпляр ClickHouse Managed Postgres, желательно в том же регионе, что и исходный экземпляр. Для этого можно воспользоваться кратким руководством [здесь](/ru/products/managed-postgres/quickstart#create-postgres-database). Для этого руководства мы развернем следующее:
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Создание экземпляра ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## Восстановите схему в ClickHouse Managed Postgres
@@ -107,7 +130,15 @@ pg_restore \
 
 В нашем случае после выполнения этой команды у нас есть две пустые таблицы:
 
-<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="Начальная настройка целевого ClickHouse Managed Postgres" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Начальная настройка целевого ClickHouse Managed Postgres](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## Настройте логическую репликацию
@@ -145,7 +176,15 @@ PUBLICATION <pub_name_you_entered_above>;
 
 В нашем случае после настройки подписки данные начали поступать:
 
-<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="Результат миграции после логической репликации" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Результат миграции после логической репликации](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
+
+</div>
 
 Новые строки, вставляемые в исходную базу данных, теперь будут реплицироваться в целевую базу данных ClickHouse Managed Postgres почти в реальном времени.
 
@@ -162,6 +201,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## Следующие шаги
 </div>
 
-Поздравляем! Вы успешно перенесли свою базу данных PostgreSQL в ClickHouse Managed Postgres с помощью pg&#95;dump и pg&#95;restore. Теперь вы готовы ознакомиться с возможностями Managed Postgres и его интеграцией с ClickHouse. Ниже — 10-минутное краткое руководство для быстрого старта:
+Поздравляем! Вы успешно перенесли свою базу данных PostgreSQL в ClickHouse Managed Postgres с помощью pg&#95;dump и pg&#95;restore. Теперь вы готовы ознакомиться с возможностями ClickHouse Managed Postgres и его интеграцией с ClickHouse. Ниже — 10-минутное краткое руководство для быстрого старта:
 
-* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)
+* [Краткое руководство по ClickHouse Managed Postgres](/ru/products/managed-postgres/quickstart)

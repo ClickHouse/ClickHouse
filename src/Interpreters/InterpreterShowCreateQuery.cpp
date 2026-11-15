@@ -14,8 +14,10 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -52,10 +54,13 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
-    ASTQueryWithTableAndOutput * show_query = nullptr;
-    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
-        (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
-        (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
+    ASTQueryWithTableAndOutput * show_query = query_ptr->as<ASTShowCreateTableQuery>();
+    if (!show_query)
+        show_query = query_ptr->as<ASTShowCreateViewQuery>();
+    if (!show_query)
+        show_query = query_ptr->as<ASTShowCreateDictionaryQuery>();
+
+    if (show_query)
     {
         /// Only `SHOW CREATE TABLE` should resolve temporary tables for an unqualified name —
         /// `VIEW` and `DICTIONARY` cannot refer to a temporary table, so resolving to one would
@@ -157,6 +162,14 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+
+        /// An `Alias` has no schema of its own; older servers inlined the resolved target columns into the
+        /// stored definition.
+        if (!is_dictionary && ast_create_query.storage && ast_create_query.storage->engine
+            && ast_create_query.storage->engine->name == "Alias"
+            && ast_create_query.columns_list && ast_create_query.columns_list->columns)
+            ast_create_query.columns_list->columns->children.clear();
+
         if (query_ptr->as<ASTShowCreateViewQuery>())
         {
             if (!ast_create_query.isView())
@@ -170,7 +183,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                     backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
     }
-    else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
+    else if (show_query = query_ptr->as<ASTShowCreateDatabaseQuery>(); show_query)
     {
         if (show_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");

@@ -12,10 +12,10 @@ struct MergeTreeReadTaskInfo;
 /// Refines (shrinks) mark ranges cut from a part by a read pool right before they become a read task.
 ///
 /// The ranges a pool was created with are an upper bound: some information usable for pruning
-/// becomes available only at execution time. Examples: a projection index bitmap that is built
-/// lazily per part (see `ProjectionIndexReadRangesRefiner`), or, in the future, a runtime filter
-/// collected from the build side of a JOIN. Pools call `refine` on every cut; ranges dropped
-/// here never become read tasks.
+/// becomes available only at execution time. Examples: skip indexes evaluated at data-read time
+/// (including a runtime filter collected from the build side of a JOIN) and a projection index
+/// bitmap, both built lazily per part (see `IndexReadRangesRefiner`). Pools call `refine` on
+/// every cut; ranges dropped here never become read tasks.
 ///
 /// Contract:
 /// - `refine` returns a subset of `ranges`: marks may only be removed, never added.
