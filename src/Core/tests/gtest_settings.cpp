@@ -21,6 +21,7 @@ namespace DB::ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -305,4 +306,34 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadWithinASmallMemoryFootprint)
     ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
     ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
     ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
+}
+
+
+GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
+{
+    /// A per-query settings block arrives over the native TCP protocol and, in interserver mode, is
+    /// decoded by `Settings::read` before the interserver hash is checked. With `STRINGS_WITH_FLAGS`,
+    /// a built-in setting marked `CUSTOM` is parsed via `SettingFieldCustom::parseFromString` ->
+    /// `Field::restoreFromDump` -> `readQuoted`. An exponent-form decimal dump builds a `Decimal`
+    /// scale that, before the fix, bypassed the binary reader's check and reached the decimal text
+    /// writer (a fixed-size stack buffer) with an oversized scale. The scale must be rejected while
+    /// reading the settings, not formatted later.
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("max_block_size", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString("Decimal64_'1e-1000'", out);
+    BaseSettingsHelpers::writeString("", out); /// end of settings
+
+    const String wire = out.str();
+    Settings settings;
+    ReadBufferFromString in(wire);
+    try
+    {
+        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }

@@ -315,14 +315,14 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+        if (d < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value in seconds cannot be negative. Got {}", d);
+        const Float64 microseconds = d * 1000000;
+        if (accurate::greaterOp(microseconds, std::numeric_limits<Poco::Timespan::TimeDiff>::max()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
-#pragma clang diagnostic pop
 
-        return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
+        return static_cast<Poco::Timespan::TimeDiff>(microseconds);
     }
 
 }

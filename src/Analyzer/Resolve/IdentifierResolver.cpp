@@ -927,6 +927,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
     for (const auto & expr : from_cross_join_node.getTableExpressions())
     {
         auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
+        if (identifier.ambiguous_in_join_tree)
+            return identifier;
         if (!identifier)
             continue;
 
@@ -963,6 +965,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         }
         else if (!prefer_left_table)
         {
+            if (identifier_lookup.allow_ambiguous_join_tree_identifier)
+                return IdentifierResolveResult::ambiguousInJoinTree();
+
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambiguous identifier '{}'. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
@@ -1065,12 +1070,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
+    bool ambiguous_in_join_tree = false;
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
         if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
             scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
+        ambiguous_in_join_tree |= res.ambiguous_in_join_tree;
 
         if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
             scope.join_using_columns.pop_back();
@@ -1080,6 +1087,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     auto left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
     auto right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
+
+    if (ambiguous_in_join_tree)
+        return IdentifierResolveResult::ambiguousInJoinTree();
 
     if (!identifier_lookup.isExpressionLookup())
     {
@@ -1266,6 +1276,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
+        }
+        else if (identifier_lookup.allow_ambiguous_join_tree_identifier)
+        {
+            return IdentifierResolveResult::ambiguousInJoinTree();
         }
         else
         {
@@ -1495,6 +1509,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
+    if (resolve_result.ambiguous_in_join_tree)
+        return resolve_result;
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
