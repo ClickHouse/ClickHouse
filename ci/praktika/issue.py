@@ -149,10 +149,10 @@ class Issue:
             "job_pattern": r"Job pattern:\s*([^\n]*)",
         }
 
-        for field, pattern in patterns.items():
+        for field_name, pattern in patterns.items():
             match = re.search(pattern, body, re.IGNORECASE)
             if match:
-                fields[field] = match.group(1).strip()
+                fields[field_name] = match.group(1).strip()
 
         flags_match = re.search(
             r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
@@ -282,7 +282,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(
@@ -313,7 +313,7 @@ class Issue:
         print(
             f"  Marking '{result.name}' as infrastructure issue (issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     @classmethod
@@ -559,10 +559,10 @@ if __name__ == "__main__":
     Path(temp_path).mkdir(exist_ok=True)
 
     def collect_and_upload():
-        print(f"Fetching active testing issues...")
+        print("Fetching active testing issues...")
         c = TestCaseIssueCatalog.from_gh()
         c.dump()
-        print(f"Uploading to S3...")
+        print("Uploading to S3...")
         url = c.to_s3()
         print(f"Catalog uploaded to S3: {url}")
         return bool(url)

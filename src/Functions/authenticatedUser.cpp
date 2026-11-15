@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -10,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionAuthenticatedUser : public IFunction
+class FunctionAuthenticatedUser final : public IFunction
 {
     const String user_name;
 
@@ -34,9 +35,9 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
     bool isDeterministic() const override { return false; }
@@ -64,8 +65,9 @@ Alias: authUser()
         .examples{
             {"Usage example",
             R"(
-            EXECUTE as u1;
-            SELECT currentUser(), authenticatedUser();
+CREATE USER u1;
+EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
+DROP USER u1;
             )",
             R"(
 ┌─currentUser()─┬─authenticatedUser()─┐

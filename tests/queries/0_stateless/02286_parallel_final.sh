@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-azure-blob-storage, long
+# Tags: no-random-merge-tree-settings, no-azure-blob-storage, long, no-msan
 # long: times out in private
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

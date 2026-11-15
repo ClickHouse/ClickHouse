@@ -1,0 +1,24 @@
+== all rows ==
+1	1	1	1-1_1_1_0	1-1	1
+1	1	2	1-1_2_2_0	1-1	2
+1	1	3	1-1_3_3_0	1-1	3
+1	2	4	1-2_4_4_0	1-2	4
+2	1	5	2-1_5_5_0	2-1	5
+2	2	6	2-2_6_6_0	2-2	6
+2	2	7	2-2_7_7_0	2-2	7
+2	2	8	2-2_8_8_0	2-2	8
+== filter by partition columns + _block_number ==
+Min-Max
+Parts: 4/8
+Parts: 4/4
+Parts: 4/4
+== filter by partition columns + _partition_id + _block_number ==
+Min-Max
+Parts: 4/6
+Parts: 4/4
+Parts: 4/4
+== filter by _partition_id + _block_number ==
+Min-Max
+Parts: 6/6
+Parts: 6/6
+Parts: 6/6

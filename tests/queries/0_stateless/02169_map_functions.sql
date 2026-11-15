@@ -3,10 +3,14 @@ CREATE TABLE table_map (id UInt32, col Map(String, UInt64)) engine = MergeTree()
 INSERT INTO table_map SELECT number, map('key1', number, 'key2', number * 2) FROM numbers(1111, 3);
 INSERT INTO table_map SELECT number, map('key3', number, 'key2', number + 1, 'key4', number + 2) FROM numbers(100, 4);
 
-SELECT mapFilter((k, v) -> k like '%3' and v > 102, col) FROM table_map ORDER BY id;
-SELECT col, mapFilter((k, v) -> ((v % 10) > 1), col) FROM table_map ORDER BY id ASC;
-SELECT mapApply((k, v) -> (k, v + 1), col) FROM table_map ORDER BY id;
-SELECT mapFilter((k, v) -> 0, col) from table_map;
+-- Wrap Map outputs with mapSort() so results are stable regardless of how the
+-- Map column is serialized on disk (randomized map_serialization_version /
+-- map_serialization_version_for_zero_level_parts may store keys in hash-bucket
+-- order instead of insertion order).
+SELECT mapSort(mapFilter((k, v) -> k like '%3' and v > 102, col)) FROM table_map ORDER BY id;
+SELECT mapSort(col), mapSort(mapFilter((k, v) -> ((v % 10) > 1), col)) FROM table_map ORDER BY id ASC;
+SELECT mapSort(mapApply((k, v) -> (k, v + 1), col)) FROM table_map ORDER BY id;
+SELECT mapSort(mapFilter((k, v) -> 0, col)) from table_map;
 SELECT mapApply((k, v) -> tuple(v + 9223372036854775806), col) FROM table_map; -- { serverError BAD_ARGUMENTS }
 
 SELECT mapFilter((k, v) -> k = 0.1::Float32, map(0.1::Float32, 4, 0.2::Float32, 5));
@@ -33,8 +37,8 @@ SELECT mapSort((k, v) -> k, map(array(1,2), 4, array(3,4), 5));
 SELECT mapSort((k, v) -> k, map(map(1,2), 4, map(3,4), 5));
 SELECT mapSort((k, v) -> k, map(tuple(1,2), 4, tuple(3,4), 5));
 
-SELECT mapConcat(col, map('key5', 500), map('key6', 600)) FROM table_map ORDER BY id;
-SELECT mapConcat(col, materialize(map('key5', 500)), map('key6', 600)) FROM table_map ORDER BY id;
+SELECT mapSort(mapConcat(col, map('key5', 500), map('key6', 600))) FROM table_map ORDER BY id;
+SELECT mapSort(mapConcat(col, materialize(map('key5', 500)), map('key6', 600))) FROM table_map ORDER BY id;
 SELECT concat(map('key5', 500), map('key6', 600));
 SELECT map('key5', 500) || map('key6', 600);
 

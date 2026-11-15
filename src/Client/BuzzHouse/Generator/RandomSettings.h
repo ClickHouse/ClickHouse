@@ -90,6 +90,8 @@ extern std::unordered_map<String, CHSetting> restoreSettings;
 
 extern std::unordered_map<String, CHSetting> projectionSettings;
 
+extern std::unordered_map<String, CHSetting> refreshSettings;
+
 extern std::unique_ptr<SQLType> size_tp;
 
 extern std::unique_ptr<SQLType> null_tp;
@@ -103,7 +105,9 @@ extern std::vector<SystemTable> systemTables;
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
 String settingCombinations(RandomGenerator & rg, DB::Strings && choices);
+String formatFirstApplicable(RandomGenerator & rg);
 String generateNextCodecString(RandomGenerator & rg);
+String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);

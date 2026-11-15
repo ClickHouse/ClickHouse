@@ -66,7 +66,7 @@ def test_insert_over_http_invalid_statement(start_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert f"0\n" == instance.query(
+    assert "0\n" == instance.query(
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday()"
     )
 
@@ -81,10 +81,10 @@ def test_insert_over_http_unknown_table(start_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert f"1\n" == instance.query(
+    assert "1\n" == instance.query(
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type = 'ExceptionBeforeStart'"
     )
-    assert f"0\n" == instance.query(
+    assert "0\n" == instance.query(
         f"select count() from system.query_log where log_comment ='{log_comment}' and current_database = currentDatabase() and event_date >= yesterday() and type != 'ExceptionBeforeStart'"
     )
 

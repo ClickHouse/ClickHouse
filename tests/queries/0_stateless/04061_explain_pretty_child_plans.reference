@@ -11,16 +11,13 @@ Expression ((Project names + (Projection + Change column names to column identif
    │  │          _table LowCardinality(String)
    │  └──ReadFromMemoryStorage
    │        Header: id Int64
-   │                _table LowCardinality(String)
    ├──Expression
    │  │  Header: id Int64
    │  │          _table LowCardinality(String)
    │  └──ReadFromMemoryStorage
    │        Header: id Int64
-   │                _table LowCardinality(String)
    └──Expression
       │  Header: id Int64
       │          _table LowCardinality(String)
       └──ReadFromMemoryStorage
             Header: id Int64
-                    _table LowCardinality(String)
