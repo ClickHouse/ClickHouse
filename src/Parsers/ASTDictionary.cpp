@@ -142,6 +142,12 @@ void ASTDictionaryLayout::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChildOfType<ASTExpressionList>("parameters");
     if (child)
     {
+        /// Dictionary key-value pairs are separated by whitespace, without an expression-list delimiter.
+        if (child->as<ASTExpressionList &>().getSeparator() != '\0')
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'parameters' of ASTDictionaryLayout must use the NUL separator during AST JSON deserialization");
+
         /// The parser rejects layout parameters without brackets, and `formatImpl` prints the
         /// parameters outside the brackets in that case (`LAYOUT(CACHE SIZE_IN_CELLS 10)`).
         if (!child->children.empty() && !has_brackets)

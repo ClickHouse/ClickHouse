@@ -73,10 +73,15 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
     if (list)
+    {
+        if (list->getSeparator() != '\0')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'second' of ASTPair must use the NUL separator during AST JSON deserialization");
         for (const auto & element : list->children)
             if (!element || !element->as<ASTPair>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
+    }
     set(second, child);
 }
 
@@ -182,6 +187,9 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
     elements = r.readChildOfType<ASTExpressionList>("elements");
     if (!elements)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    if (elements->as<ASTExpressionList &>().getSeparator() != '\0')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'elements' of ASTFunctionWithKeyValueArguments must use the NUL separator during AST JSON deserialization");
     for (const auto & element : elements->children)
         if (!element || !element->as<ASTPair>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

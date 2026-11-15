@@ -1,0 +1,16 @@
+1
+123
+LAYOUT(IP_TRIE(ACCESS_TO_KEY_FROM_ATTRIBUTES 1 RADIX_PREFIX))
+123
+1
+1
+Comma in layout parameters
+0
+Comma in source parameters
+0
+Comma in nested source parameters
+0
+Missing source separator
+0
+Semicolon in layout parameters
+0
