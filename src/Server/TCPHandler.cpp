@@ -235,7 +235,8 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
     // shard_1 receives a message with 'ClickHouse client' client_name
     // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
     // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || session_client_info.interface == ClientInfo::Interface::TCP_INTERSERVER)
         return;
 
     if (session_client_info.interface != client_info.interface)
@@ -3164,7 +3165,12 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     else
         maybe_compressed_in = in;
 
-    NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context));
+    /// Skipped data is held to the same serialization kinds as data that `initBlockInput` reads.
+    NativeReader skip_block_in(
+        *maybe_compressed_in,
+        client_tcp_protocol_version,
+        getNativeWireFormatSettings(state.query_context),
+        ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     bool has_rows = !skip_block_in.read().empty();
 
     state.at_packet_boundary = true;
@@ -3190,11 +3196,16 @@ void TCPHandler::initBlockInput(QueryState & state)
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
+        /// Only the default kind: senders materialize, and the consumers `assert_cast` columns to the declared type.
+        /// No peer is exempt: `query_kind` is declared by the client, and an initiator forwards client data to shards.
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getNativeWireFormatSettings(state.query_context));
+            getNativeWireFormatSettings(state.query_context),
+            /*block_missing_values_=*/ nullptr,
+            /*type_cache_=*/ nullptr,
+            ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     }
 }
 

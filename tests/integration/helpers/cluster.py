@@ -2445,8 +2445,9 @@ class ClickHouseCluster:
         # lost or half-written by an exit-time dump interrupted by the kill.
         # Continuous mode releases the static counter section that per-module
         # coverage reads inside the server, so the two are mutually exclusive.
+        # Per-module coverage merges no profile, so it writes none.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
+            "/dev/null" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd

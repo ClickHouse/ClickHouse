@@ -157,6 +157,14 @@ sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
 echo "Deduplicating template instantiations..."
 python3 "$WORKSPACE_PATH/ci/jobs/scripts/dedup_lcov_instantiations.py" llvm_coverage.info
 
+# Drop brace-only lines and throwing statements: they carry no logic, and a
+# closing brace after a `return` or `throw` is never executed. The selection depends on
+# the source text only, so the published .info, the HTML report, the summary
+# numbers and the diff report all count the same lines on every run. See the
+# script for the exact rules.
+echo "Dropping brace-only lines and throwing statements..."
+python3 "$WORKSPACE_PATH/ci/jobs/scripts/filter_coverage_lines.py" llvm_coverage.info
+
 rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."

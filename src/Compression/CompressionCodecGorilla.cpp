@@ -357,19 +357,26 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     return static_cast<UInt32>(dest - original_dest);
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<UInt8> getDataBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    if (!column_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    size_t max_size = column_type->getSizeOfValueInMemory();
+    size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -507,11 +514,12 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         }
         else if (column_type)
         {
-            data_bytes_size = getDataBytesSize(column_type);
+            data_bytes_size = *getDataBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
         }
 
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     };
-    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder,
+        {.is_applicable_to_type = [](const IDataType & type) { return getDataBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 }

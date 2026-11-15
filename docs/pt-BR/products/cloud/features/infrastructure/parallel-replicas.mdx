@@ -6,8 +6,6 @@ description: 'Neste guia, discutiremos primeiro como o ClickHouse distribui uma 
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="introduction">
   ## Introdução
 </div>
@@ -31,7 +29,15 @@ no shard especificado, ou ela pode ser enviada para a tabela distribuída e, nes
 caso, cada shard executará a consulta. O servidor no qual a tabela distribuída
 foi consultada agregará os dados e responderá ao cliente:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitetura com shards" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitetura com shards](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 A figura acima mostra o que acontece quando um cliente consulta uma tabela distribuída:
 
@@ -72,7 +78,15 @@ virtualmente infinita de armazenamento, a necessidade de shards se torna menos i
 
 A figura abaixo mostra a arquitetura do ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="arquitetura sem sharding" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitetura sem sharding](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 Essa arquitetura nos permite adicionar e remover réplicas quase
 instantaneamente, garantindo uma escalabilidade muito alta do cluster. O cluster ClickHouse
@@ -99,7 +113,15 @@ como unidade de trabalho.
 
 Agora, vamos ver como isso funciona na prática com a ajuda da figura abaixo:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Parallel replicas" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 Com réplicas paralelas:
 
@@ -164,7 +186,15 @@ Veremos como esses fatores são contornados nas seções a seguir.
 Para abordar (1) e (2) da lista acima, introduzimos o conceito de
 anúncio. Vamos visualizar como isso funciona usando a figura abaixo:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Anúncios" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Anúncios](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -208,7 +238,15 @@ um anúncio com todas as partes.
 
 A figura abaixo mostra como a coordenação dinâmica funciona:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordenação dinâmica - parte 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordenação dinâmica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -221,7 +259,15 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordenação dinâmica - parte 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordenação dinâmica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -234,7 +280,15 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordenação dinâmica - parte 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordenação dinâmica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -508,7 +562,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sem parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN sem parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 E agora, com réplica paralela:
 
@@ -523,4 +585,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN com parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN com parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

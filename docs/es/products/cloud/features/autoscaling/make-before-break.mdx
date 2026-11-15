@@ -7,8 +7,6 @@ title: 'Operaciones de Make before break (MBB) en ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse Cloud realiza actualizaciones y escalado de clústeres mediante un enfoque de **Make Before Break** (MBB).
 En este enfoque, se añaden nuevas réplicas al clúster antes de eliminar las antiguas.
 Esto contrasta con el enfoque break-first, en el que primero se eliminarían las réplicas antiguas antes de añadir las nuevas.
@@ -21,7 +19,15 @@ El enfoque MBB tiene varias ventajas:
 
 La imagen siguiente muestra cómo podría producirse esto en un clúster con 3 réplicas en el que el servicio se escala verticalmente:
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Diagrama de ejemplo de un clúster con 3 réplicas que se escala verticalmente" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Diagrama de ejemplo de un clúster con 3 réplicas que se escala verticalmente](/images/cloud/features/mbb/vertical_scaling.webp)
+
+</Frame>
+
+</div>
 
 En general, MBB proporciona una experiencia de escalado y actualización fluida y menos disruptiva en comparación con el enfoque break-first que se utilizaba anteriormente.
 

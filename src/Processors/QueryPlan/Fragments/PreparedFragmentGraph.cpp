@@ -15,6 +15,8 @@
 
 #include <ranges>
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,9 +34,13 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
     if (graph.fragments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no fragments");
 
-    /// A plan that was not cut is printed by `QueryPlan::explainPlan` alone, which builds its own names.
+    /// A plan that was not cut has its own naming scope, the one `QueryPlan::explainPlan` builds for it.
     if (single_node)
+    {
+        if (options.pretty)
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(getPlan(graph.fragments.front()));
         return;
+    }
 
     print_order.reserve(graph.fragments.size());
     for (const auto & fragment : graph.fragments | std::views::reverse)
@@ -42,7 +48,7 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
 
     if (options.pretty)
     {
-        std::vector<const QueryPlan *> plans;
+        VectorWithMemoryTracking<const QueryPlan *> plans;
         plans.reserve(print_order.size());
         for (const auto * fragment : print_order)
             plans.push_back(&getPlan(*fragment));
@@ -60,18 +66,20 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
     {
         case FragmentExchange::Kind::Hash:
         {
-            std::vector<String> keys;
+            VectorWithMemoryTracking<String> keys;
             keys.reserve(exchange.keys.size());
             for (const auto & key : exchange.keys)
                 keys.push_back(column_names ? QueryPlanFormat::formatColumnPretty(key, *column_names) : key);
             return fmt::format("hash({})", fmt::join(keys, ", "));
         }
         case FragmentExchange::Kind::Broadcast:
-            return "broadcast";
+        case FragmentExchange::Kind::Any:
+        case FragmentExchange::Kind::SetValues:
+            return toString(exchange.kind);
         case FragmentExchange::Kind::Gather:
         {
             if (!exchange.merge_sort)
-                return "gather";
+                return toString(exchange.kind);
             if (!column_names)
                 return "gather sorted by " + dumpSortDescription(*exchange.merge_sort);
             WriteBufferFromOwnString out;
@@ -80,10 +88,6 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
             dumpSortDescription(*exchange.merge_sort, settings);
             return "gather sorted by " + out.str();
         }
-        case FragmentExchange::Kind::Any:
-            return "any";
-        case FragmentExchange::Kind::SetValues:
-            return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
 }
@@ -107,6 +111,17 @@ const QueryPlan & PreparedFragmentGraph::getPlan(const QueryFragment & fragment)
     return *fragment.plan;
 }
 
+const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryPlan & plan) const
+{
+    static const PrettyNames no_names;
+    if (!options.pretty)
+        return no_names;
+    auto it = pretty_names.names.find(&plan);
+    if (it == pretty_names.names.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan to explain has no pretty names");
+    return it->second;
+}
+
 const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanStep & step)
 {
     if (const auto * receive = typeid_cast<const ShuffleReceiveStep *>(&step))
@@ -120,18 +135,18 @@ const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanSt
 
 FragmentInputs PreparedFragmentGraph::getFragmentInputs() const
 {
-    std::unordered_map<UInt32, const QueryPlan *> plan_by_id;
+    UnorderedMapWithMemoryTracking<UInt32, const QueryPlan *> plan_by_id;
     for (const auto & fragment : graph.fragments)
         plan_by_id.emplace(fragment.id, &getPlan(fragment));
 
-    std::unordered_map<std::string_view, const QueryPlan *> sender_by_exchange;
+    UnorderedMapWithMemoryTracking<std::string_view, const QueryPlan *> sender_by_exchange;
     for (const auto & exchange : graph.exchanges)
         sender_by_exchange.emplace(exchange.name, plan_by_id.at(exchange.from));
 
     FragmentInputs inputs;
     for (const auto & fragment : graph.fragments)
     {
-        std::vector<const QueryPlan::Node *> stack{getPlan(fragment).getRootNode()};
+        VectorWithMemoryTracking<const QueryPlan::Node *> stack{getPlan(fragment).getRootNode()};
         while (!stack.empty())
         {
             const auto * node = stack.back();
@@ -155,7 +170,9 @@ void writeSingleNode(const PreparedFragmentGraph & prepared, WriteBuffer & buf, 
 {
     chassert(prepared.single_node);
     const auto & fragment = prepared.graph.fragments.front();
-    PreparedFragmentGraph::getPlan(fragment).explainPlan(buf, prepared.options, 0, max_step_description_length);
+    PreparedFragmentGraph::getPlan(fragment).explainPlan(
+        buf, prepared.options, 0, max_step_description_length,
+        prepared.options.pretty ? &prepared.pretty_names : nullptr);
     if (fragment.fallback_reason)
         buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
 }
@@ -188,7 +205,7 @@ void writeLevelsSection(const FragmentGraph & graph, WriteBuffer & buf)
     {
         if (i != 0)
             buf << " -> ";
-        std::vector<String> names;
+        VectorWithMemoryTracking<String> names;
         names.reserve(levels[i].size());
         for (UInt32 id : levels[i])
             names.push_back(fmt::format("F{}", id));
