@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromFileView.h>
 #include <cstddef>
+#include <IO/ByteRangeSet.h>
 
 namespace DB
 {

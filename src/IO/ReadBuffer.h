@@ -5,12 +5,13 @@
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
-#include <IO/ByteRangeSet.h>
 #include <Common/Exception.h>
 
 
 namespace DB
 {
+
+class ByteRangeSet;
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
@@ -242,7 +243,7 @@ public:
 
     /// The byte ranges the caller will read until it announces another map; empty = nothing.
     /// Without a map, the caller may read the whole file. Advisory: it may bound read-ahead, never refuse a read.
-    virtual void setRequestMap(ByteRangeSet /* ranges */) {}
+    virtual void setRequestMap(ByteRangeSet ranges);
 
 protected:
     template <PaddedBufferStorage Storage>

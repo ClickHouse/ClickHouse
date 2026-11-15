@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
+#include <IO/ByteRangeSet.h>
 
 namespace fs = std::filesystem;
 
