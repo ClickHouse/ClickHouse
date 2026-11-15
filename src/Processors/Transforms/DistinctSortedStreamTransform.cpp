@@ -1,6 +1,7 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 #include <Core/SortCursor.h>
+#include <Processors/Transforms/DistinctSetFilter.h>
 
 namespace DB
 {
@@ -42,6 +43,11 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
         if (col && !isColumnConst(*col))
             other_columns_pos.emplace_back(pos);
     }
+
+    materialized_columns_pos = calculateDistinctKeyColumnsPositions(*header_, {});
+    for (size_t pos : sorted_columns_pos)
+        if (std::find(materialized_columns_pos.begin(), materialized_columns_pos.end(), pos) == materialized_columns_pos.end())
+            materialized_columns_pos.emplace_back(pos);
 
     /// reserve space in auxiliary column vectors for processing
     sorted_columns.reserve(sorted_columns_pos.size());
@@ -154,7 +160,8 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         return;
 
     removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
+    /// Header constants outside the sorting prefix stay compact, as in DistinctSetFilter.
+    materializeChunk(chunk, materialized_columns_pos);
 
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
