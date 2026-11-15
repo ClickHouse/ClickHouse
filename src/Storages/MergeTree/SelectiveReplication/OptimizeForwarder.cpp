@@ -37,6 +37,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
 }
 
@@ -57,6 +58,11 @@ UInt64 OptimizeForwarder::getMaxBytesToMergeAtMaxSpaceInPool(const MergeTreeSett
 bool OptimizeForwarder::getAssignPartUuids(const MergeTreeSettingsPtr & settings)
 {
     return (*settings)[MergeTreeSetting::assign_part_uuids];
+}
+
+UInt64 OptimizeForwarder::getMinUnreservedDiskSpaceForMerge(const MergeTreeSettingsPtr & settings)
+{
+    return (*settings)[MergeTreeSetting::min_unreserved_disk_space_for_merge];
 }
 
 bool OptimizeForwarder::getOptimizeSkipMergedPartitions(ContextPtr query_context)
@@ -111,7 +117,7 @@ bool OptimizeForwarder::forwardOptimizeToReplica(
         /// This avoids a logical error in MultiplexedConnections when the connection
         /// pool returns an empty set because the target replica is unreachable.
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(remote_context->getSettingsRef());
-        auto connection_entry = pool->get(timeouts, remote_context->getSettingsRef(), /*force_connected=*/true);
+        auto connection_entry = pool->get(timeouts, remote_context->getSettingsRef());
 
         std::vector<IConnectionPool::Entry> connections;
         connections.emplace_back(std::move(connection_entry));

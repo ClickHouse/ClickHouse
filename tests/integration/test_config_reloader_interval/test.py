@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
-import fnmatch
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -28,7 +26,7 @@ def start_cluster():
 def test_reload_config(start_cluster):
     node.restart_clickhouse()
     try:
-        assert node.wait_for_log_line(f"Config reload interval set to 1000ms")
+        assert node.wait_for_log_line("Config reload interval set to 1000ms")
 
         assert (
             node.query(
@@ -42,7 +40,7 @@ def test_reload_config(start_cluster):
             "7777",
         )
 
-        assert node.wait_for_log_line(f"Config reload interval changed to 7777ms")
+        assert node.wait_for_log_line("Config reload interval changed to 7777ms")
 
         assert (
             node.query(

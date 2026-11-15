@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Core/Block.h>
+#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 
 #include <limits>
@@ -142,6 +143,7 @@ QueryPlanPtr createReadFromRemotePlan(
         shard_count,
         std::move(storage_limits),
         cluster_name,
+        /* shard_scope_identity = */ String{},
         std::move(unavailable_shard_tracker));
 
     read_from_remote->setStepDescription(step_description, std::numeric_limits<size_t>::max());
@@ -151,7 +153,7 @@ QueryPlanPtr createReadFromRemotePlan(
     return query_plan;
 }
 
-void unitePlanList(QueryPlan & result, std::vector<QueryPlanPtr> plans)
+void unitePlanList(QueryPlan & result, QueryPlanPtrs plans)
 {
     if (plans.empty())
         return;

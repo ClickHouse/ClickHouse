@@ -107,7 +107,7 @@ def test_recover_digest_mismatch(started_cluster):
 
     db_disk_name = get_database_disk_name(dummy_node)
     db_data_path = dummy_node.query(
-        f"SELECT metadata_path FROM system.databases WHERE database='recover_digest_mismatch'"
+        "SELECT metadata_path FROM system.databases WHERE database='recover_digest_mismatch'"
     ).strip()
 
     disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "

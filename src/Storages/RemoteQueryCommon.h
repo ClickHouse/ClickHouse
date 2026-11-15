@@ -47,7 +47,7 @@ ASTPtr buildPartitionFilterAST(const Strings & partition_ids);
 
 /// Unite multiple query plans with UnionStep. Handles empty / single / multi cases.
 /// Used by selective replication and distributed query routing.
-void unitePlanList(QueryPlan & result, std::vector<QueryPlanPtr> plans);
+void unitePlanList(QueryPlan & result, QueryPlanPtrs plans);
 
 /// Build a `QueryPlan` containing a single `ReadFromRemote` step.
 /// Used by selective replication and distributed query routing.

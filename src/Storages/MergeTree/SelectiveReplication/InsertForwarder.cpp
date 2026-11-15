@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 
@@ -314,7 +315,7 @@ void InsertForwarder::executeForwarding(
                 auto remote_context = Context::createCopy(context);
                 remote_context->increaseDistributedDepth();
 
-                auto connection_entry = pool->get(timeouts, remote_context->getSettingsRef(), /*force_connected=*/true);
+                auto connection_entry = pool->get(timeouts, remote_context->getSettingsRef());
 
                 auto remote_sink = std::make_shared<RemoteSink>(
                     *connection_entry, timeouts, insert_query,
@@ -641,7 +642,7 @@ void InsertForwarder::handleAssignmentRace(
         }
 
         auto zk_with_fi = ZooKeeperWithFaultInjection::createInstance(
-            context->getSettingsRef()[Setting::insert_keeper_fault_injection_probability],
+            static_cast<double>(context->getSettingsRef()[Setting::insert_keeper_fault_injection_probability]),
             context->getSettingsRef()[Setting::insert_keeper_fault_injection_seed],
             zk,
             "InsertForwarder::handleAssignmentRace",

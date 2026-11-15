@@ -6,8 +6,10 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -22,6 +24,7 @@ using Pipes = std::vector<Pipe>;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+using QueryPlanPtrs = VectorWithMemoryTracking<QueryPlanPtr>;
 
 struct StorageID;
 
@@ -36,13 +39,6 @@ namespace ClusterProxy
 
 /// select query has database, table and table function names as AST pointers
 /// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr = nullptr);
-
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 
@@ -89,12 +85,13 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         bool use_parallel_replicas_custom_key,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -102,12 +99,13 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         bool use_parallel_replicas_custom_key,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;
@@ -121,12 +119,13 @@ private:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        QueryPlanPtrs & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         bool use_parallel_replicas_custom_key,
-        AdditionalShardFilterGenerator shard_filter_generator) const;
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
 };
 
 }

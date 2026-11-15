@@ -1,0 +1,25 @@
+-- ground truth, parallel replicas off
+300
+300
+600
+-- values with parallel replicas on
+300
+300
+300
+600
+600
+600
+300
+300
+300
+300
+-- what is shipped to replicas
+v_plain	['v_plain']
+v_set	[]
+v_nested	[]
+v_union	['mt_g2']
+v_union_both	[]
+v_final	[]
+v_av_body	['mt_g']
+v_av_top	['mt_g']
+v_plain_over_plain	['v_plain_over_plain']

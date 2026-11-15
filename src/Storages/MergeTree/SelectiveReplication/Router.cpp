@@ -440,7 +440,7 @@ void Router::readWithSelectiveRouting(
     /// Step 5: Build per-shard plans with partition filters.
     size_t shard_count = partitions_by_replica.size();
 
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     ClusterProxy::SelectStreamFactory::Shards remote_shards;
 
     for (const auto & [target_replica, partition_ids] : partitions_by_replica)
@@ -492,7 +492,8 @@ void Router::readWithSelectiveRouting(
             static_cast<UInt32>(shard_count),
             false /* parallel_replicas_enabled */,
             false /* use_parallel_replicas_custom_key */,
-            shard_filter);
+            shard_filter,
+            /* unavailable_shard_tracker = */ nullptr);
     }
 
     /// Step 6: Combine remote shards into a `ReadFromRemote` plan step.
@@ -719,8 +720,9 @@ void Router::reEnterSelectiveRoutingAtDepth(
                                     LOG_DEBUG(log, "Selective replication (depth={}): self-loop fallback "
                                         "delegating to sibling storage (replica '{}')",
                                         depth, sibling->getReplicaName());
-                                    auto sibling_snapshot = sibling->getStorageSnapshot(
-                                        sibling->getInMemoryMetadataPtr(local_context, false), local_context);
+                                    auto sibling_metadata_handle = sibling->getInMemoryMetadataPtr(local_context, false);
+                                    StorageMetadataPtr sibling_metadata = sibling_metadata_handle;
+                                    auto sibling_snapshot = sibling->getStorageSnapshot(sibling_metadata, local_context);
                                     sibling->readLocalImpl(query_plan, column_names, sibling_snapshot,
                                                            query_info, local_context, max_block_size, num_streams);
                                     return;
@@ -1412,7 +1414,13 @@ std::unordered_map<String, ReplicatedMergeTreeAddress> Router::getReplicaAddress
 void Router::enrichSnapshotWithAssignments(StorageSnapshotPtr & snapshot) const
 {
     auto component_guard = Coordination::setCurrentComponent("SelectiveReplication::Router::enrichSnapshotWithAssignments");
-    auto * snapshot_data = assert_cast<StorageReplicatedMergeTree::SnapshotData *>(snapshot->data.get());
+    /// The snapshot data is immutable, so put the assignments into a copy of it.
+    const auto & old_snapshot_data = assert_cast<const StorageReplicatedMergeTree::SnapshotData &>(*snapshot->data);
+    auto snapshot_data = std::make_shared<StorageReplicatedMergeTree::SnapshotData>();
+    snapshot_data->storage = old_snapshot_data.storage;
+    snapshot_data->parts = old_snapshot_data.parts;
+    snapshot_data->mutations_snapshot = old_snapshot_data.mutations_snapshot;
+    snapshot_data->uk_read_snapshot = old_snapshot_data.uk_read_snapshot;
 
     auto zk = storage.getZooKeeper();
     auto assignments = storage.replica_assignment->getAssignments(zk, {});
@@ -1422,6 +1430,7 @@ void Router::enrichSnapshotWithAssignments(StorageSnapshotPtr & snapshot) const
         result[pid] = entry.replicas;
 
     snapshot_data->selective_assignment_map = std::move(result);
+    snapshot = snapshot->clone(std::move(snapshot_data));
 }
 
 Router::ReplacePartitionCASGuard Router::buildReplacePartitionCASGuard(

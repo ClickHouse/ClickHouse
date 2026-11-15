@@ -4,6 +4,8 @@
 -- Tag no-parallel, no-parallel-replicas: the cache is system-wide so concurrent queries can influence the cache
 
 set log_queries = 1;
+-- Suppress retryable AWS 5xx noise that would otherwise fail the test via stderr-fatal.
+set send_logs_level = 'fatal';
 system drop parquet metadata cache;
 
 select count(), ParamCurrency

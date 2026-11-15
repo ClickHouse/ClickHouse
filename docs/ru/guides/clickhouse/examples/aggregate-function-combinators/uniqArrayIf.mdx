@@ -1,0 +1,92 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArrayIf'
+title: 'uniqArrayIf'
+description: 'Пример использования комбинатора uniqArrayIf'
+keywords: ['uniq', 'array', 'if', 'combinator', 'examples', 'uniqArrayIf']
+sidebarTitle: 'uniqArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинаторы [`Array`](/ru/reference/functions/aggregate-functions/combinators#-array) и [`If`](/ru/reference/functions/aggregate-functions/combinators#-if) можно применять к функции [`uniq`](/ru/reference/functions/aggregate-functions/uniq),
+чтобы с помощью агрегатной функции-комбинатора `uniqArrayIf` подсчитывать количество уникальных значений в массивах для строк, где
+условие истинно.
+
+<Note>
+  -`If` и -`Array` можно комбинировать. Однако `Array` должен идти первым, а затем `If`.
+</Note>
+
+Это полезно, когда нужно подсчитать количество уникальных элементов в массиве по
+определённым условиям без использования `arrayJoin`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="count-unique-products">
+  ### Подсчет числа уникальных просмотренных товаров по типу сегмента и уровню вовлеченности
+</div>
+
+В этом примере мы используем таблицу с данными о пользовательских
+сеансах покупок, чтобы подсчитать количество уникальных товаров, просмотренных
+пользователями определенного сегмента, с метрикой вовлеченности в виде
+времени, проведенного в сеансе.
+
+```sql title="Query"
+CREATE TABLE user_shopping_sessions
+(
+    session_date Date,
+    user_segment String,
+    viewed_products Array(String),
+    session_duration_minutes Int32
+) ENGINE = Memory;
+
+INSERT INTO user_shopping_sessions VALUES
+    ('2024-01-01', 'new_customer', ['smartphone_x', 'headphones_y', 'smartphone_x'], 12),
+    ('2024-01-01', 'returning', ['laptop_z', 'smartphone_x', 'tablet_a'], 25),
+    ('2024-01-01', 'new_customer', ['smartwatch_b', 'headphones_y', 'fitness_tracker'], 8),
+    ('2024-01-02', 'returning', ['laptop_z', 'external_drive', 'laptop_z'], 30),
+    ('2024-01-02', 'new_customer', ['tablet_a', 'keyboard_c', 'tablet_a'], 15),
+    ('2024-01-02', 'premium', ['smartphone_x', 'smartwatch_b', 'headphones_y'], 22);
+
+-- Подсчёт уникальных продуктов по типу сегмента и уровню вовлечённости
+SELECT 
+    session_date,
+    -- Подсчёт уникальных продуктов, просмотренных новыми клиентами в длительных сеансах
+    uniqArrayIf(viewed_products, user_segment = 'new_customer' AND session_duration_minutes > 10) AS new_customer_engaged_products,
+    -- Подсчёт уникальных продуктов, просмотренных вернувшимися клиентами
+    uniqArrayIf(viewed_products, user_segment = 'returning') AS returning_customer_products,
+    -- Подсчёт уникальных продуктов по всем сеансам
+    uniqArray(viewed_products) AS total_unique_products
+FROM user_shopping_sessions
+GROUP BY session_date
+ORDER BY session_date
+FORMAT Vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+session_date:                2024-01-01
+new_customer⋯ed_products:    2
+returning_customer_products: 3
+total_unique_products:       6
+
+Row 2:
+──────
+session_date:                2024-01-02
+new_customer⋯ed_products:    2
+returning_customer_products: 2
+total_unique_products:       7
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`uniq`](/ru/reference/functions/aggregate-functions/uniq)
+* [`комбинатор Array`](/ru/reference/functions/aggregate-functions/combinators#-array)
+* [`комбинатор If`](/ru/reference/functions/aggregate-functions/combinators#-if)

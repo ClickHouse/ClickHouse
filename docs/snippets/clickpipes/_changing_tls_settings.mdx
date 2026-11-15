@@ -1,0 +1,22 @@
+By default, your ClickPipe will be created with TLS enabled and certificate verification. These defaults can be modified upon ClickPipe creation:
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/tls-settings.webp" alt="TLS settings" />
+</Frame>
+
+Or edited at the _Connection settings_ section of your paused ClickPipe _Settings_ tab:
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-connection-settings.webp" alt="Connection settings -> Edit Connection" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-edit-connection.webp" alt="Edit Connection" />
+</Frame>
+
+Where:
+
+- `Disable TLS` toggles TLS for the connection on or off. Turning TLS off means data is sent as plaintext over the network, potentially including secrets and sensitive data.
+- `Skip certificate verification` toggles on or off the verification of the certificate presented by the source database. Take into consideration the security implications of skipping certificate verification.
+- `TLS Host` (optional, defaults to the source _Host_) is the hostname the certificate's CN must match when certificate verification is enabled.
+- `Upload CA` can be used to provide a CA used when certificate verification is enabled.

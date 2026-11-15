@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Sources/LazyFinalSharedState.h>
@@ -23,9 +24,18 @@ public:
         LazyFinalSharedStatePtr shared_state_,
         LazyFinalKeyAnalysisStep * analysis_step_);
 
+    enum class Stage : size_t
+    {
+        ReadAndAggregate = 0,
+        ReplacingMerge = 1,
+    };
+
     String getName() const override { return "LazyReadReplacingFinal"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
 
 private:
     StorageMetadataPtr metadata_snapshot;

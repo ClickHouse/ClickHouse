@@ -94,6 +94,7 @@ private:
     /// so the header can avoid broad includes.
     static UInt64 getMaxBytesToMergeAtMaxSpaceInPool(const MergeTreeSettingsPtr & settings);
     static bool getAssignPartUuids(const MergeTreeSettingsPtr & settings);
+    static UInt64 getMinUnreservedDiskSpaceForMerge(const MergeTreeSettingsPtr & settings);
     static bool getOptimizeSkipMergedPartitions(ContextPtr query_context);
     static UInt64 getReceiveTimeoutMs(ContextPtr query_context);
     static UInt64 getMaxDistributedConnections(ContextPtr query_context);
@@ -153,7 +154,8 @@ bool OptimizeForwarder::optimizeWithSelectiveRouting(
                             /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
-                            /*range_filter_=*/nullptr
+                            /*range_filter_=*/nullptr,
+                            /*storage_id_=*/storage.getStorageID()
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
@@ -184,7 +186,8 @@ bool OptimizeForwarder::optimizeWithSelectiveRouting(
                             /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
-                            /*range_filter_=*/nullptr
+                            /*range_filter_=*/nullptr,
+                            /*storage_id_=*/storage.getStorageID()
                         ),
                         hint);
                 }
@@ -206,12 +209,14 @@ bool OptimizeForwarder::optimizeWithSelectiveRouting(
                 chassert(choices.size() == 1);
                 MergeSelectorChoice choice = std::move(choices[0]);
 
-                auto future_part = constructFuturePart(storage, choice, {MergeTreeDataPartState::Active});
-                if (!future_part)
+                auto constructed_part = constructFuturePart(storage, choice, {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                        .explanation = PreformattedMessage::create("Can't construct future part from source parts ({}). Probably there was a drop part/partition user query.", constructed_part.error().text),
                     });
+
+                auto future_part = std::move(*constructed_part);
 
                 if (getAssignPartUuids(storage_settings_ptr))
                     future_part->uuid = UUIDHelpers::generateV4();
@@ -252,6 +257,10 @@ bool OptimizeForwarder::optimizeWithSelectiveRouting(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
+                /// The parts of an explicit partition or FINAL come from `selectAllPartsToMergeWithinPartition`,
+                /// which bypasses `min_unreserved_disk_space_for_merge`, as in `StorageReplicatedMergeTree::optimizeImpl`.
+                /*bypass_min_unreserved_space=*/ !partition_id.empty() && (final || explicit_partition)
+                    && getMinUnreservedDiskSpaceForMerge(storage_settings_ptr) > 0,
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);

@@ -1,0 +1,19 @@
+<!-- Columns read after PREWHERE from a Parquet file without a page index; `h` and `h32` fall back to PLAIN pages. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_prewhere_plain_columns.parquet', Parquet)
+        SELECT
+            number AS k,
+            cityHash64(number) AS h,
+            toUInt32(cityHash64(number, 1)) AS h32,
+            toUInt8(number % 100) AS f
+        FROM numbers(50000000)
+        SETTINGS output_format_parquet_write_page_index = 0
+    ]]></fill_query>
+
+    <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f &lt; 100 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f &lt; 50 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE cityHash64(k) % 2 = 0 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f != 7 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f = 7 FORMAT Null</query>
+</test>
