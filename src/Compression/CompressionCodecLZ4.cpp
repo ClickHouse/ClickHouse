@@ -7,13 +7,17 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/LZ4StatisticsHint.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 #pragma clang diagnostic ignored "-Wold-style-cast"
 
@@ -32,6 +36,11 @@ UInt64 & currentStatisticsHint()
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_lz4_library_decompression;
+}
 
 class CompressionCodecLZ4 : public ICompressionCodec
 {
@@ -159,6 +168,22 @@ LZ4::PerformanceStatistics & sharedStatistics(UInt64 hint)
 
 UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    auto context = CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+
+    if (context && context->getSettingsRef()[Setting::use_lz4_library_decompression])
+    {
+        if (source_size > std::numeric_limits<int>::max() || uncompressed_size > std::numeric_limits<int>::max())
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "LZ4 block size exceeds the library decoder limit");
+
+        const int decoded_size = LZ4_decompress_safe(source, dest, static_cast<int>(source_size), static_cast<int>(uncompressed_size));
+        if (decoded_size < 0 || static_cast<UInt32>(decoded_size) != uncompressed_size)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress LZ4-encoded data");
+
+        return uncompressed_size;
+    }
+
     using Stats = LZ4::PerformanceStatistics;
     Stats * shared = nullptr;
     Stats::Element before[Stats::NUM_ELEMENTS];

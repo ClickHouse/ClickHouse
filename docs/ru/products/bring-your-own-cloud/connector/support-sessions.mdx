@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -19,7 +18,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Сеансы управляют исключительно диагностикой. Команды жизненного цикла для сервисов в режиме managed передаются по отдельному каналу исполнителя, который сеанс поддержки не открывает и не ограничивает; см. [managed services](/ru/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Схема доверия сеанса поддержки коннектора ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Схема доверия сеанса поддержки коннектора ClickHouse](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</Frame>
+
+</div>
 
 Управлять сеансами можно через две точки:
 

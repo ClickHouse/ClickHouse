@@ -46,8 +46,8 @@ namespace FailPoints
 
 namespace
 {
-    /// Applies `f` to the two-level method the variant currently holds. The adaptive merge
-    /// only ever works on two-level variants, so any other type is a logical error.
+    /// Applies `f` to the two-level method the variant currently holds. The destination of the adaptive merge is
+    /// two-level, so any other type is a logical error.
     template <typename F>
     void visitTwoLevelVariant(DB::AggregatedDataVariants & variants, F && f)
     {
@@ -63,10 +63,10 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// The key holder (see `keyHolderGetKey`) of a staged key read back by `readStagedKey`. A string-like key points
-    /// into its record, which the merge frees only after converting the unit. With `copy_keys`, the record is in a
-    /// block read back from a spill, which the next block overwrites, so the holder copies the key into `arena` when
-    /// a table keeps it.
+    /// The key holder (see `keyHolderGetKey`) of a staged key that its record format read back (see `readStagedKey`). A
+    /// string-like key points into its record, which the merge frees only after converting the unit. With `copy_keys`,
+    /// the record is in a block read back from a spill, which the next block overwrites, so the holder copies the key
+    /// into `arena` when a table keeps it.
     template <bool copy_keys, typename Key>
     auto ALWAYS_INLINE stagedKeyHolder(const Key & key, [[maybe_unused]] DB::Arena * arena)
     {
@@ -78,30 +78,13 @@ namespace
             return key;
     }
 
-    /// Emplaces a staged key into `table` with its routing hash, copying it into `arena` if `copy_keys` (see
-    /// `stagedKeyHolder`).
-    template <typename Key, bool copy_keys, typename Table>
+    /// Emplaces a staged key, as its record format reads it back, into `table` with its routing hash, copying it into
+    /// `arena` if `copy_keys` (see `stagedKeyHolder`).
+    template <bool copy_keys, typename Table, typename Key>
     void ALWAYS_INLINE emplaceStagedKey(
-        Table & table,
-        DB::Arena * arena,
-        const char * key_pos,
-        size_t key_size,
-        size_t routing_hash,
-        typename Table::LookupResult & it,
-        bool & inserted)
+        Table & table, DB::Arena * arena, const Key & key, size_t routing_hash, typename Table::LookupResult & it, bool & inserted)
     {
-        table.emplace(stagedKeyHolder<copy_keys>(readStagedKey<Key>(key_pos, key_size, routing_hash), arena), it, inserted, routing_hash);
-    }
-
-    /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
-    /// its iteration handed out (see `forEachMappedCellWithHash`), which goes in with `emplaceIteratedKey`.
-    template <typename Table, typename Key>
-    void ALWAYS_INLINE emplaceSourceKey(Table & table, const Key & key, typename Table::LookupResult & it, bool & inserted, size_t hash)
-    {
-        if constexpr (requires { table.emplaceIteratedKey(key, it, inserted, hash); })
-            table.emplaceIteratedKey(key, it, inserted, hash);
-        else
-            table.emplace(key, it, inserted, hash);
+        table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, routing_hash);
     }
 
     /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
@@ -173,10 +156,11 @@ namespace
         size_t skipped = 0;
     };
 
-    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for every record whose
-    /// routing hash `filter` takes. With `prefetch`, which the caller decides once for the walk, it prefetches the table
-    /// slot of the taken record `adaptive_drain_prefetch_look_ahead` positions ahead. The format, the filter and `apply`
-    /// run once per record, so all of them are inlined into the loop.
+    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for
+    /// every record whose routing hash `filter` takes. With `prefetch`, which the caller decides once for
+    /// the walk, it prefetches the table slot of the taken record `adaptive_drain_prefetch_look_ahead`
+    /// positions ahead. Either way, it requests every range into L2 one range ahead. The format, the filter
+    /// and `apply` run once per record, so all of them are inlined into the loop.
     template <typename Key, typename Format, typename Table, typename Filter, typename Apply>
     StagedRecordWalk ALWAYS_INLINE walkStagedRecords(
         Format format, Table & table, const DB::AdaptiveRecordRanges & ranges, const Filter & filter, bool prefetch, Apply && apply)
@@ -184,6 +168,19 @@ namespace
         StagedRecordWalk walk;
         const auto walk_ranges = [&]<bool with_prefetch>() ALWAYS_INLINE
         {
+            /// A range is cold until its records are read, and the hardware prefetchers start a new stream
+            /// only after its first misses. So whichever reader enters a range first, the prefetch cursor or
+            /// else the walk, requests the following range into L2, up to a page.
+            const auto request_range = [&](size_t range_index) ALWAYS_INLINE
+            {
+                if (range_index >= ranges.size())
+                    return;
+                const char * line = ranges[range_index].data();
+                const char * const end = line + std::min<size_t>(ranges[range_index].size(), DB::adaptive_drain_range_prefetch_bytes);
+                for (; line < end; line += CH_CACHE_LINE_SIZE)
+                    __builtin_prefetch(line, /*rw=*/0, /*locality=*/2);
+            };
+
             /// The prefetch cursor runs the look-ahead distance in front of the walk and crosses from one range to the
             /// next as the walk does: a partition's ranges are as small as a first chunk of a few kilobytes, so
             /// restarting the distance in every range would leave a good share of the records unprefetched.
@@ -199,17 +196,7 @@ namespace
                     ahead = ranges[ahead_range].data();
                     ahead_end = ahead + ranges[ahead_range].size();
                     ++ahead_range;
-                    /// A range is cold until the cursor reads its records, and the hardware prefetchers take up a new
-                    /// stream only after its first misses: the following range, up to a page, is requested into L2 as
-                    /// the cursor enters this one.
-                    if (ahead_range < ranges.size())
-                    {
-                        const char * next = ranges[ahead_range].data();
-                        const char * const next_end
-                            = next + std::min<size_t>(ranges[ahead_range].size(), DB::adaptive_drain_range_prefetch_bytes);
-                        for (; next < next_end; next += CH_CACHE_LINE_SIZE)
-                            __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
-                    }
+                    request_range(ahead_range);
                 }
                 const UInt64 hash = format.hash(table, ahead);
                 if (filter.takes(hash))
@@ -223,10 +210,12 @@ namespace
                 for (size_t i = 0; i < DB::adaptive_drain_prefetch_look_ahead; ++i)
                     prefetch_next();
 
-            for (const auto & range : ranges)
+            for (size_t range_index = 0; range_index < ranges.size(); ++range_index)
             {
-                const char * record = range.data();
-                const char * const end = range.data() + range.size();
+                if constexpr (!with_prefetch)
+                    request_range(range_index + 1);
+                const char * record = ranges[range_index].data();
+                const char * const end = record + ranges[range_index].size();
                 while (record < end)
                 {
                     if constexpr (with_prefetch)
@@ -370,6 +359,127 @@ namespace
             callback(Table::cell_type::getKey(it->getValue()), it.getHash());
     }
 
+    /// A source of the adaptive bucket merge is two-level, or single-level with an index of its cells (see
+    /// `DB::AggregatedDataVariants::indexCells`), whose partitions are those of the session's layout, which
+    /// maps a bucket to its partitions. These count and visit the cells of a source's bucket either way.
+    template <typename Method>
+    size_t sourceBucketSize(DB::AggregatedDataVariants & source, const DB::AdaptivePartitionLayout & layout, size_t bucket)
+    {
+        if (source.isTwoLevel())
+            return DB::getDataVariant<Method>(source).data.impls[bucket].size();
+        return source.cellIndex().cellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
+    }
+
+    /// Visits the cells of `bucket` of a source of a map method like `forEachMappedCellWithHash`.
+    template <typename Method, typename Callback>
+    void forEachCellOfSourceBucket(
+        DB::AggregatedDataVariants & source, const DB::AdaptivePartitionLayout & layout, size_t bucket, Callback && callback)
+    {
+        if (source.isTwoLevel())
+            forEachMappedCellWithHash(DB::getDataVariant<Method>(source).data.impls[bucket], callback);
+        else
+            source.cellIndex().forEachCell<DB::AdaptiveBucketTable<Method>>(
+                layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
+    }
+
+    /// The source cells of the merge units of one bucket (see
+    /// `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit being a run of the partitions of the
+    /// bucket. The partitions of the cell index of a source are those of the layout, so an indexed source has
+    /// the cells of a unit in one run of positions per key class of its index, read in place. A two-level
+    /// source keeps the cells of the bucket in one table, which the constructor routes to the units by the
+    /// same hash bits that partitioned the staged records.
+    template <typename Method>
+    class AdaptiveUnitSourceCells
+    {
+    public:
+        AdaptiveUnitSourceCells(
+            DB::ManyAggregatedDataVariants & data_, const DB::AdaptivePartitionLayout & layout, size_t bucket, size_t units)
+            : data(data_)
+            , partitions_per_unit(layout.partitionsPerBucket() / units)
+            , first_partition(layout.firstPartition(bucket))
+            , routed(units)
+        {
+            const size_t unit_shift = std::countr_zero(partitions_per_unit);
+            const auto unit_of = [&](size_t hash)
+            {
+                const size_t partition = layout.partitionOf(hash);
+                chassert(layout.bucketOf(partition) == bucket);
+                return layout.subOf(partition) >> unit_shift;
+            };
+            for (size_t i = 1; i < data.size(); ++i)
+            {
+                if (!data[i]->isTwoLevel())
+                {
+                    chassert(data[i]->cellIndex().numPartitions() == layout.numPartitions());
+                    continue;
+                }
+                auto & table = DB::getDataVariant<Method>(*data[i]).data.impls[bucket];
+                if constexpr (DB::MapAggregationMethod<Method>)
+                    forEachMappedCellWithHash(
+                        table,
+                        [&](const auto & key, DB::AggregateDataPtr & mapped, size_t hash)
+                        { routed[unit_of(hash)].push_back({key, &mapped, hash}); });
+                else
+                    forEachKeyCellWithHash(
+                        table, [&](const auto & key, size_t hash) { routed[unit_of(hash)].push_back({key, nullptr, hash}); });
+            }
+        }
+
+        /// Calls `callback(key, mapped, hash)` for each source cell of `unit`, those of the indexed sources first: `mapped`
+        /// is the slot of the cell's states, or null for a set method.
+        template <typename Callback>
+        void forEach(size_t unit, Callback && callback) const
+        {
+            const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
+            const size_t unit_end_partition = unit_first_partition + partitions_per_unit;
+            for (size_t i = 1; i < data.size(); ++i)
+            {
+                if (data[i]->isTwoLevel())
+                    continue;
+                data[i]->cellIndex().forEachCell<BucketTable>(
+                    unit_first_partition,
+                    unit_end_partition,
+                    [&](const auto & key, [[maybe_unused]] auto && mapped, size_t hash)
+                    {
+                        if constexpr (DB::MapAggregationMethod<Method>)
+                            callback(key, &mapped, hash);
+                        else
+                            callback(key, nullptr, hash);
+                    });
+            }
+            for (const auto & cell : routed[unit])
+                callback(cell.key, cell.mapped, cell.hash);
+        }
+
+        /// How many source cells `unit` has.
+        size_t count(size_t unit) const
+        {
+            const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
+            size_t cells = routed[unit].size();
+            for (size_t i = 1; i < data.size(); ++i)
+                if (!data[i]->isTwoLevel())
+                    cells += data[i]->cellIndex().cellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
+            return cells;
+        }
+
+    private:
+        /// The bucket tables of the two-level variant of the method, whose cells the index of a single-level table holds.
+        using BucketTable = DB::AdaptiveBucketTable<Method>;
+
+        struct RoutedCell
+        {
+            typename BucketTable::key_type key;
+            DB::AggregateDataPtr * mapped;
+            size_t hash;
+        };
+
+        /// The first variants are the destination of the merge, the others its sources.
+        DB::ManyAggregatedDataVariants & data;
+        const size_t partitions_per_unit;
+        const size_t first_partition;
+        std::vector<std::vector<RoutedCell>> routed;
+    };
+
     /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of
     /// `layout`, in the order of the records. The values of a record follow its key: a `String` as `writeStagedString`
     /// staged it, appended without a read buffer or a virtual call, and another value in its column's own serialization.
@@ -446,7 +556,8 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     };
 
     StagedRecordWalk walk;
-    visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
+    visitStagedRecordFormat<Method>(
+        adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_count)
         {
@@ -460,14 +571,13 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if constexpr (MapAggregationMethod<Method>)
                     {
                         if (inserted)
-                            getInlineCountState(it->getMapped()) = Record::count(record);
+                            getInlineCountState(it->getMapped()) = format.count(record);
                         else
-                            getInlineCountState(it->getMapped()) += Record::count(record);
+                            getInlineCountState(it->getMapped()) += format.count(record);
                     }
                 });
         }
@@ -484,8 +594,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if constexpr (MapAggregationMethod<Method>)
                     {
                         if (inserted)
@@ -518,8 +627,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    emplaceStagedKey<Key, copy_keys>(table, arena, key_pos, key_size, hash, it, inserted);
+                    emplaceStagedKey<copy_keys>(table, arena, format.readKey(record, hash), hash, it, inserted);
                     if (inserted)
                     {
                         it->getMapped() = nullptr;
@@ -532,9 +640,6 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     records.ptrs.push_back(record);
                 });
 
-            /// A numeric key that is also an argument is read from the key's bytes in the record.
-            chassert(!adaptive_argument_layout->key_field
-                || adaptive_argument_layout->key_field->type->getSizeOfValueInMemory() == sizeof(Key));
             if (!places.empty())
                 executeStagedArgumentRecords(format, arena, places, records, use_compiled_functions);
         }
@@ -558,7 +663,8 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(counting_table);
     size_t skipped = 0;
-    visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
+    visitStagedRecordFormat<Method>(
+        adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_arguments)
         {
@@ -572,9 +678,8 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                 {
                     typename Table::LookupResult it;
                     bool inserted = false;
-                    const auto [key_pos, key_size] = format.key(record);
-                    const Key key = readStagedKey<Key>(key_pos, key_size, hash);
-                    counting_table.emplace(stagedKeyHolder<copy_keys>(key, arena), it, inserted, hash);
+                    const Key key = format.readKey(record, hash);
+                    emplaceStagedKey<copy_keys>(counting_table, arena, key, hash, it, inserted);
                     UInt64 & group_count = getInlineCountState(it->getMapped());
                     if (inserted)
                         group_count = 1;
@@ -595,26 +700,26 @@ ALWAYS_INLINE void Aggregator::discardAdaptiveSourceState(AggregateDataPtr & pla
     place = nullptr;
 }
 
-template <typename Method, typename Table, typename Cells, typename Filter>
-void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const
+template <typename Method, typename Table, typename ForEachCell, typename Filter>
+void Aggregator::adoptSourceCells(Table & table, const ForEachCell & for_each_cell, const Filter & filter, AdaptiveMergeTask & task) const
 {
     task.places.clear();
     task.source_slots.clear();
-    for (auto & cell : cells)
+    for_each_cell([&](const auto & key, [[maybe_unused]] AggregateDataPtr * mapped, size_t hash)
     {
-        if (!filter.takes(cell.hash))
+        if (!filter.takes(hash))
         {
             if constexpr (MapAggregationMethod<Method>)
-                discardAdaptiveSourceState(*cell.mapped);
-            continue;
+                discardAdaptiveSourceState(*mapped);
+            return;
         }
 
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(table, cell.key, it, inserted, cell.hash);
+        table.emplaceIteratedKey(key, it, inserted, hash);
         if constexpr (MapAggregationMethod<Method>)
         {
-            AggregateDataPtr & source_place = *cell.mapped;
+            AggregateDataPtr & source_place = *mapped;
             if (is_simple_count)
             {
                 if (inserted)
@@ -634,16 +739,22 @@ void Aggregator::adoptSourceCells(Table & table, Cells & cells, const Filter & f
                 task.source_slots.push_back(&source_place);
             }
         }
-    }
+    });
 }
 
-template <typename Method, typename Table, typename Cells, typename TopK, typename ForEachInMemoryPartition, typename ForEachSpilledBlock>
+template <
+    typename Method,
+    typename Table,
+    typename ForEachCell,
+    typename TopK,
+    typename ForEachInMemoryPartition,
+    typename ForEachSpilledBlock>
 size_t Aggregator::selectCountFirstBestGroups(
     Table & counting_table,
-    const Cells & cells,
+    const ForEachCell & for_each_cell,
     const bool * alive_bins,
     TopK * top_k,
-    const AdaptiveTopKPruning * pruning,
+    const AdaptiveTopKThreshold & threshold,
     const ForEachInMemoryPartition & for_each_in_memory_partition,
     const ForEachSpilledBlock & for_each_spilled_block,
     Arena * arena,
@@ -658,22 +769,22 @@ size_t Aggregator::selectCountFirstBestGroups(
     /// its indices in the high bits of the counts.
     if (top_k)
         top_k->clear();
-    for (const auto & cell : cells)
+    for_each_cell([&](const auto & key, AggregateDataPtr * mapped, size_t hash)
     {
-        if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
-            continue;
+        if (alive_bins && !alive_bins[bucketCountBin(hash)])
+            return;
         typename Table::LookupResult it;
         bool inserted = false;
-        emplaceSourceKey(counting_table, cell.key, it, inserted, cell.hash);
-        const UInt64 count = getCountState(*cell.mapped + rank_offset);
+        counting_table.emplaceIteratedKey(key, it, inserted, hash);
+        const UInt64 count = getCountState(*mapped + rank_offset);
         UInt64 & group_count = getInlineCountState(it->getMapped());
         if (inserted)
             group_count = count;
         else
             group_count += count;
         if (top_k)
-            top_k->template update</*copy_key=*/false>(group_count, cell.key, cell.hash);
-    }
+            top_k->template update</*copy_key=*/false>(group_count, key, hash);
+    });
     const auto update_candidates
         = [&]<bool copy_key>(UInt64 & group_count, const auto & key, UInt64 hash, std::bool_constant<copy_key>) ALWAYS_INLINE
     {
@@ -704,17 +815,18 @@ size_t Aggregator::selectCountFirstBestGroups(
     best_hashes.clear();
     if (top_k)
     {
-        /// With the pruning, which serves a descending order only, a group counted below the threshold cannot reach
-        /// the top.
-        const UInt64 threshold = pruning ? pruning->currentThreshold() : 0;
+        /// A group counted below the threshold, a floor, cannot reach the top.
+        const UInt64 min_count = threshold.current();
         for (const auto & group : top_k->getGroups())
-            if (group.count >= threshold)
+            if (group.count >= min_count)
                 best_hashes.push_back(group.hash);
     }
     else
     {
         /// The smallest counts, selected by a pass over the counted groups. Only the cells that enter the heap are
-        /// hashed; its front holds the largest count kept.
+        /// hashed; its front holds the largest count kept. A group counted above the threshold, a ceiling,
+        /// cannot reach the top.
+        const UInt64 max_count = threshold.current();
         auto & best = task.best_counts_and_hashes;
         best.clear();
         const auto by_count = [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; };
@@ -723,6 +835,8 @@ size_t Aggregator::selectCountFirstBestGroups(
             [&](AggregateDataPtr & mapped, const auto & hash_of)
             {
                 const UInt64 count = getInlineCountState(mapped);
+                if (count > max_count)
+                    return;
                 if (best.size() < params.bucket_top_k)
                 {
                     best.emplace_back(count, hash_of());
@@ -755,16 +869,25 @@ void Aggregator::executeStagedArgumentRecords(
     /// The arguments are rebuilt into dense columns while the records are hot, so the
     /// ordinary batch executor, and the compiled functions, apply to them as to a block.
     Columns arguments(argument_layout.num_positions);
-    if (const auto & field = argument_layout.key_field)
+    /// Only a single numeric key, a fixed-width one, is an argument too (see `AdaptiveArgumentLayout::key_field`). Its
+    /// records store all of its bytes, from which the argument is read.
+    if constexpr (Record::fixed_width_key)
     {
-        auto column = field->type->createColumn();
-        column->fillFromRowStorePtrs(field->type, records, format.key_offset, column->sizeOfValueIfFixed(), 0, rows);
-        arguments[field->position] = std::move(column);
+        if (const auto & field = argument_layout.key_field)
+        {
+            auto column = field->type->createColumn();
+            const size_t size = column->sizeOfValueIfFixed();
+            chassert(size == format.fixed_key.bytes);
+            column->fillFromRowStorePtrs(field->type, records, format.key_offset, size, 0, rows);
+            arguments[field->position] = std::move(column);
+        }
     }
+    else
+        chassert(!argument_layout.key_field);
     for (const auto & field : argument_layout.fixed_fields)
     {
         auto column = field.type->createColumn();
-        column->fillFromRowStorePtrs(field.type, records, Record::fixed_arguments_offset + field.offset, field.size, 0, rows);
+        column->fillFromRowStorePtrs(field.type, records, field.offset, field.size, 0, rows);
         arguments[field.position] = std::move(column);
     }
 
@@ -822,12 +945,15 @@ ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IC
     }
 }
 
-size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(
+    AggregatedDataVariants & variants,
+    AdaptiveTopKCountBins * bins,
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
 {
     size_t work = 0;
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins);
+        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins, max_count_per_bucket);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -841,7 +967,11 @@ size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & varia
 }
 
 template <typename Method>
-size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena, AdaptiveTopKCountBins * bins) const
+size_t Aggregator::collectAdaptiveTableStatistics(
+    Method & method,
+    Arena * arena,
+    AdaptiveTopKCountBins * bins,
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
 {
     size_t work = 0;
     if constexpr (MapAggregationMethod<Method>)
@@ -850,7 +980,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
         /// count.
         ColumnUInt64::MutablePtr scratch;
-        if (bins && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
+        if ((bins || max_count_per_bucket) && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
             scratch = ColumnUInt64::create();
         const auto add = [&](auto & table)
         {
@@ -860,6 +990,11 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
                 {
                     if (bins)
                         bins->add(hash_of(), adaptiveRankCount(mapped, scratch.get(), arena));
+                    if (max_count_per_bucket)
+                    {
+                        UInt64 & maximum = (*max_count_per_bucket)[adaptiveCountBin(hash_of()) / adaptive_count_bins_per_bucket];
+                        maximum = std::max(maximum, adaptiveRankCount(mapped, scratch.get(), arena));
+                    }
                     for (size_t i : adaptive_parallel_merge_indices)
                         work += aggregate_functions[i]->getEstimatedMergeWork(mapped + offsets_of_aggregate_states[i]);
                 });
@@ -879,7 +1014,12 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
 
 template <typename Method>
 void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
-    ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const
+    ManyAggregatedDataVariants & data,
+    const AdaptivePartitionLayout & layout,
+    Int32 bucket,
+    const AdaptiveTopKPruning & pruning,
+    std::span<UInt64> bounds,
+    Arena * arena) const
 {
     if constexpr (MapAggregationMethod<Method>)
     {
@@ -890,8 +1030,10 @@ void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
                 continue;
             if (!scratch && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
                 scratch = ColumnUInt64::create();
-            forEachMappedCellWithHash(
-                getDataVariant<Method>(*data[i]).data.impls[bucket],
+            forEachCellOfSourceBucket<Method>(
+                *data[i],
+                layout,
+                bucket,
                 [&](const auto &, AggregateDataPtr & mapped, size_t hash)
                 { AdaptiveTopKPruning::addToBounds(bounds, hash, adaptiveRankCount(mapped, scratch.get(), arena)); });
         }
@@ -904,6 +1046,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * merged_group_count) const
@@ -915,7 +1058,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, task, final, bucket, is_cancelled, updater, merged_group_count);
+                dest, method, data, session, task, final, bucket, parallel_merge, is_cancelled, updater, merged_group_count);
         });
     return chunks;
 }
@@ -929,6 +1072,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * merged_group_count) const
@@ -942,7 +1086,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         std::swap(dest_method.data.impls[bucket], dest_method.data.impls[task.previous_bucket]);
     task.previous_bucket = bucket;
 
-    using Table = std::decay_t<decltype(dest_method.data.impls[0])>;
+    using Table = AdaptiveBucketTable<Method>;
     static_assert(std::decay_t<decltype(dest_method.data)>::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     auto & table = dest_method.data.impls[bucket];
     /// The unit being merged creates its states in the arena of the bucket's slot, which takes a fresh arena for every
@@ -964,47 +1108,30 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
     size_t source_cells = 0;
     for (size_t i = 1; i < data.size(); ++i)
-        source_cells += getDataVariant<Method>(*data[i]).data.impls[bucket].size();
+        source_cells += sourceBucketSize<Method>(*data[i], layout, bucket);
 
     /// A unit is a run of partitions; the bucket splits into as many as give each unit about
     /// `adaptive_merge_unit_records` records and source cells, at most one per partition.
     const size_t units = std::min(
         partitions_per_bucket, std::bit_ceil(std::max<size_t>(1, (bucket_records + source_cells) / adaptive_merge_unit_records)));
     const size_t partitions_per_unit = partitions_per_bucket / units;
-    const size_t unit_shift = std::countr_zero(partitions_per_unit);
+    const AdaptiveUnitSourceCells<Method> unit_source_cells(data, layout, bucket, units);
 
-    /// The sources' cells of the bucket, routed to their units by the same hash bits that partitioned the records.
-    struct SourceCell
-    {
-        typename Table::key_type key;
-        AggregateDataPtr * mapped;
-        size_t hash;
-    };
-    std::vector<std::vector<SourceCell>> unit_cells(units);
-    const auto unit_of = [&](size_t hash)
-    {
-        const size_t partition = layout.partitionOf(hash);
-        chassert(layout.bucketOf(partition) == static_cast<size_t>(bucket));
-        return layout.subOf(partition) >> unit_shift;
-    };
-    for (size_t i = 1; i < data.size(); ++i)
-    {
-        auto & source = getDataVariant<Method>(*data[i]).data.impls[bucket];
-        if constexpr (MapAggregationMethod<Method>)
-            forEachMappedCellWithHash(
-                source, [&](const auto & key, AggregateDataPtr & mapped, size_t hash) { unit_cells[unit_of(hash)].push_back({key, &mapped, hash}); });
-        else
-            forEachKeyCellWithHash(source, [&](const auto & key, size_t hash) { unit_cells[unit_of(hash)].push_back({key, nullptr, hash}); });
-    }
+    /// The threshold of the top-K that the aggregation feeds, which every conversion of the merge reads and
+    /// tightens (see `AdaptiveTopKThreshold`). Only the external merge of a top-K goes without it, and that
+    /// merge outputs partial states.
+    AdaptiveTopKThreshold * const threshold = session.top_k_threshold.get();
+    chassert(threshold || !final || !params.bucket_top_k);
 
     /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`), completed with the
     /// groups of the tables of the producers that never froze.
     AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
+    chassert(!pruning || threshold);
     AdaptiveTopKPruning::BucketBounds bin_bounds{};
     if (pruning)
     {
         bin_bounds = pruning->boundsForBucket(bucket);
-        addMergeCountedTablesToBounds<Method>(data, bucket, *pruning, bin_bounds, arena);
+        addMergeCountedTablesToBounds<Method>(data, layout, bucket, *pruning, bin_bounds, arena);
     }
     AdaptiveTopKPruning::AliveBins alive{};
     size_t pruned_records = 0;
@@ -1038,30 +1165,32 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         size_t unit_records = 0;
         for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
             unit_records += partition_records[sub];
-        auto & cells = unit_cells[unit];
-        if (!unit_records && cells.empty())
+        if (!unit_records && !unit_source_cells.count(unit))
             continue;
+        const auto for_each_cell = [&](auto && callback) { unit_source_cells.forEach(unit, callback); };
 
-        /// The unit's bins that can still hold a group of the top, at the threshold of the moment (see
+        /// A settled threshold skips every unit left (see `AdaptiveTopKThreshold`). Otherwise the pruning
+        /// keeps the unit's bins that can still hold a group of the top, at the threshold of the moment (see
         /// `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped, its source cells dropped and its records freed
         /// unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
-        if (pruning)
+        bool skip = threshold && threshold->settled();
+        if (pruning && !skip)
         {
-            const auto selection = pruning->selectUnit(bin_bounds, unit, units, alive);
-            if (selection == AdaptiveTopKPruning::UnitSelection::Skip)
-            {
-                if constexpr (MapAggregationMethod<Method>)
-                    for (auto & cell : cells)
-                        discardAdaptiveSourceState(*cell.mapped);
-                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                    staged.release(sub);
-                pruned_records += unit_records;
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
-                continue;
-            }
+            const auto selection = pruning->selectUnit(bin_bounds, unit, units, threshold->current(), alive);
+            skip = selection == AdaptiveTopKPruning::UnitSelection::Skip;
             if (selection == AdaptiveTopKPruning::UnitSelection::Filter)
                 alive_bins = alive.data();
+        }
+        if (skip)
+        {
+            if constexpr (MapAggregationMethod<Method>)
+                for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
+            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+                staged.release(sub);
+            pruned_records += unit_records;
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
+            continue;
         }
 
         /// Calls `f` with the records in memory of each partition of the unit.
@@ -1099,7 +1228,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// do not move. Returns how many records `filter` skipped.
         const auto merge_unit = [&](const auto & filter)
         {
-            adoptSourceCells<Method>(table, cells, filter, task);
+            adoptSourceCells<Method>(table, for_each_cell, filter, task);
             size_t skipped = 0;
             for_each_spilled_block([&](const AdaptiveRecordRanges & ranges)
             {
@@ -1112,7 +1241,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     table, arena, ranges, filter, task.record_places, task.records);
             });
             if (!task.places.empty())
-                mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
+                mergeSourceStates(task.places, task.source_slots, parallel_merge, task.merge_order, task.merge_group, arena, is_cancelled);
             return skipped;
         };
 
@@ -1127,10 +1256,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 /// source cells go with their states. Each pass reads the spill streams of the unit's partitions back.
                 unit_groups = selectCountFirstBestGroups<Method>(
                     counting_table,
-                    cells,
+                    for_each_cell,
                     alive_bins,
                     top_k ? &*top_k : nullptr,
-                    pruning,
+                    *threshold,
                     for_each_in_memory_partition,
                     for_each_spilled_block,
                     arena,
@@ -1159,7 +1288,17 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// pre-filter - when the statistics ask for it: the untruncated key bytes, because the chunk carries only the
         /// kept groups, and a bounded sample of those keys for when it carries none at all.
         UntruncatedAggregationKeys untruncated_keys;
-        auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &untruncated_keys : nullptr, /*keep_table_buffer=*/true);
+        /// A group ranked worse than the threshold has `bucket_top_k` groups ahead of it in the output of the
+        /// units converted so far, so the conversion drops it. Before the first selection the threshold is
+        /// the worst rank of the order, which drops nothing.
+        auto chunk = convertOneBucketToChunk(
+            dest,
+            arena,
+            final,
+            bucket,
+            updater ? &untruncated_keys : nullptr,
+            /*keep_table_buffer=*/true,
+            threshold ? std::optional(threshold->current()) : std::nullopt);
         if (updater)
         {
             if (untruncated_keys.bytes)
@@ -1168,9 +1307,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
-        if (pruning)
-            pruning->offerCounts(
-                assert_cast<const ColumnUInt64 &>(*chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]).getData());
+        /// The unit holds every record and source cell of its keys, so the ranks it output are exact, and no
+        /// other unit outputs its groups.
+        if (threshold)
+            threshold->offer(bucketTopKRanks(chunk.chunk));
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 
@@ -1191,10 +1331,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     if (pruned_records)
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedRecords, pruned_records);
 
-    /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the
-    /// sources' bucket tables only release their buffers.
+    /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the bucket tables
+    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which its destruction
+    /// frees after the last bucket of the merge stopped the source owning states (see `AdaptiveBucketMergingSource`).
     for (size_t i = 1; i < data.size(); ++i)
-        getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();
+        if (data[i]->isTwoLevel())
+            getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();
 
     /// Both tables are empty after conversion, so the bucket retains the counting buffer for the next bucket.
     if (count_first)
@@ -1232,27 +1374,35 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
     return destination;
 }
 
-void Aggregator::mergeAdaptiveSourceStates(
+Aggregator::ParallelMergeThreshold Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session) const
+{
+    /// While the workers are busy, a group larger than a worker's share can hold up the merge, and very large states
+    /// amortize the pool even when other groups are busy. Without the producers' estimate of the merge work, only a group
+    /// of very large states takes the pool then. Small states do not justify its setup even with idle workers.
+    ParallelMergeThreshold threshold{.busy = adaptive_parallel_merge_max_work, .idle = adaptive_parallel_merge_min_work};
+    if (session)
+    {
+        chassert(params.max_threads > 0 && session->finished_producers > 0);
+        threshold.busy = std::clamp(
+            session->estimated_merge_work / std::min(params.max_threads, session->finished_producers),
+            adaptive_parallel_merge_min_work,
+            adaptive_parallel_merge_max_work);
+    }
+    return threshold;
+}
+
+void Aggregator::mergeSourceStates(
     PaddedPODArray<AggregateDataPtr> & places,
     const PaddedPODArray<AggregateDataPtr *> & source_slots,
-    AdaptiveMergeTask & task,
-    const AdaptiveAggregationSession & session,
+    const ParallelMergeThreshold & parallel_merge,
+    PaddedPODArray<UInt32> & order,
+    AggregateDataPtrs & group,
     Arena * arena,
     std::atomic<bool> & is_cancelled) const
 {
     const size_t merges = places.size();
     chassert(merges == source_slots.size());
-    chassert(params.max_threads > 0 && session.finished_producers > 0);
 
-    /// A group larger than a worker's share can hold up the merge. Very large states amortize the pool even
-    /// when other groups are busy, while small states do not justify its setup even with idle workers.
-    const size_t min_parallel_work = std::clamp(
-        session.estimated_merge_work / std::min(params.max_threads, session.finished_producers),
-        adaptive_parallel_merge_min_work,
-        adaptive_parallel_merge_max_work);
-
-    auto & order = task.merge_order;
-    auto & group = task.merge_group;
     bool ordered = false;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
@@ -1287,7 +1437,7 @@ void Aggregator::mergeAdaptiveSourceStates(
             for (size_t k = begin; k < end; ++k)
                 group_work += function.getEstimatedMergeWork(*source_slots[order[k]] + offset);
 
-            if (group_work <= min_parallel_work)
+            if (group_work <= parallel_merge.get())
             {
                 for (size_t k = begin; k < end; ++k)
                     function.merge(places[order[k]] + offset, *source_slots[order[k]] + offset, arena);
@@ -1308,7 +1458,7 @@ void Aggregator::mergeAdaptiveSourceStates(
     /// Source tables retain ownership until every aggregate has merged successfully, so an exception
     /// leaves complete states for their ordinary cleanup. Then the sources are destroyed, which does not throw,
     /// and their slots cleared.
-    auto & sources = task.merge_group;
+    auto & sources = group;
     sources.resize(merges);
     for (size_t j = 0; j < merges; ++j)
         sources[j] = *source_slots[j];

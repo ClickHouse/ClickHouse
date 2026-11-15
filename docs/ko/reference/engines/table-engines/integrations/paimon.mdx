@@ -76,6 +76,26 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 읽기 시 머지(merge-on-read)가 구현되어 있지 않으므로 **기본 키 테이블은 읽을 수 없습니다**. reader는 스냅샷의 데이터 파일을 단순히 합친 원시(raw) 결과를 반환하며, 여기에는 이후 업서트로 대체된 이전 행 버전이 그대로 남아 있습니다. 따라서 스키마에 `primary-key`가 선언된 테이블을 읽으면 예외가 발생합니다.
 
+## 삭제 벡터(deletion vectors)가 있는 테이블 {#deletion-vectors}
+
+삭제 벡터는 적용되지 않으므로 **삭제 벡터가 있는 스냅샷은 읽을 수 없습니다**. 읽더라도 결과(result)에는
+이후 `DELETE` 및 `UPDATE` SQL 문으로 제거된 행(rows)이 그대로 남아 있게 됩니다. 따라서 index manifest에
+삭제 벡터가 나열된 스냅샷을 읽으면, `deletion-vectors.enabled`를 끈 후에도 예외가 발생합니다.
+
+Paimon에서 전체 컴팩션(`compact_strategy => 'full'`)을 수행하면 삭제 벡터가 적용되며, 이후 생성된 스냅샷은
+다시 읽을 수 있습니다.
+
+증분 읽기(Incremental read)는 아직 소비되지 않은 스냅샷 중 삭제 벡터가 있는 첫 번째 스냅샷에서 멈추며, 전체
+컴팩션을 수행한 후에도 그 지점에 머무릅니다. 해당 컴팩션까지의 모든 스냅샷에 동일한 삭제 벡터가 나열되어 있기 때문입니다. 커서(Cursor)도 앞으로 이동하지 않습니다.
+Paimon이 해당 스냅샷을 만료시키거나, 커서를 전체 컴팩션 스냅샷으로 옮겨 해당 스냅샷들을 건너뛰면 읽기가 재개됩니다.
+커서를 옮기면 그 지점까지 아직 소비되지 않은 모든 스냅샷이 삭제됩니다([스냅샷을 읽을 수 없는 경우](#when-a-snapshot-cannot-be-read) 참조):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+어느 경우든 해당 삭제 벡터(deletion vectors)로 제거된 행(rows)은 증분 읽기(Incremental read)로 이미 전달된 결과에 그대로 남아 있습니다.
+
 ## 설정 {#settings}
 
 이 엔진은 해당 객체 스토리지 엔진과 동일한 설정을 사용하며, 여기에 Paimon 전용 설정이 추가됩니다:
@@ -141,6 +161,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### 웨어하우스(warehouse) 되감기 {#rewinding-the-warehouse}
+
+`paimon_keeper_path`에 있는 Keeper 커서(Cursor)는 스트림을 어디까지 소비했는지 기록하며, 증분 읽기(Incremental read)는 웨어하우스가 항상 앞으로만 진행한다고 가정합니다. Paimon 스냅샷 id는 단조 증가하며 재사용되지 않습니다. 오래된 스냅샷을 만료시키는 것은 문제가 되지 않습니다. 만료는 앞부분의 id만 제거하고 그 이후의 id는 그대로 두기 때문입니다.
+
+웨어하우스를 *뒤로* 되돌리면 이 가정이 깨집니다. 오래된 백업(backup)에서 웨어하우스를 복원하거나, 다른 엔진으로 롤백하거나, 같은 경로에서 Paimon 테이블(Paimon table)을 삭제(dropping)한 뒤 다시 생성하면 모두 스냅샷 id가 되감기며, 그 결과 writer는 커서가 이미 소비한 id를 재사용하게 됩니다.
+
+**웨어하우스를 되감을 때는 같은 작업에서 커서도 함께 초기화해야 합니다.** id가 재사용되면 ClickHouse는 컨슈머가 어떤 스냅샷을 이미 수신했는지 재구성할 수 없습니다. 따라서 되감기 후 커서를 그대로 두면 전달 동작이 정의되지 않으며, 재사용된 id의 스냅샷을 건너뛸 수 있습니다.
+
+되감기로 인해 커서가 웨어하우스의 최신 스냅샷보다 뒤쪽을 가리키게 되면, 읽기는 새 데이터가 없다고 보고하지 않고 `INVALID_STATE`로 실패하며, 오류 메시지에 복구 명령이 표시됩니다. 아무것도 읽지 않고 커서도 변경되지 않으므로, 문제를 해결할 때까지 이후의 모든 폴링이 같은 방식으로 실패합니다:
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+복구 목적으로 `committed_snapshot` 노드를 삭제하지 마십시오. 커서가 없으면 &quot;한 번도 소비되지 않음&quot;으로 간주되므로, 다음 읽기는 이전 위치에서 재개되지 않고 전체 테이블을 처음부터 다시 읽게 됩니다.
+
+커서를 초기화하기 전에 갱신 가능 구체화 뷰를 포함하여 `paimon_keeper_path`를 공유하는 모든 컨슈머를 일시 중지하고, 전송 중인 읽기가 모두 완료될 때까지 기다리십시오.
+
+읽기의 커밋은 해당 읽기가 관찰한 커서를 전제 조건으로 합니다. 관찰 이후 커밋 전에 커서가 변경되면 해당 읽기는 `INVALID_STATE` 오류로 실패하고 아무것도 전달하지 않으며, 사용자가 설정한 값은 그대로 유지됩니다. 단, 이미 커밋된 읽기는 커서가 초기화된 후에도 해당 배치를 전달할 수 있으므로, 커서를 되감으면 그 배치가 중복으로 전달될 수 있습니다.
+
+`processing_lock`을 수동으로 삭제하거나 대체하지 마십시오. 이 노드는 증분 읽기를 실행 중인 ClickHouse Keeper 세션이 소유하는 일시적 노드이며, 그 수명 주기는 운영자가 복구 용도로 다루는 인터페이스가 아닙니다.
+
+### 스냅샷을 읽을 수 없는 경우 {#when-a-snapshot-cannot-be-read}
+
+Paimon에서 만료된 스냅샷은 자동으로 건너뜁니다. 만료 시에는 스냅샷 ID의 앞부분(접두사)이 제거되므로, 웨어하우스(warehouse)에서 가장 오래된 스냅샷보다 앞선 스냅샷은 이미 사라진 것으로 판단되며 커서(Cursor)는 해당 구간을 지나 이동합니다.
+
+그 밖의 이유로 스냅샷을 읽지 못하면(예: 일시적인 객체 스토리지 오류, 손상된 스냅샷 파일) 쿼리가 실패하고 커서는 현재 위치에 그대로 남습니다. 이러한 실패를 허용하는 설정은 의도적으로 제공하지 않습니다. 읽지 않은 스냅샷을 건너뛰면 해당 스냅샷에 커밋된 데이터가 영구적으로 삭제되며, 「오류 허용」 스위치를 상시 켜 둘 수 있다면 이후 발생하는 모든 일시적인 네트워크 장애가 아무런 경고 없이 데이터 손실로 이어집니다. 커서는 변경되지 않으므로 일시적인 오류에는 별도의 조치가 전혀 필요하지 않습니다. 다음 폴링에서 동일한 범위를 다시 읽으면 성공합니다.
+
+스냅샷을 정말로 읽을 수 없고 스트림을 계속 진행해야 한다면, 해당 스냅샷을 명시적으로 포기하십시오. 오류 메시지에 사용할 명령이 표시되지만, 그에 따르는 대가에 유의하십시오. 실패한 읽기에서는 아무것도 전달되지 않았으므로, 커서를 읽을 수 없는 스냅샷으로 옮기면 해당 스냅샷 하나만이 아니라 그 스냅샷까지 아직 소비되지 않은 **모든** 스냅샷을 포기하게 됩니다.
+
+커서가 1에 있고 스냅샷 2, 3, 4가 대기 중이며 그중 3을 읽을 수 없는 경우의 예는 다음과 같습니다.
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+읽을 수 있는 스냅샷을 보존하려면 먼저 읽을 수 없는 스냅샷 직전까지 비우십시오. 폴링할 때마다 스냅샷 하나를 소비하고 커서(Cursor)를 앞으로 이동하며, 읽을 수 없는 스냅샷에 도달할 때까지 이 과정이 반복됩니다.
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+어느 쪽이든 이 결정은 설정을 통해 추론되는 것이 아니라 운영자가 명시적으로 수행한 조치로 기록됩니다.
 
 ## 갱신 가능 구체화 뷰를 사용한 Paimon에서 MergeTree로의 동기화 {#paimon-to-mergetree-via-refresh-mv}
 

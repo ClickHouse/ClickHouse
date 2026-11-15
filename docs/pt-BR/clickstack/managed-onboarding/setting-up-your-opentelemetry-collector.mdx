@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
-title: 'Como configurar seu OpenTelemetry Collector'
-description: 'Como configurar um OpenTelemetry Collector para o Managed ClickStack'
+title: 'Como configurar seu coletor OpenTelemetry'
+description: 'Como configurar um coletor OpenTelemetry para o Managed ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
 unlisted: true
@@ -14,7 +14,7 @@ import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_us
 import ConfirmInUI from '/snippets/pt-BR/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/pt-BR/components/AgentPrompt/AgentPrompt.jsx';
 
-Este guia orienta você na implantação de um OpenTelemetry Collector em um serviço Managed ClickStack existente ou na adaptação do seu coletor atual, antes de verificar se os dados estão fluindo.
+Este guia orienta você na implantação de um coletor OpenTelemetry em um serviço Managed ClickStack existente ou na adaptação do seu coletor atual, antes de verificar se os dados estão fluindo.
 
 Instale o pacote oficial ClickHouse Agent Skills antes de usar o assistente de configuração:
 
@@ -22,26 +22,34 @@ Instale o pacote oficial ClickHouse Agent Skills antes de usar o assistente de c
 npx skills add clickhouse/agent-skills
 ```
 
+Se você já tiver o [`clickhousectl`](/pt-BR/concepts/features/interfaces/cli), pode, em vez disso, instalar as mesmas skills nos agentes de programação que ele detectar:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+Para direcionar a instalação a um agente específico, passe `--agent` (por exemplo, `--agent claude`). Adicione `--global` para instalar no seu diretório home em vez de no projeto atual.
+
 <AgentPrompt
-  prompt="Use a skill clickstack-otel-collector para conectar um OpenTelemetry Collector ao meu serviço Managed ClickStack."
-  description="Seu agent configurará o ClickStack OpenTelemetry Collector para você. Funciona com Claude Code, Cursor, Codex e outros agents de programação."
+  prompt="Use a skill clickstack-otel-collector para conectar um coletor OpenTelemetry ao meu serviço Managed ClickStack."
+  description="Seu agente configurará o coletor OpenTelemetry do ClickStack para você. Funciona com Claude Code, Cursor, Codex e outros agentes de programação."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"Instale o clickhousectl, se necessário, e autentique-o (ele solicitará uma chave de API do ClickHouse Cloud — cole-a no chat ou execute você mesmo o comando de login).",
+"Instale o clickhousectl, se necessário, e verifique se ele está autenticado com uma chave de API (o login pelo navegador é read-only e não consegue criar o usuário de ingestão). Caso não esteja, ele pedirá que você mesmo execute clickhousectl cloud auth login --interactive em um terminal separado, a partir do mesmo diretório do projeto (a chave é salva em .clickhouse/credentials.json nesse diretório). Nunca cole o segredo da chave de API no chat.",
 "Ele pedirá o ID ou nome do serviço ClickHouse Cloud de destino e, em seguida, buscará o endpoint HTTPS correspondente.",
 "Crie um usuário SQL hyperdx_ingest no serviço (gera uma senha forte ou usa uma fornecida por você).",
-"Execute localmente o ClickStack OpenTelemetry Collector em Docker, apontando para o seu serviço.",
-"Envie uma pequena quantidade de logs, traces e metrics sintéticos pelo collector para comprovar que o pipeline funciona.",
+"Execute localmente o coletor OpenTelemetry do ClickStack em Docker, apontando para o seu serviço.",
+"Envie uma pequena quantidade de logs, traces e métricas sintéticos pelo coletor para comprovar que o pipeline funciona.",
 "Verifique se os dados chegaram ao banco de dados otel e forneça a URL da ClickStack UI onde você poderá visualizá-los."
 ]}
 />
 
-O coletor é executado como um **gateway**: um único endpoint OTLP para o qual seus aplicativos, SDKs e coletores agent enviam dados. O gateway agrupa eventos em batches, aplica qualquer processamento que você tenha configurado e os grava no ClickHouse por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Esse padrão mantém a lógica de coleta fora do código da sua aplicação e permite escalar a ingestão de forma independente das cargas de trabalho que produzem dados. Para mais contexto sobre as funções de gateway e agent, consulte [Funções do collector](/pt-BR/clickstack/ingesting-data/collector#collector-roles).
+O coletor é executado como um **gateway**: um único endpoint OTLP para o qual seus aplicativos, SDKs e coletores agentes enviam dados. O gateway agrupa eventos em batches, aplica qualquer processamento que você tenha configurado e os grava no ClickHouse por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Esse padrão mantém a lógica de coleta fora do código da sua aplicação e permite escalar a ingestão de forma independente das cargas de trabalho que produzem dados. Para mais contexto sobre as funções de gateway e agente, consulte [Funções do coletor](/pt-BR/clickstack/ingesting-data/collector#collector-roles).
 
 <Info>
   **Coletor existente**
 
-  Se você estiver usando um OpenTelemetry Collector existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar este processo para reconfigurar coletores na função de **agent**.
+  Se você estiver usando um coletor OpenTelemetry existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar este processo para reconfigurar coletores na função de **agente**.
 </Info>
 
 Escolha a guia correspondente à sua situação:
@@ -403,9 +411,7 @@ Escolha a guia correspondente à sua situação:
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## Próximos passos: envie seus próprios dados
-</div>
+## Próximos passos: envie seus próprios dados {#next-steps}
 
 A carga sintética acima apenas comprova que o pipeline funciona. Para começar a enviar telemetria real, instrumente seus próprios serviços com os [ClickStack SDKs](/pt-BR/clickstack/ingesting-data/sdks/index), que fornecem instrumentação para Node.js, Python, Go, Java e outras linguagens que exportam OTLP para o endpoint do collector que você acabou de verificar. Para um exemplo completo, siga [Instrumente uma aplicação](/pt-BR/clickstack/managed-onboarding/instrument-application).
 
@@ -414,9 +420,7 @@ Para coletar dados da infraestrutura em vez do código da aplicação:
 * [Monitoramento do Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes de um cluster.
 * [Monitoramento de logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch por meio do receiver CloudWatch do OpenTelemetry.
 
-<div id="further-reading">
-  ## Leitura complementar
-</div>
+## Leitura complementar {#further-reading}
 
 Este guia aborda uma única instância do coletor em sua forma mais simples. A [referência do OpenTelemetry Collector](/pt-BR/clickstack/ingesting-data/collector) explica o que fazer em seguida:
 

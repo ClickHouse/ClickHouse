@@ -11,27 +11,29 @@ doc_type: 'reference'
 
 ## 説明 {#description}
 
-デシリアライズ済みカラムキャッシュに現在格納されているエントリごとに 1 行を含みます。このキャッシュは、`MergeTree` のデータパーツから読み取ってデシリアライズしたカラムをメモリ上に保持します。これにより、同じ行範囲を繰り返し読み取る際に、伸長とデシリアライズのコストが再度発生しなくなります。
+デシリアライズ済みカラムキャッシュに現在格納されているエントリごとに 1 行を含みます。このキャッシュは、`MergeTree` のデータパーツおよび `Parquet` ファイルから読み取ってデシリアライズしたカラムをメモリ上に保持します。これにより、同じ行範囲を繰り返し読み取る際に、伸長とデシリアライズのコストが再度発生しなくなります。
 
 各エントリは、単一のデータパーツの単一のカラムにおける連続したグラニュールの範囲 `[row_begin, row_end)` に対応し、パーツ内で約 65536 行ごとに固定されたストライプの中に収まります。読み取りはグラニュール単位でキャッシュから提供され、ストライプはそのパーツに対するすべての読み取りで共通であるため、エントリはクエリがパーツをどのようにマーク範囲に分割するかには依存しません。ストライプ内の一部のグラニュールのみを読み取った場合はそれらのグラニュールがキャッシュされ、異なる読み取りによって書き込まれた隣接する範囲はマージされます。
 
 キャッシュはテーブルの UUID によってエントリを識別するため、`Atomic`、`Replicated`、`Shared` (ClickHouse Cloud のデフォルトのデータベースエンジン) など、UUID を割り当てるデータベース内のテーブルに対してのみ機能します。従来の `Ordinary` データベース内のテーブルには UUID がないため、通知なしにキャッシュの対象から除外されます。キャッシュの対象となるのは wide パーツのみであり、compact パーツは通知なしに除外されます。
 
+`Parquet` ファイルのエントリ (`file`、`s3`、`azureBlobStorage` の各テーブル関数およびテーブルエンジン、ならびにデータレイクテーブルによって読み取られるもの) は、ファイル内の 1 つの行グループのカラム全体を保持します。この場合、`part` はファイルのパスで、`[row_begin, row_end)` はファイル内におけるその行グループの行範囲です。テーブル (例: `ENGINE = File`、`S3`、またはデータレイクテーブル) によって読み取られたファイルのエントリでは、`table_uuid` にそのテーブルの UUID が入り、`database` と `table` にも値が設定されます。これらのエントリは、`MergeTree` テーブルのエントリと同じルールに従って表示されます。一方、テーブル関数によって読み取られたファイルのエントリでは、`table_uuid` は nil UUID となり、`database` と `table` は空になります。このエントリは、`SHOW COLUMNS` をグローバルに持ち、かつファイルのソース (`FILE`、`S3`、`AZURE`、`HDFS`、または `URL`) に対する制限のない `READ` 権限を持つユーザーにのみ表示されます。
+
 キャッシュは、サーバー設定 `columns_cache_size` (デフォルトではサーバーで利用可能なメモリに `columns_cache_size_to_ram_ratio` を乗じた値) および `columns_cache_size_ratio`、ならびにクエリレベルの設定 `use_columns_cache`、`enable_reads_from_columns_cache`、`enable_writes_to_columns_cache`、`columns_cache_max_estimated_bytes_to_write_to_cache`、`columns_cache_max_bytes_to_write_to_cache` によって制御されます。また、[`SYSTEM DROP COLUMNS CACHE`](/ja/reference/statements/system) を使用して手動でクリアすることもできます。
 
-行はアクセス権に基づいてフィルタリングされます。エントリは、そのテーブルとカラムの両方を参照できるユーザー、すなわちテーブルに対する `SHOW TABLES` とカラムに対する `SHOW COLUMNS` の両方の権限を持つユーザーにのみ表示されます。このテーブルはスキーマだけでなく運用データ (パーツ名、行範囲、キャッシュされたサイズ) も公開するため、`*.*` に対して `SHOW COLUMNS` を付与しても、個々のテーブルやカラムに対する取り消し (REVOKE) は無効になりません。すでに存在しないテーブルのエントリには確認に使用する名前がないため、`SHOW COLUMNS` をグローバルに持つユーザーにのみ表示されます。
+行はアクセス権に基づいてフィルタリングされます。エントリは、そのテーブルとカラムの両方を参照できるユーザー、すなわちテーブルに対する `SHOW TABLES` とカラムに対する `SHOW COLUMNS` の両方の権限を持つユーザーにのみ表示されます。このテーブルはスキーマだけでなく運用データ (パーツ名、行範囲、キャッシュされたサイズ) も公開するため、`*.*` に対して `SHOW COLUMNS` を付与しても、個々のテーブルやカラムに対する取り消し (REVOKE) は無効になりません。すでに存在しないテーブルのエントリには確認に使用する名前がないため、`SHOW COLUMNS` をグローバルに持つユーザーにのみ表示されます。そのようなテーブルによって読み取られた `Parquet` ファイルのエントリについては、さらにファイルのソースに対する制限のない `READ` 権限も必要です。
 
 ## カラム {#columns}
 
 * `database` ([String](/ja/reference/data-types/string)) — パーツが属するテーブルのデータベース名。
 * `table` ([String](/ja/reference/data-types/string)) — テーブル名。
 * `table_uuid` ([UUID](/ja/reference/data-types/uuid)) — テーブルの UUID。リネームしても変わりません。
-* `part` ([String](/ja/reference/data-types/string)) — データパーツの名前。
+* `part` ([String](/ja/reference/data-types/string)) — データパーツの名前。プロジェクションのパーツの場合は、親パーツの名前とプロジェクションの名前を `parent_part:projection` の形式で組み合わせたものになります。
 * `column` ([String](/ja/reference/data-types/string)) — カラムの名前。
-* `row_begin` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲の開始行の位置 (この値を含む) 。
-* `row_end` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲の終了行の位置 (この値を含まない) 。
-* `rows` ([UInt64](/ja/reference/data-types/int-uint)) — キャッシュされた範囲内の行数 (`row_end - row_begin`) 。
-* `bytes` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが保持するメモリ量 (バイト単位) 。キャッシュされたカラムの割り当てサイズに、エントリごとのわずかなオーバーヘッドを加えた値です。キャッシュの上限はこの値で管理されるため、全エントリにおけるこのカラムの合計は `columns_cache_size` 以内に収まります。カラムは割り当て時の容量を保持し続けるため、この値は行の論理サイズより大きくなることがあります。
+* `row_begin` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲の開始行の位置 (この値を含む) 。
+* `row_end` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲の終了行の位置 (この値を含まない) 。
+* `rows` ([UInt64](/ja/reference/data-types/int-uint)) — cacheされた範囲内の行数 (`row_end - row_begin`) 。
+* `bytes` ([UInt64](/ja/reference/data-types/int-uint)) — エントリが保持するメモリ量 (バイト単位) 。cacheされたカラムの割り当てサイズに、エントリごとのわずかなオーバーヘッドを加えた値です。cacheの上限はこの値で管理されるため、全エントリにおけるこのカラムの合計は `columns_cache_size` 以内に収まります。カラムは割り当て時の容量を保持し続けるため、この値は行の論理サイズより大きくなることがあります。
 
 ## 例 {#examples}
 
