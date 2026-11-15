@@ -174,7 +174,12 @@ BlockIO InterpreterDeleteQuery::execute()
             auto target_table = resolved_table;
             if (const auto * alias = resolved_table->as<StorageAlias>())
                 if (auto chain = alias->getTargetChain(); !chain.empty())
+                {
+                    /// `StorageAlias::mutate` checks every hop, so check them before the error below reveals the target settings.
+                    for (const auto & [target_database, target_name] : chain)
+                        getContext()->checkAccess(AccessType::ALTER, target_database, target_name);
                     target_table = DatabaseCatalog::instance().tryGetTable(StorageID(chain.back().first, chain.back().second), getContext());
+                }
             if (const auto * merge_tree_data = castStorage<MergeTreeData>(target_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
