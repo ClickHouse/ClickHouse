@@ -90,13 +90,9 @@ $CLICKHOUSE_FORMAT --line_length 24 --multiquery --query "SELECT concat('first',
 echo 'Insert payload'
 $CLICKHOUSE_FORMAT --line_length 24 --query "INSERT INTO a_long_table_name (a_long_column_name, another_long_column_name) VALUES ('spaces inside payload', 123)"
 
+queries=
 while IFS= read -r query; do
-    original=$($CLICKHOUSE_FORMAT --oneline --show_secrets --query "$query")
-    for width in 1 16 40 120; do
-        formatted=$($CLICKHOUSE_FORMAT --line_length "$width" --show_secrets --query "$query")
-        check_format "$formatted" --line_length "$width" --show_secrets --query "$formatted"
-        check_format "$original" --oneline --show_secrets --query "$formatted"
-    done
+    queries+="$query;"$'\n'
 done <<'SQL'
 SELECT multiIf(number = 0, 'zero', number = 1, 'one', 'other') AS value FROM numbers(3)
 SELECT arrayMap((x, y) -> concat(x, y), ['first', 'second'], ['third', 'fourth'])
@@ -120,6 +116,13 @@ SELECT (f | g) | h, f | (g | h), __compose(f, g)
 SELECT toString(number) NOT SIMILAR TO '[0-9]!_%' ESCAPE '!' FROM numbers(10)
 SELECT `a..b`.f(concat('first', 'second'), concat('third', 'fourth'))
 SQL
+
+original=$($CLICKHOUSE_FORMAT --multiquery --semicolons_inline --oneline --show_secrets --query "$queries")
+for width in 1 16 40 120; do
+    formatted=$($CLICKHOUSE_FORMAT --multiquery --semicolons_inline --line_length "$width" --show_secrets --query "$queries")
+    check_format "$formatted" --multiquery --semicolons_inline --line_length "$width" --show_secrets --query "$formatted"
+    check_format "$original" --multiquery --semicolons_inline --oneline --show_secrets --query "$formatted"
+done
 
 for width in 1 2 4 13 16 40; do
     query='SELECT array(), [], map(), tuple(), tuple(1), array(array(), [1]), [-1, -2, -3], array(-1, -2, -3), f(g(123456), x)'

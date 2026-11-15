@@ -52,13 +52,13 @@ struct FlatWidth
 
     void append(std::string_view text)
     {
-        multiline |= text.find('\n') != std::string_view::npos;
+        multiline |= text.contains('\n');
         if (multiline)
             return;
 
         FlatWidth width;
         width.columns.fill(displayWidth(text));
-        if (text.find('\t') != std::string_view::npos)
+        if (text.contains('\t'))
             for (size_t prefix = 1; prefix < columns.size(); ++prefix)
                 width.columns[prefix] = displayWidth(text, prefix);
         append(width);

@@ -524,7 +524,7 @@ static void formatSecretArgumentReplacement(
         if (separator.type == TokenType::Whitespace && separator.end == separator.begin + 1 && *separator.begin == ' '
             && equals.type == TokenType::Equals && key.begin == replacement.data())
         {
-            ostr.write(replacement.data(), key.end - replacement.data());
+            ostr << replacement.substr(0, key.end - replacement.data());
             writeASTFormattingBreak(ostr, state, 4 * (frame.indent + 1));
             ostr.write(equals.begin, replacement.data() + replacement.size() - equals.begin);
             return;
