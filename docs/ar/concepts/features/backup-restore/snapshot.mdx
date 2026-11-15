@@ -11,11 +11,9 @@ keywords: ['لقطة', 'نسخ احتياطي', 'استعادة', 'SharedMergeTr
 
 تنطبق الآلية الخفيفة على جداول [SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree) وSharedSet وSharedJoin. أما جميع أنواع المحركات الأخرى — مثل Log أو Memory — فيعود النسخ الاحتياطي تلقائيًا إلى نسخ احتياطي قياسي قائم على النسخ.
 
-<div id="create-a-snapshot">
-  ## إنشاء لقطة
-</div>
+## إنشاء لقطة {#create-a-snapshot}
 
-يستخدم النسخ الاحتياطي باللقطة الأمر القياسي [`BACKUP`](/ar/concepts/features/backup-restore/overview#syntax) مع `experimental_lightweight_snapshot = true`. ويُعدّ الإعداد `id` مطلوبًا — إذ يحدد اسم اللقطة ويُستخدم للإشارة إليها في أوامر unlock والأوبزرفابيليتي:
+يستخدم النسخ الاحتياطي باللقطة الأمر القياسي [`BACKUP`](/ar/concepts/features/backup-restore/overview#syntax) مع `experimental_lightweight_snapshot = true`. ويُعدّ الإعداد `id` مطلوبًا — إذ يحدد اسم اللقطة ويُستخدم للإشارة إليها في أوامر فكّ القفل والأوبزرفابيليتي:
 
 ```sql
 BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+أنشئ نسخة احتياطية من تعريف الجدول (DDL) دون بيانات (تتيح استعادة جدول فارغ بالمخطط الصحيح):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 يمكن استخدام الأوامر نفسها مع Azure Blob Storage:
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## الاستعادة إلى الخدمة نفسها
-</div>
+## الاستعادة إلى الخدمة نفسها {#restore-to-same-service}
 
 نظرًا لأن اللقطة تحتفظ بمراجع إلى ملفات تخزين الكائنات بدلًا من نسخ البيانات نفسها، فإن الاستعادة إلى خدمة ClickHouse جديدة أو أخرى تتطلب الوصول إلى تخزين الكائنات الأصلي. لذلك، لا تتوفر الاستعادة بين الخدمات عبر SQL — فهي متاحة فقط من خلال واجهة المستخدم. وعبر SQL، يمكنك استعادة لقطة إلى الخدمة نفسها من حاوية نسخ احتياطي خارجية باستخدام `snapshot_from_current_service = 1`. يقرأ هذا الكائنات مباشرةً عبر قرص الوجهة بدلًا من المرور عبر قارئ لقطات بعيد:
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## فكّ قفل لقطة
-</div>
+## فكّ قفل لقطة {#unlock-snapshot}
 
 تحتفظ كل لقطة بأقفال في ClickHouse Keeper تمنع حذف ملفات تخزين الكائنات المشار إليها تلقائيًا ضمن عملية تنظيف المهملات. بعد اكتمال الاستعادة — أو عندما لا تعود هناك حاجة إلى اللقطة — فكّ قفلها لتحرير تلك الأقفال.
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 بعد إلغاء القفل، يختفي الصف المقابل من `system.snapshot_locks`، كما تُزال الأجزاء التي لم تعد لقطات أخرى تشير إليها من `system.snapshot_parts`.
 
-<div id="observability">
-  ## الأوبزرفابيليتي
-</div>
+## الأوبزرفابيليتي {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 تظهر جميع عمليات اللقطات في [`system.backups`](/ar/reference/system-tables/backups) إلى جانب عمليات النسخ الاحتياطي والاستعادة العادية. استعلم منه باستخدام `id` الذي عيّنته (أو معرّف UUID الذي أعاده الأمر):
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 يعرض `system.snapshot_locks` اللقطات المعتمدة والمسجَّلة حاليًا في Keeper. عند اعتماد لقطة، تُنشأ عقدة في Keeper عند `/clickhouse/snapshot/committed/{snapshot_id}`. قبل حذف أي جزء بيانات، يتحقق الخادم مما إذا كانت لقطة معتمدة تحتفظ بقفل على ذلك الجزء. وإذا كان الأمر كذلك، يُتخطى الحذف. ويستمر القفل إلى أن تُلغي قفل اللقطة صراحةً.
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 يعرض `system.snapshot_parts` أجزاء البيانات المرتبطة حاليًا بقفل لقطة واحد على الأقل. ولكل جزء بيانات مقفَل، توجد عقدة Keeper عند `/clickhouse/snapshot/{table_uuid}/{part_name}` تتضمن حجمه المضغوط وغير المضغوط. ويقرأ هذا الجدول تلك العقد ليوضح الأجزاء المحمية حاليًا من الحذف.
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 يفيد هذا في فهم العبء التخزيني الإضافي الناتج عن الاحتفاظ بالنسخ اللحظية بعد تغيّر البيانات الأصلية أو حذفها.
 
-<div id="server-settings">
-  ## إعدادات الخادم
-</div>
+## إعدادات الخادم {#server-settings}
 
 تتحكم معلمات تهيئة الخادم التالية في سلوك اللقطات. وتُضبط في ملف تهيئة الخادم، وليس في SQL.
 

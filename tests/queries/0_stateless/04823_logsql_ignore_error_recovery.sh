@@ -14,7 +14,7 @@ cat > "$QUERIES_FILE" <<'EOF'
 SET dialect = 'clickhouse';
 CREATE TABLE logs_04823 (`_time` DateTime64(9, 'UTC'), `_msg` String) ENGINE = MergeTree ORDER BY _time;
 INSERT INTO logs_04823 VALUES ('2024-01-01', 'hello');
-SET dialect = 'logsql', allow_experimental_logsql_dialect = 1, logsql_table = 'logs_04823';
+SET dialect = 'logsql', enable_logsql_dialect = 1, logsql_table = 'logs_04823';
 !x | bogus_pipe "unterminated ; SELECT 2" ; * | stats count();
 ="a;b" | another_bogus_pipe ; * | stats count();
 * | stats count();

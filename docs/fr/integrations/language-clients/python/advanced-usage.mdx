@@ -13,14 +13,14 @@ Pour les cas d’utilisation ne nécessitant pas de transformation entre les don
 
 ### Méthode `raw_query` de `Client` {#client-rawquery-method}
 
-La méthode `Client.raw_query` permet d&#39;utiliser directement l&#39;interface de requête HTTP de ClickHouse via la connexion du client. La valeur de retour est un objet `bytes` non traité. Elle fournit un wrapper pratique avec liaison de paramètres, gestion des erreurs, réessais et gestion des paramètres via une interface minimale :
+La méthode `Client.raw_query` permet d&#39;utiliser directement l&#39;interface de requête HTTP de ClickHouse via la connexion du client. La valeur de retour est un objet `bytes` non traité. Elle fournit un wrapper pratique avec liaison de paramètres, gestion des erreurs, réessais pour les lectures éligibles et gestion des paramètres via une interface minimale. Voir [Réessais HTTP](/fr/integrations/language-clients/python/driver-api#http-retries).
 
 | Paramètre            | Type             | Par défaut  | Description                                                                                                                          |
 | -------------------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `query`              | str              | Obligatoire | Toute requête ClickHouse valide.                                                                                                     |
 | `parameters`         | dict or sequence | `None`      | Voir la [description des paramètres](/fr/integrations/language-clients/python/driver-api#parameters-argument).                          |
 | `settings`           | dict             | `None`      | Voir l’[argument Settings](/fr/integrations/language-clients/python/driver-api#settings-argument-1).                                    |
-| `fmt`                | str              | `None`      | Format de sortie ClickHouse pour les octets renvoyés. (ClickHouse utilise TSV s&#39;il n&#39;est pas spécifié)                       |
+| `fmt`                | str              | `None`      | Format de sortie ClickHouse. ClickHouse utilise TSV lorsqu&#39;aucun format n&#39;est spécifié.                                      |
 | `use_database`       | bool             | `True`      | Inclure la base de données configurée sur le client.                                                                                 |
 | `external_data`      | `ExternalData`   | `None`      | Fichier externe ou données binaires. Voir [Données externes](/fr/integrations/language-clients/python/advanced-querying#external-data). |
 | `transport_settings` | dict             | `None`      | En-têtes HTTP ajoutés à cette requête.                                                                                               |
@@ -33,7 +33,7 @@ La méthode synchrone `Client.raw_stream` a la même API que `raw_query`, mais r
 
 ### Méthode `raw_insert` de `Client` {#client-rawinsert-method}
 
-La méthode `Client.raw_insert` permet d’effectuer des insertions directes d’objets `bytes` ou de générateurs d’objets `bytes` via la connexion du client. Comme elle n’effectue aucun traitement de la charge utile d’insertion, elle est très performante. La méthode propose des options pour spécifier les settings et le format d’insertion :
+La méthode `Client.raw_insert` permet d’effectuer des insertions directes d’objets `bytes` ou de générateurs d’objets `bytes` via la connexion du client. Comme elle n’effectue aucun traitement de la charge utile d’insertion, elle est très performante. La méthode propose des options pour spécifier les settings et le format d’insertion :
 
 | Paramètre            | Type                                 | Par défaut  | Description                                                                                                            |
 | -------------------- | ------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -45,7 +45,9 @@ La méthode `Client.raw_insert` permet d’effectuer des insertions directes d�
 | `compression`        | str                                  | `None`      | Compression déjà appliquée à `insert_block`, comme `"gzip"`, `"lz4"` ou `"zstd"`.                                      |
 | `transport_settings` | dict                                 | `None`      | En-têtes HTTP ajoutés à cette requête.                                                                                 |
 
-Il incombe à l’appelant de s’assurer que `insert_block` est dans le format spécifié et utilise la méthode de compression spécifiée. ClickHouse Connect utilise ces insertions brutes pour les téléversements de fichiers et les tables PyArrow, en déléguant le parsing au serveur ClickHouse.
+Il incombe à l’appelant de s’assurer que `insert_block` est dans le format spécifié et utilise la méthode de compression spécifiée. ClickHouse Connect utilise ces insertions brutes pour les téléversements de fichiers et les tables PyArrow, en déléguant l’analyse au serveur ClickHouse.
+
+Les charges utiles sous forme de chaînes de caractères ou d’octets peuvent être renvoyées après une fermeture de la connexion côté serveur distant. Les générateurs et les fichiers ouverts, en revanche, ne peuvent pas être rejoués. Voir [Réessais d’insertion et déduplication](/fr/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Enregistrer les résultats d’une requête dans des fichiers {#saving-query-results-as-files}
 
@@ -85,7 +87,7 @@ De même, vous pouvez enregistrer les données au format [TabSeparated](/fr/refe
 
 ## Cas d&#39;utilisation multithread, multiprocessus et asynchrones/pilotés par événements {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect fonctionne bien dans les applications multithread, multiprocessus et pilotées par une boucle d&#39;événements/asynchrones. Tout le traitement des requêtes et des insertions s&#39;effectue dans un seul thread, de sorte que les opérations sont généralement thread-safe. (Le traitement parallèle de certaines opérations à bas niveau pourrait être ajouté ultérieurement pour compenser la pénalité de performances liée à l&#39;utilisation d&#39;un seul thread, mais même dans ce cas, la thread safety sera préservée.)
+ClickHouse Connect prend en charge les applications multithread, multiprocessus et asyncio. Un client HTTP synchrone peut être partagé entre plusieurs threads, à condition que les appels concurrents n&#39;utilisent pas la même session ClickHouse. Pour plus de détails, consultez la section consacrée aux sessions ci-dessous. Le client asynchrone effectue une partie de l&#39;analyse et de la préparation des insertions dans des worker threads.
 
 Comme chaque requête ou insertion exécutée conserve son état dans son propre objet `QueryContext` ou `InsertContext`, respectivement, ces objets utilitaires ne sont pas thread-safe et ne doivent pas être partagés entre plusieurs flux de traitement. Consultez également les explications supplémentaires sur les objets de contexte dans les sections [QueryContexts](/fr/integrations/language-clients/python/advanced-querying#querycontexts) et [InsertContexts](/fr/integrations/language-clients/python/advanced-inserting#insertcontexts).
 
@@ -118,7 +120,9 @@ async def main():
 asyncio.run(main())
 ```
 
-Le client asynchrone suit le même contrat de requête, d’insertion, raw, Arrow et de streaming que le client synchrone. Il utilise aiohttp pour les E/S réseau. Le parsing du format Native, gourmand en CPU, peut s’exécuter dans un executor afin de ne pas bloquer la boucle d’événements.
+Le client asynchrone suit le même contrat de requête, d’insertion, raw, Arrow et de streaming que le client synchrone. Il utilise aiohttp pour les E/S réseau. L’analyse du format Native, gourmande en CPU, peut s’exécuter dans un executor afin de ne pas bloquer la boucle d’événements.
+
+`insert_arrow` et `insert_df_arrow` effectuent la conversion du DataFrame et l’encodage Arrow dans un worker dédié propre à chaque client, distinct des lecteurs des requêtes en streaming. Chaque client n’exécute qu’une seule opération de préparation à la fois afin de limiter la consommation de mémoire temporaire. Fermez le client avec `async with` ou `await client.close()` une fois vos opérations terminées. Les opérations PyArrow qui détiennent le verrou global de l’interpréteur Python peuvent malgré tout suspendre les autres coroutines.
 
 Un client asynchrone possède une session aiohttp créée dans une boucle d’événements donnée. Avant de déplacer le client vers une autre boucle d’événements, fermez-le dans la boucle à laquelle il appartient, puis appelez `await client._initialize()` dans la nouvelle boucle avant d’envoyer des requêtes. Si cette boucle d’origine est déjà fermée, appelez `await client.close()` puis `await client._initialize()` dans la boucle courante. aiohttp peut encore signaler un transport non fermé si le nettoyage ne commence qu’après la fermeture de la boucle d’origine ; dans la mesure du possible, fermez donc le client avant de le transférer.
 

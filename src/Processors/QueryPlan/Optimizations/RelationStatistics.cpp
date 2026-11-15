@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
@@ -39,14 +40,14 @@ void updateJoinKeyDistinctCounts(
         right_stats.num_distinct_values = minimum;
 }
 
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
     /// `ActionsDAG` when there is nothing to remap.
     if (mapped.empty())
         return;
 
-    std::unordered_map<String, ColumnStats> original;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> original;
     original.swap(mapped);
 
     const auto lineage = traceActionsDAGLineage(actions);
@@ -80,6 +81,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
+}
+
+UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
 }
 
 }

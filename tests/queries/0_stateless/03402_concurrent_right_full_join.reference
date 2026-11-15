@@ -32,7 +32,7 @@ Positions: 4 0 1
         Join (JOIN FillRightFirst)
         Type: RIGHT
         Strictness: ALL
-        Algorithm: ConcurrentHashJoin
+        Algorithm: HashJoin
         Clauses: [(__table1.id) = (__table2.id)]
           Expression (Left Pre Join Actions)
           Actions: INPUT : 0 -> __table1.id UInt32 : 0

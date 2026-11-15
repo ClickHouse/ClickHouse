@@ -5,7 +5,6 @@
 -- the unmerged parts (k came back as k * number_of_parts). The optimization must still be
 -- applied, only the key must be preserved.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;

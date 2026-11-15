@@ -13,7 +13,7 @@ doc_type: 'reference'
 クエリできます。これにより、ClickHouse は既存の
 データレイクインフラストラクチャとシームレスに連携する強力なクエリエンジンとなります。
 
-## サポートされるカタログ
+## サポートされるカタログ {#supported-catalogs}
 
 `DataLakeCatalog` エンジンは、以下のデータカタログに対応しています。
 
@@ -22,7 +22,7 @@ doc_type: 'reference'
 * **Hive Metastore** - 従来の Hadoop エコシステムで使われるカタログ
 * **REST Catalogs** - Iceberg REST 仕様をサポートする任意のカタログ
 
-## データベースの作成
+## データベースの作成 {#creating-a-database}
 
 `DataLakeCatalog` エンジンを使用するには、以下の関連設定を有効にする必要があります。
 
@@ -48,9 +48,10 @@ catalog_type,
 
 | 設定                      | 説明                                                                                                                                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog_type`          | カタログのタイプ: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, フラットなネームスペース), `horizon` (Snowflake Horizon Iceberg REST)                                                                                |
+| `catalog_type`          | カタログのタイプ: `glue`, `unity` (Delta、または `use_unity_catalog_v2` を使用する場合は Delta と Iceberg), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, フラットなネームスペース), `horizon` (Snowflake Horizon Iceberg REST)                            |
 | `warehouse`             | カタログで使用する warehouse/データベース名。                                                                                                                                                                                                                         |
 | `catalog_credential`    | カタログの認証情報 (例: API key またはトークン)                                                                                                                                                                                                                       |
+| `use_unity_catalog_v2`  | `catalog_type = 'unity'` の場合: Delta Lake と Iceberg テーブルの両方に対応する新しい実装を使用します。既定値: `false`。`CREATE` 時に設定するか、既存のデータベースでは `ALTER DATABASE ... MODIFY SETTING` で変更します。                                                                                     |
 | `auth_header`           | カタログサービスで認証を行うためのカスタム HTTP header                                                                                                                                                                                                                    |
 | `auth_scope`            | 認証用の OAuth2 スコープ (OAuth を使用する場合)                                                                                                                                                                                                                     |
 | `storage_endpoint`      | 基盤となるストレージのエンドポイント URL                                                                                                                                                                                                                               |
@@ -66,11 +67,29 @@ catalog_type,
 | `dlf_access_key_secret` | DLF へのアクセスに使用する access key secret                                                                                                                                                                                                                    |
 | `force_add_bucket`      | カタログから提供される table location と `storage_endpoint` からオブジェクトストレージの URL を構築する際、エンドポイントにすでに bucket/コンテナー 名が含まれている場合でも、その名前を先頭に追加します。既定値: `false`。bucket を含まないパスを返し、URL 構築時にそれを追加する必要があるカタログ (Polaris 形式のパス) では `true` に設定してください。                           |
 
-## 例
+## 例 {#examples}
 
 `DataLakeCatalog` エンジン の使用例については、以下のセクションを参照してください。
 
 * [Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog)
+* Delta Lake と Iceberg テーブルを使用する Unity Catalog
+  `use_unity_catalog_v2 = 1` を設定すると、`unity` カタログで Delta Lake と Iceberg テーブルの両方を扱い、
+  各テーブルのフォーマットを自動的に判別します。
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity',
+    use_unity_catalog_v2 = 1,
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+
+`catalog_credential` には、OAuth サービスプリンシパルを `<client_id>:<client_secret>` の形式で指定するか、個人用アクセストークン (`dapi...`)、または事前に取得した OAuth トークンを指定できます。
+
 * [Glue カタログ](/ja/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
   `allow_database_iceberg` を有効にすると使用できます。

@@ -1,25 +1,26 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandlerFactory.h>
 
+#include <Common/Exception.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/IServer.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogHandler.h>
-#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
-#include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
-#include <Common/escapeForFileName.h>
-
-#include <filesystem>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
-IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_iceberg_rest_catalog;
+}
+
+IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_)
     : log(getLogger(name))
     , server(server_)
     , warehouses(std::move(warehouses_))
@@ -32,51 +33,15 @@ std::unique_ptr<HTTPRequestHandler> IcebergRESTCatalogHandlerFactory::createRequ
     return std::make_unique<IcebergRESTCatalogHandler>(server, warehouses);
 }
 
-HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config)
+HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server)
 {
-    auto get_required = [&](const char * key)
-    {
-        auto value = config.getString(fmt::format("iceberg_rest_catalog.{}", key), "");
-        if (value.empty())
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "'iceberg_rest_catalog.{}' is not set", key);
-        return value;
-    };
-    const auto warehouse = get_required("warehouse");
-    auto base_location = get_required("base_location");
-    const auto zookeeper_path_with_name = config.getString("iceberg_rest_catalog.zookeeper_path", "/clickhouse/iceberg_rest_catalog");
-
-    /// The path may select an auxiliary Keeper with a `name:/path` prefix, like other Keeper path settings.
-    const auto zookeeper_name = zkutil::extractZooKeeperName(zookeeper_path_with_name);
-    const auto zookeeper_path = zkutil::extractZooKeeperPath(zookeeper_path_with_name, /*check_starts_with_slash*/ true);
-
-    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
-    {
-        if (!server.context()->hasZooKeeper())
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "The catalog state is stored in Keeper, but no <zookeeper> section is configured");
-    }
-    else if (!server.context()->hasAuxiliaryZooKeeper(zookeeper_name))
-    {
+    if (!server.context()->getServerSettings()[ServerSetting::enable_iceberg_rest_catalog])
         throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "The catalog state is stored in auxiliary Keeper '{}', but it is not configured in <auxiliary_zookeepers>",
-            zookeeper_name);
-    }
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The Iceberg REST catalog server is experimental. Enable the server setting `enable_iceberg_rest_catalog` to use it");
 
-    auto root_path = std::filesystem::path(zookeeper_path) / escapeForFileName(warehouse);
-    auto store = std::make_shared<KeeperIcebergRESTCatalogStore>(
-        [context = server.context(), zookeeper_name] { return context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name); },
-        root_path.string());
-
-    IcebergRESTCatalogWarehouses::Map warehouses;
-    warehouses.emplace(
-        warehouse,
-        std::make_shared<const IcebergRESTCatalogWarehouse>(IcebergRESTCatalogWarehouse{
-            .name = warehouse,
-            .base_location = std::move(base_location),
-            .store = std::move(store),
-        }));
-    return std::make_shared<IcebergRESTCatalogHandlerFactory>(
-        server, std::make_shared<const IcebergRESTCatalogWarehouses>(std::move(warehouses)));
+    auto warehouses = std::make_shared<const IcebergRESTCatalogWarehouseRegistry>(server.context());
+    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouses));
 }
 
 }

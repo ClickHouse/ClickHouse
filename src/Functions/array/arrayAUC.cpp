@@ -15,6 +15,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -139,6 +140,37 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    /// `arrayROCAUC(scores, labels[, scale[, offsets]])`           — 2..4 args
+    /// `arrayAUCPR(scores, labels[, offsets])`                     — 2..3 args
+    /// `scores` and `labels` must be Array of numeric (labels can also be Enum).
+    /// Optional `scale` is a const Bool (only for ROC); optional `offsets` is
+    /// an Array of integers. Result is `Float64`.
+    String getSignatureString() const override
+    {
+        if (is_pr)
+            return "(Array, Array, [Array]) -> Float64";
+        /// `[const Bool, [Array]]` cannot be expressed as a nested Optional group (the
+        /// signature grammar does not allow groups inside `[...]`), so spell the legal
+        /// arities as explicit alternatives instead. `offsets` is only valid together
+        /// with `scale`, matching `getReturnTypeImpl` below.
+        return "(Array, Array) -> Float64"
+               " OR (Array, Array, const Bool) -> Float64"
+               " OR (Array, Array, const Bool, Array) -> Float64";
+    }
+
+    /// The signature above does not spell the element types of the arrays, and the `scale`
+    /// argument must be a constant, which cannot be checked from the types alone. Decline this
+    /// entry point (as it behaved before the signature was added) instead of letting it accept
+    /// shapes the authoritative resolver below rejects.
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "getReturnType is not implemented for {}: the constness of the arguments can only be validated "
+            "when the columns are known",
+            getName());
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

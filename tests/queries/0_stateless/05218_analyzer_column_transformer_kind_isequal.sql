@@ -1,8 +1,6 @@
 -- Two `*` matchers whose column transformers differ in kind at the same position must report the
 -- alias conflict rather than fail an internal type assertion.
 
-SET enable_analyzer = 1;
-
 -- All six ordered kind pairs reach IQueryTreeNode::isEqual through the duplicate-alias check.
 WITH x -> * APPLY toString AS lambda, x -> * EXCEPT (a) AS lambda SELECT lambda(1); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH x -> * EXCEPT (a) AS lambda, x -> * APPLY toString AS lambda SELECT lambda(1); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }

@@ -1,0 +1,64 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "0eb73468-144c-44fb-911c-8cee8bf441aa",
+  "location" : "s3://trino-ci-test/databricks-unity/af968baf-af29-4111-8bd7-4a67d3a3a39f/tables/867ed8f6-384c-42b7-a589-76551ed2dea1",
+  "last-updated-ms" : 1717737525809,
+  "last-column-id" : 2,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "a",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "b",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "a",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "b",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"a\" ]\n}, {\n  \"field-id\" : 2,\n  \"names\" : [ \"b\" ]\n} ]",
+    "delta-timestamp" : "1717737495000",
+    "delta-version" : "0"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1717737524993,
+    "metadata-file" : "s3://trino-ci-test/databricks-unity/af968baf-af29-4111-8bd7-4a67d3a3a39f/tables/867ed8f6-384c-42b7-a589-76551ed2dea1/metadata/00000-a6f70674-5338-4b57-b07e-cd4b3253fa44.metadata.json"
+  } ]
+}
