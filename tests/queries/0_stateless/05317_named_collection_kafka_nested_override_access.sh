@@ -15,6 +15,9 @@ nc_topic="${nc}_topic"
 nc_topic_locked="${nc}_topic_locked"
 nc_alias="${nc}_alias"
 nc_dot_locked="${nc}_dot_locked"
+nc_broker="${nc}_broker"
+nc_broker_locked="${nc}_broker_locked"
+nc_prefix_locked="${nc}_prefix_locked"
 user="${nc}_user"
 table="${nc}_table"
 
@@ -29,6 +32,9 @@ function cleanup()
         DROP NAMED COLLECTION IF EXISTS ${nc_topic_locked};
         DROP NAMED COLLECTION IF EXISTS ${nc_alias};
         DROP NAMED COLLECTION IF EXISTS ${nc_dot_locked};
+        DROP NAMED COLLECTION IF EXISTS ${nc_broker};
+        DROP NAMED COLLECTION IF EXISTS ${nc_broker_locked};
+        DROP NAMED COLLECTION IF EXISTS ${nc_prefix_locked};
     "
 }
 trap cleanup EXIT
@@ -67,6 +73,15 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE NAMED COLLECTION ${nc_dot_locked} AS
         kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'sports.football', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
         \`kafka.kafka_sports.football.security_protocol\` = 'SASL_SSL' NOT OVERRIDABLE;
+    CREATE NAMED COLLECTION ${nc_broker} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        kafka_sasl_username = 'user', kafka_sasl_password = 'password';
+    CREATE NAMED COLLECTION ${nc_broker_locked} AS
+        kafka_broker_list = '127.0.0.1:2' NOT OVERRIDABLE, kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        kafka_sasl_username = 'user', kafka_sasl_password = 'password';
+    CREATE NAMED COLLECTION ${nc_prefix_locked} AS
+        kafka_broker_list = '127.0.0.1:2', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow',
+        \`kafka.producer.topic.compression_level\` = '9' NOT OVERRIDABLE;
 "
 
 function expect_error()
@@ -94,6 +109,10 @@ expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_alias}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
 expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_alias}) SETTINGS kafka_compression_codec = 'gzip'"
 
+# A nested key cannot replace a stored flat setting either.
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker}, \`kafka.metadata_broker_list\` = '127.0.0.1:3')"
+expect_error ACCESS_DENIED "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker}, \`kafka.consumer.bootstrap_servers\` = '127.0.0.1:3')"
+
 # A flattened setting without a stored nested equivalent is an addition.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc}) SETTINGS kafka_sasl_mechanism = 'PLAIN'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
@@ -113,3 +132,9 @@ expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(
 # The legacy section of a topic with a dot in its name.
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_dot_locked} TO $user"
 expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_dot_locked}) SETTINGS kafka_security_protocol = 'PLAINTEXT'"
+# A locked flat setting and a nested key.
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_broker_locked} TO $user"
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_broker_locked}, \`kafka.metadata_broker_list\` = '127.0.0.1:3')"
+# The `topic.` prefix of a topic property.
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW NAMED COLLECTIONS SECRETS ON ${nc_prefix_locked} TO $user"
+expect_error BAD_ARGUMENTS "CREATE TABLE ${table} (value String) ENGINE = Kafka(${nc_prefix_locked}) SETTINGS kafka_compression_level = 1"

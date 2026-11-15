@@ -107,8 +107,8 @@ namespace
 
     /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.
     /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`,
-    /// `kafka.producer.<property>` and their per-topic sections, with `_` converted to `.`), and the non-empty flat settings
-    /// overwrite them afterwards.
+    /// `kafka.producer.<property>` and their per-topic sections, with `_` converted to `.`), and the flat settings replace
+    /// them or are replaced by them.
     struct KafkaProperty
     {
         String name;
@@ -118,6 +118,9 @@ namespace
     std::optional<KafkaProperty> getKafkaProperty(std::string_view key)
     {
         static constexpr auto flat_settings = std::to_array<std::pair<std::string_view, std::string_view>>({
+            {"kafka_broker_list", "metadata.broker.list"},
+            {"kafka_group_name", "group.id"},
+            {"kafka_client_id", "client.id"},
             {"kafka_security_protocol", "security.protocol"},
             {"kafka_sasl_mechanism", "sasl.mechanism"},
             {"kafka_sasl_username", "sasl.username"},
@@ -147,8 +150,12 @@ namespace
             /// `log_level` is the only librdkafka property with an underscore.
             if (property.name != "log_level")
                 std::ranges::replace(property.name, '_', '.');
+            /// librdkafka strips the `topic.` prefix of topic properties.
+            if (property.name.starts_with("topic."))
+                property.name = property.name.substr(std::string_view("topic.").size());
             /// librdkafka aliases of the properties set by the flat settings.
             static constexpr auto aliases = std::to_array<std::pair<std::string_view, std::string_view>>({
+                {"bootstrap.servers", "metadata.broker.list"},
                 {"sasl.mechanisms", "sasl.mechanism"},
                 {"compression.type", "compression.codec"},
             });
