@@ -27,13 +27,17 @@ public:
     StaticStatelessWorkersProvider(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
     ~StaticStatelessWorkersProvider() override = default;
 
-    /// Returns a per-query allocation over the workers snapshotted at construction.
+    /// Returns a per-query allocation of `desired_workers` hosts picked at random from the snapshot
+    /// taken at construction, or every host when `desired_workers` is zero. Throws when `desired_workers`
+    /// exceeds the snapshot.
     StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) override;
 
     std::vector<StatelessWorkerState> getWorkersState() const override;
 
-    /// A static cluster serves its fixed snapshot regardless of the request, so plan for that many.
-    size_t getPlanningNodeCount(size_t /*requested_workers*/) const override { return addresses.size(); }
+    /// Plans for `requested_workers` hosts, or every host when `requested_workers` is zero, so planning
+    /// agrees with what `allocate` hands out for the same query. Throws when `requested_workers` exceeds
+    /// the snapshot.
+    size_t getPlanningNodeCount(size_t requested_workers) const override;
 
     std::string getAuthToken() const override { return {}; }
 
