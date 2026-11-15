@@ -49,6 +49,8 @@ public:
         StaticString component,
         bool is_subrequest = false);
 
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
+
 private:
     struct EntryKey
     {

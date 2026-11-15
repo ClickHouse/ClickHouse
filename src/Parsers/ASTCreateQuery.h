@@ -73,6 +73,7 @@ class ASTColumns : public IAST
 {
 public:
     ASTExpressionList * columns = nullptr;
+    ASTExpressionList * codec_declarations = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
@@ -87,13 +88,15 @@ public:
 
     bool empty() const
     {
-        return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
+        return (!columns || columns->children.empty()) && (!codec_declarations || codec_declarations->children.empty())
+            && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
     }
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
         f(reinterpret_cast<IAST **>(&columns), nullptr);
+        f(reinterpret_cast<IAST **>(&codec_declarations), nullptr);
         f(reinterpret_cast<IAST **>(&indices), nullptr);
         f(&primary_key, nullptr);
         f(reinterpret_cast<IAST **>(&constraints), nullptr);

@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 -- Under parallel replicas the reads are remote and the pass bails
 SET enable_parallel_replicas = 0;
 -- Pinned because the test asserts the runtime filter is built; the default threshold skips it

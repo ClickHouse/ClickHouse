@@ -3,7 +3,7 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-SET enable_analyzer = 1, query_plan_join_swap_table = 0, join_algorithm = 'auto';
+SET query_plan_join_swap_table = 0, join_algorithm = 'auto';
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 CREATE TABLE t1 (k UInt32, v UInt32) ENGINE MergeTree ORDER BY (k, v);

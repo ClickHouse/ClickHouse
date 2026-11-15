@@ -17,9 +17,21 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
   Scale ティアと Enterprise ティアは、単一レプリカと複数レプリカの両方のサービスをサポートしています。単一レプリカの Scale サービスおよび標準の `1:4` プロファイルを持つ Enterprise サービスでは、セルフサービスで垂直オートスケーリングを行えます。カスタムプロファイルを持つ Enterprise サービスでは、サポートによる垂直リサイズが必要です。Scale サービスと Enterprise サービスは、複数のレプリカに水平スケーリングできます。Basic ティアのサービスは単一レプリカでサイズが固定されており、垂直スケーリングおよび水平スケーリングはできません。詳細については、[大規模な単一レプリカサービス](/ja/products/cloud/features/large-single-replica-services) を参照してください。
 </Note>
 
-<div id="how-scaling-works-in-clickhouse-cloud">
-  ## ClickHouse Cloud におけるスケーリングの仕組み
-</div>
+## コンピュートオプションの選択 {#choosing-a-compute-option}
+
+既存のサービスの容量を変更したいのか、専用のコンピュート上でワークロードを分離したいのか、対象となるクエリに一時的にコンピュートを追加したいのかに応じて、オプションを選択してください。
+
+| オプション                                                                          | 内容                                                                                         | 利用シーン                                                     |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| 既存のサービスのスケーリング                                                             | 垂直スケーリングではCPUとメモリを変更します。水平スケーリングでは、手動で、またはサポートされている場合は自動でレプリカ数を変更します。 | ワークロードの需要変化に応じて、既存のサービスをscale upまたはscale downさせたい場合。 |
+| [Warehouses](/ja/products/cloud/features/infrastructure/warehouses)               | 同一のデータを共有しながら、専用のコンピュートとendpointを持つ別個のサービスを作成します。                                       | 異なるワークロードごとに、長期的なコンピュートの分離が必要な場合。                       |
+| [On-Demand Compute](/ja/products/cloud/features/infrastructure/on-demand-compute) | 既存のサービスおよびendpointを介して、managed poolからworkerを一時的に割り当てます。                                 | 対象となる`SELECT`クエリに対して、サービスのサイズを変更せずに追加のコンピュートが必要な場合。    |
+
+<Note>
+  スケーリングのサポート状況は、サービス tierおよびプロファイルによって異なります。[水平オートスケーリング](/ja/products/cloud/features/autoscaling/horizontal-autoscaling)はプライベートプレビュー中です。On-Demand Computeもプライベートプレビュー中であり、対象となる`SELECT`クエリのみをサポートします。
+</Note>
+
+## ClickHouse Cloud におけるスケーリングの仕組み {#how-scaling-works-in-clickhouse-cloud}
 
 ClickHouse Cloud では、Scale および Enterprise ティア サービスで手動の水平スケーリングをサポートしています。Scale ティア サービスでは垂直オートスケーリングもサポートしています。Enterprise ティアの垂直オートスケーリングのサポートは、以下で説明するようにプロファイルによって異なります。[水平オートスケーリング](/ja/products/cloud/features/autoscaling/horizontal-autoscaling) は、Scale および Enterprise ティア サービス向けにプライベートプレビューで利用できます。
 
@@ -39,9 +51,7 @@ Enterprise ティア サービスのスケーリングは、次のとおりで�
   これにより、既存のクエリを完了させる必要性と、古いレプリカが長く残りすぎないようにする必要性のバランスを取っています。
 </Note>
 
-<div id="learn-more">
-  ## 詳細はこちら
-</div>
+## 詳細はこちら {#learn-more}
 
 * [垂直オートスケーリング](/ja/products/cloud/features/autoscaling/vertical) — 使用状況に応じた CPU とメモリの自動スケーリング
 * [水平オートスケーリング](/ja/products/cloud/features/autoscaling/horizontal-autoscaling) — ワークロードの需要に基づくレプリカの自動スケーリング

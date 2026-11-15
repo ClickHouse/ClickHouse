@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Verify that Date columns are output as Arrow date32 type, not uint16.
 # https://github.com/ClickHouse/ClickHouse/issues/96834

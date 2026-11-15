@@ -53,10 +53,12 @@
         "products/bring-your-own-cloud/reference/faq",
         {
           "group": "Connector Mode",
+          "hidden": true,
           "tag": "Preview",
           "pages": [
             "products/bring-your-own-cloud/connector/overview",
             "products/bring-your-own-cloud/connector/onboarding",
+            "products/bring-your-own-cloud/connector/terraform-aws",
             "products/bring-your-own-cloud/connector/architecture",
             "products/bring-your-own-cloud/connector/managed-services",
             "products/bring-your-own-cloud/connector/platform-updates",

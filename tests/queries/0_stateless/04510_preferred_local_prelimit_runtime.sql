@@ -46,7 +46,6 @@ FROM numbers(20000);
 -- Distributed path. 30 qualifying rows per shard
 -- across two shards => exact count 60. Must hold with prefer_localhost_replica
 -- both off and on.
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
@@ -68,7 +67,6 @@ SELECT '' FROM preferred_local_prelimit_rt
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3
 FORMAT Template
 SETTINGS
-    enable_analyzer = 1,
     prefer_localhost_replica = 1,
     allow_experimental_parallel_reading_from_replicas = 0,
     automatic_parallel_replicas_mode = 0,

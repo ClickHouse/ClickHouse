@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <algorithm>
 
 
@@ -19,7 +20,7 @@ ASTPtr transformGroupASTForAggregationOperator(
     {
         /// No grouping labels: aggregate all series into one with no tags (group 0).
         metric_name_dropped = true;
-        return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
+        return timeSeriesNoTagsGroupToAST();
     }
 
     if (operator_node->by)
