@@ -6,6 +6,7 @@ macro(configure_bash_completion)
             COMMAND ${PKG_CONFIG_BIN} --variable=completionsdir bash-completion
             OUTPUT_VARIABLE ${out}
             OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY
         )
     endif()
     string(REPLACE /usr "${CMAKE_INSTALL_PREFIX}" out "${out}")

@@ -1,0 +1,18 @@
+Check JSONCompactEachRowWithProgress
+{"meta":[{"name":"value","type":"UInt8"},{"name":"name","type":"String"},{"name":"arr","type":"Array(UInt64)"}]}
+{"row":[1, "a", []]}
+{"row":[2, "b", [123]]}
+{"row":[3, "c", [456,789]]}
+Check JSONCompactStringsEachRowWithProgress
+{"meta":[{"name":"value","type":"UInt8"},{"name":"name","type":"String"},{"name":"arr","type":"Array(UInt64)"}]}
+{"row":["1", "a", "[]"]}
+{"row":["2", "b", "[123]"]}
+{"row":["3", "c", "[456,789]"]}
+Check totals
+{"meta":[{"name":"name","type":"String"},{"name":"c","type":"UInt64"}]}
+{"row":["a", 1]}
+{"row":["b", 1]}
+{"row":["c", 1]}
+{"totals":["", 3]}
+Check exceptions
+{"exception":"Code: 395"}

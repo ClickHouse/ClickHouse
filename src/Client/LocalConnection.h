@@ -1,17 +1,19 @@
 #pragma once
 
-#include "Connection.h"
-#include <Interpreters/Context.h>
+#include <Client/Connection.h>
+#include <Core/Field.h>
+#include <Core/SettingsEnums.h>
+#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
-#include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/ColumnsDescription.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
 {
+class ColumnsDescription;
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
@@ -27,6 +29,32 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    /// The dialect/gate the query text was sent in: the `input()` initializer reparses `query` and must
+    /// use the dialect the outbound text was pinned to (see `ClientBase::pinOutboundDialect`),
+    /// not the live session ones - a JSON `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'`
+    /// (or `... enable_json_ast_dialect = 0`) would otherwise be reparsed with the changed settings and fail.
+    Dialect parsed_dialect = Dialect::clickhouse;
+    bool enable_json_ast_dialect = false;
+    /// Parser limits and parser flags captured when the query was received, before any query-local
+    /// `SETTINGS` from the query itself are applied. The `input()` initializer must reparse with the
+    /// settings that accepted the original query, not its query-local mutations.
+    UInt64 max_query_size = 0;
+    UInt64 max_parser_depth = 0;
+    UInt64 max_parser_backtracks = 0;
+    bool allow_settings_after_format_in_insert = false;
+    bool implicit_select = false;
+    bool enable_trino_dialect = false;
+    String promql_database;
+    String promql_table;
+    Field promql_evaluation_time;
+    String logsql_database;
+    String logsql_table;
+    String logsql_time_column;
+    String logsql_message_column;
+    bool enable_logsql_dialect = false;
+    /// AST-size limits used only by the JSON dialect.
+    UInt64 json_ast_max_depth = 0;
+    UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
@@ -38,16 +66,17 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
 
     InternalProfileEventsQueuePtr profile_queue;
+    InternalTextLogsQueuePtr logs_queue;
 
     std::unique_ptr<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
-    std::optional<ColumnsDescription> columns_description;
+    std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
-    /// Is request cancelled
-    bool is_cancelled = false;
+    /// Is request cancelled. Atomic: the interactive cancel callback may set it on a pipeline thread.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;
@@ -62,7 +91,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
+    QueryScope query_scope_holder;
 };
 
 
@@ -76,6 +105,13 @@ public:
         bool send_profile_events_,
         const String & server_display_name_);
 
+    explicit LocalConnection(
+        std::unique_ptr<Session> && session_,
+        ReadBuffer * in_,
+        bool send_progress_ = false,
+        bool send_profile_events_ = false,
+        const String & server_display_name_ = "");
+
     ~LocalConnection() override;
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
@@ -88,7 +124,17 @@ public:
         bool send_profile_events = false,
         const String & server_display_name = "");
 
+    static ServerConnectionPtr createConnection(
+        const ConnectionParameters & connection_parameters,
+        std::unique_ptr<Session> && session,
+        ReadBuffer * in_,
+        bool send_progress = false,
+        bool send_profile_events = false,
+        const String & server_display_name = "");
+
     void setDefaultDatabase(const String & database) override;
+
+    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
@@ -114,15 +160,24 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
+
+    void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
+    bool isSendDataNeeded() const override;
+
     void sendExternalTablesData(ExternalTablesData &) override;
 
+    void sendScalarsData(Scalars & data) override;
+
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -131,12 +186,15 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 
     bool isConnected() const override { return true; }
 
     bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
+
+    bool checkConnectedWithoutRoundTrip() override { return true; }
 
     void disconnect() override {}
 
@@ -154,14 +212,23 @@ private:
     /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
 
+    /// Store the in-flight exception in `state->exception` (preserving its type and message)
+    /// so that it is delivered to the client as a `Protocol::Server::Exception` packet.
+    /// Must be called from within a catch block.
+    void captureCurrentException();
+
     bool needSendProgressOrMetrics();
+    bool needSendLogs();
 
     ContextMutablePtr query_context;
-    Session session;
+    std::unique_ptr<Session> session;
 
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
+    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
+    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
+    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;

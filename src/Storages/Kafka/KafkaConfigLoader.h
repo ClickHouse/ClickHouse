@@ -3,8 +3,10 @@
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Logger.h>
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
 namespace DB
 {
@@ -27,6 +29,7 @@ struct KafkaConfigLoader
         String & collection_name;
         const Names & topics;
         LoggerPtr & log;
+        ContextPtr context;
     };
 
     struct ConsumerConfigParams : public LoadConfigParams
@@ -46,7 +49,7 @@ struct KafkaConfigLoader
     };
 
     template <typename TKafkaStorage>
-    static cppkafka::Configuration getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params);
+    static cppkafka::Configuration getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkPtr());
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);

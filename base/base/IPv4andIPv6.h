@@ -1,8 +1,9 @@
 #pragma once
 
+#include <base/bigEndianCompare.h>
 #include <base/extended_types.h>
 #include <base/strong_typedef.h>
-#include <Common/memcmpSmall.h>
+
 
 namespace DB
 {
@@ -19,32 +20,10 @@ namespace DB
         using StrongTypedef::StrongTypedef;
         using StrongTypedef::operator=;
 
-        bool operator<(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) < 0;
-        }
-
-        bool operator>(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) > 0;
-        }
-
-        bool operator==(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) == 0;
-        }
+        /// Ordered by the network byte representation, not by the little-endian UInt128 value.
+        bool operator<(const IPv6 & rhs) const { return lessBigEndian16(&toUnderType(), &rhs.toUnderType()); }
+        bool operator>(const IPv6 & rhs) const { return lessBigEndian16(&rhs.toUnderType(), &toUnderType()); }
+        bool operator==(const IPv6 & rhs) const { return toUnderType() == rhs.toUnderType(); }
 
         bool operator<=(const IPv6 & rhs) const { return !operator>(rhs); }
         bool operator>=(const IPv6 & rhs) const { return !operator<(rhs); }

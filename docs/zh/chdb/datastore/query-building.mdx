@@ -1,0 +1,629 @@
+---
+title: 'DataStore 查询构建'
+sidebarTitle: '查询构建'
+slug: /chdb/datastore/query-building
+description: '使用 DataStore 通过流畅的方法链式调用构建 SQL 风格的查询'
+keywords: ['chdb', 'datastore', '查询', 'select', '过滤器', 'where', 'join', 'groupby']
+doc_type: 'reference'
+---
+
+DataStore 提供 SQL 风格的查询构建方法，可编译为优化后的 SQL 查询。所有操作都会延迟执行，直到需要结果时才会真正运行。
+
+<div id="overview">
+  ## 查询方法概览
+</div>
+
+| 方法                 | SQL 对应项         | 说明           |
+| ------------------ | --------------- | ------------ |
+| `select(*cols)`    | `SELECT cols`   | 选择列          |
+| `filter(cond)`     | `WHERE cond`    | 使用过滤器筛选行     |
+| `where(cond)`      | `WHERE cond`    | `filter` 的别名 |
+| `sort(*cols)`      | `ORDER BY cols` | 对行排序         |
+| `orderby(*cols)`   | `ORDER BY cols` | `sort` 的别名   |
+| `limit(n)`         | `LIMIT n`       | 限制行数         |
+| `offset(n)`        | `OFFSET n`      | 跳过若干行        |
+| `distinct()`       | `DISTINCT`      | 去重           |
+| `groupby(*cols)`   | `GROUP BY cols` | 对行分组         |
+| `having(cond)`     | `HAVING cond`   | 过滤分组         |
+| `join(right, ...)` | `JOIN`          | 连接 DataStore |
+| `union(other)`     | `UNION`         | 合并结果         |
+
+***
+
+<div id="selection">
+  ## 选区
+</div>
+
+<div id="select">
+  ### `select`
+</div>
+
+从 DataStore 中选择指定列。
+
+```python
+select(*fields: Union[str, Expression]) -> DataStore
+```
+
+**示例：**
+
+```python
+from chdb.datastore import DataStore
+from pathlib import Path
+Path("employees.csv").write_text("""\
+name,age,city,salary,department,dept_id,status,email,manager_id,bonus
+Alice,28,NYC,75000,Engineering,1,active,alice@company.com,3,5000
+Bob,35,LA,85000,Engineering,1,active,bob@company.com,3,
+Charlie,52,NYC,95000,Product,2,active,charlie@company.com,,10000
+Diana,32,SF,70000,Design,3,active,diana@company.com,3,3000
+Eve,23,LA,48000,Product,2,inactive,eve@company.com,2,
+""")
+
+ds = DataStore.from_file("employees.csv")
+
+# 按列名选择
+result = ds.select('name', 'age', 'salary')
+
+# 选择所有列
+result = ds.select('*')
+
+# 使用表达式选择
+result = ds.select(
+    'name',
+    (ds['salary'] * 12).as_('annual_salary'),
+    ds['age'].as_('employee_age')
+)
+
+# 等效的 pandas 风格
+result = ds[['name', 'age', 'salary']]
+```
+
+***
+
+<div id="filtering">
+  ## 过滤器
+</div>
+
+<div id="filter">
+  ### `filter` / `where`
+</div>
+
+根据条件使用过滤器筛选行。两种方法等价。
+
+```python
+filter(condition) -> DataStore
+where(condition) -> DataStore  # 别名
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 单一条件
+result = ds.filter(ds['age'] > 30)
+result = ds.where(ds['salary'] >= 50000)
+
+# 多个条件（与）
+result = ds.filter((ds['age'] > 30) & (ds['department'] == 'Engineering'))
+
+# 多个条件（或）
+result = ds.filter((ds['city'] == 'NYC') | (ds['city'] == 'LA'))
+
+# NOT 条件
+result = ds.filter(~(ds['status'] == 'inactive'))
+
+# 字符串条件
+result = ds.filter(ds['name'].str.contains('John'))
+result = ds.filter(ds['email'].str.endswith('@company.com'))
+
+# NULL 检查
+result = ds.filter(ds['manager_id'].notnull())
+result = ds.filter(ds['bonus'].isnull())
+
+# IN 条件
+result = ds.filter(ds['department'].isin(['Engineering', 'Product', 'Design']))
+
+# BETWEEN 条件
+result = ds.filter(ds['salary'].between(50000, 100000))
+
+# 链式过滤器（与）
+result = (ds
+    .filter(ds['age'] > 25)
+    .filter(ds['salary'] > 50000)
+    .filter(ds['city'] == 'NYC')
+)
+```
+
+<div id="pandas-filtering">
+  ### Pandas 风格筛选
+</div>
+
+```python
+# 布尔索引（等同于过滤器）
+result = ds[ds['age'] > 30]
+result = ds[(ds['age'] > 30) & (ds['salary'] > 50000)]
+
+# 查询方法
+result = ds.query('age > 30 and salary > 50000')
+```
+
+***
+
+<div id="sorting">
+  ## 排序
+</div>
+
+<div id="sort">
+  ### `sort` / `orderby`
+</div>
+
+按一个或多个列对行排序。
+
+```python
+sort(*fields, ascending=True) -> DataStore
+orderby(*fields, ascending=True) -> DataStore  # 别名
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 单列升序
+result = ds.sort('name')
+
+# 单列降序
+result = ds.sort('salary', ascending=False)
+
+# 多列
+result = ds.sort('department', 'salary')
+
+# 混合排序（ascending 参数使用列表）
+result = ds.sort('department', 'salary', ascending=[True, False])
+
+# Pandas 风格
+result = ds.sort_values('salary', ascending=False)
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+```
+
+***
+
+<div id="limiting">
+  ## 限制与分页
+</div>
+
+<div id="limit">
+  ### `limit`
+</div>
+
+限制返回结果的行数。
+
+```python
+limit(n: int) -> DataStore
+```
+
+<div id="offset">
+  ### `offset`
+</div>
+
+跳过前 n 行。
+
+```python
+offset(n: int) -> DataStore
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 前 10 行
+result = ds.limit(10)
+
+# 跳过前 100 行，取接下来的 50 行
+result = ds.offset(100).limit(50)
+
+# Pandas 风格
+result = ds.head(10)
+result = ds.tail(10)
+result = ds.iloc[100:150]
+```
+
+***
+
+<div id="distinct">
+  ## DISTINCT
+</div>
+
+<div id="distinct-method">
+  ### `distinct`
+</div>
+
+去除重复行。
+
+```python
+distinct(subset=None, keep='first') -> DataStore
+```
+
+**示例：**
+
+```python
+from pathlib import Path
+Path("events.csv").write_text("""\
+user_id,event_type,timestamp
+1,click,2024-01-15 10:30:00
+2,view,2024-01-15 11:00:00
+1,purchase,2024-01-15 11:30:00
+3,click,2024-01-16 09:00:00
+2,click,2024-01-16 10:00:00
+""")
+
+ds = DataStore.from_file("events.csv")
+
+# 删除所有重复行
+result = ds.distinct()
+
+# 根据特定列删除重复项
+result = ds.distinct(subset=['user_id', 'event_type'])
+
+# Pandas 风格
+result = ds.drop_duplicates()
+result = ds.drop_duplicates(subset=['user_id'])
+```
+
+***
+
+<div id="grouping">
+  ## 分组
+</div>
+
+<div id="groupby">
+  ### `groupby`
+</div>
+
+按一个或多个列对行分组。返回一个 `LazyGroupBy` 对象。
+
+```python
+groupby(*fields, sort=True, as_index=True, dropna=True) -> LazyGroupBy
+```
+
+**示例：**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+ds = DataStore.from_file("sales.csv")
+
+# 按单列分组
+by_region = ds.groupby('region')
+
+# 按多列分组
+by_region_product = ds.groupby('region', 'product')
+
+# groupby 后聚合
+result = ds.groupby('region')['amount'].sum()
+result = ds.groupby('region').agg({'amount': 'sum', 'quantity': 'mean'})
+
+# 多重聚合
+result = ds.groupby('category').agg({
+    'price': ['min', 'max', 'mean'],
+    'quantity': 'sum'
+})
+
+# 命名聚合
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count')
+)
+```
+
+<div id="having">
+  ### `having`
+</div>
+
+对聚合后的分组进行过滤。
+
+```python
+having(condition: Union[Condition, str]) -> DataStore
+```
+
+**示例：**
+
+```python
+# 过滤 total > 10000 的分组
+result = (ds
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .having(ds['sum'] > 10000)
+)
+
+# 使用 SQL 风格的 having
+result = (ds
+    .select('region', 'SUM(amount) as total')
+    .groupby('region')
+    .having('total > 10000')
+)
+```
+
+***
+
+<div id="joining">
+  ## 连接
+</div>
+
+<div id="join">
+  ### `join`
+</div>
+
+连接两个 DataStore。
+
+```python
+join(right, on=None, how='inner', left_on=None, right_on=None) -> DataStore
+```
+
+**参数：**
+
+| 参数         | 类型        | 默认值       | 描述                                                                  |
+| ---------- | --------- | --------- | ------------------------------------------------------------------- |
+| `right`    | DataStore | *必填*      | 要连接的右侧 DataStore                                                    |
+| `on`       | str/list  | `None`    | 用于连接的列                                                              |
+| `how`      | str       | `'inner'` | 连接类型：&#39;inner&#39;、&#39;left&#39;、&#39;right&#39;、&#39;outer&#39; |
+| `left_on`  | str/list  | `None`    | 左侧用于连接的列                                                            |
+| `right_on` | str/list  | `None`    | 右侧用于连接的列                                                            |
+
+**示例：**
+
+```python
+from pathlib import Path
+Path("departments.csv").write_text("""\
+dept_id,department_name
+1,Engineering
+2,Product
+3,Design
+""")
+
+employees = DataStore.from_file("employees.csv")
+departments = DataStore.from_file("departments.csv")
+
+# 单列内连接
+result = employees.join(departments, on='dept_id')
+
+# 左连接
+result = employees.join(departments, on='dept_id', how='left')
+
+# 使用不同列名进行连接
+result = employees.join(
+    departments,
+    left_on='department_id',
+    right_on='id',
+    how='inner'
+)
+
+# Pandas 风格的合并
+from chdb import datastore as pd
+result = pd.merge(employees, departments, on='dept_id')
+result = pd.merge(employees, departments, left_on='department_id', right_on='id')
+```
+
+<div id="union">
+  ### `union`
+</div>
+
+将两个 DataStore 的结果合并。
+
+```python
+union(other, all=False) -> DataStore
+```
+
+**示例：**
+
+```python
+from pathlib import Path
+Path("sales_2023.csv").write_text("""\
+region,product,amount,date
+East,Widget,1200,2023-06-15
+West,Gadget,800,2023-09-20
+North,Gizmo,600,2023-11-10
+""")
+Path("sales_2024.csv").write_text("""\
+region,product,amount,date
+East,Widget,1500,2024-03-10
+North,Gizmo,900,2024-07-22
+West,Gadget,1100,2024-05-05
+""")
+
+ds1 = DataStore.from_file("sales_2023.csv")
+ds2 = DataStore.from_file("sales_2024.csv")
+
+# UNION（去除重复项）
+result = ds1.union(ds2)
+
+# UNION ALL（保留重复项）
+result = ds1.union(ds2, all=True)
+
+# Pandas 风格
+from chdb import datastore as pd
+result = pd.concat([ds1, ds2])
+```
+
+***
+
+<div id="conditional">
+  ## 条件表达式
+</div>
+
+<div id="when">
+  ### `when`
+</div>
+
+创建 CASE WHEN 表达式。
+
+```python
+when(condition, value) -> CaseWhenBuilder
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+# 简单的 case-when
+result = ds.select(
+    'name',
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+      .as_('salary_tier')
+)
+
+# 带列赋值
+ds['salary_tier'] = (
+    ds.when(ds['salary'] > 100000, 'High')
+      .when(ds['salary'] > 50000, 'Medium')
+      .otherwise('Low')
+)
+```
+
+***
+
+<div id="raw-sql">
+  ## 原生 SQL
+</div>
+
+<div id="run-sql">
+  ### `run_sql` / `sql`
+</div>
+
+执行原生 SQL 查询。
+
+```python
+run_sql(query: str) -> DataStore
+sql(query: str) -> DataStore  # 别名
+```
+
+**示例：**
+
+```python
+from chdb.datastore import DataStore
+
+# 执行原生 SQL
+result = DataStore().sql("""
+    SELECT 
+        department,
+        COUNT(*) as count,
+        AVG(salary) as avg_salary
+    FROM file('employees.csv', 'CSVWithNames')
+    WHERE status = 'active'
+    GROUP BY department
+    HAVING count > 5
+    ORDER BY avg_salary DESC
+    LIMIT 10
+""")
+
+# 在已有 DataStore 上执行 SQL
+ds = DataStore.from_file("employees.csv")
+result = ds.sql("SELECT * FROM __table__ WHERE age > 30")
+```
+
+<div id="to-sql">
+  ### `to_sql`
+</div>
+
+查看生成的 SQL，但不执行。
+
+```python
+to_sql(**kwargs) -> str
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_file("employees.csv")
+
+query = (ds
+    .filter(ds['age'] > 30)
+    .groupby('department')
+    .agg({'salary': 'mean'})
+    .sort('mean', ascending=False)
+)
+
+print(query.to_sql())
+# 输出：
+# SELECT department, AVG(salary) AS mean
+# FROM file('employees.csv', 'CSVWithNames')
+# WHERE age > 30
+# GROUP BY department
+# ORDER BY mean DESC
+```
+
+***
+
+<div id="chaining">
+  ## 方法链式调用
+</div>
+
+所有查询方法都支持链式调用：
+
+```python
+from chdb.datastore import DataStore
+
+ds = DataStore.from_file("sales.csv")
+
+result = (ds
+    .select('region', 'product', 'amount', 'date')
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'product')
+    .agg({
+        'amount': ['sum', 'mean'],
+        'date': 'count'
+    })
+    .having(ds['sum'] > 10000)
+    .sort('sum', ascending=False)
+    .limit(20)
+)
+
+# 查看 SQL
+print(result.to_sql())
+
+# 执行
+df = result.to_df()
+```
+
+***
+
+<div id="aliasing">
+  ## 别名
+</div>
+
+<div id="as">
+  ### `as_`
+</div>
+
+为列或子查询指定别名。
+
+```python
+as_(alias: str) -> DataStore
+```
+
+**示例：**
+
+```python
+# 列别名
+result = ds.select(
+    ds['name'].as_('employee_name'),
+    (ds['salary'] * 12).as_('annual_salary')
+)
+
+# 子查询别名
+subquery = ds.filter(ds['age'] > 30).as_('senior_employees')
+```

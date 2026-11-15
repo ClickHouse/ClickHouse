@@ -43,36 +43,50 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested;
+    }
 
     Field getDefault() const override;
 
+    DataTypePtr getNormalizedType() const override { return std::make_shared<DataTypeArray>(nested->getNormalizedType()); }
     bool equals(const IDataType & rhs) const override;
-
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
-    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
 
     /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
     /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.
     bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
+    {
+        nested->forEachKnownDynamicSubcolumnName(callback, array_level + 1);
+    }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    void updateHashImpl(SipHash & hash) const override;
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
+
+private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 }

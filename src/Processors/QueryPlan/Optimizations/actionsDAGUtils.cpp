@@ -1,21 +1,52 @@
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
+
+namespace DB::ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
+/// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
+static bool hasNullConstantArgument(const ActionsDAG::Node & node)
 {
-    using Parents = std::set<const ActionsDAG::Node *>;
-    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
+    return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
+}
+
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity,
+    size_t max_size_for_sets_from_tuple_to_compare)
+{
+    using Parents = SetWithMemoryTracking<const ActionsDAG::Node *>;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Parents> inner_parents;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
     {
-        std::stack<const ActionsDAG::Node *> stack;
+        StackWithMemoryTracking<const ActionsDAG::Node *> stack;
         for (const auto * out : inner_dag)
         {
             if (inner_parents.contains(out))
@@ -50,7 +81,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
     };
 
     MatchedTrees::Matches matches;
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
 
     for (const auto & node : outer_dag.getNodes())
     {
@@ -113,7 +144,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
+                    else if (!frame.node->children[i]->column)
                         found_all_children = false;
                 }
 
@@ -124,7 +155,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
 
                     if (frame.mapped_children.size() > 1)
                     {
-                        std::vector<Parents *> other_parents;
+                        VectorWithMemoryTracking<Parents *> other_parents;
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
@@ -158,7 +189,10 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                         for (const auto * parent : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
+                            /// One function name resolves to different result types depending on the settings
+                            /// the DAG was built with, and differently-typed results are not one calculation.
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
+                                && parent->result_type->equals(*frame.node->result_type))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
@@ -168,9 +202,48 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                     {
                                         if (frame.mapped_children[i] == nullptr)
                                         {
-                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
-                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
-                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                            const auto * inner_col = children[i]->column.get();
+                                            const auto * outer_col = frame.node->children[i]->column.get();
+                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            {
+                                                all_children_matched = false;
+                                            }
+                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
+                                            {
+                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
+                                                /// set contents, so `getField()` cannot distinguish different
+                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
+                                                /// hash (computed order-independently in its constructor) when both
+                                                /// fit under the size limit. Subquery/storage sets fall through to
+                                                /// non-matching: their content isn't known at planning time, and
+                                                /// matching them structurally here would be unsound.
+                                                all_children_matched = false;
+                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
+                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
+                                                {
+                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        inner_set->getData().get());
+                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        outer_set->getData().get());
+                                                    if (inner_tuple && outer_tuple)
+                                                    {
+                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
+                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
+                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
+                                                        /// contents, so skip hashing in that case.
+                                                        if (inner_rows == outer_rows
+                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
+                                                        {
+                                                            all_children_matched =
+                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            else
+                                            {
+                                                all_children_matched = inner_col->getField() == outer_col->getField();
+                                            }
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
@@ -209,7 +282,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                             {
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
-                                monotonicity.strict = info.is_strict;
+                                monotonicity.strict = info.is_strict && !hasNullConstantArgument(*frame.node);
+                                monotonicity.child_match = &child_match;
+                                monotonicity.child_node = monotonic_child;
 
                                 if (child_match.monotonicity)
                                 {
@@ -231,6 +306,635 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
     }
 
     return matches;
+}
+
+
+struct PossiblyMonotonicChain
+{
+    const ActionsDAG::Node * input_node = nullptr;
+    VectorWithMemoryTracking<size_t> non_const_arg_pos;
+    bool changes_order = false;
+    bool is_strict = true;
+};
+
+/// Build a chain of functions which may be monotonic.
+static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node * node)
+{
+    VectorWithMemoryTracking<size_t> chain;
+
+    while (node->type != ActionsDAG::ActionType::INPUT)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            node = node->children.at(0);
+            continue;
+        }
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            break;
+
+        size_t num_children = node->children.size();
+        if (num_children == 0)
+            break;
+
+        const auto & func = node->function_base;
+        if (!func->hasInformationAboutMonotonicity())
+            break;
+
+        std::optional<size_t> non_const_arg;
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            const auto * child = node->children[i];
+            if (child->type == ActionsDAG::ActionType::COLUMN)
+                continue;
+
+            if (non_const_arg != std::nullopt)
+            {
+                /// Second non-constant arg
+                non_const_arg = {};
+                break;
+            }
+
+            non_const_arg = i;
+        }
+
+        if (non_const_arg == std::nullopt)
+            break;
+
+        chain.push_back(*non_const_arg);
+        node = node->children[*non_const_arg];
+    }
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    return {node, std::move(chain)};
+}
+
+/// Check whether all the function in chain are monotonic
+static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+{
+    auto it = chain.non_const_arg_pos.begin();
+    while (node != chain.input_node)
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+        {
+            node = node->children[0];
+            continue;
+        }
+
+        size_t pos = *it;
+        ++it;
+
+        const auto & type = node->children[pos]->result_type;
+        const Field field{};
+        auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
+        if (!monotonicity.is_monotonic)
+            break;
+
+        if (!monotonicity.is_positive)
+            chain.changes_order = !chain.changes_order;
+
+        chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
+
+        node = node->children[pos];
+    }
+
+    return node == chain.input_node;
+}
+
+void applyActionsToSortDescription(
+    SortDescription & description,
+    const ActionsDAG & dag,
+    const ActionsDAG::Node * output_to_skip)
+{
+    if (description.empty())
+        return;
+
+    const size_t descr_size = description.size();
+
+    const auto & inputs = dag.getInputs();
+    const size_t num_inputs = inputs.size();
+
+    struct SortColumn
+    {
+        const ActionsDAG::Node * input = nullptr;
+        const ActionsDAG::Node * output = nullptr;
+        bool is_monotonic_chain = false;
+        bool is_strict = true;
+        bool changes_order = false;
+    };
+
+    VectorWithMemoryTracking<SortColumn> sort_columns(descr_size);
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_to_sort_column;
+
+    {
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> desc_name_to_pos;
+        for (size_t pos = 0; pos < descr_size; ++pos)
+            desc_name_to_pos.emplace(description[pos].column_name, pos);
+
+        for (size_t pos = 0; pos < num_inputs; ++pos)
+        {
+            auto it = desc_name_to_pos.find(inputs[pos]->result_name);
+            if (it != desc_name_to_pos.end() && !sort_columns[it->second].input)
+            {
+                sort_columns[it->second].input = inputs[pos];
+                input_to_sort_column[inputs[pos]] = it->second;
+            }
+        }
+    }
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output == output_to_skip)
+            continue;
+
+        /// An output that is not computed from a sort column (a constant, a function of several columns or of
+        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
+        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
+        auto chain = buildPossiblyMonitinicChain(output);
+        if (!chain.input_node)
+            continue;
+
+        auto it = input_to_sort_column.find(chain.input_node);
+        if (it == input_to_sort_column.end())
+            continue;
+
+        SortColumn & sort_column = sort_columns[it->second];
+
+        /// Already found better chain
+        bool has_functions = !chain.non_const_arg_pos.empty();
+        bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
+        if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
+            continue;
+
+        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
+        /// output may still carry the column itself.
+        if (has_functions && !isMonotonicChain(output, chain))
+            continue;
+
+        bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
+        if (sort_column.output && !is_strictness_improved)
+            continue;
+
+        sort_column.output = output;
+        sort_column.is_monotonic_chain = has_functions;
+        sort_column.changes_order = chain.changes_order;
+        sort_column.is_strict = chain.is_strict;
+    }
+
+    size_t prefix_size = 0;
+    while (prefix_size < descr_size)
+    {
+        const auto & sort_colunm = sort_columns[prefix_size];
+
+        /// No input is allowed : it means DAG did not use the column.
+        if (sort_colunm.input && !sort_colunm.output)
+            break;
+
+        auto & descr = description[prefix_size];
+        ++prefix_size;
+
+        if (sort_colunm.output)
+            descr.column_name = sort_colunm.output->result_name;
+
+        if (sort_colunm.changes_order)
+            descr.direction *= -1;
+
+        if (!sort_colunm.is_strict)
+            break;
+    }
+
+    description.resize(prefix_size);
+}
+
+std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+    const MatchedTrees::Matches & matches,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
+    const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+    };
+
+    StackWithMemoryTracking<Frame> stack;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
+
+    for (const auto * node : nodes)
+    {
+        if (visited.contains(node))
+            continue;
+
+        stack.push({.node = node});
+
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+
+            if (frame.next_child_to_visit == 0)
+            {
+                auto jt = matches.find(frame.node);
+                if (jt != matches.end())
+                {
+                    const auto & match = jt->second;
+                    if (match.node && !match.monotonicity && allowed_inputs.contains(match.node))
+                    {
+                        visited.insert(frame.node);
+                        new_inputs[frame.node] = match.node;
+                        stack.pop();
+                        continue;
+                    }
+                }
+            }
+
+            if (frame.next_child_to_visit < frame.node->children.size())
+            {
+                stack.push({.node = frame.node->children[frame.next_child_to_visit]});
+                ++frame.next_child_to_visit;
+                continue;
+            }
+
+            /// Not a match and there is no matched child.
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                return std::nullopt;
+
+            /// Not a match, but all children matched.
+            visited.insert(frame.node);
+            stack.pop();
+        }
+    }
+
+    return new_inputs;
+}
+
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    const auto function_name = node.function_base->getName();
+    ActionsDAGLineageKind kind{};
+    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
+        kind = ActionsDAGLineageKind::ValuePreserving;
+    else if (function_name == "_CAST" || function_name == "CAST")
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else if (node.children.size() == 1 && node.function_base->isDeterministic())
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    else
+        return {};
+
+    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
+    /// non-Nullable result can map NULL to one additional counted value.
+    const bool collapses_null
+        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+}
+
+VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+{
+    using TraceState = std::optional<ActionsDAGInputLineage>;
+
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_positions;
+    const auto & inputs = actions.getInputs();
+    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
+        input_positions[inputs[input_position]] = input_position;
+
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, TraceState> traced;
+    const auto & outputs = actions.getOutputs();
+    for (const auto * output : outputs)
+    {
+        StackWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({output, false});
+        while (!nodes_to_process.empty())
+        {
+            auto [node, child_pushed] = nodes_to_process.top();
+            if (traced.contains(node))
+            {
+                nodes_to_process.pop();
+                continue;
+            }
+
+            if (auto input = input_positions.find(node); input != input_positions.end())
+            {
+                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
+                nodes_to_process.pop();
+                continue;
+            }
+
+            const auto hop = describeActionsDAGLineageHop(*node);
+            if (hop && !child_pushed)
+            {
+                nodes_to_process.top().second = true;
+                nodes_to_process.push({node->children[0], false});
+                continue;
+            }
+
+            TraceState result;
+            if (hop)
+            {
+                const auto & child = traced.at(node->children[0]);
+                if (child)
+                {
+                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
+                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
+                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
+                        kind = ActionsDAGLineageKind::DistinctValuesBound;
+                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
+                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
+                        kind = ActionsDAGLineageKind::ValuePreserving;
+                    result = ActionsDAGInputLineage{
+                        child->input_position,
+                        kind,
+                        child->ndv_delta + hop->ndv_delta,
+                        child->preserves_width && hop->preserves_width};
+                }
+            }
+            traced[node] = result;
+            nodes_to_process.pop();
+        }
+    }
+
+    VectorWithMemoryTracking<ActionsDAGOutputLineage> result;
+    result.reserve(outputs.size());
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+        result.push_back({output_position, traced.at(outputs[output_position])});
+    return result;
+}
+
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+{
+    /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
+    /// n-th input of a name with the n-th header column of that name.
+    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> name_to_inputs;
+    for (size_t position = inputs.size(); position != 0; --position)
+        name_to_inputs[inputs[position - 1]->result_name].push_back(position - 1);
+
+    HeaderColumnsToInputs result;
+    result.read_by.resize(header.columns(), HeaderColumnsToInputs::passes_through);
+
+    size_t read_columns = 0;
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        auto it = name_to_inputs.find(header.getByPosition(position).name);
+        if (it == name_to_inputs.end() || it->second.empty())
+            continue;
+
+        result.read_by[position] = it->second.back();
+        it->second.pop_back();
+        ++read_columns;
+    }
+
+    if (read_columns != inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The header [{}] has a column for only {} of the DAG's {} inputs",
+            header.dumpNames(), read_columns, inputs.size());
+
+    return result;
+}
+
+bool isInjectiveFunction(const ActionsDAG::Node * node)
+{
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
+        return true;
+
+    const auto & name = node->function_base->getName();
+    if (node->children.size() != 2 || (name != "plus" && name != "minus"))
+        return false;
+
+    const auto & left = *node->children[0];
+    const auto & right = *node->children[1];
+    return plusMinusWithConstantsIsInjective(
+        {left.column, left.result_type, left.result_name}, {right.column, right.result_type, right.result_name}, node->result_type);
+}
+
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
+{
+    NodeSet irreducible;
+    NodeSet visited;
+    for (const auto & node : actions.getOutputs())
+        removeInjectiveFunctionsFromResultsRecursively(node, irreducible, visited);
+    return irreducible;
+}
+
+void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * node, NodeSet & irreducible, NodeSet & visited)
+{
+    if (visited.contains(node))
+        return;
+    visited.insert(node);
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::ALIAS:
+            chassert(node->children.size() == 1);
+            removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
+            break;
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
+            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
+            irreducible.insert(node);
+            break;
+        case ActionsDAG::ActionType::COLUMN:
+            irreducible.insert(node);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            if (!isInjectiveFunction(node))
+            {
+                irreducible.insert(node);
+            }
+            else
+            {
+                for (const auto & child : node->children)
+                    removeInjectiveFunctionsFromResultsRecursively(child, irreducible, visited);
+            }
+            break;
+        case ActionsDAG::ActionType::INPUT:
+            irreducible.insert(node);
+            break;
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
+    }
+}
+
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited)
+{
+    if (visited.contains(node))
+        return visited[node];
+
+    bool res = false;
+    /// `matches` maps partition key nodes into nodes in group by actions
+    if (matches.contains(node))
+    {
+        const auto & match = matches.at(node);
+        /// Function could be mapped into its argument. In this case .monotonicity != std::nullopt (see matchTrees)
+        if (match.node && !match.monotonicity)
+            res = irreducible_nodes.contains(match.node);
+    }
+
+    if (!res)
+    {
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::ALIAS:
+                chassert(node->children.size() == 1);
+                res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
+                break;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                /// An exploded array element is not a per-row function of its source row, so the key
+                /// value it feeds is not determined by the allowed nodes.
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+                /// Constants doesn't matter, so let's always consider them matched.
+                res = true;
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                res = true;
+                for (const auto & child : node->children)
+                    res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, child, visited);
+                break;
+            case ActionsDAG::ActionType::INPUT:
+                break;
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
+        }
+    }
+    visited[node] = res;
+    return res;
+}
+
+/// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
+/// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
+/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
+{
+    NodeMap visited;
+    bool res = true;
+    for (const auto * node : key_nodes)
+        res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+    return res;
+}
+
+
+VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
+{
+    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> res;
+    if (!predicate)
+        return res;
+
+    /// Decompose the AND chain of the predicate: only a top-level conjunct is guaranteed to
+    /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
+    /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
+    /// be used for pruning.
+    VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts = {predicate};
+    while (!conjuncts.empty())
+    {
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        if (node->function_base->getName() == "and")
+        {
+            conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (node->function_base->getName() != "__applyFilter" || node->children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = node->children[0];
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
+            continue;
+        String filter_id(label->column->getDataAt(0));
+
+        /// Argument 1: the probe key column, possibly wrapped in at most one CAST and/or aliases
+        /// (composing the filter through expression steps turns a renamed key into an alias
+        /// of the physical column - looking through it reports the physical name).
+        /// A key under nested casts, e.g. `_CAST(CAST(k, 'UInt8'), 'UInt64')`, is not reported: the pruning
+        /// predicate re-applies only the cast to the filter type, so the inner cast would be lost.
+        const auto * key_arg = node->children[1];
+        size_t casts = 0;
+        while (!key_arg->children.empty())
+        {
+            if (key_arg->type == ActionsDAG::ActionType::ALIAS)
+                key_arg = key_arg->children.front();
+            else if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                     && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
+            {
+                ++casts;
+                key_arg = key_arg->children.front();
+            }
+            else
+                break;
+        }
+
+        /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
+        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
+        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
+        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
+        /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
+        /// the negating filter exposes neither recorded key values nor a key range.)
+        if (casts > 1)
+            continue;
+
+        /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
+        /// as a global row index key: it is not a column, but granules can be skipped easily using that.
+        if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+            && key_arg->function_base->getName() == "plus" && key_arg->children.size() == 2)
+        {
+            auto input_name = [](const ActionsDAG::Node * arg) -> std::optional<String>
+            {
+                while (arg->type == ActionsDAG::ActionType::ALIAS)
+                    arg = arg->children.front();
+                if (arg->type != ActionsDAG::ActionType::INPUT)
+                    return std::nullopt;
+                return arg->result_name;
+            };
+            auto lhs = input_name(key_arg->children[0]);
+            auto rhs = input_name(key_arg->children[1]);
+            if (lhs && rhs
+                && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
+            {
+                res.push_back({std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true});
+            }
+            continue;
+        }
+
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+    }
+
+    return res;
+}
+
+VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
 }

@@ -1,16 +1,18 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
 #include <Interpreters/Context_fwd.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -44,7 +46,9 @@ namespace DB
   * 5 AS b - LIMIT BY offset section.
   * id, value - LIMIT BY section.
   * 14. LIMIT section.
-  * 15. OFFSET section.
+  * 15. LIMIT AFTER section.
+  * 16. LIMIT UNTIL section.
+  * 17. OFFSET section.
   *
   * Query node contains settings changes that must be applied before query analysis or execution.
   * Example: SELECT * FROM test_table SETTINGS prefer_column_name_to_alias = 1, join_use_nulls = 1;
@@ -60,11 +64,15 @@ namespace DB
 class QueryNode;
 using QueryNodePtr = std::shared_ptr<QueryNode>;
 
-class QueryNode final : public IQueryTreeNode
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class QueryNode final : public ITableExpressionNode
 {
 public:
-    /// Construct query node with context and changed settings
-    explicit QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_);
+    /// Construct query node with context and changed or reset settings and query parameters.
+    explicit QueryNode(
+        ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_ = {}, NameToNameVector query_parameters_ = {});
 
     /// Construct query node with context
     explicit QueryNode(ContextMutablePtr context_);
@@ -87,10 +95,10 @@ public:
         return context;
     }
 
-    /// Returns true if query node has settings changes, false otherwise
+    /// Returns true if query node has settings changes, resets, or query parameters, false otherwise.
     bool hasSettingsChanges() const
     {
-        return !settings_changes.empty();
+        return !settings_changes.empty() || !default_settings.empty() || !query_parameters.empty();
     }
 
     /// Get query node settings changes
@@ -99,9 +107,23 @@ public:
         return settings_changes;
     }
 
+    /// Get query node settings that are reset to their default values
+    const std::vector<String> & getDefaultSettings() const
+    {
+        return default_settings;
+    }
+
+    /// Get query parameters set in the query SETTINGS clause.
+    const NameToNameVector & getQueryParameters() const
+    {
+        return query_parameters;
+    }
+
     void clearSettingsChanges()
     {
         settings_changes.clear();
+        default_settings.clear();
+        query_parameters.clear();
     }
 
     /// Returns true if query node is subquery, false otherwise
@@ -140,6 +162,18 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    /// Returns true if query node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set query node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
+    }
+
     /// Returns true if query node has RECURSIVE WITH, false otherwise
     bool isRecursiveWith() const
     {
@@ -162,6 +196,26 @@ public:
     void setIsDistinct(bool is_distinct_value)
     {
         is_distinct = is_distinct_value;
+    }
+
+    bool isLimitByAll() const
+    {
+        return is_limit_by_all;
+    }
+
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        is_limit_by_all = is_limit_by_all_value;
+    }
+
+    bool isLimitAfterAll() const
+    {
+        return is_limit_after_all;
+    }
+
+    void setIsLimitAfterAll(bool is_limit_after_all_value)
+    {
+        is_limit_after_all = is_limit_after_all_value;
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
@@ -248,6 +302,18 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
+    /// Returns true if query node has `SHUFFLE`, false otherwise
+    bool isShuffle() const
+    {
+        return is_shuffle;
+    }
+
+    /// Set query node `SHUFFLE` value
+    void setIsShuffle(bool is_shuffle_value)
+    {
+        is_shuffle = is_shuffle_value;
+    }
+
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -303,15 +369,28 @@ public:
     }
 
     /// Get JOIN TREE section node
-    const QueryTreeNodePtr & getJoinTree() const
+    const ITableExpressionNode & getJoinTree() const
+    {
+        return children[join_tree_child_index]->assertTableExpression();
+    }
+
+    /// Get JOIN TREE section node
+    QueryTreeNodePtr & getJoinTreeNode()
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    QueryTreeNodePtr & getJoinTree()
+    const QueryTreeNodePtr & getJoinTreeNode() const
     {
         return children[join_tree_child_index];
+    }
+
+    /// Get JOIN TREE section node
+    TableExpressionNodePtr getJoinTreeNodeTyped() const
+    {
+        children[join_tree_child_index]->assertTableExpression();
+        return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
@@ -578,6 +657,42 @@ public:
         return children[limit_child_index];
     }
 
+    /// Returns true if query node LIMIT AFTER section is not empty, false otherwise
+    bool hasLimitAfter() const
+    {
+        return children[limit_after_child_index] != nullptr;
+    }
+
+    /// Get LIMIT AFTER section node
+    const QueryTreeNodePtr & getLimitAfter() const
+    {
+        return children[limit_after_child_index];
+    }
+
+    /// Get LIMIT AFTER section node
+    QueryTreeNodePtr & getLimitAfter()
+    {
+        return children[limit_after_child_index];
+    }
+
+    /// Returns true if query node LIMIT UNTIL section is not empty, false otherwise
+    bool hasLimitUntil() const
+    {
+        return children[limit_until_child_index] != nullptr;
+    }
+
+    /// Get LIMIT UNTIL section node
+    const QueryTreeNodePtr & getLimitUntil() const
+    {
+        return children[limit_until_child_index];
+    }
+
+    /// Get LIMIT UNTIL section node
+    QueryTreeNodePtr & getLimitUntil()
+    {
+        return children[limit_until_child_index];
+    }
+
     /// Returns true if query node OFFSET section is not empty, false otherwise
     bool hasOffset() const
     {
@@ -602,14 +717,51 @@ public:
         return projection_columns;
     }
 
+    /// Returns true if query node is resolved, false otherwise
+    bool isResolved() const
+    {
+        return !projection_columns.empty();
+    }
+
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
-    /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
+    /// Clear query node projection columns
+    void clearProjectionColumns()
+    {
+        projection_columns.clear();
+    }
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
+
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -618,10 +770,20 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    void setProjectionAliasesToOverride(Names pr_aliases)
+    {
+        projection_aliases_to_override = std::move(pr_aliases);
+    }
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
+
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -630,6 +792,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
@@ -639,11 +802,17 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
+    bool is_limit_by_all = false;
+    bool is_shuffle = false;
+    bool is_limit_after_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;
@@ -660,8 +829,11 @@ private:
     static constexpr size_t limit_by_offset_child_index = 12;
     static constexpr size_t limit_by_child_index = 13;
     static constexpr size_t limit_child_index = 14;
-    static constexpr size_t offset_child_index = 15;
-    static constexpr size_t children_size = offset_child_index + 1;
+    static constexpr size_t limit_after_child_index = 15;
+    static constexpr size_t limit_until_child_index = 16;
+    static constexpr size_t offset_child_index = 17;
+    static constexpr size_t correlated_columns_list_index = 18;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }

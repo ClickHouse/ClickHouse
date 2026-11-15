@@ -4,6 +4,8 @@ drop table if exists table_2;
 drop table if exists v_numbers;
 drop table if exists mv_table;
 
+SET max_rows_to_read = 0;
+
 create table table_1 (x UInt32, y String) engine = MergeTree order by x;
 insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 
@@ -40,8 +42,9 @@ select * from system.numbers as t limit 5 settings additional_table_filters={'t'
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
 select * from (select number from system.numbers limit 5 union all select x from table_1) order by number settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
-select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
+select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x order by all settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
 select b + 1 as c from (select a + 1 as b from (select x + 1 as a from table_1)) settings additional_table_filters={'table_1' : 'x != 2 and x != 3'};
+select dummy from system.one SETTINGS additional_table_filters = {'system.one':'dummy in (select number from numbers(2))'};
 
 -- { echoOff }
 
@@ -99,3 +102,7 @@ select x + 1 from table_1 settings additional_result_filter='`plus(x, 1)` != 2';
 
 select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a = 3';
 select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a != 3';
+
+select * from table_1 order by x settings additional_result_filter='x in (select number from numbers(3))';
+select count() as c from table_1 settings additional_result_filter='c in (select 4)';
+select count() as c from table_1 settings additional_result_filter='c in (select 3)';

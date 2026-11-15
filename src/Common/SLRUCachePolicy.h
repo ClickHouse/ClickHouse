@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ICachePolicy.h>
+#include <Common/CurrentMetrics.h>
 
 #include <list>
 #include <unordered_map>
@@ -22,21 +23,35 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio_, OnWeightLossFunction on_weight_loss_function_)
+    SLRUCachePolicy(
+        CurrentMetrics::Metric size_in_bytes_metric_,
+        CurrentMetrics::Metric count_metric_,
+        size_t max_size_in_bytes_,
+        size_t max_count_,
+        double size_ratio_,
+        OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
-        , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
+        , max_protected_size(calculateMaxProtectedValue(max_size_in_bytes_, size_ratio_))
         , max_count(max_count_)
+        , max_protected_count(calculateMaxProtectedValue(max_count_, size_ratio_))
         , size_ratio(size_ratio_)
-        , on_weight_loss_function(on_weight_loss_function_)
+        , current_size_in_bytes_metric(size_in_bytes_metric_)
+        , count_metric(count_metric_)
+        , on_remove_entry_function(on_remove_entry_function_)
     {
+    }
+
+    ~SLRUCachePolicy() override
+    {
+        clearImpl();
     }
 
     size_t sizeInBytes() const override
@@ -54,28 +69,40 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_count = cells.size();
+
+        max_protected_count = calculateMaxProtectedValue(max_count_, size_ratio);
         max_count = max_count_;
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        updateMetrics(old_size_in_bytes, old_count);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
-        max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_count = cells.size();
+
+        max_protected_size = calculateMaxProtectedValue(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        updateMetrics(old_size_in_bytes, old_count);
     }
 
     void clear() override
     {
-        cells.clear();
-        probationary_queue.clear();
-        protected_queue.clear();
-        current_size_in_bytes = 0;
-        current_protected_size = 0;
+        clearImpl();
     }
 
     void remove(const Key & key) override
@@ -89,10 +116,38 @@ public:
         current_size_in_bytes -= cell.size;
         if (cell.is_protected)
             current_protected_size -= cell.size;
+        CurrentMetrics::sub(current_size_in_bytes_metric, cell.size);
 
         auto & queue = cell.is_protected ? protected_queue : probationary_queue;
         queue.erase(cell.queue_iterator);
         cells.erase(it);
+        CurrentMetrics::sub(count_metric);
+    }
+
+    void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
+    {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_count = cells.size();
+
+        for (auto it = cells.begin(); it != cells.end();)
+        {
+            if (predicate(it->first, it->second.value))
+            {
+                auto & cell = it->second;
+
+                current_size_in_bytes -= cell.size;
+                if (cell.is_protected)
+                    current_protected_size -= cell.size;
+
+                auto & queue = cell.is_protected ? protected_queue : probationary_queue;
+                queue.erase(cell.queue_iterator);
+                it = cells.erase(it);
+            }
+            else
+                ++it;
+        }
+
+        updateMetrics(old_size_in_bytes, old_count);
     }
 
     MappedPtr get(const Key & key) override
@@ -137,8 +192,16 @@ public:
         return std::make_optional<KeyMapped>({it->first, cell.value});
     }
 
+    bool contains(const Key & key) const override
+    {
+        return cells.count(key) != 0;
+    }
+
     void set(const Key & key, const MappedPtr & mapped) override
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_count = cells.size();
+
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
             std::forward_as_tuple());
@@ -179,6 +242,7 @@ public:
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+        updateMetrics(old_size_in_bytes, old_count);
     }
 
     std::vector<KeyMapped> dump() const override
@@ -200,7 +264,7 @@ private:
     {
         bool is_protected = false;
         MappedPtr value;
-        size_t size;
+        size_t size{};
         SLRUQueueIterator queue_iterator;
     };
 
@@ -211,18 +275,30 @@ private:
     size_t max_size_in_bytes;
     size_t max_protected_size;
     size_t max_count;
+    size_t max_protected_count;
     const double size_ratio;
     size_t current_protected_size = 0;
     size_t current_size_in_bytes = 0;
 
-    WeightFunction weight_function;
-    OnWeightLossFunction on_weight_loss_function;
+    CurrentMetrics::Metric current_size_in_bytes_metric;
+    CurrentMetrics::Metric count_metric;
 
-    static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
+    WeightFunction weight_function;
+    OnRemoveEntryFunction on_remove_entry_function;
+
+    /// Applies size_ratio to a cache limit, in bytes or in entries.
+    /// static_cast<double>(std::numeric_limits<size_t>::max()) rounds up to 2^64, which is not representable
+    /// in size_t, so the product is compared against the limit before it is converted back.
+    static size_t calculateMaxProtectedValue(size_t max_value, double size_ratio)
     {
-        return static_cast<size_t>(max_size_in_bytes * std::max(0.0, std::min(1.0, size_ratio)));
+        const double max_protected_value = static_cast<double>(max_value) * std::max(0.0, std::min(1.0, size_ratio));
+        if (max_protected_value >= static_cast<double>(max_value))
+            return max_value;
+        return static_cast<size_t>(max_protected_value);
     }
 
+    /// While `queue` exceeds its limits, moves its oldest cells out of it: a protected cell moves to the
+    /// probationary queue, and a probationary cell leaves the cache. The callers update the metrics.
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
         size_t current_weight_lost = 0;
@@ -237,7 +313,7 @@ private:
             /// because protected elements move to probationary part and still remain in cache.
             need_remove = [&]()
             {
-                return ((max_count != 0 && cells.size() - probationary_queue.size() > max_count)
+                return ((max_count != 0 && cells.size() - probationary_queue.size() > max_protected_count)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
@@ -269,6 +345,13 @@ private:
             else
             {
                 current_weight_lost += cell.size;
+
+                /// We cannot have protected cells in non-protected queue
+                chassert(!is_protected);
+                /// Update cache-specific metrics.
+                if (on_remove_entry_function)
+                    on_remove_entry_function(cell.size, cell.value);
+
                 cells.erase(it);
                 queue.pop_front();
             }
@@ -276,11 +359,33 @@ private:
             --queue_size;
         }
 
-        if (!is_protected)
-            on_weight_loss_function(current_weight_lost);
-
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent
+    }
+
+    /// Adds to the metrics how much the size and the count of the cache changed since they were
+    /// `old_size_in_bytes` and `old_count`. All threads that use caches of the same kind update the same
+    /// metrics, so each method updates them once, after all its changes, and skips a metric that did not
+    /// change. A lookup only moves a cell between the queues, so it does not update the metrics at all.
+    void updateMetrics(size_t old_size_in_bytes, size_t old_count)
+    {
+        if (current_size_in_bytes != old_size_in_bytes)
+            CurrentMetrics::add(
+                current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
+        if (cells.size() != old_count)
+            CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - static_cast<Int64>(old_count));
+    }
+
+    void clearImpl()
+    {
+        CurrentMetrics::sub(count_metric, cells.size());
+        CurrentMetrics::sub(current_size_in_bytes_metric, current_size_in_bytes);
+
+        cells.clear();
+        probationary_queue.clear();
+        protected_queue.clear();
+        current_size_in_bytes = 0;
+        current_protected_size = 0;
     }
 };
 

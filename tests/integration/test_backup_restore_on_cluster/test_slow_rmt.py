@@ -3,7 +3,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry, exec_query_with_retry
 
-
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [

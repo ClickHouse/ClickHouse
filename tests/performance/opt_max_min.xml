@@ -1,0 +1,24 @@
+<test>
+    <create_query>CREATE TABLE IF NOT EXISTS t_opt_max_min (arg Int64, d32 Decimal32(2), nd32 Nullable(Decimal32(2)), d64 Decimal64(6), nd64 Nullable(Decimal64(6)), dt DateTime64(6), ndt Nullable(DateTime64(6))) ENGINE = Memory()</create_query>
+    <fill_query>INSERT INTO t_opt_max_min SELECT * FROM  generateRandom('arg Int64, d32 Decimal32(2), nd32 Nullable(Decimal32(2)), d64 Decimal64(6), nd64 Nullable(Decimal64(6)), dt DateTime64(6), ndt Nullable(DateTime64(6))', 1, 10, 2) limit 10000000</fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>select max(d32), min(d32) from t_opt_max_min</query>
+    <query>select max(nd32), min(nd32) from t_opt_max_min</query>
+    <query>select max(d64), min(d64) from t_opt_max_min</query>
+    <query>select max(nd64), min(nd64) from t_opt_max_min</query>
+    <query>select max(dt), min(dt) from t_opt_max_min</query>
+    <query>select max(ndt), min(ndt) from t_opt_max_min</query>
+
+    <query>select argMax(arg, d32), argMin(arg, d32) from t_opt_max_min</query>
+    <query>select argMax(arg, nd32), argMin(arg, nd32) from t_opt_max_min</query>
+    <query>select argMax(arg, d64), argMin(arg, d64) from t_opt_max_min</query>
+    <query>select argMax(arg, nd64), argMin(arg, nd64) from t_opt_max_min</query>
+    <query>select argMax(arg, dt), argMin(arg, dt) from t_opt_max_min</query>
+    <query>select argMax(arg, ndt), argMin(arg, ndt) from t_opt_max_min</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_opt_max_min </drop_query>
+</test>

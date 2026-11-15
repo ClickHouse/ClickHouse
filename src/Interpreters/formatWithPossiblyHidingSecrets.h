@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Access/ContextAccess.h>
-#include <Interpreters/Context.h>
-
-
-#include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+class IAST;
 
 struct SecretHidingFormatSettings
 {
@@ -19,13 +16,9 @@ struct SecretHidingFormatSettings
     bool one_line = true;
 };
 
-inline String format(const SecretHidingFormatSettings & settings)
-{
-    const bool show_secrets = settings.ctx->displaySecretsInShowAndSelect()
-        && settings.ctx->getSettingsRef().format_display_secrets_in_show_and_select
-        && settings.ctx->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
+/// Whether this user may see plaintext secrets: the server setting, the format setting and the
+/// `displaySecretsInShowAndSelect` grant all have to allow it.
+bool canDisplaySecrets(const ContextPtr & context);
 
-    return settings.query.formatWithPossiblyHidingSensitiveData(settings.max_length, settings.one_line, show_secrets);
-}
-
+String format(const SecretHidingFormatSettings & settings);
 }

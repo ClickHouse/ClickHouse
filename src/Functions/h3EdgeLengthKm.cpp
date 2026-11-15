@@ -18,7 +18,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int ILLEGAL_COLUMN;
 }
@@ -26,7 +25,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3EdgeLengthKm : public IFunction
+class FunctionH3EdgeLengthKm final : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthKm";
@@ -39,15 +38,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 1, getName());
+        return "(UInt8) -> Float64";
+    }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeFloat64>();
     }
 
@@ -82,7 +79,8 @@ public:
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
-            Float64 res = getHexagonEdgeLengthAvgKm(resolution);
+            double res = 0;
+            getHexagonEdgeLengthAvgKm(resolution, &res);
             dst_data[row] = res;
         }
 
@@ -94,7 +92,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeLengthKm)
 {
-    factory.registerFunction<FunctionH3EdgeLengthKm>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in kilometers.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeLengthKm(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average length of an [H3](#h3-index) hexagon edge in kilometers.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge length for maximum resolution",
+            "SELECT h3EdgeLengthKm(15) AS edgeLengthKm",
+            R"(
+┌─edgeLengthKm─┐
+│  0.000584169 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeLengthKm>(documentation);
 }
 
 }

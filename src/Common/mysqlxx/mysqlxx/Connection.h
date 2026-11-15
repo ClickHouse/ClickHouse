@@ -9,12 +9,14 @@
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_DEFAULT_TIMEOUT 60
 #define MYSQLXX_DEFAULT_RW_TIMEOUT 1800
 
 /// Disable LOAD DATA LOCAL INFILE because it is insecure
 #define MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE false
 /// See https://dev.mysql.com/doc/c-api/5.7/en/c-api-auto-reconnect.html
+/// NOLINTEND(modernize-macro-to-enum)
 #define MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT true
 
 
@@ -79,7 +81,9 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+        bool enable_compression = false,
+        const char * ssl_key_passphrase = "");
 
     /// Creates connection. Can be used if Poco::Util::Application is using.
     /// All settings will be got from config_name section of configuration.
@@ -100,7 +104,9 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+        bool enable_compression = false,
+        const char * ssl_key_passphrase = "");
 
     void connect(const std::string & config_name)
     {
@@ -115,8 +121,10 @@ public:
         std::string ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
         std::string ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         std::string ssl_key = cfg.getString(config_name + ".ssl_key", "");
+        std::string ssl_key_passphrase = cfg.getString(config_name + ".ssl_key_passphrase", "");
         bool enable_local_infile = cfg.getBool(config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
         bool opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool enable_compression = cfg.getBool(config_name + ".enable_compression", false);
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",
@@ -141,7 +149,9 @@ public:
                 timeout,
                 rw_timeout,
                 enable_local_infile,
-                opt_reconnect);
+                opt_reconnect,
+                enable_compression,
+                ssl_key_passphrase.c_str());
     }
 
     /// If MySQL connection was established.
@@ -158,6 +168,8 @@ public:
 
     /// Get MySQL C API MYSQL object.
     MYSQL * getDriver();
+
+    uint64_t getDriverThreadID();
 
 private:
     std::unique_ptr<MYSQL> driver;

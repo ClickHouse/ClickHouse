@@ -1,0 +1,1085 @@
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReadersChain.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/KeyDescription.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/IFunction.h>
+
+#include <algorithm>
+#include <unordered_set>
+
+namespace ProfileEvents
+{
+    extern const Event GranulesReadByPrewhereReaders;
+    extern const Event GranulesSkippedByPrewhereReaders;
+}
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+LoggerPtr getMergeTreeReadersChainLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeReadersChain");
+    return log;
+}
+
+static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+
+MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
+    : range_readers(std::move(range_readers_))
+    , patch_readers(std::move(patch_readers_))
+    , patches_results(patch_readers.size())
+    , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
+    , is_initialized(true)
+{
+    for (const auto & range_reader : range_readers)
+    {
+        if (!range_reader.getReader()->producesFilterOnly())
+            columns_cache_readers.push_back(range_reader.getReader());
+    }
+    previous_steps_columns.resize(range_readers.size());
+    for (size_t i = 1; i < range_readers.size(); ++i)
+        for (const auto & column : range_readers[i - 1].getSampleBlock())
+            previous_steps_columns[i].insert(column.name);
+
+    for (size_t i = range_readers.size(); i > 1; --i)
+    {
+        if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
+        {
+            last_reader_evaluating_defaults = i - 1;
+            break;
+        }
+    }
+
+    /// The PREWHERE granule ProfileEvents are only meaningful when the chain evaluates the query's PREWHERE
+    /// predicate. A `Filter` step may instead be a row-level-security filter, a lightweight-delete mask, or
+    /// an on-fly mutation filter, none of which is PREWHERE; `is_query_prewhere` marks the real one. A chain
+    /// without such a step (e.g. a query with no PREWHERE, only an on-fly DELETE) counts nothing.
+    for (size_t i = 0; i < range_readers.size(); ++i)
+    {
+        const auto * step = range_readers[i].getPrewhereInfo();
+        if (step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere)
+        {
+            if (!prewhere_granule_stats_enabled)
+            {
+                prewhere_granule_stats_enabled = true;
+                first_query_prewhere_reader_index = i;
+            }
+            last_query_prewhere_reader_index = i;
+        }
+    }
+}
+
+size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
+{
+    return range_readers.empty() ? 0 : range_readers.front().numReadRowsInCurrentGranule();
+}
+
+size_t MergeTreeReadersChain::numPendingRowsInCurrentGranule() const
+{
+    return range_readers.empty() ? 0 : range_readers.front().numPendingRowsInCurrentGranule();
+}
+
+size_t MergeTreeReadersChain::numRowsInCurrentGranule() const
+{
+    return range_readers.empty() ? 0 : range_readers.back().numRowsInCurrentGranule();
+}
+
+size_t MergeTreeReadersChain::currentMark() const
+{
+    return range_readers.empty() ? 0 : range_readers.back().currentMark();
+}
+
+const Block & MergeTreeReadersChain::getSampleBlock() const
+{
+    static const Block empty_block;
+    return range_readers.empty() ? empty_block : range_readers.back().getSampleBlock();
+}
+
+bool MergeTreeReadersChain::isCurrentRangeFinished() const
+{
+    return range_readers.empty() ? true : range_readers.front().isCurrentRangeFinished();
+}
+
+static std::optional<UInt64> getMaxPatchVersionForStep(const MergeTreeRangeReader & reader)
+{
+    const auto * prewhere_info = reader.getPrewhereInfo();
+    return prewhere_info ? prewhere_info->mutation_version : std::nullopt;
+}
+
+/// Name of the internal `_CAST` function (`CastOverloadResolver`); the outer/inner casts an
+/// on-fly `UPDATE` wraps its assignment in are emitted under this name. `CAST` is the
+/// user-facing alias of the same resolver, accepted here for robustness.
+static bool isCastFunctionNode(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+    const auto & name = node.function_base->getName();
+    return name == "_CAST" || name == "CAST";
+}
+
+/// Whether an `if` condition selects the THEN branch for every row at runtime, i.e. it is a
+/// constant that is neither NULL nor false. Then `FunctionIf` returns the THEN branch and never
+/// reads the keep-old fallback, so that fallback's on-disk value need not be converted. Prefers
+/// the node's own propagated constant and descends the `_CAST(..., UInt8)` the mutation builder
+/// may wrap the condition in (the cast preserves the 0/non-0 truthiness).
+static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
+{
+    while (true)
+    {
+        if (node->column)
+            return !node->column->isNullAt(0) && node->column->getBool(0);
+        if (isCastFunctionNode(*node) && !node->children.empty())
+            node = node->children.front();
+        else
+            return false;
+    }
+}
+
+/// Storage names of overwritten columns whose on-disk value must STILL be converted to the
+/// post-`MODIFY` metadata type, because an on-fly mutation step genuinely consumes it as a
+/// function input before any step overwrites it.
+///
+/// Background: a column the on-fly chain overwrites is normally exempt from
+/// `performRequiredConversions` (its on-disk value is about to be discarded, and pre-casting
+/// could fail on a value the UPDATE replaces, e.g. `CAST('x', UInt64)` before
+/// `UPDATE v = '100'`). But conversion happens once, in the reader that first reads the column
+/// from disk. A step that consumes the column as a function input expects it in the
+/// post-`MODIFY` type its DAG was built against; if that consumption is reached before the
+/// column is overwritten, the on-disk value the consumer reads is the real one and must be
+/// converted.
+///
+/// `MutationsInterpreter` lowers `UPDATE col = expr WHERE cond` to
+/// `_CAST(if(cond, _CAST(expr, type), col), type)`. The bare `col` argument of that `if` is a
+/// keep-old-value fallback: it is the value for unmatched rows. The `if` node is declared at the
+/// post-`MODIFY` `type`, so whenever `FunctionIf` actually reads that fallback at runtime the
+/// on-disk `col` must already be in `type`, or the executor aborts with
+/// `Unexpected return type from if`. `FunctionIf` skips the fallback only when `cond` is a
+/// constant that selects the THEN branch for every row; only then is the fallback edge safe to
+/// ignore (its on-disk value, possibly unconvertible like `'x'` before `UPDATE v = '100'`, is
+/// never materialized). For a non-constant or constant-false `cond` the fallback IS read, so it
+/// counts as a genuine consume and forces conversion. Any OTHER reference to the column (inside
+/// `cond`, or inside `expr`, e.g. `UPDATE col = materialize(col)`) is always a genuine read.
+///
+/// The decision is per column and order-sensitive. Walk the on-fly mutation steps in chain
+/// (== mutation version) order; the FIRST step that references a column decides it:
+///   - the step GENUINELY CONSUMES it as a function input -> force its conversion (this wins
+///     over a self-overwrite in the same step: `UPDATE col = f(col)` reads the old `col` and
+///     needs it in the post-`MODIFY` type the DAG was built against);
+///   - the step only OVERWRITES it (its sole reference is the synthetic fallback) -> its
+///     on-disk value is discarded there, leave it skipped.
+/// A later step never overrides an earlier decision: it reads the value the earlier step
+/// produced, not the on-disk one.
+///
+/// Query PREWHERE / row-level-filter steps (`perform_alter_conversions == true`) are not
+/// scanned: they run after the whole mutation chain has produced the final column and convert
+/// at their own turn. Counting their consumption would force a premature conversion of an
+/// about-to-be-discarded on-disk value (e.g. `PREWHERE v > 50` before `UPDATE v = '100'`).
+///
+/// Keys are `NameAndTypePair::getNameInStorage`, matching the skip set in
+/// `executeActionsBeforePrewhere`. A physical column whose name contains dots (`info.name`)
+/// keeps its exact name; a real subcolumn (`info.name` of a Tuple/Nested `info`) maps to its
+/// parent `info`. Splitting on the first dot unconditionally would key a physical `info.name`
+/// as `info` and miss it in the skip set, reintroducing the type mismatch.
+static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers)
+{
+    /// Map each column's read name to its storage-name key, so a name from an action DAG
+    /// resolves to the same key the skip set uses.
+    std::unordered_map<String, String> name_in_storage_by_read_name;
+    for (const auto & reader : range_readers)
+    {
+        if (const auto * merge_tree_reader = reader.getReader())
+            for (const auto & name_and_type : merge_tree_reader->getColumns())
+                name_in_storage_by_read_name.emplace(name_and_type.name, name_and_type.getNameInStorage());
+    }
+    auto to_storage_key = [&](const String & read_name) -> String
+    {
+        auto it = name_in_storage_by_read_name.find(read_name);
+        return it != name_in_storage_by_read_name.end() ? it->second : read_name;
+    };
+
+    NameSet must_convert;
+    NameSet decided;
+    for (const auto & reader : range_readers)
+    {
+        const auto * prewhere_info = reader.getPrewhereInfo();
+        if (!prewhere_info || !prewhere_info->actions)
+            continue;
+
+        /// Query PREWHERE / row-level-filter steps convert at their own turn; never force here.
+        if (prewhere_info->perform_alter_conversions)
+            continue;
+
+        const auto & dag = prewhere_info->actions->getActionsDAG();
+
+        /// Columns this step overwrites: an assignment target the step produces (a DAG output
+        /// that is not a plain passthrough INPUT node). For each, locate the keep-old fallback
+        /// `(INPUT col)` edge of an `if(cond, _CAST(expr, type), col)` WHOSE CONDITION IS
+        /// CONSTANT-TRUE, so the consume scan can ignore exactly that one (never-read) edge while
+        /// still counting genuine reads of the column.
+        NameSet overwritten_here;
+        std::unordered_set<const ActionsDAG::Node *> synthetic_fallback_if_nodes;
+        for (const auto * output : dag.getOutputs())
+        {
+            if (output->type == ActionsDAG::ActionType::INPUT)
+                continue;
+            auto key = to_storage_key(output->result_name);
+            if (!prewhere_info->columns_overwritten_by_chain.contains(key))
+                continue;
+            overwritten_here.insert(key);
+
+            /// Descend the assignment output to its `if`: strip the named ALIAS, then any
+            /// outer `_CAST(..., type)` wrappers (their first child is the wrapped value).
+            const auto * node = output;
+            while (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+                node = node->children.front();
+            while (isCastFunctionNode(*node) && !node->children.empty())
+                node = node->children.front();
+
+            /// Recognize the keep-old fallback shape: `if(cond, then, INPUT col)` whose third
+            /// argument is the bare on-disk input of this very column. Ignore the fallback edge
+            /// ONLY when `cond` is constant-true: then `FunctionIf` returns the then-branch and
+            /// never reads the on-disk `col`, so its (possibly unconvertible) value is safely
+            /// left unconverted. For a non-constant or constant-false `cond` the fallback is read
+            /// with the post-`MODIFY`-declared type, so it must count as a genuine consume.
+            /// A user `if` nested elsewhere in the expression is reached through the then-branch
+            /// and is always counted as a genuine consume.
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                && node->function_base->getName() == "if" && node->children.size() == 3
+                && ifConditionIsConstantTrue(node->children[0]))
+            {
+                const auto * fallback = node->children[2];
+                if (fallback->type == ActionsDAG::ActionType::INPUT && to_storage_key(fallback->result_name) == key)
+                    synthetic_fallback_if_nodes.insert(node);
+            }
+        }
+
+        /// Columns this step genuinely consumes as a function input, ignoring the synthetic
+        /// keep-old fallback edge identified above.
+        NameSet consumed_here;
+        for (const auto & node : dag.getNodes())
+        {
+            /// `arrayJoin` is rejected for mutations in `MutationsInterpreter` (it changes the
+            /// row count), so a mutation step's DAG never contains an ARRAY_JOIN node.
+            chassert(node.type != ActionsDAG::ActionType::ARRAY_JOIN);
+
+            if (node.type != ActionsDAG::ActionType::FUNCTION)
+                continue;
+
+            const bool is_synthetic_fallback_if = synthetic_fallback_if_nodes.contains(&node);
+            for (size_t i = 0; i < node.children.size(); ++i)
+            {
+                /// Skip the `if`'s third argument: it is the keep-old fallback, not a read.
+                if (is_synthetic_fallback_if && i == 2)
+                    continue;
+
+                const auto * arg = node.children[i];
+
+                /// A mutation step's DAG binds a function argument directly to its source node
+                /// (INPUT, another FUNCTION, or COLUMN); ALIAS nodes only appear as a step's
+                /// named output, never as a function argument.
+                chassert(arg->type != ActionsDAG::ActionType::ALIAS);
+
+                if (arg->type == ActionsDAG::ActionType::INPUT)
+                    consumed_here.insert(to_storage_key(arg->result_name));
+            }
+        }
+
+        /// First reference wins across steps; within a step a genuine consume wins over the
+        /// overwrite, so `UPDATE col = f(col)` forces `col` to its post-`MODIFY` type.
+        for (const auto & col : consumed_here)
+            if (decided.insert(col).second)
+                must_convert.insert(col);
+        for (const auto & col : overwritten_here)
+            decided.insert(col);
+    }
+    return must_convert;
+}
+
+/// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
+/// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
+static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
+{
+    if (columns.size() != on_disk_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of columns doesn't match number of on-disk columns, columns size: {}, on_disk_columns size: {}",
+            columns.size(),
+            on_disk_columns.size());
+
+    ColumnsWithTypeAndName res;
+    res.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
+        if (columns[i])
+            res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
+    }
+    return res;
+}
+
+MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
+    size_t max_rows,
+    MarkRanges & ranges,
+    std::vector<MarkRanges> & patch_ranges,
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    size_t max_block_size_rows)
+{
+    if (max_rows == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
+
+    ReadResult read_result{log};
+
+    if (range_readers.empty())
+        return read_result;
+
+    auto & first_reader = range_readers.front();
+
+    size_t num_attributed_readers = 0;
+    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
+        for (size_t i = 0; i < range_readers.size(); ++i)
+            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
+                num_attributed_readers = i + 1;
+
+    try
+    {
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
+        LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While reading part {}", first_reader.getReader()->data_part_info_for_read->getPartName());
+        throw;
+    }
+
+    /// Survivors per granule entering the first query-PREWHERE step, captured only when an earlier reader
+    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
+    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
+    std::optional<std::vector<size_t>> rows_entering_prewhere;
+
+    /// Per-granule PREWHERE drop attribution. A granule counts as dropped by PREWHERE only when the user
+    /// predicate alone empties it. We can assert that only if no synthesized dynamic filter (a top-K threshold
+    /// filter, a join runtime filter) removed any of its rows: once a dynamic filter has thinned a granule, a
+    /// user step that empties the remnant is not emptying the granule -- most of it was already gone -- so the
+    /// drop cannot be attributed to PREWHERE (fail-closed). `dynamic_touched[g]` records that a dynamic filter
+    /// reduced g's survivors anywhere in the chain, including a top-K filter that runs before the first user
+    /// step; the final verdict also requires g to be empty after the last user step. Row-level policies, on-fly
+    /// mutations and lightweight deletes are not dynamic filters and do not contaminate: they run before PREWHERE
+    /// and are excluded via the `entering` snapshot instead.
+    std::vector<size_t> prewhere_prev_surviving; /// survivors per granule after the previously tracked step
+    std::vector<char> prewhere_dynamic_touched;  /// a synthesized dynamic filter removed rows from this granule
+    bool prewhere_tracking_started = false;
+
+    /// Fold one chain step into the per-granule attribution above. Called for every reader up to the last
+    /// query-PREWHERE reader; later readers cannot change PREWHERE's verdict. Tracking starts at the first
+    /// reader so a dynamic filter preceding the first user step (a leading top-K) is caught.
+    auto track_prewhere_granules = [&](size_t step_index)
+    {
+        if (!prewhere_granule_stats_enabled || step_index > last_query_prewhere_reader_index)
+            return;
+
+        auto surviving = read_result.survivingRowsPerGranule();
+        if (!prewhere_tracking_started)
+        {
+            /// Survivors before the first reader are the raw rows read.
+            prewhere_prev_surviving = read_result.raw_rows_per_granule;
+            prewhere_dynamic_touched.assign(surviving.size(), 0);
+            prewhere_tracking_started = true;
+        }
+
+        const auto * step = range_readers[step_index].getPrewhereInfo();
+        const bool is_dynamic_filter_step = step && step->type == PrewhereExprStep::Filter && step->is_synthesized_dynamic_filter;
+        /// A synthesized dynamic filter that removes any row of a granule contaminates it: the user predicate
+        /// alone can no longer be shown to empty that granule. User predicates, and the mutation/row-policy
+        /// readers, only reduce the honest survivor count and do not contaminate.
+        if (is_dynamic_filter_step)
+            for (size_t granule = 0; granule < surviving.size(); ++granule)
+                if (surviving[granule] < prewhere_prev_surviving[granule])
+                    prewhere_dynamic_touched[granule] = 1;
+
+        prewhere_prev_surviving = std::move(surviving);
+    };
+
+    std::optional<bool> should_continue_sampling;
+    if (read_result.num_rows != 0)
+    {
+        first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
+
+        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
+        if (dataflow_cache_update_cb)
+            dataflow_cache_update_cb(
+                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
+                first_reader.getReader()->getPartiallyReadColumns(),
+                read_result.num_bytes_read,
+                should_continue_sampling);
+
+        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
+        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
+
+        executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
+        addPatchVirtuals(read_result, first_reader.getSampleBlock());
+
+        track_prewhere_granules(0);
+
+        if (num_attributed_readers != 0)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
+    }
+
+    for (size_t i = 1; i < range_readers.size(); ++i)
+    {
+        if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
+            rows_entering_prewhere = read_result.survivingRowsPerGranule();
+
+        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
+        size_t num_read_rows = 0;
+        auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
+
+        /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
+        /// It's also needed to properly advancing streams in later steps.
+        if (read_result.num_rows == 0)
+            continue;
+
+        const auto & previous_header = range_readers[i - 1].getSampleBlock();
+        applyPatchesAfterReader(read_result, i - 1);
+
+        if (!columns.empty())
+        {
+            /// If all requested columns are absent in part num_read_rows will be 0.
+            /// In this case we need to use number of rows in the result to fill the default values and don't filter block.
+            if (num_read_rows == 0)
+                num_read_rows = read_result.num_rows;
+
+            if (dataflow_cache_update_cb)
+            {
+                chassert(read_result.num_bytes_read >= num_bytes_read_so_far);
+                // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
+                // is already set to false, because we still need to update the total bytes seen.
+                dataflow_cache_update_cb(
+                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
+                    range_readers[i].getReader()->getPartiallyReadColumns(),
+                    read_result.num_bytes_read - num_bytes_read_so_far,
+                    should_continue_sampling);
+            }
+
+            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
+            read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
+        }
+
+        executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
+
+        track_prewhere_granules(i);
+
+        if (i < num_attributed_readers)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
+    }
+
+    applyPatchesAfterReader(read_result, range_readers.size() - 1);
+
+    /// Account the granules this block read and dropped by PREWHERE. For each granule, feed three flags to the
+    /// mark combiner: whether rows reached the user predicate (`read`), whether any survived it (`survived`),
+    /// and whether a synthesized dynamic filter removed rows from it (`contaminated`). `read` is `entering > 0`
+    /// -- the survivors reaching the first query-PREWHERE reader, or the raw rows read when PREWHERE is first --
+    /// so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy filter are not
+    /// read. A granule is counted as dropped only when it was read, nothing survived the last user step
+    /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter), and no dynamic filter
+    /// contaminated it. We also feed granules that a dynamic filter emptied before the user step (`read` false
+    /// but `contaminated` true): they carry the contamination to the mark without being counted as read, which
+    /// matters when another fragment of the same granule was cleanly emptied by the user predicate. Feeding is
+    /// in mark order; `feedPrewhereGranuleMark` OR-s the flags of a granule split across blocks.
+    if (prewhere_granule_stats_enabled)
+    {
+        /// Feed this block's granules only when tracking ran (it does whenever any row reached PREWHERE in this
+        /// block). When it did not, the per-granule vectors are empty; a pending mark from an earlier block is
+        /// still finalized below once the cursor passes it.
+        if (prewhere_tracking_started)
+        {
+            const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
+
+            /// Visit a granule if it was read, or if a dynamic filter touched it (so its contamination reaches
+            /// the mark even when no row of this fragment reached the user predicate).
+            std::vector<size_t> visit(entering.size(), 0);
+            for (size_t granule = 0; granule < visit.size(); ++granule)
+                if (entering[granule] > 0 || prewhere_dynamic_touched[granule])
+                    visit[granule] = 1;
+
+            read_result.forEachGranuleMark(visit, [&](size_t mark, size_t granule)
+            {
+                const bool read = entering[granule] > 0;
+                const bool survived = read && prewhere_prev_surviving[granule] > 0;
+                const bool contaminated = prewhere_dynamic_touched[granule] != 0;
+                feedPrewhereGranuleMark(mark, read, survived, contaminated);
+            });
+        }
+
+        /// Finalize the pending granule once the first reader's cursor has advanced past its mark, which
+        /// proves it was read in full. Comparing the mark (not `numReadRowsInCurrentGranule() == 0`) is needed
+        /// because the cursor may stop partway through a *later* granule that an earlier filter emptied, so it
+        /// was not fed here; the pending, earlier granule is still complete. It stays pending only while the
+        /// cursor is still inside it: a genuine split across blocks, or a granule cut short by early
+        /// termination. This also finalizes it on early termination (LIMIT), which the task-end path would miss.
+        if (prewhere_pending_mark && range_readers.front().currentMark() > *prewhere_pending_mark)
+            finalizeCompletedPrewhereGranule();
+    }
+
+    return read_result;
+}
+
+void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool was_read, bool survived, bool contaminated)
+{
+    /// Marks arrive in non-decreasing order across the whole part read. The only repeat is the trailing
+    /// granule of one block continuing as the leading granule of the next, so an equal mark means the same
+    /// granule split across blocks: combine the flags instead of counting it twice.
+    if (prewhere_pending_mark && *prewhere_pending_mark == mark)
+    {
+        /// Count the granule as read the first time a fragment of it reached the user predicate.
+        if (was_read && !prewhere_pending_read)
+            ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+        prewhere_pending_read |= was_read;
+        prewhere_pending_survived |= survived;
+        prewhere_pending_contaminated |= contaminated;
+        return;
+    }
+
+    /// A higher mark means the pending granule was read in full.
+    if (prewhere_pending_mark)
+        finalizeCompletedPrewhereGranule();
+
+    prewhere_pending_mark = mark;
+    prewhere_pending_read = was_read;
+    prewhere_pending_survived = survived;
+    prewhere_pending_contaminated = contaminated;
+
+    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still reports
+    /// the granules it read; whether it is also dropped is decided once the granule is complete. A fragment a
+    /// dynamic filter emptied before the user step (`was_read` false) does not count as read.
+    if (was_read)
+        ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+}
+
+void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
+{
+    /// The pending granule has been read in full. It was dropped by PREWHERE only if the user predicate read
+    /// it, rejected every surviving row, and no synthesized dynamic filter contaminated it (which would mean
+    /// the user predicate alone cannot be shown to empty the granule).
+    if (prewhere_pending_read && !prewhere_pending_survived && !prewhere_pending_contaminated)
+        ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders);
+
+    prewhere_pending_mark.reset();
+    prewhere_pending_read = false;
+    prewhere_pending_survived = false;
+    prewhere_pending_contaminated = false;
+}
+
+void MergeTreeReadersChain::executeActionsBeforePrewhere(
+    ReadResult & result,
+    Columns & read_columns,
+    MergeTreeRangeReader & range_reader,
+    const Block & previous_header,
+    const NameSet & previous_step_columns,
+    size_t num_read_rows) const
+{
+    auto * merge_tree_reader = range_reader.getReader();
+    const auto * prewhere_info = range_reader.getPrewhereInfo();
+
+    merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
+
+    /// fillMissingColumns() must be called after reading but before any filterings because
+    /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
+    /// fillMissingColumns() fixes this.
+    /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
+    /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
+    bool should_evaluate_missing_defaults = false;
+    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
+
+    if (result.total_rows_per_granule != num_read_rows)
+    {
+        /// This can only happen when all columns are missing during the current read step,
+        /// and num_read_rows is inferred from a previous read.
+        if (result.num_rows != num_read_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch in expected row count: total_rows_per_granule={}, num_rows={}, num_read_rows={}. "
+                "This indicates an inconsistency in row filling logic when all columns are missing",
+                result.total_rows_per_granule,
+                result.num_rows,
+                num_read_rows);
+    }
+    else if (result.num_rows != num_read_rows)
+    {
+        /// We have filter applied from the previous step
+        /// So we need to apply it to the newly read rows
+        if (!result.final_filter.present() || result.final_filter.countBytesInFilter() != result.num_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
+
+        MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
+    }
+
+    auto patch_max_version = getMaxPatchVersionForStep(range_reader);
+    const auto & result_header = range_reader.getReadSampleBlock();
+    auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
+
+    auto apply_patches = [&](ColumnForPatch::Order order)
+    {
+        /// Apply patches without min version for new columns because
+        /// if column is read on this step, it is not used by previous steps.
+        applyPatches(
+            result_header,
+            read_columns,
+            result.patch_versions_block,
+            /*min_version=*/ {},
+            patch_max_version,
+            columns_for_patches,
+            {order},
+            result.columns_for_patches);
+    };
+
+    apply_patches(ColumnForPatch::Order::BeforeConversions);
+
+    /// Apply alter conversions for columns read by this step.
+    ///
+    /// On-fly UPDATE/DELETE steps that precede a pending `ALTER MODIFY COLUMN` are built
+    /// by `AlterConversions::getMutationSteps` with `perform_alter_conversions = false`,
+    /// because the on-fly action's DAG embeds its own CAST for the columns the mutation
+    /// overwrites. Pre-casting the on-disk value would fail on values the UPDATE is
+    /// about to replace (e.g. `CAST('x' AS UInt64)` before `UPDATE v = '100'`).
+    ///
+    /// The same step also produces pass-through columns the mutation never touches.
+    /// Skipping conversion for those leaves the block advertising the post-MODIFY
+    /// metadata type over the on-disk column class, and downstream operators
+    /// (`MergingSortedTransform`'s `ColumnLowCardinality::insertFrom`, `NativeWriter`'s
+    /// `typeid_cast<ColumnLowCardinality>`, etc.) trip on the type vs. storage mismatch.
+    ///
+    /// `prewhere_info->columns_overwritten_by_chain` is the set of columns the chain
+    /// will overwrite. Null those out around `performRequiredConversions` so they are
+    /// skipped, then restore them so the step's action sees them in their on-disk form.
+    /// When the skip set is empty (e.g. a metadata-only / lazy `ALTER MODIFY COLUMN` with no
+    /// chained UPDATE/DELETE) the loop below is a pass-through and every read column is
+    /// converted. Not converting here would leave an on-disk column (e.g. a lazy JSON
+    /// type-hint path still stored as `Dynamic`) advertising the post-`MODIFY` metadata type,
+    /// which later trips `materialize` in `evaluateMissingDefaults` when the column is read
+    /// through the text-index paths (exact-equals direct read or the LIKE fallback).
+    ///
+    /// A column is exempt from conversion ONLY when its on-disk value is about to be
+    /// discarded and replaced before anything genuinely reads it. If a mutation step consumes
+    /// the column as a function input first (e.g. `materialize(a)` from
+    /// `UPDATE b = isNotNull(materialize(a))` before `UPDATE a = ...`, or a self-read like
+    /// `UPDATE a = materialize(a)`), that action expects it in the post-`MODIFY` type, so it
+    /// must still be converted. `columns_consumed_by_chain_actions` holds exactly those
+    /// columns; keep them out of the skip set so the conversion still runs.
+    if (!prewhere_info || prewhere_info->perform_alter_conversions)
+    {
+        merge_tree_reader->performRequiredConversions(read_columns);
+    }
+    else
+    {
+        const auto & reader_columns = merge_tree_reader->getColumns();
+        const auto & skip = prewhere_info->columns_overwritten_by_chain;
+
+        /// Skip conversion for overwritten columns, EXCEPT those a mutation step consumes
+        /// before any step overwrites them (`columns_consumed_by_chain_actions`): those must
+        /// arrive in the post-`MODIFY` type their consuming action was built against.
+        Columns saved(read_columns.size());
+        size_t pos = 0;
+        for (const auto & name_and_type : reader_columns)
+        {
+            const auto name_in_storage = name_and_type.getNameInStorage();
+            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
+            {
+                saved[pos] = read_columns[pos];
+                read_columns[pos] = nullptr;
+            }
+            ++pos;
+        }
+
+        merge_tree_reader->performRequiredConversions(read_columns);
+
+        pos = 0;
+        for (const auto & name_and_type : reader_columns)
+        {
+            const auto name_in_storage = name_and_type.getNameInStorage();
+            if (skip.contains(name_in_storage) && !columns_consumed_by_chain_actions.contains(name_in_storage))
+                read_columns[pos] = std::move(saved[pos]);
+            ++pos;
+        }
+    }
+
+    apply_patches(ColumnForPatch::Order::AfterConversions);
+
+    /// If some columns absent in part, then evaluate default values
+    if (should_evaluate_missing_defaults)
+        evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+
+    apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
+}
+
+void MergeTreeReadersChain::evaluateMissingDefaults(
+    MergeTreeRangeReader & range_reader,
+    const ReadResult & result,
+    const Block & previous_header,
+    Columns & columns) const
+{
+    chassert(range_reader.getReader()->mayEvaluateMissingDefaults());
+
+    Block additional_columns;
+    if (!previous_header.empty())
+        additional_columns = previous_header.cloneWithColumns(result.columns);
+
+    for (const auto & col : result.additional_columns)
+        additional_columns.insert(col);
+
+    addDummyColumnWithRowCount(additional_columns, result.num_rows);
+    range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
+}
+
+void MergeTreeReadersChain::executePrewhereActions(
+    MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader, bool keep_additional_columns)
+{
+    reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns);
+    result.checkInternalConsistency();
+
+    if (!result.can_return_prewhere_column_without_filtering && is_last_reader)
+    {
+        if (!result.filterWasApplied())
+        {
+            /// TODO: another solution might be to set all 0s from final filter into the prewhere column
+            /// and not filter all the columns here but rely on filtering in WHERE.
+            result.applyFilter(result.final_filter);
+            result.checkInternalConsistency();
+        }
+
+        result.can_return_prewhere_column_without_filtering = true;
+    }
+
+    const auto & sample_block = reader.getSampleBlock();
+    if (result.num_rows != 0 && result.columns.size() != sample_block.columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of columns in result doesn't match number of columns in sample block, read_result: {}, sample block: {}",
+            result.dumpInfo(), sample_block.dumpStructure());
+}
+
+void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & header) const
+{
+    if (patch_readers.empty() || result.num_rows == 0)
+        return;
+
+    auto result_block = header.cloneWithColumns(result.columns);
+    addPatchVirtuals(result.columns_for_patches, result_block);
+}
+
+void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) const
+{
+    const auto & system_columns = getAllPatchPartSystemColumns();
+    for (const auto & column : system_columns)
+    {
+        /// All system columns must be read on previous steps.
+        if (!to.has(column.name) && from.has(column.name))
+            to.insert(from.getByName(column.name));
+    }
+
+    /// Save sorting key columns required for applying MergeOnKey patches.
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+
+        if (patch.mode == PatchMode::MergeOnKey && patch.sorting_key)
+        {
+            for (const auto & name : patch.sorting_key->column_names)
+            {
+                if (!to.has(name) && from.has(name))
+                    to.insert(from.getByName(name));
+            }
+        }
+    }
+}
+
+Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_header, ReadResult & read_result)
+{
+    /// Sort-key columns of MergeOnKey patches are required for key comparisons but may be missing on disk.
+    bool should_evaluate_missing_defaults = false;
+    range_readers.front().getReader()->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults, read_result.num_rows);
+
+    if (should_evaluate_missing_defaults)
+    {
+        NameSet required_key_columns;
+        for (const auto & patch_reader : patch_readers)
+        {
+            const auto & patch = patch_reader->getPatchPart();
+
+            if (patch.mode == PatchMode::MergeOnKey && patch.sorting_key)
+            {
+                auto key_columns = getKeyColumnsRequiredForPatch(patch);
+                required_key_columns.insert(key_columns.begin(), key_columns.end());
+            }
+        }
+
+        auto is_missing_key_column = [&](size_t pos)
+        {
+            const auto & column_name = result_header.getByPosition(pos).name;
+            return !read_result.columns[pos] && required_key_columns.contains(column_name);
+        };
+
+        size_t num_columns = result_header.columns();
+        bool has_missing_key_columns = false;
+
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (is_missing_key_column(pos))
+            {
+                has_missing_key_columns = true;
+                break;
+            }
+        }
+
+        if (has_missing_key_columns)
+        {
+            auto columns_with_defaults = read_result.columns;
+            evaluateMissingDefaults(range_readers.front(), read_result, /*previous_header=*/ {}, columns_with_defaults);
+
+            for (size_t pos = 0; pos < num_columns; ++pos)
+            {
+                if (is_missing_key_column(pos))
+                    read_result.columns[pos] = columns_with_defaults[pos];
+            }
+        }
+    }
+
+    auto main_block = result_header.cloneWithColumns(read_result.columns);
+
+    /// Materialize the sort-key result columns of MergeOnKey patches on `main_block` once per main block.
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
+            continue;
+
+        auto is_missing = [&](const String & name)
+        {
+            const auto * column = main_block.findByName(name);
+            return !column || !column->column;
+        };
+
+        if (patch.sorting_key->expression && std::ranges::any_of(patch.sorting_key->column_names, is_missing))
+        {
+            auto block_for_key = result_header.cloneWithColumns(read_result.columns);
+            patch.sorting_key->expression->execute(block_for_key);
+
+            for (const auto & name : patch.sorting_key->column_names)
+            {
+                if (!main_block.has(name))
+                    main_block.insert(block_for_key.getByName(name));
+            }
+        }
+
+        for (const auto & name : patch.sorting_key->column_names)
+        {
+            /// Key comparisons require the same column class on all sides.
+            auto & key_column = main_block.getByName(name);
+
+            chassert(key_column.column);
+            key_column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_column.column->convertToFullColumnIfConst()));
+            key_column.type = recursiveRemoveLowCardinality(key_column.type);
+
+            if (!read_result.columns_for_patches.has(name))
+                read_result.columns_for_patches.insert(key_column);
+        }
+    }
+
+    return main_block;
+}
+
+void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
+{
+    if (patch_readers.empty())
+        return;
+
+    auto main_block = executeSortingKeyExpressions(result_header, read_result);
+
+    for (size_t i = 0; i < patches_results.size(); ++i)
+    {
+        auto & patch_results = patches_results[i];
+
+        /// Remove patches that are not needed for current block anymore.
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), main_block))
+        {
+            patch_results.pop_front();
+        }
+
+        const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
+        patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
+    }
+}
+
+ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & header, const Columns & columns) const
+{
+    ColumnsForPatches res;
+    if (patch_readers.empty())
+        return res;
+
+    auto block = header.cloneWithColumns(columns);
+    using enum ColumnForPatch::Order;
+
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+        const auto & patch_columns = patch.part->getColumnsDescription();
+        const auto & alter_conversions = patch.part->getAlterConversions();
+
+        const auto & sorting_key_columns = patch.stored_sorting_key_columns;
+        auto & columns_for_patch = res.emplace_back();
+
+        for (const auto & column : block)
+        {
+            if (isPatchPartSystemColumn(column.name))
+                continue;
+
+            String column_name_in_patch = column.name;
+            if (alter_conversions && alter_conversions->isColumnRenamed(column.name))
+                column_name_in_patch = alter_conversions->getColumnOldName(column.name);
+
+            /// Sorting key columns are never updated.
+            if (sorting_key_columns.contains(column_name_in_patch))
+                continue;
+
+            if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
+                continue;
+
+            /// Add requested column name, not the column name in patch, for correct applying patches.
+            /// This column name is translated to the column name in patch in MergeTree reader.
+            /// If columns is not created at this stage, it will be filled with defaults at the latest stage of reading.
+            if (!column.column)
+            {
+                columns_for_patch.emplace_back(column.name, AfterEvaluatingDefaults);
+            }
+            else if (patch.perform_alter_conversions)
+            {
+                columns_for_patch.emplace_back(column.name, AfterConversions);
+            }
+            else
+            {
+                columns_for_patch.emplace_back(column.name, BeforeConversions);
+            }
+        }
+    }
+
+    return res;
+}
+
+void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t reader_index)
+{
+    if (patch_readers.empty() || result.num_rows == 0 || result.columns.empty())
+        return;
+
+    auto & current_reader = range_readers.at(reader_index);
+
+    std::optional<UInt64> min_version = getMaxPatchVersionForStep(current_reader);
+    std::optional<UInt64> max_version;
+
+    if (reader_index + 1 != range_readers.size())
+        max_version = getMaxPatchVersionForStep(range_readers[reader_index + 1]);
+
+    if (min_version == max_version)
+        return;
+
+    if (min_version.has_value())
+    {
+        for (auto & column : result.patch_versions_block)
+            column.column = ColumnUInt64::create(result.patch_versions_block.rows(), *min_version);
+    }
+
+    const auto & result_header = current_reader.getSampleBlock();
+    auto columns_for_patches = getColumnsForPatches(result_header, result.columns);
+
+    using enum ColumnForPatch::Order;
+    std::set<ColumnForPatch::Order> suitable_orders = {AfterConversions, AfterEvaluatingDefaults};
+
+    applyPatches(
+        result_header,
+        result.columns,
+        result.patch_versions_block,
+        min_version,
+        max_version,
+        columns_for_patches,
+        suitable_orders,
+        result.columns_for_patches);
+}
+
+void MergeTreeReadersChain::applyPatches(
+    const Block & result_header,
+    Columns & result_columns,
+    Block & versions_block,
+    std::optional<UInt64> min_version,
+    std::optional<UInt64> max_version,
+    const ColumnsForPatches & columns_for_patches,
+    const std::set<ColumnForPatch::Order> & suitable_orders,
+    const Block & additional_columns) const
+{
+    if (patch_readers.empty() || result_columns.empty())
+        return;
+
+    auto result_block = result_header.cloneWithColumns(result_columns);
+    addPatchVirtuals(result_block, additional_columns);
+
+    /// Release the second references to columns so that updateInplaceFrom doesn't have to clone the updated columns.
+    result_columns.clear();
+
+    UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
+    std::vector<PatchReadResultToApply> patch_read_results;
+
+    for (size_t i = 0; i < patch_readers.size(); ++i)
+    {
+        const auto & patch = patch_readers[i]->getPatchPart();
+        const auto & patch_results = patches_results[i];
+
+        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Patches for one reader must have the same source data version. Got: {}, expected: {}",
+                patch.source_data_version, source_data_version);
+        }
+
+        if (min_version.has_value() && !patchHasHigherDataVersion(*patch.part, *min_version))
+            continue;
+
+        if (max_version.has_value() && patchHasHigherDataVersion(*patch.part, *max_version))
+            continue;
+
+        Names updated_columns;
+        for (const auto & columns_for_patch : columns_for_patches[i])
+        {
+            if (suitable_orders.contains(columns_for_patch.order))
+                updated_columns.push_back(columns_for_patch.column_name);
+        }
+
+        if (!updated_columns.empty())
+        {
+            std::sort(updated_columns.begin(), updated_columns.end());
+
+            for (const auto & patch_result : patch_results)
+                patch_read_results.push_back(PatchReadResultToApply{patch, patch_result, updated_columns});
+        }
+    }
+
+    /// Prevent patch rows with versions <= min_version from re-applying stale updates.
+    if (min_version.has_value())
+        source_data_version = std::max(source_data_version, *min_version);
+
+    applyPatchesToBlock(result_block, versions_block, additional_columns, patch_read_results, source_data_version);
+
+    result_columns = result_block.getColumns();
+    result_columns.resize(result_header.columns());
+}
+
+}

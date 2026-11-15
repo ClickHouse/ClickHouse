@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -53,7 +52,7 @@ namespace
     DistinctColumns getDistinctColumns(const DistinctStep * distinct)
     {
         /// find non-const columns in DISTINCT
-        const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputStream().header.getColumnsWithTypeAndName();
+        const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputHeader()->getColumnsWithTypeAndName();
         std::set<std::string_view> non_const_columns;
         std::unordered_set<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
         for (const auto & column : distinct_columns)
@@ -157,6 +156,7 @@ namespace
         std::vector<std::vector<const ActionsDAG *>> actions_chain;
         const DistinctStep * inner_distinct_step = nullptr;
         const IQueryPlanStep * aggregation_before_distinct = nullptr;
+        bool has_cube_or_rollup = false;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())
         {
@@ -171,6 +171,9 @@ namespace
                 logDebug("aggregation pass: stopped by allow check on step", current_step->getName());
                 break;
             }
+
+            if (typeid_cast<const CubeStep *>(current_step) || typeid_cast<const RollupStep *>(current_step))
+                has_cube_or_rollup = true;
 
             if (typeid_cast<const WindowStep *>(current_step))
             {
@@ -196,6 +199,12 @@ namespace
 
         if (aggregation_before_distinct)
         {
+            /// CUBE/ROLLUP/GROUPING SETS emit extra rows with key columns defaulted, which can
+            /// collide with real group values, so the output is not distinct on the keys: keep DISTINCT.
+            /// CUBE/ROLLUP are a separate step above Aggregating; GROUPING SETS lives inside it.
+            if (has_cube_or_rollup)
+                return false;
+
             if (actions_chain.empty())
                 actions_chain.push_back(std::move(dag_stack));
 
@@ -203,12 +212,16 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
             {
+                if (aggregating_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     aggregating_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
-            else if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
-                     merging_aggregated_step)
+            if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
+                merging_aggregated_step)
             {
+                if (merging_aggregated_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     merging_aggregated_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
@@ -307,10 +320,10 @@ namespace
 /// DISTINCT is redundant if DISTINCT on the same columns was executed before
 /// Trivial example: SELECT DISTINCT * FROM (SELECT DISTINCT * FROM numbers(3))
 ///
-size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
+size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & /*settings*/)
 {
     bool applied = false;
-    for (const auto * node : parent_node->children)
+    for (auto & node : parent_node->children)
     {
         /// check if it is distinct node
         if (typeid_cast<const DistinctStep *>(node->step.get()) == nullptr)
@@ -320,7 +333,7 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
         {
             /// remove current distinct
             chassert(!node->children.empty());
-            parent_node->children[0] = node->children.front();
+            node = node->children.front();
             applied = true;
         }
     }

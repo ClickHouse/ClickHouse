@@ -110,5 +110,5 @@ true	Bool
 [{42:(1,[(2,{1:2})])}]	Dynamic
 [{42:(1,[(2,{1:2})])}]	Dynamic(max_types=10)
 [{42:(1,[(2,{1:2})])}]	Dynamic(max_types=10)
-[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=255)
-[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=255)
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=254)
+[{42:(1,[(2,{1:2})])}]	Dynamic(max_types=254)

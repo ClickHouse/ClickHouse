@@ -1,3 +1,5 @@
+#include <Access/AccessControl.h>
+#include <Common/CurrentThread.h>
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -5,24 +7,32 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Backups/IBackupCoordination.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
+#include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
+#include <Common/intExp2.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
-
+#include <algorithm>
 #include <filesystem>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -35,6 +45,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsSeconds lock_acquire_timeout;
+
+    /// Cloud only
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
@@ -42,6 +62,7 @@ namespace ErrorCodes
     extern const int CANNOT_BACKUP_TABLE;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -58,7 +79,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 
@@ -78,23 +99,40 @@ namespace
         std::chrono::milliseconds sleep_time = intExp2(std::min(sleep_counter, 10)) * min_sleep;
         return std::min(sleep_time, max_sleep);
     }
+
+    /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
+    void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
+    {
+        /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
+        /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
+        if (BackupUtils::isInnerTable(database_name, table_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                "Table: {}.{}. Use the outer table name instead.",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
+        }
+    }
 }
 
 
 BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
+    const String & backup_id_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
     const ContextPtr & context_,
     ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
+    , backup_id(backup_id_)
     , backup_coordination(backup_coordination_)
     , read_settings(read_settings_)
     , context(context_)
     , process_list_element(context->getProcessListElement())
-    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , collect_metadata_timeout(context->getConfigRef().getUInt64(
           "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
     , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
@@ -102,12 +140,16 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
+    , compare_collected_metadata(context->getConfigRef().getBool(
+          "backups.compare_collected_metadata",
+          !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+    /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
-    , global_zookeeper_retries_info(
-          context->getSettingsRef().backup_restore_keeper_max_retries,
-          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+    , zookeeper_retries_info(
+          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , threadpool(threadpool_)
 {
 }
@@ -168,23 +210,7 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     checkIsQueryCancelled();
 
     current_stage = new_stage;
-    backup_coordination->setStage(new_stage, message);
-
-    if (new_stage == Stage::formatGatheringMetadata(0))
-    {
-        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-    }
-    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
-    {
-        auto current_time = std::chrono::steady_clock::now();
-        auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
-        return backup_coordination->waitForStage(
-            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
-    }
-    else
-    {
-        return backup_coordination->waitForStage(new_stage);
-    }
+    return backup_coordination->setStage(new_stage, message, /* sync = */ true);
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -219,6 +245,8 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
+
+    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 
@@ -361,8 +389,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -375,8 +405,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
-                    /* except_table_names= */ {});
+                    /* except_table_names= */ {},
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -389,14 +421,16 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* table_name= */ {},
                     /* throw_if_table_not_found= */ false,
                     /* partitions= */ {},
+                    /* exclude_table_data= */ false,
                     /* all_tables= */ true,
-                    /* except_table_names= */ element.except_tables);
+                    /* except_table_names= */ element.except_tables,
+                    /* except_data_table_names= */ element.except_data_tables);
                 break;
             }
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -407,8 +441,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                             /* table_name= */ {},
                             /* throw_if_table_not_found= */ false,
                             /* partitions= */ {},
+                            /* exclude_table_data= */ false,
                             /* all_tables= */ true,
-                            /* except_table_names= */ element.except_tables);
+                            /* except_table_names= */ element.except_tables,
+                            /* except_data_table_names= */ element.except_data_tables);
                     }
                 }
                 break;
@@ -424,10 +460,17 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::optional<String> & table_name,
     bool throw_if_table_not_found,
     const std::optional<ASTs> & partitions,
+    bool exclude_table_data,
     bool all_tables,
-    const std::set<DatabaseAndTableName> & except_table_names)
+    const std::set<DatabaseAndTableName> & except_table_names,
+    const std::set<DatabaseAndTableName> & except_data_table_names)
 {
     checkIsQueryCancelled();
+
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
 
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())
@@ -485,23 +528,46 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     if (table_name)
     {
-        auto & table_params = database_info.tables[*table_name];
+        if (exclude_table_data)
+            checkTableCanHaveDataExcluded(database_name, *table_name);
+
+        auto & table_params = database_info.tables.try_emplace(*table_name).first->second;
         if (throw_if_table_not_found)
             table_params.throw_if_table_not_found = true;
-        if (partitions)
-        {
-            table_params.partitions.emplace();
-            insertAtEnd(*table_params.partitions, *partitions);
-        }
-        database_info.except_table_names.emplace(*table_name);
+
+        /// One call naming a table is one single-table element of the query, so this is where an element's
+        /// own view of the table gets recorded. The partition scope and the exclusion are kept together and
+        /// per element: they are one request, and merging them across elements is what let one element's
+        /// request erase another's (see `DatabaseInfo::TableParams`).
+        auto & element_info = table_params.elements.emplace_back();
+        element_info.partitions = partitions;
+        element_info.except_data = exclude_table_data;
     }
 
     if (all_tables)
     {
-        database_info.all_tables = all_tables;
+        /// One call with `all_tables` is one DATABASE or ALL element covering this database, so this is where an
+        /// element's own view of the database gets recorded.
+        auto & element_info = database_info.all_tables_elements.emplace_back();
+
         for (const auto & except_table_name : except_table_names)
-            if (except_table_name.first == database_name)
-                database_info.except_table_names.emplace(except_table_name.second);
+        {
+            if (except_table_name.first != database_name)
+                continue;
+
+            element_info.except_table_names.emplace(except_table_name.second);
+        }
+
+        /// Only a DATABASE or ALL element can name other tables in EXCEPT DATA FROM TABLE/TABLES, and it can
+        /// only name tables it selects itself, i.e. tables of the databases it enumerates.
+        for (const auto & except_data_table_name : except_data_table_names)
+        {
+            if (except_data_table_name.first != database_name)
+                continue;
+
+            checkTableCanHaveDataExcluded(except_data_table_name.first, except_data_table_name.second);
+            element_info.except_data_table_names.emplace(except_data_table_name.second);
+        }
     }
 }
 
@@ -510,6 +576,14 @@ void BackupEntriesCollector::gatherTablesMetadata()
     checkIsQueryCancelled();
 
     table_infos.clear();
+
+    /// Collect target tables of refreshable materialized views that use the REPLACE
+    /// refresh strategy (APPEND is excluded) among the tables being backed up.
+    /// We build this snapshot from the storages we've already found, so the decision
+    /// in `shouldBackupTableData` doesn't need to query `DatabaseCatalog` again and
+    /// is scoped to the tables within the backup.
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> rmv_replace_target_ids;
+
     for (const auto & [database_name, database_info] : database_infos)
     {
         std::vector<std::pair<ASTPtr, StoragePtr>> db_tables = findTablesInDatabase(database_name);
@@ -521,7 +595,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path metadata_path_in_backup, data_path_in_backup;
+            fs::path metadata_path_in_backup;
+            fs::path data_path_in_backup;
             auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
             if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
@@ -536,32 +611,72 @@ void BackupEntriesCollector::gatherTablesMetadata()
                     / escapeForFileName(table_name_in_backup.table);
             }
 
-            /// Add information to `table_infos`.
-            auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
+            const auto qualified_name = QualifiedTableName{database_name, table_name};
+            auto & res_table_info = table_infos[qualified_name];
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            if (!backup_settings.structure_only)
+            /// Record REPLACE targets of refreshable materialized views from the create query, not
+            /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
+            /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
+            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend()
+                && create.hasTargetTableID(ViewTarget::To))
             {
-                auto it = database_info.tables.find(table_name);
-                if (it != database_info.tables.end())
-                {
-                    const auto & partitions = it->second.partitions;
-                    if (partitions && storage && !storage->supportsBackupPartition())
-                    {
-                        throw Exception(
-                            ErrorCodes::CANNOT_BACKUP_TABLE,
-                            "Table engine {} doesn't support partitions, cannot backup {}",
-                            storage->getName(),
-                            tableNameWithTypeToString(database_name, table_name, false));
-                    }
-                    res_table_info.partitions = partitions;
-                }
+                StorageID target_id = create.getTargetTableID(ViewTarget::To);
+                if (!target_id.hasDatabase())
+                    target_id.database_name = database_name;
+                rmv_replace_target_ids.insert(target_id);
             }
         }
+    }
+
+    /// Second pass: now that we have the full snapshot of tables and RMV targets,
+    /// decide whether the data of each table should be backed up and validate
+    /// partition-related constraints.
+    for (auto & [qualified_name, res_table_info] : table_infos)
+    {
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, res_table_info.create_table_query, rmv_replace_target_ids);
+
+        const auto & database_info = database_infos.at(qualified_name.database);
+
+        /// Only a single-table element can name partitions, so the engines that cannot back them up are
+        /// validated against those elements alone.
+        ///
+        /// Validated before `should_backup_data` is acted on, so it holds however the data came to be left
+        /// out - `EXCEPT DATA FROM TABLE`, `structure_only`, or a refreshable materialized view target.
+        /// Naming a partition of an engine that has none is a user error in each of those cases, and
+        /// answering it by silently ignoring the clause is worse than refusing the query.
+        auto it = database_info.tables.find(qualified_name.table);
+        const bool partitions_named = it != database_info.tables.end() && it->second.anyElementNamedPartitions();
+        if (partitions_named && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Table engine {} doesn't support partitions, cannot backup {}",
+                res_table_info.storage->getName(),
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+
+        /// The data of a table on a storage policy marked `backup_metadata_only` is never backed up, the storage provides
+        /// it. A backup of some of its partitions would be restored as the whole table, so refuse it.
+        if (partitions_named
+            && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, res_table_info.create_table_query, context))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot backup specific partitions of {}: it is on a storage policy marked backup_metadata_only, so only its "
+                "definition is backed up, and it is restored with all the data of its storage",
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+
+        /// An excluded table contributes no partitions, so the scope below is left unset for it.
+        if (!res_table_info.should_backup_data)
+            continue;
+
+        res_table_info.partitions = database_info.partitionsWithData(qualified_name.table);
     }
 }
 
@@ -574,16 +689,14 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     auto filter_by_table_name = [&](const String & table_name)
     {
+        /// Only the reserved `.inner*` families can be told from the name. This filter is all a database
+        /// engine gets, and it is called with a name and nothing else - for a `Replicated` database while
+        /// walking the Keeper metadata listing, before any table definition has been read - so the inner
+        /// tables which take a definition to recognise are dropped from the result below instead.
         if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
-        if (database_info.tables.contains(table_name))
-            return true;
-
-        if (database_info.all_tables)
-            return !database_info.except_table_names.contains(table_name);
-
-        return false;
+        return database_info.isTableSelectedByAnyElement(table_name);
     };
 
     std::vector<std::pair<ASTPtr, StoragePtr>> db_tables;
@@ -591,8 +704,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     try
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
-        auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info, nullptr);
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
@@ -610,7 +722,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create->temporary)
+            if (!create->isTemporary())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
@@ -653,7 +765,7 @@ void BackupEntriesCollector::lockTablesForReading()
 
         checkIsQueryCancelled();
 
-        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     }
 
     std::erase_if(
@@ -677,9 +789,9 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     tables_metadata.reserve(table_infos.size());
 
     for (const auto & [database_name, database_info] : database_infos)
-        databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
+        databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-        tables_metadata.emplace_back(table_name, serializeAST(*table_info.create_table_query));
+        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());
@@ -708,23 +820,20 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         {
             if (mismatch->first == p_mismatch->first)
                 return {MismatchType::CHANGED, mismatch->first};
-            else if (mismatch->first < p_mismatch->first)
+            if (mismatch->first < p_mismatch->first)
                 return {MismatchType::ADDED, mismatch->first};
-            else
-                return {MismatchType::REMOVED, mismatch->first};
+            return {MismatchType::REMOVED, mismatch->first};
         }
-        else if (mismatch != metadata.end())
+        if (mismatch != metadata.end())
         {
             return {MismatchType::ADDED, mismatch->first};
         }
-        else if (p_mismatch != previous_metadata.end())
+        if (p_mismatch != previous_metadata.end())
         {
             return {MismatchType::REMOVED, p_mismatch->first};
         }
-        else
-        {
-            return {MismatchType::NONE, {}};
-        }
+
+        return {MismatchType::NONE, {}};
     };
 
     /// Databases must be the same as during the previous scan.
@@ -770,7 +879,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -788,21 +897,25 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTablesData()
 {
-    if (backup_settings.structure_only)
-        return;
-
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
-    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+    /// No early return for `structure_only` here: the export of the named collections through the
+    /// data of `system.named_collections` is kept even then (see `shouldBackupTableData`), so with
+    /// `structure_only` everything except that table has `should_backup_data = false`.
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
+    /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
+    /// So they will outlive runner even if an exception is thrown
+    for (const auto & it : table_infos)
     {
-        runner([&]()
+        if (!it.second.should_backup_data)
+            continue;
+        runner.enqueueAndKeepTrack([&]()
         {
-            makeBackupEntriesForTableData(table_name);
+            makeBackupEntriesForTableData(it.first);
         });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -810,10 +923,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
 {
-    if (backup_settings.structure_only)
+    const auto & table_info = table_infos.at(table_name);
+    if (!table_info.should_backup_data)
         return;
 
-    const auto & table_info = table_infos.at(table_name);
     const auto & storage = table_info.storage;
     const auto & data_path_in_backup = table_info.data_path_in_backup;
 
@@ -840,6 +953,167 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         e.addMessage("While collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+bool BackupEntriesCollector::shouldBackupTableData(
+    const QualifiedTableName & table_name,
+    const StoragePtr & storage,
+    const ASTPtr & create_table_query,
+    const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
+{
+    /// The "data" of `system.named_collections` is the collections' definitions, which objects
+    /// restored from a schema-only backup may resolve inside their CREATE, so `structure_only`
+    /// keeps it. The other export controls - `backup_named_collections` (see
+    /// `backupNamedCollections`) and `EXCEPT DATA FROM TABLE` below - still apply.
+    if (backup_settings.structure_only && !BackupUtils::isSystemNamedCollectionsTable(table_name))
+        return false;
+
+    if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
+        && rmv_replace_target_ids.contains(StorageID{table_name.database, table_name.table}))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
+        return false;
+    }
+
+    if (isTableDataExcluded(table_name))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (excluded via EXCEPT DATA FROM TABLE)", table_name.getFullName());
+        return false;
+    }
+
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, create_table_query, context))
+    {
+        LOG_INFO(log, "Skipping table data for {} (on a storage policy marked backup_metadata_only)", table_name.getFullName());
+        return false;
+    }
+
+    return true;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::TableParams::anyElementNamedPartitions() const
+{
+    return std::ranges::any_of(elements, [](const auto & element) { return element.partitions.has_value(); });
+}
+
+std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::TableParams::partitionsWithData() const
+{
+    std::optional<ASTs> res;
+
+    for (const auto & element : elements)
+    {
+        /// The element asks for none of the table's data, so it contributes no partitions.
+        if (element.except_data)
+            continue;
+
+        /// The element asks for the whole table, which subsumes any partition another element named.
+        if (!element.partitions)
+            return {};
+
+        if (!res)
+            res.emplace();
+        insertAtEnd(*res, *element.partitions);
+    }
+
+    return res;
+}
+
+bool BackupEntriesCollector::DatabaseInfo::TableParams::isDataExcluded() const
+{
+    return std::ranges::all_of(elements, [](const auto & element) { return element.except_data; });
+}
+
+std::optional<ASTs> BackupEntriesCollector::DatabaseInfo::partitionsWithData(const String & table_name) const
+{
+    /// A DATABASE or ALL element cannot name partitions - only a single-table element can - so such an
+    /// element selecting the table without excluding its data is asking for the table's data in full, and
+    /// that subsumes any partition a single-table element named. Least exclusion wins here as everywhere
+    /// else: naming a partition asks for more data, it never licenses dropping the rest.
+    for (const auto & element : all_tables_elements)
+    {
+        /// The element does not select the table at all, so it expresses no wish about its data.
+        if (element.except_table_names.contains(table_name))
+            continue;
+
+        if (!element.except_data_table_names.contains(table_name))
+            return {};
+    }
+
+    auto it = tables.find(table_name);
+    if (it == tables.end())
+        return {};
+
+    return it->second.partitionsWithData();
+}
+
+bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const String & table_name) const
+{
+    /// A table named by an element of its own is selected even when a wider element excludes it: the element
+    /// naming it asks for it, and that request wins.
+    if (tables.contains(table_name))
+        return true;
+
+    /// A DATABASE or ALL element selects every table of the database except the ones its own EXCEPT TABLES
+    /// names. The elements are asked one by one rather than through a merged set of names, because a name
+    /// excluded by one element says nothing about the others - one element selecting the table is enough.
+    for (const auto & element : all_tables_elements)
+    {
+        if (!element.except_table_names.contains(table_name))
+            return true;
+    }
+
+    return false;
+}
+
+bool BackupEntriesCollector::isTableDataExplicitlySelectedForBackup(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    /// `DatabaseInfo::tables` holds only the tables named by TABLE elements; a DATABASE or ALL
+    /// element selecting the table records itself in `all_tables_elements` instead. An explicit
+    /// element excluding the table's data (`EXCEPT DATA FROM TABLE`) asks only for the table's
+    /// definition, so it does not make the data selection explicit; the data of such a table is
+    /// being backed up because a wildcard element asked for it.
+    auto table_it = it->second.tables.find(table_name.table);
+    return (table_it != it->second.tables.end()) && !table_it->second.isDataExcluded();
+}
+
+bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    const auto & database_info = it->second;
+
+    /// The data is dropped only when every element selecting this table also excludes its data. An element
+    /// asking for the table without the clause is asking for its data, and that request wins: backing up data
+    /// the user meant to exclude is a far smaller harm than silently dropping data they asked for.
+    ///
+    /// Whether the table is selected at all is the same question `findTablesInDatabase` asks, so it is asked
+    /// through the same predicate: the two must not be able to drift apart.
+    if (!database_info.isTableSelectedByAnyElement(table_name.table))
+        return false;
+
+    bool wanted_by_any_element = false;
+
+    /// `TableParams::isDataExcluded` asks every single-table element naming this table, so it is false as
+    /// soon as one of them asked for the data.
+    if (auto table_it = database_info.tables.find(table_name.table); table_it != database_info.tables.end())
+        wanted_by_any_element = !table_it->second.isDataExcluded();
+
+    for (const auto & element : database_info.all_tables_elements)
+    {
+        /// The element does not select the table at all, so it expresses no wish about its data.
+        if (element.except_table_names.contains(table_name.table))
+            continue;
+
+        if (!element.except_data_table_names.contains(table_name.table))
+            wanted_by_any_element = true;
+    }
+
+    return !wanted_by_any_element;
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)
@@ -903,11 +1177,20 @@ void BackupEntriesCollector::runPostTasks()
     LOG_TRACE(log, "All post tasks successfully executed");
 }
 
-size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
+std::unordered_map<UUID, AccessEntityPtr> BackupEntriesCollector::getAllAccessEntities()
 {
     std::lock_guard lock(mutex);
-    access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
-    return access_counters[static_cast<size_t>(type)]++;
+    if (!all_access_entities)
+    {
+        all_access_entities.emplace();
+        auto entities_with_ids = context->getAccessControl().readAllWithIDs();
+        for (const auto & [id, entity] : entities_with_ids)
+        {
+            if (entity->isBackupAllowed())
+                all_access_entities->emplace(id, entity);
+        }
+    }
+    return *all_access_entities;
 }
 
 }

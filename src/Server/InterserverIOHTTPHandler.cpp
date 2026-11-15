@@ -4,16 +4,23 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ServerSettings.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/String.h>
+#include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <shared_mutex>
 
 namespace DB
 {
@@ -21,18 +28,51 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int REQUIRED_PASSWORD;
+}
+
+namespace
+{
+
+/// Read the `endpoint` query parameter from the URI without consuming the request body.
+String getEndpointNameFromURI(const HTTPServerRequest & request)
+{
+    const Poco::URI uri(request.getURI());
+    for (const auto & [key, value] : uri.getQueryParameters())
+        if (key == "endpoint")
+            return value;
+    return {};
+}
+
 }
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
+    /// Defer a `Bearer` credential to the target endpoint only if it opts in via `acceptsBearerAuth`.
+    /// Otherwise fall through to the shared check and reject it before the endpoint is resolved, so
+    /// an unauthenticated caller cannot probe endpoint existence through the response.
+    if (request.hasCredentials())
+    {
+        String scheme;
+        String info;
+        request.getCredentials(scheme, info);
+        if (Poco::icompare(scheme, "Bearer") == 0)
+        {
+            const String endpoint_name = getEndpointNameFromURI(request);
+            const auto endpoint = server.context()->getInterserverIOHandler().tryGetEndpoint(endpoint_name);
+            if (endpoint && endpoint->acceptsBearerAuth())
+                return {"", true};
+        }
+    }
+
     auto server_credentials = server.context()->getInterserverCredentials();
     if (server_credentials)
     {
         if (!request.hasCredentials())
             return server_credentials->isValidUser("", "");
 
-        String scheme, info;
+        String scheme;
+        String info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
@@ -41,7 +81,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         Poco::Net::HTTPBasicCredentials credentials(info);
         return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
-    else if (request.hasCredentials())
+    if (request.hasCredentials())
     {
         return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }
@@ -49,16 +89,36 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+OpenTelemetry::TracingContextHolderPtr InterserverIOHTTPHandler::startTracingContext(const HTTPServerRequest & request) const
+{
+    if (!request.has("traceparent"))
+        return nullptr;
+
+    OpenTelemetry::TracingContext client_trace_context;
+    const String traceparent = request.get("traceparent");
+    String error;
+    if (client_trace_context.parseTraceparentHeader(traceparent, error))
+        client_trace_context.tracestate = request.get("tracestate", "");
+    else
+        LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+
+    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+        "InterserverIOHTTPHandler", client_trace_context, server.context()->getOpenTelemetrySpanLog());
+    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    thread_trace_context->root_span.addAttribute(
+        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+    return thread_trace_context;
+}
+
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
-
-    auto & body = request.getStream();
 
     auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
@@ -66,106 +126,86 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (endpoint->blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
+    /// Per-endpoint authentication on top of the interserver credentials checked in
+    /// `checkAuthentication`. The default rejects a deferred `Bearer` credential; an endpoint
+    /// that carries its own per-request bearer credential overrides `authenticate` to accept it.
+    endpoint->authenticate(request);
+
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(*used_output.out);
-        endpoint->processQuery(params, body, compressed_out, response);
+        CompressedWriteBuffer compressed_out(*output);
+        endpoint->processQuery(params, request.getStream(), compressed_out, response);
+        compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *used_output.out, response);
+        endpoint->processQuery(params, request.getStream(), *output, response);
     }
+    /// Make sure that request stream is not used after this function.
+    chassert(request.getStream().use_count() == 2);
 }
 
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    setThreadName("IntersrvHandler");
+    DB::setThreadName(ThreadName::INTERSERVER_HANDLER);
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    Output used_output;
-    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
+    /// Spans the whole request, failures included. The trace context is installed on this thread
+    /// while the holder exists. A dispatch that fails before its task starts (authentication, an
+    /// exception in the endpoint) leaves this span as its only worker-side trace, so the failure
+    /// and the HTTP status are recorded on it, the same as `HTTPHandler` does.
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context = startTracingContext(request);
+    SCOPE_EXIT({
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+    });
 
-    auto finalize_output = [&]
-    {
-        try
-        {
-            used_output.out->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to finalize response write buffer");
-        }
-    };
-
-    auto write_response = [&](const std::string & message)
-    {
-        if (response.sent())
-        {
-            finalize_output();
-            return;
-        }
-
-        try
-        {
-            writeString(message, *used_output.out);
-            finalize_output();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            finalize_output();
-        }
-    };
+    auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
 
     try
     {
-        if (auto [message, success] = checkAuthentication(request); success)
+        auto [message, success] = checkAuthentication(request);
+        if (success)
         {
-            processQuery(request, response, used_output);
-            finalize_output();
+            processQuery(request, response, output);
+            output->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else
         {
-            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
-            write_response(message);
-            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", maskSensitiveQueryParametersInURI(request.getURI()));
+            if (thread_trace_context)
+                thread_trace_context->root_span.addAttribute(ExecutionStatus(ErrorCodes::REQUIRED_PASSWORD, message));
+            output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
     catch (Exception & e)
     {
-        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            used_output.out->finalize();
-            return;
-        }
-
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
-
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
-        write_response(message.text);
-
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ is_real_error);
         if (is_real_error)
             LOG_ERROR(log, message);
         else
             LOG_INFO(log, message);
+
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(ExecutionStatus::fromCurrentException("", /* with_stacktrace */ false, /* with_version */ false));
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
     catch (...)
     {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-        write_response(message.text);
-
         LOG_ERROR(log, message);
+
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(ExecutionStatus::fromCurrentException("", /* with_stacktrace */ false, /* with_version */ false));
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
 }
 

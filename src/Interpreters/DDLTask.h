@@ -2,10 +2,13 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
+#include <optional>
+#include <utility>
+#include <vector>
 
 namespace Poco
 {
@@ -38,7 +41,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port;
+    UInt16 port{};
 
     HostID() = default;
 
@@ -55,12 +58,10 @@ struct HostID
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const
-    {
-        return host_name + ":" + DB::toString(port);
-    }
+    String readableString() const;
 
     bool isLocalAddress(UInt16 clickhouse_port) const;
+    bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -77,10 +78,12 @@ struct DDLLogEntry
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
     static constexpr const UInt64 BACKUP_RESTORE_FLAG_IN_ZK_VERSION = 6;
+    static constexpr const UInt64 PARENT_TABLE_UUID_VERSION = 7;
+    static constexpr const UInt64 INITIATOR_USER_VERSION = 8;
     /// Add new version here
 
     /// Remember to update the value below once new version is added
-    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 6;
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 8;
 
     UInt64 version = 1;
     String query;
@@ -90,6 +93,12 @@ struct DDLLogEntry
     OpenTelemetry::TracingContext tracing_context;
     String initial_query_id;
     bool is_backup_restore = false;
+    /// If present, this entry should be executed only if table with this uuid exists.
+    /// Only for DatabaseReplicated.
+    std::optional<UUID> parent_table_uuid;
+
+    String initiator_user;
+    Strings initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
@@ -112,7 +121,12 @@ struct DDLTaskBase
 
     bool is_initial_query = false;
     bool is_circular_replicated = false;
-    bool execute_on_leader = false;
+    bool execute_on_single_replica = false;
+
+    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
+
+    QueryExecutionStartedCallback query_execution_started_callback;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;
@@ -125,6 +139,12 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+
+    /// The initiator's user and its roles, resolved on this host, when
+    /// `distributed_ddl_use_initial_user_and_roles` preserves them for the execution of the entry.
+    /// `std::nullopt` when that server setting is disabled, when the entry carries no user, or - only if
+    /// `throw_if_not_found` is false - when the user or one of the roles does not exist on this host.
+    std::optional<std::pair<UUID, std::vector<UUID>>> resolveInitiatorUserAndRoles(ContextPtr from_context, bool throw_if_not_found) const;
     void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
@@ -153,6 +173,11 @@ struct DDLTask : public DDLTaskBase
 
     String getShardID() const override;
 
+    static bool
+    isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port);
+    static bool
+    isSelfHostname(LoggerPtr log, const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port);
+
 private:
     bool tryFindHostInCluster();
     bool tryFindHostInClusterViaResolving(ContextPtr context);
@@ -174,6 +199,12 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
+
+    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the replica path of every `Replicated` database
+    /// to fence the initial DDL entries of this server that are already queued. It is located in the replica path,
+    /// because it belongs to this server, and the server already has write access to it, while it may have no access
+    /// to other paths in Keeper.
+    static String getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database);
 
     DatabaseReplicated * database;
 };
@@ -200,6 +231,9 @@ class ZooKeeperMetadataTransaction
     bool is_initial_query;
     String task_path;
     Coordination::Requests ops;
+
+    using FinalizerCallback = std::function<void()>;
+    FinalizerCallback finalizer;
 
     /// CREATE OR REPLACE is special query that consists of 3 separate DDL queries (CREATE, RENAME, DROP)
     /// and not all changes should be applied to metadata in ZooKeeper
@@ -237,10 +271,22 @@ public:
         ops.emplace_back(op);
     }
 
+    /// Allow to run arbitrary code after executing transaction
+    void addFinalizer(FinalizerCallback && callback)
+    {
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add finalizer because transaction had been already executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Finalizer already set. It's a bug.");
+        finalizer = std::move(callback);
+    }
+
     void moveOpsTo(Coordination::Requests & other_ops)
     {
         if (isExecuted())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move ZooKeeper operations out from transaction with finalizer. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -248,8 +294,26 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
+    /// (It would be nice to assert something like the following:
+    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///  But we can't do it because it would cause rare false positives because
+    ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
+    ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following
+    ///  scenario:
+    ///   0. There's a query whose Context has a ZooKeeperMetadataTransactionPtr.
+    ///   1. A `select * from system.process_list` looks at this query's QueryStatus and does
+    ///      weak_ptr::lock() on the query's Context.
+    ///   2. The query fails with any exception and destroys its ContextPtr. But the Context
+    ///      and its ZooKeeperMetadataTransaction are still held alive by the temporary
+    ///      shared_ptr from the previous step.
+    ///   3. The temporary shared_ptr<Context> gets destroyed, and ~ZooKeeperMetadataTransaction
+    ///      is called with std::uncaught_exceptions() == 0.)
+    ~ZooKeeperMetadataTransaction() = default;
 };
+
+/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
+/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
+bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 

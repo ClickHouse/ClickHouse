@@ -1,3 +1,5 @@
+#include <Analyzer/IdentifierNode.h>
+#include <iostream>
 #include <Analyzer/SortNode.h>
 
 #include <Common/assert_cast.h>
@@ -33,6 +35,10 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
+    if (expression_)
+        if (auto * identifier = expression_->as<IdentifierNode>())
+            column_name = identifier->getIdentifier().getFullName();
+
     children[sort_expression_child_index] = std::move(expression_);
 }
 
@@ -49,7 +55,10 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", with_fill: " << with_fill;
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION";
+    if (!column_name.empty())
+        buffer << " " << column_name;
+    buffer << "\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (hasFillFrom())
@@ -69,6 +78,12 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
         buffer << '\n' << std::string(indent + 2, ' ') << "FILL STEP\n";
         getFillStep()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasFillStaleness())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "FILL STALENESS\n";
+        getFillStaleness()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
@@ -81,9 +96,9 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     if (!collator && !rhs_typed.collator)
         return true;
-    else if (collator && !rhs_typed.collator)
+    if (collator && !rhs_typed.collator)
         return false;
-    else if (!collator && rhs_typed.collator)
+    if (!collator && rhs_typed.collator)
         return false;
 
     return collator->getLocale() == rhs_typed.collator->getLocale();
@@ -107,12 +122,17 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 
 QueryTreeNodePtr SortNode::cloneImpl() const
 {
-    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    auto result = std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+    /// `column_name` is derived from the original AST identifier, not from a child node, so the base
+    /// clone machinery does not reproduce it. The planner reads it (`PlannerSorting`) and it appears
+    /// in `EXPLAIN`, so a clone must carry it explicitly.
+    result->column_name = column_name;
+    return result;
 }
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTOrderByElement>();
+    auto result = make_intrusive<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
     result->nulls_direction = result->direction;
     if (nulls_sort_direction)
@@ -123,7 +143,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
     result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
-        result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+        result->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));
 
     result->with_fill = with_fill;
     if (hasFillFrom())
@@ -132,6 +152,8 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
         result->setFillTo(getFillTo()->toAST(options));
     if (hasFillStep())
         result->setFillStep(getFillStep()->toAST(options));
+    if (hasFillStaleness())
+        result->setFillStaleness(getFillStaleness()->toAST(options));
 
     return result;
 }

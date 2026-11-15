@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, replica, no-replicated-database
+# Tags: long, replica, no-replicated-database, no-shared-merge-tree
 # Tag no-replicated-database: Old syntax is not allowed
+# no-shared-merge-tree: implemented another test with new syntax
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,209 +1,163 @@
-#include "SerializationInterval.h"
+#include <Common/SipHash.h>
+#include <DataTypes/Serializations/SerializationInterval.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <IO/WriteBuffer.h>
-#include <Parsers/Kusto/Formatters.h>
+#include <base/arithmeticOverflow.h>
+
+#include <fmt/format.h>
+
+#include <cmath>
+
 
 namespace DB
 {
+
 using ColumnInterval = DataTypeInterval::ColumnType;
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
-void SerializationKustoInterval::serializeText(
-    const IColumn & column, const size_t row, WriteBuffer & ostr, const FormatSettings &) const
+namespace
+{
+
+/// The Kusto timespan format, `[-][d.]hh:mm:ss[.fffffff]`, where the fraction counts
+/// 100-nanosecond ticks. Used for `interval_output_format = 'kusto'`, which is how a KQL
+/// timespan is rendered.
+std::string formatKustoTimespan(const Int64 ticks)
+{
+    static constexpr Int64 TICKS_PER_SECOND = 10'000'000;
+    static constexpr Int64 TICKS_PER_MINUTE = TICKS_PER_SECOND * 60;
+    static constexpr Int64 TICKS_PER_HOUR = TICKS_PER_MINUTE * 60;
+    static constexpr Int64 TICKS_PER_DAY = TICKS_PER_HOUR * 24;
+
+    /// `std::abs` of the most negative value is undefined, so widen first.
+    const auto absolute = ticks == std::numeric_limits<Int64>::min() ? static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1
+                                                                     : static_cast<UInt64>(std::abs(ticks));
+
+    std::string result = ticks < 0 ? "-" : "";
+    if (absolute >= static_cast<UInt64>(TICKS_PER_DAY))
+        result.append(fmt::format("{}.", absolute / TICKS_PER_DAY));
+
+    result.append(fmt::format(
+        "{:02}:{:02}:{:02}",
+        (absolute / TICKS_PER_HOUR) % 24,
+        (absolute / TICKS_PER_MINUTE) % 60,
+        (absolute / TICKS_PER_SECOND) % 60));
+
+    if (const auto fraction = absolute % TICKS_PER_SECOND)
+        result.append(fmt::format(".{:07}", fraction));
+
+    return result;
+}
+
+void serializeTextKusto(IntervalKind interval_kind, const IColumn & column, const size_t row, WriteBuffer & ostr)
 {
     const auto * interval_column = checkAndGetColumn<ColumnInterval>(&column);
     if (!interval_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected column of underlying type of Interval");
 
-    const auto & value = interval_column->getData()[row];
-    const auto ticks = kind.toAvgNanoseconds() * value / 100;
-    const auto interval_as_string = formatKQLTimespan(ticks);
-    ostr.write(interval_as_string.c_str(), interval_as_string.length());
+    const Int64 value = interval_column->getData()[row];
+    if (!interval_kind.isFixedLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot format a calendar interval in Kusto timespan format");
+
+    if (interval_kind == IntervalKind::Kind::Nanosecond && value % 100)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot format an IntervalNanosecond that is not a multiple of 100 in Kusto timespan format");
+
+    Int64 nanoseconds = 0;
+    if (common::mulOverflow(interval_kind.toAvgNanoseconds(), value, nanoseconds))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Formatting an interval in Kusto dialect will overflow");
+
+    const std::string text = formatKustoTimespan(nanoseconds / 100);
+    ostr.write(text.c_str(), text.length());
 }
 
-void SerializationKustoInterval::deserializeText(
-    [[maybe_unused]] IColumn & column,
-    [[maybe_unused]] ReadBuffer & istr,
-    [[maybe_unused]] const FormatSettings & settings,
-    [[maybe_unused]] const bool whole) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Deserialization is not implemented for {}", kind.toNameOfFunctionToIntervalDataType());
 }
 
 SerializationInterval::SerializationInterval(IntervalKind interval_kind_) : interval_kind(std::move(interval_kind_))
 {
 }
 
-void SerializationInterval::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+
+UInt128 SerializationInterval::getHash(IntervalKind kind_)
 {
-    dispatch(
-        static_cast<void (ISerialization::*)(Field &, ReadBuffer &, const FormatSettings &) const>(&ISerialization::deserializeBinary),
-        settings.interval.output_format,
-        field,
-        istr,
-        settings);
+    SipHash hash;
+    hash.update("Interval");
+    hash.update(kind_.toString());
+    return hash.get128();
 }
 
-void SerializationInterval::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+SerializationPtr SerializationInterval::create(IntervalKind kind_)
 {
-    dispatch(
-        static_cast<void (ISerialization::*)(IColumn &, ReadBuffer &, const FormatSettings &) const>(&ISerialization::deserializeBinary),
-        settings.interval.output_format,
-        column,
-        istr,
-        settings);
-}
-
-void SerializationInterval::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
-{
-    dispatch(
-        &ISerialization::deserializeBinaryBulk, FormatSettings::IntervalOutputFormat::Numeric, column, istr, limit, avg_value_size_hint);
-}
-
-void SerializationInterval::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
-{
-    dispatch(&ISerialization::deserializeBinaryBulkStatePrefix, FormatSettings::IntervalOutputFormat::Numeric, settings, state, cache);
-}
-
-
-void SerializationInterval::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
-{
-    dispatch(
-        &ISerialization::deserializeBinaryBulkWithMultipleStreams,
-        FormatSettings::IntervalOutputFormat::Numeric,
-        column,
-        limit,
-        settings,
-        state,
-        cache);
-}
-
-
-void SerializationInterval::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeTextCSV, settings.interval.output_format, column, istr, settings);
-}
-
-void SerializationInterval::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeTextEscaped, settings.interval.output_format, column, istr, settings);
-}
-
-void SerializationInterval::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeTextJSON, settings.interval.output_format, column, istr, settings);
-}
-
-void SerializationInterval::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeTextQuoted, settings.interval.output_format, column, istr, settings);
-}
-
-void SerializationInterval::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeTextRaw, settings.interval.output_format, column, istr, settings);
-}
-
-
-void SerializationInterval::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::deserializeWholeText, settings.interval.output_format, column, istr, settings);
-}
-
-void SerializationInterval::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    dispatch(
-        static_cast<void (ISerialization::*)(const Field &, WriteBuffer &, const FormatSettings &) const>(&ISerialization::serializeBinary),
-        settings.interval.output_format,
-        field,
-        ostr,
-        settings);
-}
-
-void SerializationInterval::serializeBinary(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    dispatch(
-        static_cast<void (ISerialization::*)(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const>(
-            &ISerialization::serializeBinary),
-        settings.interval.output_format,
-        column,
-        row,
-        ostr,
-        settings);
-}
-
-void SerializationInterval::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
-{
-    dispatch(&ISerialization::serializeBinaryBulk, FormatSettings::IntervalOutputFormat::Numeric, column, ostr, offset, limit);
-}
-
-void SerializationInterval::serializeBinaryBulkStatePrefix(
-    const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
-{
-    dispatch(&ISerialization::serializeBinaryBulkStatePrefix, FormatSettings::IntervalOutputFormat::Numeric, column, settings, state);
-}
-
-void SerializationInterval::serializeBinaryBulkStateSuffix(
-    SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
-{
-    dispatch(&ISerialization::serializeBinaryBulkStateSuffix, FormatSettings::IntervalOutputFormat::Numeric, settings, state);
-}
-
-void SerializationInterval::serializeBinaryBulkWithMultipleStreams(
-    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
-{
-    dispatch(
-        &ISerialization::serializeBinaryBulkWithMultipleStreams,
-        FormatSettings::IntervalOutputFormat::Numeric,
-        column,
-        offset,
-        limit,
-        settings,
-        state);
+    return ISerialization::pooled(getHash(kind_), [=] { return new SerializationInterval(kind_); });
 }
 
 void SerializationInterval::serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dispatch(&ISerialization::serializeText, settings.interval.output_format, column, row, ostr, settings);
-}
-
-void SerializationInterval::serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::serializeTextCSV, settings.interval.output_format, column, row, ostr, settings);
-}
-
-void SerializationInterval::serializeTextEscaped(
-    const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    dispatch(&ISerialization::serializeTextEscaped, settings.interval.output_format, column, row, ostr, settings);
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeText(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            serializeTextKusto(interval_kind, column, row, ostr);
+            return;
+    }
 }
 
 void SerializationInterval::serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dispatch(&ISerialization::serializeTextJSON, settings.interval.output_format, column, row, ostr, settings);
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeTextJSON(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            ostr.write('"');
+            serializeTextKusto(interval_kind, column, row, ostr);
+            ostr.write('"');
+            return;
+    }
 }
 
-void SerializationInterval::serializeTextQuoted(
-    const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationInterval::serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dispatch(&ISerialization::serializeTextQuoted, settings.interval.output_format, column, row, ostr, settings);
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeTextCSV(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            ostr.write('"');
+            serializeTextKusto(interval_kind, column, row, ostr);
+            ostr.write('"');
+            return;
+    }
 }
 
-void SerializationInterval::serializeTextRaw(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationInterval::serializeTextQuoted(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dispatch(&ISerialization::serializeTextRaw, settings.interval.output_format, column, row, ostr, settings);
+    switch (settings.interval_output_format)
+    {
+        case FormatSettings::IntervalOutputFormat::Numeric:
+            Base::serializeTextQuoted(column, row, ostr, settings);
+            return;
+        case FormatSettings::IntervalOutputFormat::Kusto:
+            ostr.write('\'');
+            serializeTextKusto(interval_kind, column, row, ostr);
+            ostr.write('\'');
+            return;
+    }
 }
+
+void SerializationInterval::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Interval is not supported by the HiveText output format");
+}
+
 }

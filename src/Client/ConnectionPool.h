@@ -26,22 +26,30 @@ struct Settings;
 class IConnectionPool : private boost::noncopyable
 {
 public:
-    using Entry = PoolBase<Connection>::Entry;
+    using Entry = PoolEntry<Connection>;
 
     IConnectionPool() = default;
-    IConnectionPool(String host_, UInt16 port_, Priority config_priority_)
-        : host(host_), port(port_), address(host + ":" + toString(port_)), config_priority(config_priority_)
-    {
-    }
+    IConnectionPool(String host_, UInt16 port_, Priority config_priority_);
 
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     virtual Entry get(const ConnectionTimeouts & timeouts) = 0;
-    /// If force_connected is false, the client must manually ensure that returned connection is good.
+    /// The returned connection is established. It is not pinged: a pooled connection that the
+    /// server has closed while it was idle (or that is out of sync with the protocol) is detected
+    /// with a zero-timeout poll and recovered by reconnecting (see Connection::forceConnected);
+    /// a failure the poll cannot see is detected and recovered when the connection is first used.
     virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-                      const Settings & settings,
-                      bool force_connected = true) = 0;
+                      const Settings & settings) = 0;
+    /// Selects a connection to work without checking that it is usable: it can be not yet
+    /// connected, or a stale pooled connection. The caller must establish or validate it
+    /// (see Connection::forceConnected). ConnectionEstablisher uses this to establish the
+    /// connection itself, under its async callback: a slow connect or handshake can then be
+    /// preempted (e.g. by hedged connections switching to another replica), and the connection
+    /// being established stays visible to the caller's timeout handling.
+    /// For ConnectionPoolWithFailover, selecting a replica means establishing a connection to it,
+    /// so the returned connection is established and checked anyway.
+    virtual Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) = 0;
 
     const std::string & getHost() const { return host; }
     UInt16 getPort() const { return port; }
@@ -57,40 +65,52 @@ protected:
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 using ConnectionPoolPtrs = std::vector<ConnectionPoolPtr>;
+using ConnectionPoolEntries = std::vector<IConnectionPool::Entry>;
+
+Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & settings);
 
 /** A common connection pool, without fault tolerance.
   */
-class ConnectionPool : public IConnectionPool, private PoolBase<Connection>
+template <typename TLocker, typename TWaiter>
+class ConnectionPoolImpl : public IConnectionPool, private PoolBase<Connection, TLocker, TWaiter>
 {
 public:
     using Entry = IConnectionPool::Entry;
-    using Base = PoolBase<Connection>;
+    using Base = PoolBase<Connection, TLocker, TWaiter>;
 
-    ConnectionPool(
+    ConnectionPoolImpl(
         unsigned max_connections_,
         const String & host_,
         UInt16 port_,
         const String & default_database_,
         const String & user_,
         const String & password_,
+        const String & proto_send_chunked_,
+        const String & proto_recv_chunked_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        Priority config_priority_ = Priority{1})
+        const String & bind_host_,
+        Priority config_priority_ = Priority{1},
+        Connection::SocketFactory socket_factory_ = &Connection::defaultSocketFactory)
         : IConnectionPool(host_, port_, config_priority_)
-        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")"))
+        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"), /* pool_outlives_query_ = */ true)
         , default_database(default_database_)
         , user(user_)
         , password(password_)
+        , proto_send_chunked(proto_send_chunked_)
+        , proto_recv_chunked(proto_recv_chunked_)
         , quota_key(quota_key_)
         , cluster(cluster_)
         , cluster_secret(cluster_secret_)
         , client_name(client_name_)
         , compression(compression_)
         , secure(secure_)
+        , bind_host(bind_host_)
+        , socket_factory(std::move(socket_factory_))
     {
     }
 
@@ -102,29 +122,48 @@ public:
     }
 
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
-              const Settings & settings,
-              bool force_connected) override;
+              const Settings & settings) override
+    {
+        Entry entry = getUnchecked(timeouts, settings);
+        entry->forceConnected(timeouts);
+        return entry;
+    }
+
+    Entry getUnchecked(const ConnectionTimeouts &, const Settings & settings) override
+    {
+        return Base::get(connectionPoolMaxWaitMilliseconds(settings));
+    }
 
     std::string getDescription() const
     {
-        return host + ":" + toString(port);
+        return host + ":" + std::to_string(port);
     }
 
 protected:
+    void releaseObject(Connection & connection) noexcept override { connection.releaseQueryBuffers(); }
+
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, SSHKey(), /*jwt*/ "", quota_key,
+            default_database, user, password,
+            proto_send_chunked, proto_recv_chunked,
+            SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
-            client_name, compression, secure);
+            client_name, compression, secure, "", bind_host,
+#if USE_JWT_CPP && USE_SSL
+            /*jwt_provider*/ nullptr,
+#endif
+            socket_factory);
     }
 
 private:
     String default_database;
     String user;
     String password;
+    String proto_send_chunked;
+    String proto_recv_chunked;
     String quota_key;
 
     /// For inter-server authorization
@@ -134,7 +173,11 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
+    String bind_host;
+    Connection::SocketFactory socket_factory;
 };
+
+using ConnectionPool = ConnectionPoolImpl<std::mutex, std::condition_variable>;
 
 /**
  * Connection pool factory. Responsible for creating new connection pools and reuse existing ones.
@@ -150,12 +193,15 @@ public:
         String default_database;
         String user;
         String password;
+        String proto_send_chunked;
+        String proto_recv_chunked;
         String quota_key;
         String cluster;
         String cluster_secret;
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
+        String bind_host;
         Priority priority;
     };
 
@@ -173,12 +219,15 @@ public:
         String default_database,
         String user,
         String password,
+        String proto_send_chunked,
+        String proto_recv_chunked,
         String quota_key,
         String cluster,
         String cluster_secret,
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
+        String bind_host,
         Priority priority);
 private:
     mutable std::mutex mutex;
@@ -190,9 +239,10 @@ inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionP
 {
     return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
+        && lhs.proto_send_chunked == rhs.proto_send_chunked && lhs.proto_recv_chunked == rhs.proto_recv_chunked
         && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
-        && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
+        && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.bind_host == rhs.bind_host && lhs.priority == rhs.priority;
 }
 
 }

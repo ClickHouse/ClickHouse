@@ -1,1 +1,1 @@
-ColumnLowCardinality
+LowCardinality(String)

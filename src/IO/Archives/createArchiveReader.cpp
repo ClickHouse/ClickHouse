@@ -43,7 +43,10 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
     else if (hasSupported7zExtension(path_to_archive))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<SevenZipArchiveReader>(path_to_archive);
+        if (archive_read_function)
+            return std::make_shared<SevenZipArchiveReader>(path_to_archive, archive_read_function, archive_size);
+        else
+            return std::make_shared<SevenZipArchiveReader>(path_to_archive);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif

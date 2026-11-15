@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ArrayJoin.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -21,7 +21,6 @@ struct Settings;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -38,12 +37,27 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+
+class QueryPlan;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
+
+namespace ExpressionActionsChainSteps
+{
+struct Step;
+}
+
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;
@@ -90,7 +104,6 @@ private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
     struct ExtractedSettings
     {
-        const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
@@ -127,7 +140,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -138,16 +151,9 @@ public:
     void makeWindowDescriptionFromAST(
         const Context & context,
         const WindowDescriptions & existing_descriptions,
-        AggregateFunctionPtr aggregate_function,
         WindowDescription & desc,
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
-
-    /** Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
 protected:
     ExpressionAnalyzer(
@@ -174,7 +180,7 @@ protected:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
-    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
+    ArrayJoin addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
 
     void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
@@ -220,6 +226,12 @@ struct ExpressionAnalysisResult
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     bool second_stage = false;
+    /// Do I run on the initiating server over data the remote servers already aggregated, because they
+    /// processed the query up to `WithMergeableStateAfterAggregation` or further? Neither `first_stage` nor
+    /// `second_stage` is set then, yet the final clauses still run here, so `appendLimitRange` must build the
+    /// `LIMIT AFTER`/`UNTIL` expressions for execution: their `IN (subquery)` sets get created, unlike in the
+    /// types-only analysis that skips them.
+    bool from_aggregation_stage = false;
 
     bool need_aggregate = false;
     bool has_order_by   = false;
@@ -227,14 +239,11 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
-    bool optimize_read_in_order = false;
-    bool optimize_aggregation_in_order = false;
-    bool join_has_delayed_stream = false;
 
     bool use_grouping_set_key = false;
 
     ActionsAndProjectInputsFlagPtr before_array_join;
-    ArrayJoinActionPtr array_join;
+    std::optional<ArrayJoin> array_join;
     ActionsAndProjectInputsFlagPtr before_join;
     ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
@@ -246,6 +255,9 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr before_limit_range;
+    String limit_range_start_column_name;
+    String limit_range_end_column_name;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -259,13 +271,9 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereInfoPtr prewhere_info;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
-    /// Actions by every element of ORDER BY
-    ManyExpressionActions order_by_elements_actions;
-    ManyExpressionActions group_by_elements_actions;
-
     ExpressionAnalysisResult() = default;
 
     ExpressionAnalysisResult(
@@ -273,13 +281,14 @@ struct ExpressionAnalysisResult
         const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
+        bool from_aggregation_stage,
         bool only_types,
-        const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasFilter() const { return filter_info.get(); }
+    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
     bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
@@ -388,7 +397,7 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
+    std::optional<ArrayJoin> appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 
@@ -396,20 +405,23 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
+    void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
 

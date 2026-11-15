@@ -6,9 +6,10 @@ all_X_X_X
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
 columns.txt
+columns_substreams.txt
 count.txt
 data.bin
-data.cmrk3
+data.cmrk4
 default_compression_codec.txt
 metadata_version.txt
 primary.cidx
@@ -20,9 +21,10 @@ all_X_X_X
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
 columns.txt
+columns_substreams.txt
 count.txt
 data.bin
-data.cmrk3
+data.cmrk4
 default_compression_codec.txt
 metadata_version.txt
 primary.cidx

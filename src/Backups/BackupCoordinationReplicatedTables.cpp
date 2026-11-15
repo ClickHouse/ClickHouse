@@ -1,7 +1,11 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
+#if CLICKHOUSE_CLOUD
+    #include <Storages/SharedMergeTree/SharedMergeTreeMutationEntry.h>
+#endif
 #include <Common/Exception.h>
+
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -35,7 +39,7 @@ public:
     {
         auto new_min_block = new_part_info.min_block;
         auto new_max_block = new_part_info.max_block;
-        auto & parts = partitions[new_part_info.partition_id];
+        auto & parts = partitions[new_part_info.getPartitionId()];
 
         /// Find the first part with max_block >= `part_info.min_block`.
         auto first_it = parts.lower_bound(new_min_block);
@@ -98,7 +102,7 @@ public:
 
     bool isCoveredByAnotherPart(const MergeTreePartInfo & part_info) const
     {
-        auto partition_it = partitions.find(part_info.partition_id);
+        auto partition_it = partitions.find(part_info.getPartitionId());
         if (partition_it == partitions.end())
             return false;
 
@@ -289,13 +293,7 @@ void BackupCoordinationReplicatedTables::prepare() const
             for (const auto & [part_name, part_replicas] : table_info.replicas_by_part_name)
             {
                 auto part_info = MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-
-                auto & min_data_versions_by_partition = table_info.min_data_versions_by_partition;
-                auto it2 = min_data_versions_by_partition.find(part_info.partition_id);
-                if (it2 == min_data_versions_by_partition.end())
-                    min_data_versions_by_partition[part_info.partition_id] = part_info.getDataVersion();
-                else
-                    it2->second = std::min(it2->second, part_info.getDataVersion());
+                [[maybe_unused]] const auto & partition_id = part_info.getPartitionId();
 
                 table_info.covered_parts_finder->addPartInfo(std::move(part_info), part_replicas.replica_names[0]);
             }
@@ -308,24 +306,6 @@ void BackupCoordinationReplicatedTables::prepare() const
                 const auto & chosen_replica_name = *part_replicas.replica_names[chosen_index];
                 table_info.part_names_by_replica_name[chosen_replica_name].push_back(part_name);
             }
-
-            /// Remove finished or unrelated mutations.
-            std::unordered_map<String, String> unfinished_mutations;
-            for (const auto & [mutation_id, mutation_entry_str] : table_info.mutations)
-            {
-                auto mutation_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_entry_str, mutation_id);
-                std::map<String, Int64> new_block_numbers;
-                for (const auto & [partition_id, block_number] : mutation_entry.block_numbers)
-                {
-                    auto it = table_info.min_data_versions_by_partition.find(partition_id);
-                    if ((it != table_info.min_data_versions_by_partition.end()) && (it->second < block_number))
-                        new_block_numbers[partition_id] = block_number;
-                }
-                mutation_entry.block_numbers = std::move(new_block_numbers);
-                if (!mutation_entry.block_numbers.empty())
-                    unfinished_mutations[mutation_id] = mutation_entry.toString();
-            }
-            table_info.mutations = unfinished_mutations;
         }
         catch (Exception & e)
         {

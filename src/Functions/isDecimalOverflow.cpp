@@ -7,13 +7,14 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Common/intExp.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/callOnTypeIndex.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
@@ -23,7 +24,7 @@ namespace
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
 /// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
-class FunctionIsDecimalOverflow : public IFunction
+class FunctionIsDecimalOverflow final : public IFunction
 {
 public:
     static constexpr auto name = "isDecimalOverflow";
@@ -38,27 +39,10 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override { return "(Decimal, [const UInt8]) -> UInt8"; }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
-
-        WhichDataType which_first(arguments[0]->getTypeId());
-
-        if (!which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        if (arguments.size() == 2)
-        {
-            WhichDataType which_second(arguments[1]->getTypeId());
-            if (!which_second.isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[1]->getName(), getName());
-        }
-
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -100,7 +84,7 @@ public:
                 result_column->getData().resize_fill(input_rows_count, res_value);
                 return true;
             }
-            else if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
+            if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
                 execute<Type>(*col_vec, *result_column, input_rows_count, precision);
                 return true;
@@ -148,7 +132,36 @@ private:
 
 REGISTER_FUNCTION(IsDecimalOverflow)
 {
-    factory.registerFunction<FunctionIsDecimalOverflow>();
+    FunctionDocumentation::Description description = R"(
+Checks if a decimal number has too many digits to fit properly in a Decimal data type with given precision.
+    )";
+    FunctionDocumentation::Syntax syntax = "isDecimalOverflow(value[, precision])";
+    FunctionDocumentation::Arguments arguments = {
+        {"value", "Decimal value to check.", {"Decimal"}},
+        {"precision", "Optional. The precision of the Decimal type. If omitted, the initial precision of the first argument is used.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the decimal value has more digits than allowed by its precision, `0` if the decimal value satisfies the specified precision.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+        )",
+        R"(
+┌─isDecimalOverflow(toDecimal32(1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(1000000000, 0))─┬─isDecimalOverflow(toDecimal32(-1000000000, 0), 9)─┬─isDecimalOverflow(toDecimal32(-1000000000, 0))─┐
+│                                                1 │                                             1 │                                                 1 │                                              1 │
+└──────────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsDecimalOverflow>(documentation);
 }
 
 }

@@ -10,7 +10,7 @@ for check_query in "SELECT value FROM system.settings WHERE name = 'alter_sync';
     echo "Checking setting value with '$check_query'"
 
     echo 'Using SET'
-    $CLICKHOUSE_CLIENT -mn -q """
+    $CLICKHOUSE_CLIENT -m -q """
     SET replication_alter_partitions_sync = 0;
     $check_query
 
@@ -28,7 +28,7 @@ for check_query in "SELECT value FROM system.settings WHERE name = 'alter_sync';
 done
 
 
-$CLICKHOUSE_CLIENT -mn -q """
+$CLICKHOUSE_CLIENT -m -q """
 DROP VIEW IF EXISTS 02539_settings_alias_view;
 CREATE VIEW 02539_settings_alias_view AS SELECT 1 SETTINGS replication_alter_partitions_sync = 2;
 SHOW CREATE TABLE 02539_settings_alias_view;

@@ -1,8 +1,8 @@
 *** Check data after fetch of merged part ***
-all_0_2_1	1
-all_0_2_1	2
-all_0_2_1	3
+0_2	1
+0_2	2
+0_2	3
 *** Check data after fetch/clone of mutated part ***
-all_0_2_1_3	1
-all_0_2_1_3	2
-all_0_2_1_3	3
+0_2	3	1
+0_2	3	2
+0_2	3	3

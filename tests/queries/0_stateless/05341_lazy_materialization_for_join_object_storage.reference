@@ -1,0 +1,36 @@
+-- query_plan_lazy_materialization_for_join = 1
+-- object storage joined with MergeTree
+3	val_3	mt_3
+54	val_54	mt_54
+105	val_105	mt_105
+156	val_156	mt_156
+207	val_207	mt_207
+-- the object storage side can be unmatched
+495	mt_495	val_1995
+498	mt_498	val_1998
+501	mt_501	
+-- object storage joined with itself
+1994	val_1994	val_1993
+1977	val_1977	val_1976
+1960	val_1960	val_1959
+1943	val_1943	val_1942
+-- query_plan_lazy_materialization_for_join = 0
+-- object storage joined with MergeTree
+3	val_3	mt_3
+54	val_54	mt_54
+105	val_105	mt_105
+156	val_156	mt_156
+207	val_207	mt_207
+-- the object storage side can be unmatched
+495	mt_495	val_1995
+498	mt_498	val_1998
+501	mt_501	
+-- object storage joined with itself
+1994	val_1994	val_1993
+1977	val_1977	val_1976
+1960	val_1960	val_1959
+1943	val_1943	val_1942
+-- lazy reads of object storage, of MergeTree
+1	1
+-- lazy reads of object storage in the LEFT JOIN
+1

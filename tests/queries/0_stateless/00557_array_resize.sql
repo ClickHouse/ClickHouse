@@ -14,3 +14,7 @@ select arrayResize([[1, 2], [3, 4]], -4, [5, 6]);
 
 -- different types of array elements and default value to fill
 select arrayResize([1, 2, 3], 5, 423.56);
+
+-- Second argument cannot be Nullable
+select arrayResize([1, 2, 3], toNullable(3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayResize(materialize([1]), toNullable(3)) -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -2,7 +2,6 @@
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 
-
 namespace DB
 {
 
@@ -10,9 +9,34 @@ using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreate
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
+/// Instantiated in greater.cpp and equals.cpp.
+extern template class FunctionComparison<GreaterOp, NameGreater>;
+extern template class FunctionComparison<EqualsOp, NameEquals>;
+
 REGISTER_FUNCTION(GreaterOrEquals)
 {
-    factory.registerFunction<FunctionGreaterOrEquals>();
+    // Documentation for greaterOrEquals
+    FunctionDocumentation::Description description = "Compares two values for greater-than-or-equal-to relation.";
+    FunctionDocumentation::Syntax syntax = R"(
+    greaterOrEquals(a, b)
+    -- a >= b
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
+        {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is greater than or equal to `b`, otherwise `0`", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT 2 >= 1, 2 >= 2, 1 >= 2;", R"(
+┌─greaterOrEquals(2, 1)─┬─greaterOrEquals(2, 2)─┬─greaterOrEquals(1, 2)─┐
+│                     1 │                     1 │                     0 │
+└───────────────────────┴───────────────────────┴───────────────────────┘
+)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGreaterOrEquals>(documentation);
 }
 
 template <>
@@ -21,10 +45,10 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
 {
 
     FunctionOverloadResolverPtr greater
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(check_decimal_overflow));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(params));
 
     FunctionOverloadResolverPtr greater_or_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreaterOrEquals>(check_decimal_overflow));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreaterOrEquals>(params));
 
     FunctionOverloadResolverPtr func_builder_or
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
@@ -33,7 +57,7 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     return executeTupleLessGreaterImpl(
         greater,
@@ -42,6 +66,25 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
         func_builder_or,
         func_builder_equals,
         x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+    FunctionOverloadResolverPtr order_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(params));
+
+    return executeArrayLexicographicLessGreaterImpl(
+        equals_resolver,
+        order_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
 }
 
 }

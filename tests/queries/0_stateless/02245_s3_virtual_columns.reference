@@ -13,3 +13,5 @@ select * from test_02245_2;
 1	2
 select _path, isNotNull(_etag) from test_02245_2;
 2	1
+select count() from test_02245_2 where _etag IN (select _etag from test_02245_2);
+1

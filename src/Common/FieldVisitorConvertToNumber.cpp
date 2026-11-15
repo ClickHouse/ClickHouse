@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorConvertToNumber.h>
-#include "base/Decimal.h"
 
 namespace DB
 {
@@ -17,6 +16,7 @@ template class FieldVisitorConvertToNumber<Int128>;
 template class FieldVisitorConvertToNumber<UInt128>;
 template class FieldVisitorConvertToNumber<Int256>;
 template class FieldVisitorConvertToNumber<UInt256>;
+//template class FieldVisitorConvertToNumber<BFloat16>;
 template class FieldVisitorConvertToNumber<Float32>;
 template class FieldVisitorConvertToNumber<Float64>;
 

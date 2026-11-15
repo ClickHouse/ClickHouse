@@ -5,9 +5,15 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/ResourceLink.h>
 
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+
+#include <atomic>
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 
 
@@ -22,12 +28,28 @@ namespace DB
 class ResourceGuard
 {
 public:
-    enum ResourceGuardCtor
+    enum class Lock
     {
-        LockStraightAway, /// Locks inside constructor (default)
+        Default, /// Locks inside constructor
 
         // WARNING: Only for tests. It is not exception-safe because `lock()` must be called after construction.
-        PostponeLocking /// Don't lock in constructor, but send request
+        Defer /// Don't lock in constructor, but send request
+    };
+
+    struct Metrics
+    {
+        const ProfileEvents::Event requests = ProfileEvents::end();
+        const ProfileEvents::Event cost = ProfileEvents::end();
+        const ProfileEvents::Event wait_microseconds = ProfileEvents::end();
+        const CurrentMetrics::Metric scheduled_count = CurrentMetrics::end();
+
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIORead();
+
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIOWrite();
     };
 
     enum RequestState
@@ -45,62 +67,145 @@ public:
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
             chassert(state == Finished);
             state = Enqueued;
+            // `Request` is reused (e.g. via `Request::local()` thread-local instance), so a stale `exception`
+            // left over from a previous failed request must be cleared. Otherwise `wait()` would observe it and
+            // spuriously throw even though this (new) request was granted via `execute()`.
+            exception = {};
             ResourceRequest::reset(cost_);
-            link_.queue->enqueueRequestUsingBudget(this);
+            // Tag this request with the query's scheduling context + per-resource state, which the
+            // classifier stamped onto the link (reset() cleared any stale ones from a previous reuse).
+            scheduling.context = link_.scheduling_context;
+            scheduling.state = link_.scheduling_state;
+            estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
         // This function is executed inside scheduler thread and wakes thread issued this `request`.
         // That thread will continue execution and do real consumption of requested resource synchronously.
         void execute() override
         {
-            {
-                std::unique_lock lock(mutex);
-                chassert(state == Enqueued);
-                state = Dequeued;
-            }
+            std::unique_lock lock(mutex);
+            chassert(state == Enqueued);
+            state = Dequeued;
             dequeued_cv.notify_one();
         }
 
-        void wait()
+        // This function is executed inside scheduler thread and wakes thread that issued this `request`.
+        // That thread will throw an exception.
+        void failed(const std::exception_ptr & ptr) override
         {
             std::unique_lock lock(mutex);
-            dequeued_cv.wait(lock, [this] { return state == Dequeued; });
+            chassert(state == Enqueued);
+            state = Dequeued;
+            exception = ptr;
+            dequeued_cv.notify_one();
         }
 
-        void finish()
+        void wait();
+
+        void finish(ResourceCost real_cost_, ResourceLink link_)
         {
             // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
             chassert(state == Dequeued);
             state = Finished;
+            if (estimated_cost != real_cost_)
+                link_.queue->adjustBudget(estimated_cost, real_cost_);
+            // Now that the real cost is known, correct the per-query service charged at the enqueue
+            // estimate. Applied unconditionally (every enqueued request carries a valid per-query
+            // state): `fair` reads `attained_cost` for its thresholds and drains `vruntime_correction`,
+            // `las` reads `attained_cost` for its level, `fifo`/`priority` read neither (harmless).
+            const Int64 service_delta = static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost);
+            if (service_delta != 0) // common case real == estimate: both adds are no-ops, skip the RMWs
+            {
+                scheduling.state->attained_cost.fetch_add(service_delta, std::memory_order_relaxed);
+                scheduling.state->fair.vruntime_correction.fetch_add(service_delta, std::memory_order_relaxed);
+            }
             ResourceRequest::finish();
+            ProfileEvents::increment(metrics->requests);
+            ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
-        static Request & local()
+        // If the request was failed by the scheduler, reset it to `Finished` for reuse and report it.
+        // `finish()` and the failed path are alternatives: a failed request must NOT be `finish()`ed,
+        // because that touches its queue (`adjustBudget()`) and the queue may already be destroyed — the
+        // request is often failed precisely because its queue is being purged/destructed, so the raw
+        // `ResourceLink::queue` would dangle. NOTE: this means the budget transaction made by
+        // `enqueueRequestUsingBudget` is not rolled back for a failed request, so the queue budget may be
+        // slightly off afterwards. That is acceptable: failures are rare and the queue (with its budget) is
+        // usually gone anyway, while touching it here would be a use-after-free.
+        bool consumeException()
         {
-            // Since single thread cannot use more than one resource request simultaneously,
-            // we can reuse thread-local request to avoid allocations
-            static thread_local Request instance;
-            return instance;
+            // lock(mutex) is not required because a `Dequeued` request cannot be used by the scheduler thread
+            chassert(state == Dequeued);
+            if (exception)
+            {
+                exception = nullptr;
+                state = Finished;
+                return true;
+            }
+            return false;
         }
+
+        // Restore a reused request to the `Finished` state after a `ResourceGuard` constructor failed
+        // (either `enqueue()` or `wait()` threw). Because the constructor is unwinding, `~ResourceGuard()`
+        // will not run, so this is the only chance to make the thread-local instance reusable; otherwise the
+        // next request enqueued on this thread would hit `chassert(state == Finished)`.
+        void recoverAfterConstructorFailure(ResourceLink)
+        {
+            if (state == Enqueued)
+                // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
+                // destructed). The request was never linked into a queue and `enqueueRequestUsingBudget`
+                // has rolled back its budget transaction, so just restore the state.
+                state = Finished;
+            else if (state == Dequeued)
+                // `wait()` threw: the request was failed by the scheduler. Reset it for reuse without
+                // calling `finish()` — see `consumeException()` (the queue may already be destroyed).
+                consumeException();
+        }
+
+        void assertFinished()
+        {
+            // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
+            chassert(state == Finished);
+        }
+
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static Request & local(const Metrics * metrics);
+
+        const Metrics * metrics = nullptr; // Must be initialized before use
 
     private:
+        ResourceCost estimated_cost = 0; // Stores initial `cost` value in case budget was used to modify it
         std::mutex mutex;
         std::condition_variable dequeued_cv;
         RequestState state = Finished;
+        std::exception_ptr exception;
     };
 
-    /// Creates pending request for resource; blocks while resource is not available (unless `PostponeLocking`)
-    explicit ResourceGuard(ResourceLink link_, ResourceCost cost = 1, ResourceGuardCtor ctor = LockStraightAway)
+    /// Creates pending request for resource; blocks while resource is not available (unless `Lock::Defer`)
+    explicit ResourceGuard(const Metrics * metrics, ResourceLink link_, ResourceCost cost = 1, ResourceGuard::Lock type = ResourceGuard::Lock::Default)
         : link(link_)
-        , request(Request::local())
+        , request(Request::local(metrics))
     {
         if (cost == 0)
-            link.queue = nullptr; // Ignore zero-cost requests
-        else if (link.queue)
+            link.reset(); // Ignore zero-cost requests
+        else if (link)
         {
-            request.enqueue(cost, link);
-            if (ctor == LockStraightAway)
-                request.wait();
+            try
+            {
+                request.enqueue(cost, link);
+                if (type == Lock::Default)
+                    request.wait();
+            }
+            catch (...)
+            {
+                // The constructor is propagating an exception (the request failed in `enqueue()` or `wait()`),
+                // so `~ResourceGuard()` will not run. Restore the reused thread-local `Request` to the `Finished`
+                // state here, mirroring the cleanup the `Lock::Defer` path performs via `~ResourceGuard()`.
+                request.recoverAfterConstructorFailure(link);
+                link.reset();
+                throw;
+            }
         }
     }
 
@@ -112,22 +217,32 @@ public:
     /// Blocks until resource is available
     void lock()
     {
-        if (link.queue)
+        if (link)
             request.wait();
     }
 
-    /// Report resource consumption has finished
-    void unlock()
+    void consume(ResourceCost cost)
     {
-        if (link.queue)
+        real_cost += cost;
+    }
+
+    /// Report resource consumption has finished
+    void unlock(ResourceCost consumed = 0)
+    {
+        consume(consumed);
+        if (link)
         {
-            request.finish();
-            link.queue = nullptr;
+            // `finish()` and the failed path are alternatives: skip `finish()` (and the queue access it
+            // performs) if the request was failed, otherwise it would touch a possibly-destroyed queue.
+            if (!request.consumeException())
+                request.finish(real_cost, link);
+            link.reset();
         }
     }
 
     ResourceLink link;
     Request & request;
+    ResourceCost real_cost = 0;
 };
 
 }

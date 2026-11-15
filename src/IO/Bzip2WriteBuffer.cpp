@@ -4,7 +4,6 @@
 #    include <IO/Bzip2WriteBuffer.h>
 #    include <bzlib.h>
 
-#include <Common/MemoryTracker.h>
 
 namespace DB
 {
@@ -42,10 +41,7 @@ void Bzip2WriteBuffer::nextImpl()
             out->position() = out->buffer().end() - stream.avail_out;
 
             if (ret != BZ_RUN_OK)
-                throw Exception(
-                    ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
-                    "bzip2 stream encoder failed: error code: {}",
-                    ret);
+                throw Exception(ErrorCodes::BZIP2_STREAM_ENCODER_FAILED, "bzip2 stream encoder failed: {}", bzip2ErrorToString(ret));
 
         }
         while (stream.avail_in > 0);
@@ -60,7 +56,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finalizeBefore()
+void Bzip2WriteBuffer::finalFlushBefore()
 {
     next();
 
@@ -82,10 +78,7 @@ void Bzip2WriteBuffer::finalizeBefore()
             break;
 
         if (ret != BZ_FINISH_OK)
-            throw Exception(
-                ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
-                "bzip2 stream encoder failed: error code: {}",
-                ret);
+            throw Exception(ErrorCodes::BZIP2_STREAM_ENCODER_FAILED, "bzip2 stream encoder failed: {}", bzip2ErrorToString(ret));
     }
     while (true);
 }

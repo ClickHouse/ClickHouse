@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cassert>
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -9,10 +10,11 @@
 #include <utility>
 #include <vector>
 #include <array>
+#include <absl/container/inlined_vector.h>
 
 #include <boost/core/noncopyable.hpp>
 
-#include <Common/PODArray.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -20,6 +22,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -31,8 +34,6 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class FullMergeJoinCursor;
-
-using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
 
 /// Used instead of storing previous block
 struct JoinKeyRow
@@ -46,7 +47,23 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    Columns row;
+};
+
+struct MatchedRows
+{
+    size_t left = 0;
+    size_t right = 0;
+
+    size_t & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
+struct MatchedRanges
+{
+    JoinKeyRow left;
+    JoinKeyRow right;
+
+    JoinKeyRow & side(size_t source_num) { return source_num == 0 ? left : right; }
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -65,6 +82,10 @@ public:
 
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
+
+    bool count_matches = false;
+    /// key of the last equal range of each side that found a partner on the other side
+    MatchedRanges matched;
 };
 
 /// Accumulate blocks with same key and cross-join them
@@ -81,13 +102,13 @@ public:
             , current(begin_)
             , chunk(std::move(chunk_))
         {
-            assert(length > 0 && begin + length <= chunk.getNumRows());
+            chassert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        size_t begin;
-        size_t length;
+        size_t begin{};
+        size_t length{};
 
-        size_t current;
+        size_t current{};
         Chunk chunk;
     };
 
@@ -108,7 +129,7 @@ public:
     bool next()
     {
         /// advance right to one row, when right finished, advance left to next block
-        assert(!left.empty() && !right.empty());
+        chassert(!left.empty() && !right.empty());
 
         if (finished())
             return false;
@@ -153,8 +174,8 @@ private:
         }
         return true;
     }
-    std::vector<Range> left;
-    std::vector<Range> right;
+    VectorWithMemoryTracking<Range> left;
+    VectorWithMemoryTracking<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -182,44 +203,46 @@ public:
 /*
  * Wrapper for SortCursorImpl
  */
-class FullMergeJoinCursor : boost::noncopyable
+class FullMergeJoinCursor
 {
 public:
-    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
+    constexpr static bool has_null_maps = true;
+
+    FullMergeJoinCursor() = default;
+    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
+
+    FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
+    FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
+    FullMergeJoinCursor(const FullMergeJoinCursor &) = delete;
+    FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
     bool fullyCompleted() const;
-    void setChunk(Chunk && chunk);
+    void setCompleted() { received_all_blocks = true; }
     const Chunk & getCurrent() const;
-    Chunk detach();
+    void setChunk(Chunk && chunk);
 
-    SortCursorImpl * operator-> () { return &cursor; }
-    const SortCursorImpl * operator-> () const { return &cursor; }
+    absl::InlinedVector<ColumnPtr, 4> sort_columns;
+    absl::InlinedVector<ColumnPtr, 4> null_maps;
+    SortedKeyRuns key_runs;
+    ColumnPtr asof_column = nullptr;
+    size_t pos = 0;
+    size_t rows = 0;
 
-    SortCursorImpl & operator* () { return cursor; }
-    const SortCursorImpl & operator* () const { return cursor; }
+    bool empty() const { return rows == 0; }
+    size_t getRow() const { return pos; }
+    bool isLast() const { return pos + 1 >= rows; }
+    bool isValid() const { return pos < rows; }
+    void next() { ++pos; }
+    size_t rowsLeft() const { return rows - pos; }
 
-    SortCursorImpl cursor;
-
-    const Block & sampleBlock() const { return sample_block; }
-    Columns sampleColumns() const { return sample_block.getColumns(); }
-
-    const IColumn * getAsofColumn() const
-    {
-        if (!asof_column_position)
-            return nullptr;
-        return cursor.all_columns[*asof_column_position];
-    }
-
-    String dump() const;
+    const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
 
 private:
-    Block sample_block;
-    SortDescription desc;
-
     Chunk current_chunk;
-    bool recieved_all_blocks = false;
+    bool received_all_blocks = false;
 
-    std::optional<size_t> asof_column_position;
+    VectorWithMemoryTracking<size_t> key_indices;
+    bool is_asof = false;
 };
 
 /*
@@ -232,10 +255,11 @@ public:
     MergeJoinAlgorithm(JoinKind kind_,
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
-                       const Blocks & input_headers,
-                       size_t max_block_size_);
+                       SharedHeaders & input_headers,
+                       size_t max_block_size_,
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
-    MergeJoinAlgorithm(JoinPtr join_ptr, const Blocks & input_headers, size_t max_block_size_);
+    MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -245,6 +269,11 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
+    MergedStats getMergedStats() const override;
+
+    /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
+
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
@@ -255,14 +284,22 @@ private:
     std::optional<Status> handleAsofJoinState();
     Status asofJoin();
 
+    void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
+    Columns getEmptyResultColumns(size_t pos) const;
+    /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
+    /// used to fill non-joined rows with the proper type default instead of a raw zero.
+    DataTypes getOutputTypes() const;
+
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
 
-    /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    SharedHeaders input_headers;
 
-    std::array<FullMergeJoinCursorPtr, 2> cursors;
+    /// For `USING` join key columns should have values from right side instead of defaults
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
+
+    std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
 
     /// Keep some state to make handle data from different blocks
@@ -272,6 +309,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -280,6 +318,10 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+        size_t num_bytes[2] = {0, 0};
+
+        /// Rows of each side that found a partner on the other side.
+        MatchedRows matched_rows;
 
         size_t max_blocks_loaded = 0;
     };
@@ -296,8 +338,8 @@ class MergeJoinTransform final : public IMergingTransform<MergeJoinAlgorithm>
 public:
     MergeJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint = 0);
 
@@ -305,14 +347,16 @@ public:
         JoinKind kind_,
         JoinStrictness strictness_,
         const TableJoin::JoinOnClause & on_clause_,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_ = 0);
 
     String getName() const override { return "MergeJoinTransform"; }
 
     void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
+
+    JoinAnalysisCounters getJoinAnalysisCounters() const { return algorithm.getJoinAnalysisCounters(); }
 
 protected:
     void onFinish() override;

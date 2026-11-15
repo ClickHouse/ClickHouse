@@ -1,8 +1,8 @@
 #ifndef __clang_analyzer__ // It's too hard to analyze.
 
-#include "GatherUtils.h"
-#include "Selectors.h"
-#include "Algorithms.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Selectors.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
 namespace DB::GatherUtils
 {
@@ -12,6 +12,8 @@ namespace
 
 struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
+    static constexpr bool supports_replicated_source = true;
+
     template <typename Source>
     static void selectSource(bool is_const, bool is_nullable, Source && source,
                            const IColumn & offset_column, const IColumn & length_column, ColumnArray::MutablePtr & result)
@@ -31,6 +33,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
 
             if (is_const)
                 sliceDynamicOffsetBounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset_column, length_column);
+            else if (source.isReplicated())
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset_column, length_column);
             else
                 sliceDynamicOffsetBounded(static_cast<NullableSource &>(source), sink, offset_column, length_column);
         }
@@ -41,6 +45,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
 
             if (is_const)
                 sliceDynamicOffsetBounded(static_cast<ConstSource<SourceType> &>(source), sink, offset_column, length_column);
+            else if (source.isReplicated())
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<SourceType> &>(source), sink, offset_column, length_column);
             else
                 sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
         }

@@ -1,0 +1,59 @@
+<test>
+    <settings>
+        <max_block_size>1000</max_block_size>
+        <enable_named_columns_in_function_tuple>0</enable_named_columns_in_function_tuple>
+        <allow_experimental_dynamic_type>1</allow_experimental_dynamic_type>
+    </settings>
+
+    <create_query>
+CREATE TABLE dynamic_squash_performance_1
+(
+    d Dynamic
+)
+ENGINE = Null;
+    </create_query>
+
+    <create_query>
+CREATE TABLE dynamic_squash_performance_2
+(
+    d Dynamic(max_types=6)
+)
+ENGINE = Null;
+    </create_query>
+
+    <create_query>
+CREATE TABLE src_dynamic_squash_performance_1
+(
+    d Dynamic
+)
+ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+CREATE TABLE src_dynamic_squash_performance_2
+(
+    d Dynamic(max_types=6)
+)
+ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+<![CDATA[insert into src_dynamic_squash_performance_1 select multiIf(number % 15000 < 1000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b1v1 Array(UInt64))::Dynamic, number % 15 < 3,tuple(range(number % 100))::Tuple(b1v2 Array(UInt64))::Dynamic, number % 15 < 6,tuple(range(number % 100))::Tuple(b1v3 Array(UInt64))::Dynamic, number % 15 < 10,tuple(range(number % 100))::Tuple(b1v4 Array(UInt64))::Dynamic,tuple(range(number % 100))::Tuple(b1v5 Array(UInt64))::Dynamic), number % 15000 < 3000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b2v1 Array(UInt64))::Dynamic, number % 15 < 3,tuple(range(number % 100))::Tuple(b2v2 Array(UInt64))::Dynamic, number % 15 < 6,tuple(range(number % 100))::Tuple(b2v3 Array(UInt64))::Dynamic, number % 15 < 10,tuple(range(number % 100))::Tuple(b2v4 Array(UInt64))::Dynamic,tuple(range(number % 100))::Tuple(b2v5 Array(UInt64))::Dynamic), number % 15000 < 6000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b3v1 Array(UInt64))::Dynamic, number % 15 < 3,tuple(range(number % 100))::Tuple(b3v2 Array(UInt64))::Dynamic, number % 15 < 6,tuple(range(number % 100))::Tuple(b3v3 Array(UInt64))::Dynamic, number % 15 < 10,tuple(range(number % 100))::Tuple(b3v4 Array(UInt64))::Dynamic,tuple(range(number % 100))::Tuple(b3v5 Array(UInt64))::Dynamic), number % 15000 < 10000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b4v1 Array(UInt64))::Dynamic, number % 15 < 3,tuple(range(number % 100))::Tuple(b4v2 Array(UInt64))::Dynamic, number % 15 < 6,tuple(range(number % 100))::Tuple(b4v3 Array(UInt64))::Dynamic, number % 15 < 10,tuple(range(number % 100))::Tuple(b4v4 Array(UInt64))::Dynamic,tuple(range(number % 100))::Tuple(b4v5 Array(UInt64))::Dynamic), multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b5v1 Array(UInt64))::Dynamic, number % 15 < 3,tuple(range(number % 100))::Tuple(b5v2 Array(UInt64))::Dynamic, number % 15 < 6,tuple(range(number % 100))::Tuple(b5v3 Array(UInt64))::Dynamic, number % 15 < 10,tuple(range(number % 100))::Tuple(b5v4 Array(UInt64))::Dynamic,tuple(range(number % 100))::Tuple(b5v5 Array(UInt64))::Dynamic)) as res from numbers(1000000)]]>
+    </fill_query>
+
+    <fill_query>
+<![CDATA[insert into src_dynamic_squash_performance_2 select multiIf(number % 15000 < 1000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b1v1 Array(UInt64))::Dynamic(max_types=6), number % 15 < 3,tuple(range(number % 100))::Tuple(b1v2 Array(UInt64))::Dynamic(max_types=6), number % 15 < 6,tuple(range(number % 100))::Tuple(b1v3 Array(UInt64))::Dynamic(max_types=6), number % 15 < 10,tuple(range(number % 100))::Tuple(b1v4 Array(UInt64))::Dynamic(max_types=6),tuple(range(number % 100))::Tuple(b1v5 Array(UInt64))::Dynamic(max_types=6)), number % 15000 < 3000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b2v1 Array(UInt64))::Dynamic(max_types=6), number % 15 < 3,tuple(range(number % 100))::Tuple(b2v2 Array(UInt64))::Dynamic(max_types=6), number % 15 < 6,tuple(range(number % 100))::Tuple(b2v3 Array(UInt64))::Dynamic(max_types=6), number % 15 < 10,tuple(range(number % 100))::Tuple(b2v4 Array(UInt64))::Dynamic(max_types=6),tuple(range(number % 100))::Tuple(b2v5 Array(UInt64))::Dynamic(max_types=6)), number % 15000 < 6000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b3v1 Array(UInt64))::Dynamic(max_types=6), number % 15 < 3,tuple(range(number % 100))::Tuple(b3v2 Array(UInt64))::Dynamic(max_types=6), number % 15 < 6,tuple(range(number % 100))::Tuple(b3v3 Array(UInt64))::Dynamic(max_types=6), number % 15 < 10,tuple(range(number % 100))::Tuple(b3v4 Array(UInt64))::Dynamic(max_types=6),tuple(range(number % 100))::Tuple(b3v5 Array(UInt64))::Dynamic(max_types=6)), number % 15000 < 10000, multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b4v1 Array(UInt64))::Dynamic(max_types=6), number % 15 < 3,tuple(range(number % 100))::Tuple(b4v2 Array(UInt64))::Dynamic(max_types=6), number % 15 < 6,tuple(range(number % 100))::Tuple(b4v3 Array(UInt64))::Dynamic(max_types=6), number % 15 < 10,tuple(range(number % 100))::Tuple(b4v4 Array(UInt64))::Dynamic(max_types=6),tuple(range(number % 100))::Tuple(b4v5 Array(UInt64))::Dynamic(max_types=6)), multiIf(number % 15 < 1,tuple(range(number % 100))::Tuple(b5v1 Array(UInt64))::Dynamic(max_types=6), number % 15 < 3,tuple(range(number % 100))::Tuple(b5v2 Array(UInt64))::Dynamic(max_types=6), number % 15 < 6,tuple(range(number % 100))::Tuple(b5v3 Array(UInt64))::Dynamic(max_types=6), number % 15 < 10,tuple(range(number % 100))::Tuple(b5v4 Array(UInt64))::Dynamic(max_types=6),tuple(range(number % 100))::Tuple(b5v5 Array(UInt64))::Dynamic(max_types=6))) as res from numbers(1000000)]]>
+    </fill_query>
+
+    
+    <query>INSERT INTO dynamic_squash_performance_1 SELECT number::Dynamic FROM numbers(10000000)</query>
+    <query>INSERT INTO dynamic_squash_performance_1 SELECT range(number % 100)::Dynamic FROM numbers(2000000)</query>
+    <query>INSERT INTO dynamic_squash_performance_1 SELECT * FROM src_dynamic_squash_performance_1</query>
+    <query>INSERT INTO dynamic_squash_performance_2 SELECT * FROM src_dynamic_squash_performance_2</query>
+
+    <drop_query>DROP TABLE IF EXISTS dynamic_squash_performance_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dynamic_squash_performance_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS src_dynamic_squash_performance_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS src_dynamic_squash_performance_2</drop_query>
+</test>
+

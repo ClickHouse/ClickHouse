@@ -4,12 +4,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n "
+$CLICKHOUSE_CLIENT "
     DROP TABLE IF EXISTS t_unload_primary_key;
 
     CREATE TABLE t_unload_primary_key (a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS old_parts_lifetime = 10000;
+    SETTINGS old_parts_lifetime = 10000, use_primary_key_cache = 0, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     INSERT INTO t_unload_primary_key VALUES (1, 1);
 
@@ -26,7 +26,7 @@ for _ in {1..100}; do
     sleep 0.3
 done
 
-$CLICKHOUSE_CLIENT -n "
+$CLICKHOUSE_CLIENT "
     SELECT name, active, primary_key_bytes_in_memory FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_unload_primary_key' ORDER BY name;
     DROP TABLE IF EXISTS t_unload_primary_key;
 "

@@ -1,0 +1,3 @@
+---
+# Increase number of threads to avoid one test affect others
+threadpool_writer_pool_size: 500

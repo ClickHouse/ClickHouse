@@ -1,34 +1,33 @@
 #include <Backups/RestoreCoordinationLocal.h>
+
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(getLogger("RestoreCoordinationLocal"))
+RestoreCoordinationLocal::RestoreCoordinationLocal(
+    bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_)
+    : log(getLogger("RestoreCoordinationLocal"))
+    , concurrency_check(/* is_restore = */ true, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_restore_, concurrency_counters_)
 {
 }
 
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &)
-{
-}
-
-void RestoreCoordinationLocal::setError(const Exception &)
-{
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const String &)
+ZooKeeperRetriesInfo RestoreCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+bool RestoreCoordinationLocal::acquireCreatingSharedDatabase(const String & database_name)
 {
-    return {};
+    std::lock_guard lock{mutex};
+    return acquired_shared_databases.emplace(database_name).second;
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -53,17 +52,59 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
+{
+    return true;
+}
+
+bool RestoreCoordinationLocal::acquireReplicatedNamedCollections(const String &)
+{
+    return true;
+}
+
+void RestoreCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    auto & dirs = replicated_named_collections_dirs[replication_id];
+    if (std::find(dirs.begin(), dirs.end(), dir_path) == dirs.end())
+        dirs.push_back(dir_path);
+}
+
+Strings RestoreCoordinationLocal::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = replicated_named_collections_dirs.find(replication_id);
+    if (it == replicated_named_collections_dirs.end())
+        return {};
+    return it->second;
+}
+
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
     std::lock_guard lock{mutex};
     return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
 }
 
+void RestoreCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id)
+{
+    std::lock_guard lock{mutex};
+    auto [it, inserted] = rocksdb_data_owner.emplace(rocksdb_dir, election_id);
+    if (!inserted && election_id > it->second)
+        it->second = election_id;
+}
+
+String RestoreCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock{mutex};
+    auto it = rocksdb_data_owner.find(rocksdb_dir);
+    return it != rocksdb_data_owner.end() ? it->second : String{};
+}
+
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
-    String query_str = serializeAST(create_query);
+    String query_str = create_query.formatWithSecretsOneLine();
 
-    auto find_in_map = [&]
+    auto find_in_map = [&]() TSA_REQUIRES(mutex)
     {
         auto it = create_query_uuids.find(query_str);
         if (it != create_query_uuids.end())
@@ -80,7 +121,7 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
     }
 
-    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* for_restore= */ true};
     new_uuids.copyToQuery(create_query);
 
     {
@@ -89,16 +130,6 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
         create_query_uuids[query_str] = new_uuids;
     }
-}
-
-bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const
-{
-    if (num_active_restores > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_restores={}", num_active_restores);
-        return true;
-    }
-    return false;
 }
 
 }

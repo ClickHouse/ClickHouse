@@ -90,12 +90,12 @@ Application::~Application()
 void Application::setup()
 {
 	poco_assert (_pInstance == 0);
-	
+
 	_pConfig->add(new SystemConfiguration, PRIO_SYSTEM, false, false);
 	_pConfig->add(new MapConfiguration, PRIO_APPLICATION, true, false);
-	
+
 	addSubsystem(new LoggingSubsystem);
-	
+
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 	_workingDirAtLaunch = Path::current();
 
@@ -149,7 +149,7 @@ void Application::init()
 	_pConfig->setString("application.cacheDir", Path::cacheHome() + appPath.getBaseName() + Path::separator());
 	_pConfig->setString("application.tempDir", Path::tempHome() + appPath.getBaseName() + Path::separator());
 	_pConfig->setString("application.dataDir", Path::dataHome() + appPath.getBaseName() + Path::separator());
-	processOptions();
+	processPocoOptions();
 }
 
 
@@ -169,7 +169,7 @@ void Application::initialize(Application& self)
 	_initialized = true;
 }
 
-	
+
 void Application::uninitialize()
 {
 	if (_initialized)
@@ -356,7 +356,7 @@ void Application::setArgs(int argc, char* argv[])
 void Application::setArgs(const ArgVec& args)
 {
 	poco_assert (!args.empty());
-	
+
 	_command = args[0];
 	_pConfig->setInt("application.argc", (int) args.size());
 	_unprocessedArgs = args;
@@ -368,7 +368,7 @@ void Application::setArgs(const ArgVec& args)
 }
 
 
-void Application::processOptions()
+void Application::processPocoOptions()
 {
 	defineOptions(_options);
 	OptionProcessor processor(_options);
@@ -426,7 +426,7 @@ void Application::getApplicationPath(Poco::Path& appPath) const
 bool Application::findFile(Poco::Path& path) const
 {
 	if (path.isAbsolute()) return true;
-	
+
 	Path appPath;
 	getApplicationPath(appPath);
 	Path base = appPath.parent();
@@ -472,7 +472,7 @@ bool Application::findAppConfigFile(const std::string& appName, const std::strin
 bool Application::findAppConfigFile(const Path& basePath, const std::string& appName, const std::string& extension, Path& path) const
 {
 	poco_assert (!appName.empty());
-	
+
 	Path p(basePath,appName);
 	p.setExtension(extension);
 	bool found = findFile(p);

@@ -1,13 +1,11 @@
 import os
 import sys
-import time
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -163,8 +161,9 @@ test_config3 = """
 
 def send_repeated_query(table, count=5):
     for i in range(count):
+        # serialize_query_plan=0 because local table does not exist and distributed query fails with a different error
         node.query_and_get_error(
-            "SELECT count() FROM {} SETTINGS receive_timeout=1, handshake_timeout_ms=1".format(
+            "SELECT count() FROM {} SETTINGS receive_timeout=1, handshake_timeout_ms=1, serialize_query_plan=0".format(
                 table
             )
         )

@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
-$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "create table test (id UInt64, d Dynamic(max_types=255)) engine=Memory"
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "create table test (id UInt64, d Dynamic(max_types=254)) engine=Memory"
 
 $CLICKHOUSE_CLIENT -q "insert into test select 0, NULL"
 $CLICKHOUSE_CLIENT -q "insert into test select 1, materialize(42)::UInt8"
@@ -58,6 +58,6 @@ $CLICKHOUSE_CLIENT -q "insert into test select 47, materialize([[(20, 20), (50, 
 $CLICKHOUSE_CLIENT -q "insert into test select 48, materialize([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]])::MultiPolygon"
 $CLICKHOUSE_CLIENT -q "insert into test select 49, materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])"
 
-$CLICKHOUSE_CLIENT -q "select * from test format RowBinary" | $CLICKHOUSE_LOCAL --allow_experimental_dynamic_type=1 --input-format RowBinary --structure 'id UInt64, d Dynamic(max_types=255)' -q "select d, dynamicType(d) from table order by id"
+$CLICKHOUSE_CLIENT -q "select * from test format RowBinary" | $CLICKHOUSE_LOCAL --allow_experimental_dynamic_type=1 --input-format RowBinary --structure 'id UInt64, d Dynamic(max_types=254)' -q "select d, dynamicType(d) from table order by id"
 $CLICKHOUSE_CLIENT -q "drop table test"
 

@@ -1,0 +1,7 @@
+the array survives the merge
+[10,20,30]
+[40]
+4
+the nested column survives the merge
+[1,2]	[3,4]
+2	2

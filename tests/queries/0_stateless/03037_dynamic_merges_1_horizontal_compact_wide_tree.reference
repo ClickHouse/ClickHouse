@@ -1,28 +1,66 @@
-50000	DateTime
-60000	Date
-70000	Array(UInt16)
-80000	String
-100000	None
-100000	UInt64
-70000	Array(UInt16)
-100000	None
-100000	UInt64
-190000	String
-70000	Array(UInt16)
-100000	None
-100000	UInt64
-190000	String
-200000	Map(UInt64, UInt64)
-100000	None
-100000	UInt64
-200000	Map(UInt64, UInt64)
-260000	String
-10000	Tuple(UInt64, UInt64)
-100000	None
-100000	UInt64
-200000	Map(UInt64, UInt64)
-260000	String
-100000	None
-100000	UInt64
-200000	Map(UInt64, UInt64)
-270000	String
+50000	DateTime	false
+60000	Date	false
+70000	Array(UInt16)	false
+80000	String	false
+100000	None	false
+100000	UInt64	false
+---------------------
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	false
+100000	None	false
+100000	UInt64	false
+---------------------
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	false
+100000	None	false
+100000	UInt64	false
+200000	Map(UInt64, UInt64)	false
+---------------------
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	true
+100000	None	false
+100000	UInt64	false
+200000	Map(UInt64, UInt64)	false
+---------------------
+10000	Tuple(UInt64, UInt64)	false
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	true
+100000	None	false
+100000	UInt64	false
+200000	Map(UInt64, UInt64)	false
+---------------------
+10000	Tuple(UInt64, UInt64)	true
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	true
+100000	None	false
+100000	UInt64	false
+200000	Map(UInt64, UInt64)	false
+---------------------
+10000	Tuple(UInt64, UInt64)	true
+30000	String	false
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+80000	String	true
+100000	None	false
+100000	UInt64	false
+200000	Map(UInt64, UInt64)	false
+---------------------
+10000	Tuple(UInt64, UInt64)	true
+50000	DateTime	true
+60000	Date	true
+70000	Array(UInt16)	true
+100000	None	false
+100000	UInt64	true
+110000	String	false
+200000	Map(UInt64, UInt64)	false

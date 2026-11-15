@@ -1,33 +1,54 @@
-#include <Interpreters/PeriodicLog.h>
+#include <Common/setThreadName.h>
+#include <Common/SystemLogBase.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/PeriodicLog.h>
+#include <Interpreters/QueryMetricLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 
 namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(ThreadName thread_name, size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    flush_thread = std::make_unique<ThreadFromGlobalPool>([this] { threadFunction(); });
+    collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
+        DB::setThreadName(thread_name);
+        threadFunction();
+    });
 }
 
 template <typename LogElement>
 void PeriodicLog<LogElement>::stopCollect()
 {
-    bool old_val = false;
-    if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
-        return;
-    if (flush_thread)
-        flush_thread->join();
+    {
+        /// Under sleep_mutex, so that the collector cannot miss the notification.
+        std::lock_guard lock(sleep_mutex);
+        bool old_val = false;
+        if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
+            return;
+    }
+    sleep_cv.notify_all();
+    if (collecting_thread)
+        collecting_thread->join();
 }
 
 template <typename LogElement>
 void PeriodicLog<LogElement>::shutdown()
 {
     stopCollect();
-    this->stopFlushThread();
+    Base::shutdown();
+}
+
+template <typename LogElement>
+void PeriodicLog<LogElement>::stepFunctionSafe(TimePoint current_time)
+{
+    std::lock_guard lock(step_mutex);
+    stepFunction(current_time);
 }
 
 template <typename LogElement>
@@ -40,14 +61,15 @@ void PeriodicLog<LogElement>::threadFunction()
         {
             const auto current_time = std::chrono::system_clock::now();
 
-            stepFunction(current_time);
+            stepFunctionSafe(current_time);
 
             /// We will record current time into table but align it to regular time intervals to avoid time drift.
             /// We may drop some time points if the server is overloaded and recording took too much time.
             while (desired_timepoint <= current_time)
                 desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
 
-            std::this_thread::sleep_until(desired_timepoint);
+            std::unique_lock lock(sleep_mutex);
+            sleep_cv.wait_until(lock, desired_timepoint, [this] { return is_shutdown_metric_thread.load(); });
         }
         catch (...)
         {
@@ -56,7 +78,13 @@ void PeriodicLog<LogElement>::threadFunction()
     }
 }
 
-#define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
-SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)
+template <typename LogElement>
+void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
+{
+    stepFunctionSafe(current_time);
+}
+
+#define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
+SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_PERIODIC_SYSTEM_LOG)
 
 }

@@ -32,6 +32,8 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     virtual void finalize() = 0;
 
+    virtual void cancel() noexcept = 0;
+
     static constexpr const int kDefaultCompressionLevel = -1;
 
     /// Sets compression method and level.

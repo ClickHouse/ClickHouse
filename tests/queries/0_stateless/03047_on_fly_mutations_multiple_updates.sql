@@ -1,0 +1,43 @@
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
+-- no-parallel: SYSTEM CLEAR MARK CACHE is used.
+
+DROP TABLE IF EXISTS t_lightweight_mut_5;
+
+SET apply_mutations_on_fly = 1;
+SET use_columns_cache = 0;
+
+CREATE TABLE t_lightweight_mut_5 (id UInt64, s1 String, s2 String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    serialization_info_version = 'basic',
+    storage_policy = 'default';
+
+SYSTEM STOP MERGES t_lightweight_mut_5;
+
+INSERT INTO t_lightweight_mut_5 VALUES (1, 'a', 'b');
+ALTER TABLE t_lightweight_mut_5 UPDATE s1 = 'x', s2 = 'y' WHERE id = 1;
+
+SYSTEM CLEAR MARK CACHE;
+SELECT s1 FROM t_lightweight_mut_5 ORDER BY id;
+
+SYSTEM CLEAR MARK CACHE;
+SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
+
+SYSTEM CLEAR MARK CACHE;
+SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
+SELECT anyIf(query, is_initial_query), sum(ProfileEvents['FileOpen']) FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+        AND query ILIKE 'SELECT%FROM t_lightweight_mut_5%' AND type = 'QueryFinish' AND is_initial_query
+)
+GROUP BY initial_query_id
+ORDER BY min(event_time_microseconds);
+
+DROP TABLE t_lightweight_mut_5;

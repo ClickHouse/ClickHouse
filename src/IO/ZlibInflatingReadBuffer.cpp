@@ -67,6 +67,14 @@ bool ZlibInflatingReadBuffer::nextImpl()
             zstr.avail_in = static_cast<BufferSizeType>(std::min(
                 static_cast<UInt64>(in->buffer().end() - in->position()),
                 static_cast<UInt64>(max_buffer_size)));
+
+            /// If the inner stream is completely empty (e.g. a URL returned 404
+            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
+            if (!zstr.avail_in && in->eof() && zstr.total_in == 0)
+            {
+                eof_flag = true;
+                return false;
+            }
         }
 
         /// init output bytes (place, where decompressed data will be)
@@ -95,17 +103,15 @@ bool ZlibInflatingReadBuffer::nextImpl()
                 return !working_buffer.empty();
             }
             /// If it is not end of file, we need to reset zstr and return true, because we still have some data to read
-            else
-            {
-                rc = inflateReset(&zstr);
-                if (rc != Z_OK)
-                    throw Exception(
-                        ErrorCodes::ZLIB_INFLATE_FAILED,
-                        "inflateReset failed: {}{}",
-                        zError(rc),
-                        getExceptionEntryWithFileName(*in));
-                return true;
-            }
+
+            rc = inflateReset(&zstr);
+            if (rc != Z_OK)
+                throw Exception(
+                    ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}{}", zError(rc), getExceptionEntryWithFileName(*in));
+            if (working_buffer.empty())
+                continue;
+
+            return true;
         }
 
         /// If it is not end and not OK, something went wrong, throw exception

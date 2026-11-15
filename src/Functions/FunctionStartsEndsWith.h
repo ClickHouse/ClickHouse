@@ -1,17 +1,18 @@
 #pragma once
-#include <base/map.h>
 
-#include <Common/TargetSpecific.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
+#include <Common/StringSearcher.h>
+#include <Common/UTF8Helpers.h>
+
+#include <optional>
+#include <ranges>
 
 namespace DB
 {
@@ -22,45 +23,81 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct NameStartsWith
 {
     static constexpr auto name = "startsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
+    static constexpr auto is_starts_with = true;
+};
+struct NameStartsWithCaseInsensitive
+{
+    static constexpr auto name = "startsWithCaseInsensitive";
+    static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = true;
+    static constexpr auto is_starts_with = true;
 };
 struct NameEndsWith
 {
     static constexpr auto name = "endsWith";
     static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = false;
+    static constexpr auto is_starts_with = false;
+};
+struct NameEndsWithCaseInsensitive
+{
+    static constexpr auto name = "endsWithCaseInsensitive";
+    static constexpr auto is_utf8 = false;
+    static constexpr auto is_case_insensitive = true;
+    static constexpr auto is_starts_with = false;
 };
 
 struct NameStartsWithUTF8
 {
     static constexpr auto name = "startsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
+    static constexpr auto is_starts_with = true;
+};
+struct NameStartsWithCaseInsensitiveUTF8
+{
+    static constexpr auto name = "startsWithCaseInsensitiveUTF8";
+    static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = true;
+    static constexpr auto is_starts_with = true;
 };
 
 struct NameEndsWithUTF8
 {
     static constexpr auto name = "endsWithUTF8";
     static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = false;
+    static constexpr auto is_starts_with = false;
+};
+struct NameEndsWithCaseInsensitiveUTF8
+{
+    static constexpr auto name = "endsWithCaseInsensitiveUTF8";
+    static constexpr auto is_utf8 = true;
+    static constexpr auto is_case_insensitive = true;
+    static constexpr auto is_starts_with = false;
 };
 
-DECLARE_MULTITARGET_CODE(
-
 template <typename Name>
-class FunctionStartsEndsWith : public IFunction
+class FunctionStartsEndsWith final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static constexpr auto is_utf8 = Name::is_utf8;
+    static constexpr bool is_case_insensitive = Name::is_case_insensitive;
 
     String getName() const override
     {
         return name;
     }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStartsEndsWith<Name>>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
@@ -77,18 +114,21 @@ public:
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1])
-            || isString(arguments[0]) && isString(arguments[1]))
-            return std::make_shared<DataTypeUInt8>();
+        if constexpr (is_utf8)
+            return
+                "(String, String) -> UInt8"
+                " OR (Array, Array) -> UInt8";
+        else
+            return
+                "(StringOrFixedString, StringOrFixedString) -> UInt8"
+                " OR (Array, Array) -> UInt8";
+    }
 
-        if (isArray(arguments[0]) && isArray(arguments[1]))
-            return std::make_shared<DataTypeUInt8>();
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal types {} {} of arguments of function {}. Both must be String or Array",
-            arguments[0]->getName(), arguments[1]->getName(), getName());
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -107,13 +147,14 @@ public:
 private:
     ColumnPtr executeImplArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & arg) { return arg.type; })});
 
         Columns preprocessed_columns(2);
         for (size_t i = 0; i < 2; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+        VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
         for (auto & argument_column : preprocessed_columns)
         {
             bool is_const = false;
@@ -133,7 +174,7 @@ private:
         auto result_column = ColumnUInt8::create(input_rows_count);
         auto * result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
 
-        if constexpr (std::is_same_v<Name, NameStartsWith>)
+        if constexpr (Name::is_starts_with)
             GatherUtils::sliceHas(*sources[0], *sources[1], GatherUtils::ArraySearchType::StartsWith, *result_column_ptr);
         else
             GatherUtils::sliceHas(*sources[0], *sources[1], GatherUtils::ArraySearchType::EndsWith, *result_column_ptr);
@@ -213,6 +254,16 @@ private:
     template <typename HaystackSource, typename NeedleSource>
     static void execute(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
     {
+        if constexpr (is_case_insensitive)
+            executeCaseInsensitive(haystack_source, needle_source, res_data);
+        else
+            executeCaseSensitive(haystack_source, needle_source, res_data);
+    }
+
+    template <typename HaystackSource, typename NeedleSource>
+    requires (!is_case_insensitive)
+    static void executeCaseSensitive(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
+    {
         size_t row_num = 0;
 
         while (!haystack_source.isEnd())
@@ -225,9 +276,12 @@ private:
             else
             {
                 if constexpr (std::is_same_v<Name, NameStartsWith>) /// startsWith
-                    res_data[row_num] = StringRef(haystack.data, needle.size) == StringRef(needle.data, needle.size);
+                    res_data[row_num] = std::string_view(reinterpret_cast<const char *>(haystack.data), needle.size)
+                        == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                 else if constexpr (std::is_same_v<Name, NameEndsWith>) /// endsWith
-                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size);
+                    res_data[row_num]
+                        = std::string_view(reinterpret_cast<const char *>(haystack.data) + haystack.size - needle.size, needle.size)
+                        == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                 else /// startsWithUTF8 or endsWithUTF8
                 {
                     auto length = UTF8::countCodePoints(needle.data, needle.size);
@@ -235,12 +289,14 @@ private:
                     if constexpr (std::is_same_v<Name, NameStartsWithUTF8>)
                     {
                         auto slice = haystack_source.getSliceFromLeft(0, length);
-                        res_data[row_num] = StringRef(slice.data, slice.size) == StringRef(needle.data, needle.size);
+                        res_data[row_num] = std::string_view(reinterpret_cast<const char *>(slice.data), slice.size)
+                            == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                     }
                     else
                     {
                         auto slice = haystack_source.getSliceFromRight(length);
-                        res_data[row_num] = StringRef(slice.data, slice.size) == StringRef(needle.data, needle.size);
+                        res_data[row_num] = std::string_view(reinterpret_cast<const char *>(slice.data), slice.size)
+                            == std::string_view(reinterpret_cast<const char *>(needle.data), needle.size);
                     }
                 }
             }
@@ -250,43 +306,93 @@ private:
             ++row_num;
         }
     }
+
+    using CaseInsensitiveComparator = std::variant<
+        std::unique_ptr<ASCIICaseInsensitiveStringSearcher>,
+        std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>;
+
+    template <typename NeedleSource>
+    requires is_case_insensitive
+    static CaseInsensitiveComparator constCaseInsensitiveComparatorOf(NeedleSource needle_source)
+    {
+        if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>> || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>)
+        {
+            auto needle = needle_source.getWhole();
+            return std::make_unique<ASCIICaseInsensitiveStringSearcher>(needle.data, needle.size);
+        }
+        else if constexpr (std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+        {
+            auto needle = needle_source.getWhole();
+            return std::make_unique<UTF8CaseInsensitiveStringSearcher>(needle.data, needle.size);
+        }
+        return std::unique_ptr<UTF8CaseInsensitiveStringSearcher>{};
+    }
+
+    /// A case-insensitive UTF-8 match can differ from the needle in byte length, so anchor it by code points, not bytes.
+    template <typename HaystackSource, typename NeedleSlice>
+    static bool matchCaseInsensitiveUTF8(const HaystackSource & haystack_source, const NeedleSlice & needle, const CaseInsensitiveComparator & const_comparator)
+    {
+        const auto & const_searcher = std::get<std::unique_ptr<UTF8CaseInsensitiveStringSearcher>>(const_comparator);
+        std::optional<UTF8CaseInsensitiveStringSearcher> row_searcher;
+        if (!const_searcher)
+            row_searcher.emplace(needle.data, needle.size);
+        const auto & searcher = const_searcher ? *const_searcher : *row_searcher;
+
+        auto haystack = haystack_source.getWhole();
+        const UInt8 * haystack_end = haystack.data + haystack.size;
+        if constexpr (Name::is_starts_with)
+            return searcher.matchEnd(haystack.data, haystack_end) != nullptr;
+        else
+            return searcher.matchEnd(haystack_source.getSliceFromRight(UTF8::countCodePoints(needle.data, needle.size)).data, haystack_end) == haystack_end;
+    }
+
+    template <typename HaystackSource, typename NeedleSource>
+    requires is_case_insensitive
+    static void executeCaseInsensitive(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
+    {
+        /// Pull constant needle processing out of the loop over haystack comparisons
+        const CaseInsensitiveComparator const_comparator = constCaseInsensitiveComparatorOf<NeedleSource>(needle_source);
+
+        size_t row_num = 0;
+
+        while (!haystack_source.isEnd())
+        {
+            auto haystack = haystack_source.getWhole();
+            auto needle = needle_source.getWhole();
+
+            if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitiveUTF8> || std::is_same_v<Name, NameEndsWithCaseInsensitiveUTF8>)
+                res_data[row_num] = matchCaseInsensitiveUTF8(haystack_source, needle, const_comparator);
+            else if (needle.size > haystack.size)
+                res_data[row_num] = false;
+            else
+            {
+                /// Constant needle comparison
+                if constexpr (std::is_same_v<NeedleSource, ConstSource<StringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<FixedStringSource>>
+                    || std::is_same_v<NeedleSource, ConstSource<UTF8StringSource>>)
+                {
+                    if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
+                        res_data[row_num] = std::get<std::unique_ptr<ASCIICaseInsensitiveStringSearcher>>(const_comparator)->compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
+                }
+                else /// Non-constant needle comparison
+                {
+                    if constexpr (std::is_same_v<Name, NameStartsWithCaseInsensitive>)
+                        res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data, haystack.data + haystack.size, haystack.data);
+                    else if constexpr (std::is_same_v<Name, NameEndsWithCaseInsensitive>)
+                        res_data[row_num] = ASCIICaseInsensitiveStringSearcher(needle.data, needle.size).compare(haystack.data + haystack.size - needle.size, haystack.data + haystack.size, haystack.data + haystack.size - needle.size);
+                    else
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function '{}'", name);
+                }
+            }
+
+            haystack_source.next();
+            needle_source.next();
+            ++row_num;
+        }
+    }
 };
-
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Name>
-class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
-{
-public:
-    explicit FunctionStartsEndsWith(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::SSE42,
-            TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX,
-            TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionStartsEndsWith<Name>>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 }

@@ -29,7 +29,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parseIntervalKind(pos, expected, kind))
             return false;
 
-        UInt64 val;
+        UInt64 val = 0;
         if (!value->as<ASTLiteral &>().value.tryGet(val))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
         intervals.emplace_back(kind, val);
@@ -38,6 +38,13 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (intervals.empty())
         return false;
 
+    std::sort(intervals.begin(), intervals.end());
+    for (size_t i = 0; i + 1 < intervals.size(); ++i)
+    {
+        if (intervals[i].first == intervals[i + 1].first)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval contains multiple {} components", intervals[i].first.toString());
+    }
+
     CalendarTimeInterval interval(intervals);
 
     if (!options.allow_zero)
@@ -45,7 +52,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!options.allow_mixing_calendar_and_clock_units)
         interval.assertSingleUnit();
 
-    auto time_interval = std::make_shared<ASTTimeInterval>();
+    auto time_interval = make_intrusive<ASTTimeInterval>();
     time_interval->interval = interval;
 
     node = time_interval;

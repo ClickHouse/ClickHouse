@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 drop table if exists num_1;
 drop table if exists num_2;
 
@@ -25,7 +25,13 @@ $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS allow_experimental_analyzer=1"
+"
+
+# The assertions below read the query text that was shipped to the replicas, which only the
+# query-based implementation produces; plan-based ships a serialized plan fragment. Pinned so
+# that this test keeps describing the implementation it was written for - the plan-based side is
+# covered by the `_pr_`/`pr_plan_based` tests.
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas = 2, automatic_parallel_replicas_mode = 0, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join = 0, parallel_replicas_plan_based = 0"
 
 ##############
 echo
@@ -35,17 +41,33 @@ $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS allow_experimental_analyzer=1, allow_experimental_parallel_reading_from_replicas = 2,
-max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
-cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0"
 
 $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS allow_experimental_analyzer=1, allow_experimental_parallel_reading_from_replicas = 2, send_logs_level='trace',
-max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1,
-cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_prefer_local_join=0" 2>&1 |
-grep "executeQuery\|<Debug>.*Coordinator: Coordination done" |
-grep -o "SELECT.*WithMergeableState)\|<Debug>.*Coordinator: Coordination done" |
-sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g'
+SETTINGS send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0" 2>&1 |
+grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
+grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
+sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
+sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
+
+echo
+echo "simple (global) join with analyzer and parallel replicas with local plan"
+
+$CLICKHOUSE_CLIENT -q "
+select * from (select key, value from num_1) l
+inner join (select key, value from num_2) r on l.key = r.key
+order by l.key limit 10 offset 700000
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1"
+
+$CLICKHOUSE_CLIENT -q "
+select * from (select key, value from num_1) l
+inner join (select key, value from num_2) r on l.key = r.key
+order by l.key limit 10 offset 700000
+SETTINGS send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1" 2>&1 |
+grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
+grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
+sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
+sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'

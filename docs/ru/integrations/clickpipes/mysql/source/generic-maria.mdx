@@ -1,0 +1,115 @@
+---
+sidebarTitle: 'Универсальная MariaDB'
+description: 'Настройте любой экземпляр MariaDB как источник для ClickPipes'
+slug: /integrations/clickpipes/mysql/source/generic_maria
+title: 'Руководство по настройке источника для универсальной MariaDB'
+doc_type: 'guide'
+keywords: ['универсальная mariadb', 'ClickPipes', 'бинарное логирование', 'ssl tls', 'самостоятельное размещение']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  Если вы используете одного из поддерживаемых провайдеров (см. боковую панель), обратитесь к соответствующему руководству для этого провайдера.
+</Info>
+
+<div id="enable-binlog-retention">
+  ## Включите хранение бинарных логов
+</div>
+
+Бинарные логи содержат сведения об изменениях данных на экземпляре сервера MariaDB и необходимы для репликации.
+
+Чтобы включить бинарное логирование на вашем экземпляре MariaDB, убедитесь, что заданы следующие параметры:
+
+```sql
+server_id = 1               -- или больше; любое значение, кроме 0
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  -- добавлено в 10.5.0
+expire_logs_days = 1        -- или больше; значение 0 означает бессрочное хранение журналов
+```
+
+Чтобы проверить эти настройки, выполните следующие SQL-команды:
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+Если значения не совпадают, их можно указать в конфигурационном файле (обычно в `/etc/my.cnf` или `/etc/my.cnf.d/mariadb-server.cnf`):
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  ; только начиная с версии 10.5.0
+expire_logs_days = 1
+```
+
+Если исходная база данных — реплика, убедитесь, что `log_slave_updates` тоже включён.
+
+Необходимо ПЕРЕЗАПУСТИТЬ экземпляр MariaDB, чтобы изменения вступили в силу.
+
+<Note>
+  Исключение столбцов не поддерживается в MariaDB &lt;= 10.4, поскольку параметр `binlog_row_metadata` в этой версии ещё не был доступен.
+</Note>
+
+<div id="configure-database-user">
+  ## Настройка пользователя базы данных
+</div>
+
+Подключитесь к своему экземпляру MariaDB от имени пользователя root и выполните следующие команды:
+
+1. Создайте отдельного пользователя для ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. Предоставьте разрешения на схему. В следующем примере показаны разрешения для базы данных `clickpipes`. Повторите эти команды для каждой базы данных и каждого хоста, для которых нужно настроить репликацию:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. Предоставьте пользователю разрешения на репликацию:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  Обязательно замените `clickpipes_user` и `some_secure_password` на нужные имя пользователя и пароль.
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## Настройка SSL/TLS (рекомендуется)
+</div>
+
+SSL‑сертификаты обеспечивают защищённое подключение к вашей базе данных MariaDB. Настройка зависит от типа сертификата:
+
+**Доверенный центр сертификации (DigiCert, Let&#39;s Encrypt и т. д.)** - дополнительная настройка не требуется.
+
+**Внутренний центр сертификации** - Получите файл корневого CA‑сертификата у вашей ИТ‑команды. В интерфейсе ClickPipes загрузите его при создании нового MariaDB ClickPipe.
+
+**Самоуправляемая MariaDB** - Скопируйте CA‑сертификат с сервера MariaDB (путь можно посмотреть в параметре `ssl_ca` в файле `my.cnf`). В интерфейсе ClickPipes загрузите его при создании нового MariaDB ClickPipe. В качестве хоста используйте IP‑адрес сервера.
+
+**Самоуправляемая MariaDB, начиная с 11.4** - Если на вашем сервере настроен `ssl_ca`, следуйте варианту выше. В противном случае обратитесь к вашей ИТ‑команде, чтобы получить корректный сертификат. В крайнем случае используйте переключатель &quot;Skip Certificate Verification&quot; в интерфейсе ClickPipes (не рекомендуется по соображениям безопасности).
+
+Дополнительную информацию о параметрах SSL/TLS см. в нашем [FAQ](/ru/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
+
+<div id="whats-next">
+  ## Что дальше?
+</div>
+
+Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/mysql/index) и начать импорт данных из вашего экземпляра MariaDB в ClickHouse Cloud.
+Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра MariaDB, — они понадобятся вам при создании ClickPipe.

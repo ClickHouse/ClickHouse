@@ -4,9 +4,11 @@
 
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <filesystem>
+
 
 namespace DB
 {
@@ -45,16 +47,14 @@ ReadBufferPtr FileLogConsumer::consume()
         LOG_TRACE(log, "No new records to read");
         return nullptr;
     }
-    else
-    {
-        records = std::move(new_records);
-        current = records.begin();
 
-        LOG_TRACE(log, "Polled batch of {} records. ", records.size());
+    records = std::move(new_records);
+    current = records.begin();
 
-        buffer_status = BufferStatus::POLLED_OK;
-        return getNextRecord();
-    }
+    LOG_TRACE(log, "Polled batch of {} records. ", records.size());
+
+    buffer_status = BufferStatus::POLLED_OK;
+    return getNextRecord();
 }
 
 FileLogConsumer::Records FileLogConsumer::pollBatch(size_t batch_size_)
@@ -120,6 +120,17 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
 
 
             std::getline(reader, record.data);
+
+            /// A last line without '\n' may still be being written: leave it for a later read.
+            /// EOF before `last_open_end` means the file was truncated, which is an error.
+            if (reader.eof() && static_cast<UInt64>(offset) + record.data.size() >= file_meta.last_open_end)
+            {
+                reader.clear();
+                reader.seekg(offset);
+                StorageFileLog::assertStreamGood(reader);
+                file_ctx.status = StorageFileLog::FileStatus::NO_CHANGE;
+                break;
+            }
             StorageFileLog::assertStreamGood(reader);
 
             new_records.emplace_back(record);
@@ -132,7 +143,7 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         file_meta.last_writen_position = current_position;
 
         /// stream reach to end
-        if (current_position == file_meta.last_open_end)
+        if (current_position >= file_meta.last_open_end)
         {
             file_ctx.status = StorageFileLog::FileStatus::NO_CHANGE;
         }

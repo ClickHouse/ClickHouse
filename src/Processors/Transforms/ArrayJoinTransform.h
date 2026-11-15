@@ -12,17 +12,17 @@ class ArrayJoinResultIterator;
 using ArrayJoinResultIteratorPtr = std::unique_ptr<ArrayJoinResultIterator>;
 
 /// Execute ARRAY JOIN
-class ArrayJoinTransform : public IInflatingTransform
+class ArrayJoinTransform final : public IInflatingTransform
 {
 public:
     ArrayJoinTransform(
-            const Block & header_,
+            SharedHeader header_,
             ArrayJoinActionPtr array_join_,
             bool on_totals_ = false);
 
     String getName() const override { return "ArrayJoinTransform"; }
 
-    static Block transformHeader(Block header, const ArrayJoinActionPtr & array_join);
+    static Block transformHeader(const Block & header, const Names & array_join_columns);
 
 protected:
     void consume(Chunk chunk) override;

@@ -4,22 +4,31 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include "Common/ZooKeeper/Types.h"
-#include "Common/ZooKeeper/ZooKeeper.h"
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include "Core/Types.h"
-#include "Disks/IStoragePolicy.h"
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Core/Types.h>
+#include <Disks/IStoragePolicy.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 part_moves_between_shards_enable;
+}
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_DATA_PART;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -30,16 +39,18 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , log(getLogger(logger_name))
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
-    task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()
 {
-    if (!storage.getSettings()->part_moves_between_shards_enable)
+    if (!(*storage.getSettings())[MergeTreeSetting::part_moves_between_shards_enable])
         return;
 
     if (need_stop)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
 
     /// Don't poll ZooKeeper too often.
     auto sleep_ms = 3 * 1000;
@@ -67,6 +78,16 @@ void PartMovesBetweenShardsOrchestrator::run()
     task->scheduleAfter(sleep_ms);
 }
 
+void PartMovesBetweenShardsOrchestrator::start()
+{
+    task->activateAndSchedule();
+}
+
+void PartMovesBetweenShardsOrchestrator::wakeup()
+{
+     task->schedule();
+}
+
 void PartMovesBetweenShardsOrchestrator::shutdown()
 {
     need_stop = true;
@@ -79,7 +100,10 @@ std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrc
     std::vector<Entry> tasks;
     auto zk = storage.getZooKeeper();
 
-    Strings task_names = zk->getChildren(entries_znode_path + "/tasks");
+    /// A replicated table whose Keeper tree is absent stays attached in read-only mode instead of
+    /// failing to attach, so it can have no task node at all, and then it has no moves to report.
+    Strings task_names;
+    zk->tryGetChildren(entries_znode_path + "/tasks", task_names);
 
     for (auto const & task_name : task_names)
     {
@@ -367,7 +391,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                         auto drop_part_info = MergeTreePartInfo::fromPartName(attach_log_entry->new_part_name, storage.format_version);
 
                         storage.getClearBlocksInPartitionOps(
-                            ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                            ops, *zk, drop_part_info.getPartitionId(), drop_part_info.min_block, drop_part_info.max_block);
                         size_t clear_block_ops_size = ops.size();
 
                         attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
@@ -393,7 +417,8 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                         LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                     }
 
-                    Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1);
+                    StorageReplicatedMergeTree::WatchEventByPath watch_events;
+                    Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1, watch_events);
                     if (!unwaited.empty())
                         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
@@ -408,14 +433,22 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
                 auto part = storage.getActiveContainingPart(entry.part_name);
+                /// The pin blocks only merges and DROP PART, so the part can be removed, e.g. by TRUNCATE or DROP PARTITION.
+                if (!part)
+                    throw Exception(
+                        ErrorCodes::NO_SUCH_DATA_PART,
+                        "Part {} is not active on replica {}, it cannot be attached on shard {}",
+                        entry.part_name,
+                        storage.replica_name,
+                        entry.to_shard);
 
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
+                auto block_number_lock = storage.allocateBlockNumber(part->info.getPartitionId(), zk, {attach_log_entry_barrier_path}, entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData log_entry;
 
-                auto block_number = block_number_lock->getNumber();
+                auto block_number = block_number_lock.getNumber();
 
                 auto part_info = part->info;
                 part_info.min_block = block_number;
@@ -465,7 +498,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
-                storage.getClearBlocksInPartitionOps(ops, *zk, source_drop_part_info.partition_id, source_drop_part_info.min_block, source_drop_part_info.max_block);
+                storage.getClearBlocksInPartitionOps(ops, *zk, source_drop_part_info.getPartitionId(), source_drop_part_info.min_block, source_drop_part_info.max_block);
 
                 source_drop_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
                 source_drop_log_entry.create_time = std::time(nullptr);
