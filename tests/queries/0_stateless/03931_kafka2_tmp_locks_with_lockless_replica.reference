@@ -1,4 +1,6 @@
 Created topic.
+--- Act 1 done: full coverage with a permanently lockless replica ---
+--- Act 2 done: the fresh replica acquired partitions and consumes despite a stuck lockless replica ---
 --- Consumed rows ---
 1	msg_1
 2	msg_2

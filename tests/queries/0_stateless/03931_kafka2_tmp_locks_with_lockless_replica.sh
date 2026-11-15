@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-llvm-coverage
+# Tags: no-fasttest, no-replicated-database, no-llvm-coverage, long
 # Tag no-fasttest: Kafka is not available in fast tests
-# Tag no-replicated-database: the test relies on exactly one real replica plus a ghost replica in Keeper competing for partition assignment
+# Tag no-replicated-database: the test relies on a fixed set of replicas (a healthy one, a permanently lockless ghost, a stuck and a fresh one) competing for partition assignment
 # Tag no-llvm-coverage: Kafka consumer is too slow under coverage instrumentation, consumer group rebalancing times out
+# Tag long: lock refresh rounds are wall-clock bound (~15 polls per round), so even the green path takes minutes on slow builders
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,9 +16,10 @@ KEEPER_PATH="/clickhouse/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 PARTITIONS=4
 MESSAGES_PER_PARTITION=2
+MAX_MESSAGES_PER_PARTITION=4
 # Refresh rounds are counted in polls (stream_kafka_locks_refresh_polls=15);
-# a short poll timeout keeps a round around ~15s so the test stays within budget.
-POLL_TIMEOUT_MS=1000
+# short poll + fast reschedule keep a refresh round at a few seconds (the combination the integration quota tests use).
+POLL_TIMEOUT_MS=50
 
 cleanup()
 {
@@ -29,6 +31,11 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_b" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_broken" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_broken" 2>/dev/null
     timeout 10 rpk topic delete $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1
 
     exit $exit_code
@@ -53,16 +60,14 @@ partition_end_offset() {
     return 1
 }
 
-# Produce $MESSAGES_PER_PARTITION messages into one partition, idempotently:
-# message k (0-based) of partition p carries id p+1+4*k, so every partition
-# receives a distinct, restartable id sequence. The deadline is shared by all
-# partitions so the whole produce phase stays bounded well below the per-test
-# timeout (see the budget comment in lock_count wait below).
+# Produce messages into one partition, idempotently, until it holds $3 records:
+# message k (0-based) of partition p carries id p+1+4*k. The deadline is shared by all
+# partitions so the whole produce phase stays bounded well below the per-test timeout.
 produce_into_partition() {
-    local partition=$1 deadline=$2
+    local partition=$1 deadline=$2 target=$3
     local ids=()
     local k
-    for k in $(seq 0 $((MESSAGES_PER_PARTITION - 1))); do
+    for k in $(seq 0 $((MAX_MESSAGES_PER_PARTITION - 1))); do
         ids+=($((partition + 1 + PARTITIONS * k)))
     done
 
@@ -72,11 +77,11 @@ produce_into_partition() {
             sleep 1
             continue
         fi
-        if [ "$hw" -ge "$MESSAGES_PER_PARTITION" ]; then
+        if [ "$hw" -ge "$target" ]; then
             return 0
         fi
         start=$hw
-        out=$(seq "$start" $((MESSAGES_PER_PARTITION - 1)) | while read -r k; do
+        out=$(seq "$start" $((target - 1)) | while read -r k; do
                 echo "{\"id\": ${ids[$k]}, \"data\": \"msg_${ids[$k]}\"}"
             done | timeout 30 rpk topic produce "$KAFKA_TOPIC" -p "$partition" --brokers "$KAFKA_BROKER" 2>&1)
         sleep 1
@@ -87,7 +92,7 @@ produce_into_partition() {
 
 # Create the topic. "Already exists" counts as success.
 created=0
-deadline=$((SECONDS + 60))
+deadline=$((SECONDS + 30))
 while [ "$SECONDS" -lt "$deadline" ]; do
     create_out=$(timeout 10 rpk topic create $KAFKA_TOPIC -p $PARTITIONS --brokers $KAFKA_BROKER 2>&1)
     if [ $? -eq 0 ] || echo "$create_out" | grep -q "TOPIC_ALREADY_EXISTS"; then
@@ -112,6 +117,7 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_format = 'JSONEachRow',
              kafka_max_block_size = 100,
              kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
              kafka_keeper_path = '$KEEPER_PATH',
              kafka_replica_name = '{replica}';
  "
@@ -123,7 +129,7 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
 # (4 / 2 = 2 permanent locks plus at most one rotating temporary lock), so the
 # topic was never fully covered.
 ghost_registered=0
-deadline=$((SECONDS + 30))
+deadline=$((SECONDS + 20))
 while [ "$SECONDS" -lt "$deadline" ]; do
     if $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas', 'ghost', '')" 2>/dev/null \
         && $CLICKHOUSE_CLIENT -q "INSERT INTO system.zookeeper (path, name, value) VALUES ('$KEEPER_PATH/replicas/ghost', 'is_active', 'ghost')" 2>/dev/null; then
@@ -152,14 +158,14 @@ lock_count() {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$KEEPER_PATH/topic_partition_locks'" 2>/dev/null || echo 0
 }
 
-# The single real replica must be able to cover the whole topic: 2 permanent
-# locks plus temporary locks for the remaining partitions. While the ghost is
-# active this must still reach $PARTITIONS and stay there. All wait budgets
-# (210s here + 90s produce + 90s consumption + startup loops) together stay
-# well below the runner's 600s per-test timeout, so failures are always
-# explicit messages, never a silent timeout.
+# The single real replica must be able to cover the whole topic: 2 permanent locks plus
+# temporary locks for the remaining partitions. The ghost is lockless forever, so after
+# MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA rounds the real replica stops yielding to it
+# and the coverage must reach $PARTITIONS. All wait budgets together stay well below the
+# runner's per-test timeout, so failures are always explicit messages, never a silent
+# timeout.
 locks=0
-deadline=$((SECONDS + 210))
+deadline=$((SECONDS + 150))
 while [ "$SECONDS" -lt "$deadline" ]; do
     locks=$(lock_count)
     if [ "$locks" -ge "$PARTITIONS" ]; then
@@ -172,16 +178,16 @@ if [ "$locks" -lt "$PARTITIONS" ]; then
     exit 1
 fi
 
-# Produce two messages into every partition: with full lock coverage all of
-# them must be consumed. One shared produce budget covers all partitions.
-produce_deadline=$((SECONDS + 90))
+# Produce two messages into every partition: with full lock coverage all of them must be
+# consumed. One shared produce budget covers all partitions.
+produce_deadline=$((SECONDS + 45))
 for p in $(seq 0 $((PARTITIONS - 1))); do
-    produce_into_partition $p $produce_deadline
+    produce_into_partition $p $produce_deadline $MESSAGES_PER_PARTITION
 done
 
 expected=$((PARTITIONS * MESSAGES_PER_PARTITION))
 count=0
-deadline=$((SECONDS + 90))
+deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
     count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
     if [ "$count" -ge "$expected" ]; then
@@ -194,5 +200,92 @@ if [ "$count" -lt "$expected" ]; then
     exit 1
 fi
 
+echo "--- Act 1 done: full coverage with a permanently lockless replica ---"
+
+# Act 2: a replica that is active but cannot reach Kafka (metadata retry loop) holds no
+# locks for a long time; it must not stop a fresh replica from taking its share. The
+# fresh replica plays the role of one recovering after a restart.
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_broken (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '127.0.0.1:9',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${KAFKA_GROUP}_broken',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'r2';
+ "
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b (id UInt64, data String)
+    ENGINE = MergeTree ORDER BY id;
+ "
+# The MV makes r2 active: it holds no locks (NoMetadata loop) for the rest of the test,
+# exactly like a replica stuck while its session stays alive.
+$CLICKHOUSE_CLIENT -q "
+    CREATE MATERIALIZED VIEW ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_broken TO ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b AS
+    SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_broken;
+ "
+
+# Let the stuck replica's lockless streak age past the yield window.
+sleep 35
+
+# A fresh healthy replica starts: it is lockless and young, so the healthy first replica
+# must yield the free partitions to it even though the stuck r2 (and the ghost) exist.
+$CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
+    CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b (id UInt64, data String)
+    ENGINE = Kafka
+    SETTINGS kafka_broker_list = '$KAFKA_BROKER',
+             kafka_topic_list = '$KAFKA_TOPIC',
+             kafka_group_name = '${KAFKA_GROUP}_b',
+             kafka_format = 'JSONEachRow',
+             kafka_max_block_size = 100,
+             kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
+             kafka_consumer_reschedule_ms = 100,
+             kafka_keeper_path = '$KEEPER_PATH',
+             kafka_replica_name = 'r3';
+ "
+$CLICKHOUSE_CLIENT -q "
+    CREATE MATERIALIZED VIEW ${CLICKHOUSE_TEST_UNIQUE_NAME}_mv_b TO ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b AS
+    SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b;
+ "
+
+recovered=0
+deadline=$((SECONDS + 75))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    recovered=$($CLICKHOUSE_CLIENT -q "SELECT length(assignments.partition_id) FROM system.kafka_consumers WHERE table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka_b' SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    if [ "$recovered" -ge 1 ]; then
+        break
+    fi
+    sleep 2
+done
+if [ "$recovered" -lt 1 ]; then
+    echo "FAIL: the fresh replica did not acquire any partition within the budget (free partitions are not yielded to it while older replicas are stuck lockless)" >&2
+    exit 1
+fi
+
+# Produce one more message per partition: the fresh replica must consume its share.
+produce_deadline=$((SECONDS + 45))
+for p in $(seq 0 $((PARTITIONS - 1))); do
+    produce_into_partition $p $produce_deadline $MAX_MESSAGES_PER_PARTITION
+done
+
+count_b=0
+deadline=$((SECONDS + 60))
+while [ "$SECONDS" -lt "$deadline" ]; do
+    count_b=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst_b SETTINGS max_execution_time=5" 2>/dev/null || echo 0)
+    if [ "$count_b" -ge 1 ]; then
+        break
+    fi
+    sleep 2
+done
+if [ "$count_b" -lt 1 ]; then
+    echo "FAIL: the fresh replica acquired partitions but consumed nothing" >&2
+    exit 1
+fi
+
+echo "--- Act 2 done: the fresh replica acquired partitions and consumes despite a stuck lockless replica ---"
 echo "--- Consumed rows ---"
-$CLICKHOUSE_CLIENT -q "SELECT id, data FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst ORDER BY id"
+$CLICKHOUSE_CLIENT -q "SELECT id, data FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst WHERE id <= $((PARTITIONS * MESSAGES_PER_PARTITION)) ORDER BY id"

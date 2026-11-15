@@ -1,5 +1,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
+#include <algorithm>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/join.hpp>
@@ -23,6 +24,10 @@ namespace
 const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
+/// A lockless active replica may just be restarting; give it a few rounds of unclaimed
+/// partitions before covering them with temporary locks again. A replica lockless for
+/// longer is treated as idle and stops holding the coverage back.
+constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -157,6 +162,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
+        lockless_rounds_by_replica.clear();
     }
     keeper = keeper_;
     tmp_locks_quota = 0;
@@ -233,7 +239,7 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
             std::lock_guard lock(topic_partition_locks_mutex);
             // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
             updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocksLocked(available_topic_partitions);
+            lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.lockless_active_replicas);
             poll_count = 0;
 
             assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
@@ -286,11 +292,30 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
 {
     LOG_TRACE(log, "Starting to lookup replica's state");
     TopicPartitionSet locked_partitions;
-    /// Only the lock node names matter: the content fed the quota guard removed from lockTemporaryLocksLocked.
     auto lock_nodes = keeper->getChildren(keeper_path / "topic_partition_locks");
+    std::unordered_set<String> replicas_with_lock;
 
+    Strings lock_paths;
+    lock_paths.reserve(lock_nodes.size());
     for (const auto & lock_name : lock_nodes)
+        lock_paths.push_back(keeper_path / "topic_partition_locks" / lock_name);
+
+    /// Locks are released and re-acquired as replicas rebalance. A lock listed by
+    /// getChildren() may already be gone by the time we read it; such a lock is held
+    /// by no one, so skip it instead of failing the whole polling round. The read data
+    /// (owning replica) feeds the lockless-replica detection in getActiveReplicasInfo.
+    auto lock_responses = keeper->tryGet(lock_paths);
+
+    for (size_t i = 0; i < lock_nodes.size(); ++i)
     {
+        const auto & lock_response = lock_responses[i];
+        if (lock_response.error == Coordination::Error::ZNONODE)
+            continue;
+        if (lock_response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(lock_response.error, lock_paths[i]);
+        replicas_with_lock.insert(lock_response.data);
+
+        const auto & lock_name = lock_nodes[i];
         auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
         auto sep = base.rfind('_');
         if (sep == String::npos)
@@ -309,11 +334,11 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
         already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
     LOG_INFO(log, "Already locked topic partitions are [{}]", boost::algorithm::join(already_locked_partitions_str, ", "));
 
-    return {locked_partitions, getActiveReplicasInfo()};
+    return {locked_partitions, getActiveReplicasInfo(replicas_with_lock)};
 }
 
 KeeperHandlingConsumer::ActiveReplicasInfo
-KeeperHandlingConsumer::getActiveReplicasInfo()
+KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock)
 {
     const auto replica_names = keeper->getChildren(keeper_path / "replicas");
 
@@ -351,18 +376,23 @@ KeeperHandlingConsumer::getActiveReplicasInfo()
     auto is_active_responses = keeper->exists(is_active_paths);
 
     size_t active_replica_count = 0;
+    std::vector<String> lockless_active_replicas;
     for (size_t i = 0; i < candidates.size(); ++i)
     {
-        if (is_active_responses[i].error == Coordination::Error::ZOK)
-            ++active_replica_count;
+        if (is_active_responses[i].error != Coordination::Error::ZOK)
+            continue;
+
+        ++active_replica_count;
+        if (!replicas_with_lock.contains(candidates[i]))
+            lockless_active_replicas.push_back(candidates[i]);
     }
 
     /// Clamp to 1: our own is_active may be transiently missing, and 0 would divide by zero in
     /// updatePermanentLocksLocked (its chassert is a no-op in the release build).
     active_replica_count = std::max<size_t>(active_replica_count, 1);
-    LOG_TEST(log, "There are {} active replicas out of {} total replicas (shard_count={})",
-             active_replica_count, replica_names.size(), shard_count);
-    return ActiveReplicasInfo{active_replica_count};
+    LOG_TEST(log, "There are {} active replicas, {} of them without locks, out of {} total replicas (shard_count={})",
+             active_replica_count, lockless_active_replicas.size(), replica_names.size(), shard_count);
+    return ActiveReplicasInfo{active_replica_count, std::move(lockless_active_replicas)};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
@@ -428,13 +458,33 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
 }
 
 void KeeperHandlingConsumer::lockTemporaryLocksLocked(
-    const TopicPartitions & available_topic_partitions) TSA_REQUIRES(topic_partition_locks_mutex)
+    const TopicPartitions & available_topic_partitions,
+    const std::vector<String> & lockless_active_replicas) TSA_REQUIRES(topic_partition_locks_mutex)
 {
-    /// Temporary locks are released every refresh round, so a lockless replica can take the freed partitions anyway.
+    /// Age the lockless streak of every still-active replica and drop the streaks of replicas
+    /// that took locks or disappeared. While any streak is young the free partitions are left
+    /// to the replica (it may be restarting); a replica lockless for longer is treated as idle.
+    for (const auto & replica : lockless_active_replicas)
+        ++lockless_rounds_by_replica[replica];
+    std::erase_if(lockless_rounds_by_replica, [&](const auto & entry)
+    {
+        return std::find(lockless_active_replicas.begin(), lockless_active_replicas.end(), entry.first)
+            == lockless_active_replicas.end();
+    });
+
+    const bool has_young_lockless_replica = std::any_of(
+        lockless_rounds_by_replica.begin(), lockless_rounds_by_replica.end(),
+        [](const auto & entry) { return entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA; });
+
     /// There are no available topic partitions, so drop the quota to 0
     if (available_topic_partitions.empty())
     {
         LOG_TRACE(log, "There are no available topic partitions to lock");
+        tmp_locks_quota = 0;
+    }
+    else if (has_young_lockless_replica)
+    {
+        LOG_TRACE(log, "There is a lockless replica that may still take its permanent locks, leaving the free topic partitions to it");
         tmp_locks_quota = 0;
     }
     /// We have some temporary lock quota, but it is greater than the number of available topic partitions, so we will
