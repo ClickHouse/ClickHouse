@@ -2617,7 +2617,7 @@ void TCPHandler::sendHello()
             !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
-            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            session->sessionContext()->getSettingsRef().write(*out);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
@@ -2779,12 +2779,26 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-        : SettingsWriteFormat::BINARY;
-
     Settings passed_settings;
-    passed_settings.read(*in, settings_format);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+    {
+        passed_settings.read(*in);
+    }
+    else
+    {
+        /// Older clients serialize settings in a binary format, which is no longer supported.
+        /// They can still send queries without settings: an empty list is the same in both formats,
+        /// a single empty name (its length is 0) that marks the end of settings.
+        UInt64 first_setting_name_size = 0;
+        readVarUInt(first_setting_name_size, *in);
+        if (first_setting_name_size != 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Client with protocol revision {} sent settings in the binary format, which is no longer supported "
+                "(the minimum revision to pass settings is {}). Update the client",
+                client_tcp_protocol_version,
+                DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS);
+    }
 
     std::string received_extra_roles;
     // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.

@@ -342,7 +342,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
-    , parallel_inserts((*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -503,8 +502,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
-    const size_t task_count = parallel_inserts ? table_metadata.processing_threads_num.load() : 1;
-
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
         zookeeper_name,
@@ -519,6 +516,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
+    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -1070,9 +1068,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
+    const bool parallel_inserts = table_metadata.parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TRACE(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
+    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
@@ -1115,7 +1114,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = streaming_tasks_index * threads + i;
+            size_t processor_id = i * (streaming_tasks_index + 1);
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -2020,7 +2019,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
-    settings[ObjectStorageQueueSetting::parallel_inserts] = parallel_inserts;
+    settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
