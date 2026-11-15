@@ -308,6 +308,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
             SETTINGS
                 s3_max_single_part_upload_size=100,
                 s3_min_upload_part_size=100,
+                s3_max_inflight_parts_for_one_file=1,
                 s3_check_objects_after_upload=0
             """,
         query_id=insert_query_id,
@@ -315,6 +316,10 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
 
     assert "Code: 499" in error, error
     assert message in error, error
+
+    _, _, s3_errors = get_multipart_counters(node, insert_query_id)
+    # s3_retry_attempts + 1 attempts of the failing part, plus the failed abort of the fake upload
+    assert s3_errors == 5 + 1 + 1, s3_errors
 
 
 def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
@@ -383,10 +388,60 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
     )
 
     assert "Code: 1000" in error, error
+    # The mock aborts the connection in the middle of the upload with `SO_LINGER` set to zero, so
+    # the client is interrupted by an `RST`. Which errno that surfaces as depends on whether the
+    # client was blocked in `send` when the `RST` arrived (`ECONNRESET`) or wrote once more
+    # afterwards (`EPIPE`), so accept both: the point of the test is that the interrupted upload is
+    # retried, which the counters above assert.
     assert (
         "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
         in error
+        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        in error
     ), error
+
+
+def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(
+        count=1000,
+        after=0,
+        action="no_such_upload",
+        action_args=["1"],
+    )
+
+    insert_query_id = randomize_query_id("TEST_EARLY_ERROR_RESPONSE_AT_UPLOAD")
+    error = node.query_and_get_error(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_early_error_response_at_upload_is_not_retried',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+        SELECT number, randomString(1000) FROM numbers(40000)
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=33554432,
+            s3_max_inflight_parts_for_one_file=1,
+            max_remote_write_network_bandwidth=1000000,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 499" in error, error
+    assert "The specified upload does not exist" in error, error
+
+    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+        node, insert_query_id
+    )
+    assert create_multipart == 1
+    assert upload_parts == 1
+    # the early 404 and the failed abort of the fake upload
+    assert s3_errors == 2, s3_errors
 
 
 @pytest.mark.parametrize("send_something", [True, False])
@@ -566,13 +621,14 @@ def test_when_s3_timeout_at_listing(
     insert_query_id = randomize_query_id(
         "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
+    # A parallel formatter per partition keeps several MiB, and 2000 of them approach the node's memory limit.
     node.query(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/{{_partition_id}}/file',
                 'minio', '{minio_secret_key}',
-                'CSV', auto, 'none'
+                'CSV', auto, 'none', partition_strategy='wildcard'
             )
             PARTITION BY number
         SELECT
@@ -581,7 +637,8 @@ def test_when_s3_timeout_at_listing(
         LIMIT 2000
         SETTINGS
             s3_check_objects_after_upload=0,
-            s3_truncate_on_insert=1
+            s3_truncate_on_insert=1,
+            output_format_parallel_formatting=0
         """,
         query_id=insert_query_id,
     )
@@ -1072,3 +1129,144 @@ def test_exception_in_MV(cluster, broken_s3):
 
     assert 'ExceptionName: ExpectedError Message: mock s3 injected unretryable error' in query_view_log
     assert 'ExceptionWhileProcessing' in query_view_log
+
+
+def test_insert_to_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    # Keep uploads failing with a retryable error so the query sits in the S3 retry loop when killed.
+    broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+    broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+    query_id = randomize_query_id("insert_to_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/insert_to_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error
+
+
+def test_select_from_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """
+    )
+
+    # Make reads hang so the query is inside an in-flight S3 request when killed.
+    broken_s3.setup_slow_get_answers(timeout=30)
+
+    query_id = randomize_query_id("select_from_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        SELECT count() FROM s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error
+
+
+def test_complete_multi_part_upload_no_such_upload_keeps_prior_object(
+    cluster, broken_s3
+):
+    node = cluster.instances["node"]
+    key = "test_complete_multipart_upload_no_such_upload"
+    table_function = (
+        f"s3('http://resolver:8083/root/data/{key}', "
+        f"'minio', '{minio_secret_key}', 'CSV', 'tag String, filler String')"
+    )
+
+    # A one-part multipart upload: s3_max_single_part_upload_size forces the multipart path, and the
+    # large part size keeps everything in a single part. S3 exempts only the final part from the 5 MiB
+    # minimum, so splitting this payload further would be rejected with EntityTooSmall.
+    # s3_check_objects_after_upload is off here (its default) because this suite's profile enables it:
+    # it compares sizes, so it would report a different error and hide the completion result itself.
+    def insert(rows, tag):
+        return f"""
+            INSERT INTO TABLE FUNCTION {table_function}
+            SELECT '{tag}', repeat('x', 50) FROM numbers({rows})
+            SETTINGS s3_truncate_on_insert=1,
+                     s3_check_objects_after_upload=0,
+                     s3_max_single_part_upload_size=100,
+                     s3_min_upload_part_size=104857600
+            """
+
+    def read_tags():
+        return node.query(
+            f"SELECT countIf(tag = 'NEW'), countIf(tag = 'OLD') FROM {table_function}"
+        ).split()
+
+    def head_object_requests(query_id):
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(
+            node.query(
+                f"""
+                SELECT ProfileEvents['S3HeadObject']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1
+                """
+            )
+        )
+
+    node.query(insert(100, "OLD"))
+
+    # An upload aborted between create and complete: the server reports NoSuchUpload and the key
+    # still holds the OLD object. Overwriting it must fail rather than report a stored NEW object.
+    broken_s3.setup_at_complete_multi_part_upload(count=1, action="no_such_upload")
+
+    error = node.query_and_get_error(insert(900, "NEW"), query_id=f"{key}_recovery")
+    assert "Code: 499" in error, error
+    assert "NoSuchUpload" in error or "does not exist" in error, error
+    assert read_tags() == ["0", "100"]
+
+    # To tell an aborted upload from a completion whose response was lost, the recovery reads the
+    # object's metadata and looks for the id this upload stamped. That HEAD is a request like any
+    # other, so it has to be accounted for -- it went uncounted while it lived outside the client.
+    assert head_object_requests(f"{key}_recovery") == 1
+
+    # Control: without the injection the same INSERT replaces the object, so the fixture does write
+    # a real multipart upload and the assertion above is not vacuous. It also asks for no HEAD at
+    # all, which is what makes the one above attributable to the recovery.
+    broken_s3.reset()
+    node.query(insert(900, "NEW"), query_id=f"{key}_control")
+    assert read_tags() == ["900", "0"]
+    assert head_object_requests(f"{key}_control") == 0

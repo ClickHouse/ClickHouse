@@ -1,0 +1,107 @@
+# Compression codec method bytes and common header patterns.
+# Values from CompressionInfo.h CompressionMethodByte enum.
+
+# CompressionMethodByte values (keep in sync with the enum).
+# NONE
+"\x02"
+# LZ4
+"\x82"
+# ZSTD
+"\x90"
+# Multiple (attacker-controlled codec chain)
+"\x91"
+# Delta
+"\x92"
+# T64
+"\x93"
+# DoubleDelta
+"\x94"
+# Gorilla
+"\x95"
+# AES_128_GCM_SIV
+"\x96"
+# AES_256_GCM_SIV
+"\x97"
+# FPC
+"\x98"
+# GCD
+"\x9A"
+# ALP
+"\x9C"
+# SZ3
+"\x9D"
+# Quantized
+"\x9E"
+# ZXC
+"\x9F"
+# 0x99 (DeflateQpl) and 0x9B (ZSTD_QPL) were removed from the enum and are
+# rejected by `CompressionCodecFactory::get` before any codec code runs, so they
+# are deliberately not listed here.
+
+# Common data_bytes_size values for Delta/GCD/Gorilla (1, 2, 4, 8)
+# 1-byte elements
+"\x01"
+# 2-byte elements
+"\x02"
+# 4-byte elements
+"\x04"
+# 8-byte elements
+"\x08"
+
+# Gorilla/T64 compressed block header patterns
+# data_bytes_size=1, bytes_to_skip=0
+"\x01\x00"
+# data_bytes_size=2, bytes_to_skip=0
+"\x02\x00"
+# data_bytes_size=4, bytes_to_skip=0
+"\x04\x00"
+# data_bytes_size=8, bytes_to_skip=0
+"\x08\x00"
+
+# T64 cookie byte: top bit = Variant (0=Byte, 1=Bit), lower 7 bits = TypeIndex
+# Byte variant, Int8
+"\x01"
+# Byte variant, Int16
+"\x02"
+# Byte variant, Int32
+"\x03"
+# Byte variant, Int64
+"\x04"
+# Byte variant, UInt8
+"\x05"
+# Byte variant, UInt16
+"\x06"
+# Byte variant, UInt32
+"\x07"
+# Bit variant, Int8
+"\x81"
+# Bit variant, Int64
+"\x84"
+
+# FPC header (2 bytes): [0]=float_width, [1]=compression_level
+# float32, level 12 (default)
+"\x04\x0C"
+# float64, level 12 (default)
+"\x08\x0C"
+# float32, level 1
+"\x04\x01"
+# float64, level 28 (max)
+"\x08\x1C"
+
+# Multiple codec chain patterns: [0]=chain_length, [1..N]=codec bytes
+# 1 codec: LZ4
+"\x01\x82"
+# 1 codec: Delta
+"\x01\x92"
+# 2 codecs: Delta + LZ4
+"\x02\x92\x82"
+# 2 codecs: T64 + LZ4
+"\x02\x93\x82"
+# 2 codecs: Gorilla + LZ4
+"\x02\x95\x82"
+# 3 codecs: Delta + DoubleDelta + LZ4
+"\x03\x92\x94\x82"
+
+# Compressed block header magic (9 bytes: checksum(8) + method(1))
+# zero checksum prefix
+"\x00\x00\x00\x00\x00\x00\x00\x00"

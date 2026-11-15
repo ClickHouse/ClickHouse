@@ -30,6 +30,7 @@ void Stats::merge(Stats & from)
     std::scoped_lock lock(mutex, from.mutex);
 
     errors += from.errors;
+    ignored_errors += from.ignored_errors;
     watches_fired += from.watches_fired;
     read_collector.merge(from.read_collector);
     write_collector.merge(from.write_collector);
@@ -41,6 +42,7 @@ void Stats::extractInto(Stats & target)
     target.read_collector.merge(read_collector);
     target.write_collector.merge(write_collector);
     target.errors += errors.exchange(0);
+    target.ignored_errors += ignored_errors.exchange(0);
     target.watches_fired += watches_fired.exchange(0);
 
     read_collector.clear();
@@ -67,6 +69,7 @@ void Stats::clear()
     read_collector.clear();
     write_collector.clear();
     errors = 0;
+    ignored_errors = 0;
     watches_fired = 0;
     elapsed.restart();
 }
@@ -110,9 +113,12 @@ void Stats::report(const Stats & cumulative)
     std::cerr << "Total: read " << cumulative.read_collector.requests
               << ", write " << cumulative.write_collector.requests;
     const auto errors_count = cumulative.errors.load();
+    const auto ignored_errors_count = cumulative.ignored_errors.load();
     const auto watches_fired_count = cumulative.watches_fired.load();
     if (errors_count)
         std::cerr << ", errors " << errors_count;
+    if (ignored_errors_count)
+        std::cerr << ", ignored errors " << ignored_errors_count;
     if (watches_fired_count)
         std::cerr << ", watches fired " << watches_fired_count;
     std::cerr << "\n";
@@ -169,6 +175,8 @@ void Stats::writeJSON(DB::WriteBuffer & out, int64_t start_timestamp)
 
     results.AddMember("timestamp", Value(start_timestamp), allocator);
     results.AddMember("errors", Value(static_cast<uint64_t>(errors.load())), allocator);
+    if (ignored_errors)
+        results.AddMember("ignored_errors", Value(static_cast<uint64_t>(ignored_errors.load())), allocator);
     results.AddMember("ops", Value(static_cast<uint64_t>(read_collector.requests + write_collector.requests)), allocator);
 
     if (watches_fired)

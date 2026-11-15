@@ -1,0 +1,34 @@
+not optimized	[1772956800,1772963999,1772964000,1773039599]
+optimized	[1772956800,1772963999,1772964000,1773039599]
+query tree retains toDate	0
+today query tree retains toDate	0
+index condition retains toDate	0
+month not optimized	6
+month optimized	6
+day not optimized	4
+day optimized	4
+last day of month not optimized	6
+last day of month optimized	6
+ISO year number not optimized	10
+ISO year number optimized	10
+YYYYMMDD not optimized	4
+YYYYMMDD optimized	4
+month query tree retains function	0
+day query tree retains function	0
+week query tree retains function	0
+quarter query tree retains function	0
+year query tree retains function	0
+ISO year query tree retains function	0
+last day of month query tree retains function	0
+ISO year number query tree retains function	0
+YYYYMMDD query tree retains function	0
+invalid last day query tree retains function	1
+invalid YYYYMMDD query tree retains function	1
+month index condition retains function	0
+Lima not optimized	3
+Lima optimized	3
+Lima query tree retains function	0
+Managua not optimized	1
+Managua optimized	1
+Managua query tree retains function	0
+DateTime64 retains toDate	1

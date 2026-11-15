@@ -3,6 +3,8 @@
 -- layouts and across merges that rewrite the archive. State is checked via system tables and
 -- EXPLAIN indexes = 1 only (no on-disk file listing) so the test works on any storage.
 
+SET explain_query_plan_default = 'legacy';
+
 -- ---------------------------------------------------------------------------------------------
 -- Wide part with packed minmax.
 -- ---------------------------------------------------------------------------------------------
@@ -28,7 +30,7 @@ SELECT 'wide_in_range_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_wide WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 -- Out-of-range predicate must be dropped ENTIRELY: the Skip block reports 0/N granules kept,
 -- which is the strongest signal that the packed minmax is being read correctly.
 SELECT 'wide_out_of_range_count', count() FROM t_packed_wide WHERE v = 999999999;
@@ -36,7 +38,7 @@ SELECT 'wide_out_of_range_drops_all', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64 = 0
     AND splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64 > 0)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_wide WHERE v = 999999999) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_packed_wide SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed_wide;
@@ -71,13 +73,13 @@ SELECT 'compact_in_range_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_compact WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 SELECT 'compact_out_of_range_count', count() FROM t_packed_compact WHERE v = 999999999;
 SELECT 'compact_out_of_range_drops_all', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64 = 0
     AND splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64 > 0)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_compact WHERE v = 999999999) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_packed_compact SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed_compact;
@@ -116,7 +118,7 @@ SELECT 'merge_wide_index_filters_after', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_merge_wide WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_packed_merge_wide SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed_merge_wide;
@@ -154,7 +156,7 @@ SELECT 'merge_compact_index_filters_after', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_packed_merge_compact WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_packed_merge_compact SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed_merge_compact;

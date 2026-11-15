@@ -7,10 +7,14 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -246,15 +250,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().insertDefault();
 }
 
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
@@ -483,6 +478,30 @@ int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nu
 int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
+}
+
+size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// In a sorted Nullable column the NULLs are grouped at one end, so null-ness forms a run within this
+    /// range. Rows must be compared by null-ness, not by the raw null map byte: any non-zero byte means
+    /// NULL, so the bytes within the NULL group may be arbitrary non-zero values in arbitrary order.
+    const UInt8 * null_bytes = getNullMapData().data();
+    const bool ref_is_null = null_bytes[begin] != 0;
+
+    /// A null-ness comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    size_t run_end = findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t i) { return (null_bytes[i] != 0) == ref_is_null; });
+
+    /// When the start row is non-NULL the run is additionally bounded by where the nested value changes.
+    /// That nested scan stays within `[begin, run_end)`, which is entirely non-NULL, so it never reads NULL slots.
+    if (!ref_is_null)
+        run_end = getNestedColumn().getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
+
+    return run_end;
 }
 
 void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -743,6 +762,12 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
     if (range_size <= 1)
         return range_size;
 
+    /// Some nested column types (e.g. Tuple, Object, Array of non-fixed elements) do not implement getDataAt.
+    /// For them, return the upper-bound estimate from the base implementation - the same estimate
+    /// such columns produce when they are not wrapped in Nullable.
+    if (!nested_column->supportsGetDataAt())
+        return IColumn::estimateCardinalityInPermutedRange(permutation, equal_range);
+
     /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
     bool has_null = false;
@@ -781,9 +806,12 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
+        const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        new_size += source_nullable_column->size();
+        nested_source_columns.push_back(source_nullable_column->getNestedColumnPtr());
     }
 
     nested_column->prepareForSquashing(nested_source_columns, factor);
@@ -828,12 +856,14 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
+    Columns parts{nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
-        });
+        },
+        std::move(parts));
 }
 
 
@@ -912,8 +942,10 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
             "Null map of size {} at offset {} does not match ColumnNullable of size {}",
             map.size(), offset, arr.size());
 
+    /// Any non-zero byte means NULL, so reduce the map before negating it: `negative ^ 2` would
+    /// yield 3 and mark a row the map leaves present.
     for (size_t i = 0, size = map.size(); i < size; ++i)
-        arr[offset + i] |= negative ^ map[i];
+        arr[offset + i] |= negative ^ !!map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -1015,19 +1047,29 @@ void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracki
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
+    const auto * source_nullable = typeid_cast<const ColumnNullable *>(&source);
+    if (!source_nullable)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Nullable", getName(), source.getName());
+
+    nested_column->takeExactDynamicStructureFrom(source_nullable->getNestedColumn());
 }
 
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
 {
-    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
-    return nested_column->dynamicStructureEquals(rhs_nested_column);
+    const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs);
+    return rhs_nullable && nested_column->dynamicStructureEquals(rhs_nullable->getNestedColumn());
 }
 
 void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -1035,8 +1077,87 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for statistics of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+}
+
+void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
+{
+    getNestedColumn().gatherRangeIntoRows(rows, row_length, field_offset, start, count, overflow_cursor, getNullMapData().data());
+}
+
+void ColumnNullable::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 *) const
+{
+    getNestedColumn().gatherSelectedIntoRows(source_rows, destination_rows, field_offset, getNullMapData().data());
+}
+
+/// A NULL row emits only the flag byte and never touches the nested column, so an
+/// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
+/// Probe row 0 once so every row rejects the same types a non-NULL row would, even
+/// in an all-NULL block. Not on the hot path.
+void ColumnNullable::validateNestedComparable() const
+{
+    String probe;
+    nested_column->serializeAsComparable(0, probe);
+}
+
+/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
+/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
+/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
+/// encoding; a NULL row is just `\x01`.
+void ColumnNullable::serializeAsComparable(size_t n, String & out) const
+{
+    const auto & null_map_data = getNullMapData();
+    if (null_map_data[n])
+    {
+        validateNestedComparable();
+        out.push_back('\x01');
+        return;
+    }
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
+}
+
+void ColumnNullable::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation,
+    const UInt8 * outer_null_map) const
+{
+    if (num_rows == 0)
+        return;
+
+    validateNestedComparable();
+
+    /// Write the null flag for every row: NULL=0x01 (sorts after), non-NULL=0x00.
+    const auto & null_map_data = getNullMapData();
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, outer_null_map,
+        [&](size_t src, String & dst) { dst.push_back(null_map_data[src] ? '\x01' : '\x00'); });
+
+    /// Encode the nested values with one virtual dispatch; the merged null map
+    /// lets the nested loop skip NULL rows.
+    const UInt8 * effective_null_map = null_map_data.data();
+    PaddedPODArray<UInt8> merged_null_map;
+    if (outer_null_map)
+    {
+        merged_null_map.resize(null_map_data.size());
+        for (size_t i = 0; i < null_map_data.size(); ++i)
+            merged_null_map[i] = null_map_data[i] | outer_null_map[i];
+        effective_null_map = merged_null_map.data();
+    }
+    nested_column->batchSerializeAsComparable(num_rows, out, permutation, effective_null_map);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)
@@ -1122,4 +1243,18 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     return removeNullable(column);
 }
 
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
+}
+
+ColumnPlanes ColumnNullable::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }

@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'Resample 组合器与 avg 的使用示例'
+keywords: ['avg', 'Resample', '组合器', '示例', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 描述
+</div>
+
+[`Resample`](/zh/reference/functions/aggregate-functions/combinators#-resample)
+组合器可应用于 [`count`](/zh/reference/functions/aggregate-functions/count)
+聚合函数，用于统计指定键列在固定数量的
+时间间隔 (`N`) 内的值。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+<div id="basic-example">
+  ### 基础示例
+</div>
+
+来看一个示例。我们将创建一个包含员工 `name`、`age` 和
+`wage` 的表，并向其中插入一些数据：
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+我们来计算年龄落在 `[30,60)` 和 `[60,75)` 这两个区间内的人群的平均工资
+(`[` 表示左闭，`)` 表示右开) 。由于年龄使用整数表示，
+因此对应的年龄区间为 `[30, 59]` 和 `[60,74]`。
+为此，我们将 `Resample` 组合器应用到 `avg` 聚合函数上。
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## 另见
+</div>
+
+* [`count`](/zh/reference/functions/aggregate-functions/count)
+* [`Resample 组合器`](/zh/reference/functions/aggregate-functions/combinators#-resample)

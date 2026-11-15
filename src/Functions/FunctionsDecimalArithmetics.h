@@ -93,7 +93,7 @@ struct DecimalOpHelpers
         UInt16 idx = 0;
         Int512 temp = 0;
 
-        while (temp < divisor && max_index > idx)
+        while (temp < divisor && max_index >= idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
@@ -279,6 +279,15 @@ public:
         return Transform::suitable_for_short_circuit;
     }
 
+    /// Documentation-only — arithmetic on two `Decimal` operands; the optional
+    /// third argument is a const-`UInt8` scale for the result. The output is
+    /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
+    /// stays authoritative.
+    String getSignatureString() const override
+    {
+        return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
@@ -331,6 +340,16 @@ public:
                 this->getName());
 
         return std::make_shared<DataTypeDecimal512>(DecimalUtils::max_precision<Decimal512>, scale);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

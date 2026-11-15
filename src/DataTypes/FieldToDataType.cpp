@@ -14,6 +14,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -189,6 +190,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Decimal512 &, UInt32 sc
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(x.size());
 
@@ -201,6 +204,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
+    checkStackSize();
+
     DataTypes element_types;
     element_types.reserve(tuple.size());
 
@@ -213,6 +218,8 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 {
+    checkStackSize();
+
     DataTypes key_types;
     DataTypes value_types;
     key_types.reserve(map.size());
@@ -244,6 +251,14 @@ DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateD
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const NumberLiteral & x) const
+{
+    /// Resolve the NumberLiteral to a concrete Field value, then infer the type from that.
+    Field resolved = Field(x).resolveNumberLiteral();
+    return applyVisitor(FieldToDataType<on_error>(), resolved);
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
@@ -259,5 +274,6 @@ template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
 template class FieldToDataType<LeastSupertypeOnError::Variant>;
+template class FieldToDataType<LeastSupertypeOnError::Dynamic>;
 
 }

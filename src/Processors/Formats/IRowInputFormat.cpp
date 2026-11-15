@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h> // toString
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/ParseError.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 
 
@@ -89,7 +90,8 @@ Chunk IRowInputFormat::read()
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
-        if (need_only_count && supportsCountRows())
+        /// `countRows` skips rows without parsing them, so it cannot skip bad rows as allowed by `input_format_allow_errors_*`.
+        if (need_only_count && supportsCountRows() && params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
         {
             num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)
@@ -129,6 +131,11 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
+            /// The `QueryStatus`, not `IProcessor::isCancelled`: the latter is also raised by a
+            /// `CancelReason::PartialResult` stop, which must still return its partial result.
+            if (rows != 0 && rows % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+                CurrentThread::checkIfNotCancelled();
+
             if (max_block_wait_ms != 0 && num_rows > 0)
             {
                 UInt64 elapsed_ms = watch.elapsedMilliseconds();
@@ -184,7 +191,11 @@ Chunk IRowInputFormat::read()
 
                 /// Logic for possible skipping of errors.
 
-                if (!isParseError(e.code()))
+                /// Skip a bad row only for a genuine parse error that was not thrown from the
+                /// buffer itself. A throwing read self-cancels the buffer (ReadBuffer::next()'s
+                /// catch handler), and syncAfterError() reads from it again
+                /// (skipToNextLineOrEOF/ignore/eof -> next()), tripping chassert(!isCanceled()).
+                if (!isParseError(e.code()) || getReadBuffer().isCanceled())
                     throw;
 
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
@@ -238,7 +249,10 @@ Chunk IRowInputFormat::read()
         }
         else
         {
-            if (!isParseError(e.code()))
+            /// Collect verbose diagnostics only for a genuine parse error that was not thrown
+            /// from the buffer itself. A throwing read self-cancels the buffer, and
+            /// getDiagnosticInfo() reads from it (eof() -> next()), tripping chassert(!isCanceled()).
+            if (!isParseError(e.code()) || getReadBuffer().isCanceled())
                 throw;
 
             String verbose_diagnostic;

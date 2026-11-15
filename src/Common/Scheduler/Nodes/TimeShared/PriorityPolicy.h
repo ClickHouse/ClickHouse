@@ -38,11 +38,7 @@ class PriorityPolicy final : public ITimeSharedNode
     };
 
 public:
-    explicit PriorityPolicy(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ITimeSharedNode(event_queue_, config, config_prefix)
-    {}
-
-    explicit PriorityPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & node_info)
+    explicit PriorityPolicy(EventQueue & event_queue_, const SchedulerNodeInfo & node_info = {})
         : ITimeSharedNode(event_queue_, node_info)
     {}
 
@@ -54,15 +50,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "priority"; }
-
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
-            return true;
-        return false;
-    }
 
     void attachChild(const SchedulerNodePtr & child_base) override
     {
@@ -98,6 +85,8 @@ public:
                     items.erase(i);
                     // Element was removed from inside of heap -- heap must be rebuilt
                     std::make_heap(items.begin(), items.end());
+                    if (items.empty())
+                        flushThroughputOnDeactivation();
                     break;
                 }
             }
@@ -123,7 +112,10 @@ public:
         while (true)
         {
             if (items.empty())
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Capture child info before potentially removing from heap
             ITimeSharedNode * front_child = items.front().child;
@@ -145,7 +137,7 @@ public:
             {
                 SCHED_DBG("{} -- dequeue(child={}, cost={}, priority={})",
                     getPath(), front_child->basename, request->cost, front_priority.value);
-                incrementDequeued(request->cost);
+                incrementDequeued(request->cost, isActive());
                 return {request, isActive()};
             }
         }
