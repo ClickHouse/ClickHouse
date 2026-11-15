@@ -4,6 +4,7 @@
 #include <typeinfo>
 #include <unordered_map>
 
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -162,7 +163,7 @@ size_t & getTreeHashWorkCounter()
     /// Thread-local accumulator of the number of nodes visited by getTreeHash. It lets a pass
     /// that hashes many subtrees (e.g. optimize_and_compare_chain) bound its own work directly,
     /// without separately measuring tree sizes -- it watches this counter and backs off once it
-    /// grows too much. The hashing itself is unchanged; this is a pure observability counter.
+    /// grows too much. getTreeHash also checks for query cancellation every 65536 visited nodes.
     static thread_local size_t counter = 0;
     return counter;
 }
@@ -180,7 +181,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
       */
     HashState hash_state;
-    size_t visited_nodes = 0;
+    size_t & hashed_nodes = getTreeHashWorkCounter();
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
@@ -191,7 +192,11 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     {
         const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
-        ++visited_nodes;
+
+        /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
+        static constexpr size_t cancellation_check_period = 1 << 16;
+        if (++hashed_nodes % cancellation_check_period == 0)
+            CurrentThread::checkIfNotCancelled();
 
         if (is_weak_node)
         {
@@ -231,7 +236,6 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
-    getTreeHashWorkCounter() += visited_nodes;
     return getSipHash128AsPair(hash_state);
 }
 

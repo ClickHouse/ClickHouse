@@ -2,8 +2,6 @@
 -- not capture anything an operand references, and the guard against substituting into a
 -- subquery must respect nested scopes.
 
-SET enable_analyzer = 1;
-
 -- A column that happens to be named like a synthesized argument of the fused lambda is still
 -- captured from the outside: `10 + (1 + 1)`.
 SELECT arrayMap((x -> x + 1) | (y -> y + __composed_arg_1), [1]) FROM (SELECT 10 AS __composed_arg_1);

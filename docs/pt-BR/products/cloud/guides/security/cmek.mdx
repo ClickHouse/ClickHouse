@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'criptografia', 'CMEK', 'verificação periódica da chave KMS']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
@@ -161,4 +160,12 @@ Os backups são criptografados com a mesma chave do serviço associado. Ao resta
 
 A criptografia do banco de dados usa o [recurso integrado Virtual File System for Data Encryption](/pt-BR/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) do ClickHouse para criptografar e proteger seus dados. O algoritmo usado nesse recurso é `AES_256_CTR`, que deve causar uma perda de desempenho de 5-15%, dependendo da carga de trabalho:
 
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Penalidade de desempenho do CMEK" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Penalidade de desempenho do CMEK](/images/_snippets/cmek-performance.webp)
+
+</Frame>
+
+</div>

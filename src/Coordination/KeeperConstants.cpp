@@ -281,6 +281,7 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -303,6 +304,7 @@
     M(KeeperWatchTriggeredNodeDeleted) \
     M(KeeperWatchTriggeredNodeDataChanged) \
     M(KeeperWatchTriggeredNodeChildrenChanged) \
+    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperChangelogStartupReadMicroseconds) \

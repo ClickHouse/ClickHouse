@@ -42,6 +42,8 @@ struct ServerSideEncryptionKMSConfig
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
+#include <Common/Silk/FiberMutex.h>
+
 namespace DB::S3
 {
 
@@ -60,7 +62,7 @@ struct ClientCache
 
     void clearCache();
 
-    mutable std::mutex region_cache_mutex;
+    mutable Silk::FiberMutex region_cache_mutex;
     NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
@@ -235,7 +237,7 @@ public:
 
     bool isClientForDisk() const
     {
-        return client_configuration.for_disk_s3;
+        return client_configuration.group == HTTPConnectionGroupType::DISK;
     }
 
     ProviderType getProviderType() const { return provider_type; }
@@ -304,6 +306,12 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
+    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
+    /// `x-goog-if-generation-match` (GCS rejects the mix). So an HMAC create-if-absent is
+    /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
+    bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
+    Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
+
     /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
     /// One HeadObject. Logs a failed proof, at warning level if asked.
     bool isObjectWrittenWithIdempotencyId(
@@ -356,6 +364,8 @@ private:
 class ClientFactory
 {
 public:
+    static constexpr size_t AES256_KEY_BYTES = 32;
+
     ~ClientFactory();
 
     static ClientFactory & instance();
@@ -380,7 +390,7 @@ public:
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
-        bool for_disk_s3,
+        HTTPConnectionGroupType group,
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
@@ -394,7 +404,7 @@ public:
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,
-        bool for_disk_s3,
+        HTTPConnectionGroupType group,
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https") = delete;

@@ -7,8 +7,6 @@ sidebarTitle: 'Tablas del sistema'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Todas las instancias de ClickHouse incluyen un conjunto de [tablas del sistema](/es/reference/system-tables/overview) en la base de datos `system` que contiene información sobre:
 
 * Estados, procesos y entorno del servidor.
@@ -58,7 +56,15 @@ ORDER BY
 
 ClickHouse incluye un panel avanzado de observabilidad integrado, accesible mediante `$HOST:$PORT/dashboard` (requiere usuario y contraseña), que muestra las métricas de Cloud Overview incluidas en `system.dashboards`.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Panel avanzado de observabilidad nativo" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Panel avanzado de observabilidad nativo](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   Este panel requiere autenticación directa en la instancia de ClickHouse y es independiente del [Cloud Console Advanced Dashboard](/es/products/cloud/features/monitoring/cloud-console#advanced-dashboard), al que se puede acceder desde la UI de Cloud Console sin autenticación adicional.

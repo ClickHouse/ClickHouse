@@ -13,11 +13,11 @@
 # normalize a numeric-looking string. Storing and reading them as plain name/value pairs makes the
 # original string round-trip intact.
 #
-# A parameter whose name is a setting *alias* (e.g. `enable_analyzer`, an alias of
-# `allow_experimental_analyzer`) is a stronger case: both `writeQueryParameters` (client side) and
+# A parameter whose name is a setting *alias* (e.g. `replication_alter_partitions_sync`, an alias of
+# `alter_sync`) is a stronger case: both `writeQueryParameters` (client side) and
 # `readQueryParameters` (server side) transport the parameter under the user's chosen name, NOT the
-# alias-resolved canonical name — otherwise `{enable_analyzer:String}` cannot find a value stored
-# under `allow_experimental_analyzer` and substitution fails.
+# alias-resolved canonical name — otherwise `{replication_alter_partitions_sync:String}` cannot find
+# a value stored under `alter_sync` and substitution fails.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,8 +37,8 @@ echo "-- colliding param 'page' (a Double setting), numeric-looking string prese
 ${CLICKHOUSE_CLIENT} --param_page="05" -q "SELECT {page:String}"
 echo "-- colliding param 'limit' (a Double setting), non-numeric string value"
 ${CLICKHOUSE_CLIENT} --param_limit="x>1" -q "SELECT {limit:String}"
-echo "-- colliding param 'enable_analyzer' (alias of 'allow_experimental_analyzer'), name preserved through alias resolution"
-${CLICKHOUSE_CLIENT} --param_enable_analyzer="foo" -q "SELECT {enable_analyzer:String}"
+echo "-- colliding param 'replication_alter_partitions_sync' (alias of 'alter_sync'), name preserved through alias resolution"
+${CLICKHOUSE_CLIENT} --param_replication_alter_partitions_sync="foo" -q "SELECT {replication_alter_partitions_sync:String}"
 echo "-- non-colliding custom param, value starting with a quote still works"
 ${CLICKHOUSE_CLIENT} --param_myparam="'hello" -q "SELECT {myparam:String}"
 echo "-- non-colliding custom param, ordinary value still works"

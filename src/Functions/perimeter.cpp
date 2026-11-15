@@ -89,7 +89,7 @@ REGISTER_FUNCTION(Perimeter)
             {"object", "geometry object", {"Variant"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the perimeter of the object.",
+            "Returns the perimeter on a sphere of radius 1, in radians (coordinates are longitude and latitude in degrees). Multiply by the radius of the sphere to get a length, for example by 6371 for kilometers on the Earth.",
             {"Float64"}
         };
         FunctionDocumentation::Examples examples;

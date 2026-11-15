@@ -1,0 +1,22 @@
+-- WITH TOTALS on the right side, the second run reads the subquery result from the cache
+0	p0	4
+1	p1	4
+
+0		20
+0	p0	4
+1	p1	4
+
+0		20
+-- WITH TOTALS on the left side, the second run reads the subquery result from the cache
+0	30	p0
+1	34	p1
+
+0	190	
+0	30	p0
+1	34	p1
+
+0	190	
+-- a run read from the cache without totals still reads lazily
+-- a run of each was served from the cache
+1	1
+1

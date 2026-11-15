@@ -1,7 +1,6 @@
 -- Lazy materialization over a join reads the lazy columns by the row index of each table. A row that matches several
 -- rows of the other side has its index several times, and the lazy read reads it once and repeats it.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;

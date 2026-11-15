@@ -6,7 +6,6 @@
 -- leaving `chooseJoinAlgorithm` with no usable algorithm and a `NOT_IMPLEMENTED` exception instead of
 -- falling back to `full_sorting_merge` as it did without the runtime-filter feature.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'grace_hash,full_sorting_merge';
 SET query_plan_join_swap_table = 0;

@@ -14,20 +14,28 @@ import CreateIngestionUser from '/snippets/ja/clickstack/_create_ingestion_user.
 import ConfirmInUI from '/snippets/ja/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/ja/components/AgentPrompt/AgentPrompt.jsx';
 
-このガイドでは、既存の Managed ClickStack service に対して OpenTelemetry collector をデプロイする方法、または既存の collector をそれに合わせて調整する方法を説明し、その後データが正しく流れていることを確認します。
+このガイドでは、既存の Managed ClickStack サービス に対して OpenTelemetry collector をデプロイする方法、または既存の collector をそれに合わせて調整する方法を説明し、その後データが正しく流れていることを確認します。
 
-セットアップアシスタントを使用する前に、公式の ClickHouse agent skills をインストールしてください:
+セットアップアシスタントを使用する前に、公式の ClickHouse エージェント skills をインストールしてください:
 
 ```bash
 npx skills add clickhouse/agent-skills
 ```
+
+すでに [`clickhousectl`](/ja/concepts/features/interfaces/cli) をお持ちの場合は、代わりに、`clickhousectl` が検出したコーディングエージェントに同じスキルをインストールすることもできます:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+特定のエージェントのみを対象にするには、`--agent` を指定します (例: `--agent claude`) 。現在のプロジェクトではなくホームディレクトリにインストールするには、`--global` を追加します。
 
 <AgentPrompt
   prompt="clickstack-otel-collector スキルを使って、私の Managed ClickStack service に OpenTelemetry collector を組み込んでください。"
   description="エージェントが ClickStack OpenTelemetry collector のセットアップを行います。Claude Code、Cursor、Codex、その他のコーディングエージェントで利用できます。"
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"clickhousectl がなければインストールし、認証します（ClickHouse Cloud API key の入力を求められます。チャットに貼り付けるか、自分で login コマンドを実行してください）。",
+"clickhousectl がなければインストールし、APIキーで認証済みであることを確認します（ブラウザでのログインは読み取り専用のため、インジェスト用ユーザーを作成できません）。認証されていない場合は、別のターミナルを開き、同じプロジェクトディレクトリで clickhousectl cloud auth login --interactive を自分で実行するよう求めます（APIキーはそのディレクトリの .clickhouse/credentials.json に保存されます）。APIキーのシークレットは決してチャットに貼り付けないでください。",
 "対象の ClickHouse Cloud service ID または名前を確認し、その HTTPS endpoint を取得します。",
 "サービス上に hyperdx_ingest SQL user を作成します（強力な password を生成するか、指定したものを使用します）。",
 "そのサービスを送信先として、Docker で ClickStack OpenTelemetry collector をローカルで実行します。",
@@ -36,12 +44,12 @@ npx skills add clickhouse/agent-skills
 ]}
 />
 
-collector は **ゲートウェイ** として動作します。つまり、アプリケーション、SDK、agent collector の送信先となる単一の OTLP endpoint です。ゲートウェイはイベントをバッチ化し、設定した処理を適用したうえで、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) を介して ClickHouse に書き込みます。このパターンにより、収集ロジックを application code から切り離し、データを生成するワークロードとは独立してインジェストをスケールできます。ゲートウェイ ロールと agent ロールの違いについては、[Collector roles](/ja/clickstack/ingesting-data/collector#collector-roles) を参照してください。
+collector は **ゲートウェイ** として動作します。つまり、アプリケーション、SDK、エージェント collector の送信先となる単一の OTLP エンドポイント です。ゲートウェイはイベントをバッチ化し、設定した処理を適用したうえで、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) を介して ClickHouse に書き込みます。このパターンにより、収集ロジックを アプリケーションコード から切り離し、データを生成するワークロードとは独立してインジェストをスケールできます。ゲートウェイ ロールと エージェント ロールの違いについては、[Collector roles](/ja/clickstack/ingesting-data/collector#collector-roles) を参照してください。
 
 <Info>
   **既存の collector**
 
-  既存の OpenTelemetry collector を使用している場合は、すでに **ゲートウェイ** ロールとして構成されていることを前提としています。**agent** ロールの collector を再構成する用途には、この手順は推奨しません。
+  既存の OpenTelemetry collector を使用している場合は、すでに **ゲートウェイ** ロールとして構成されていることを前提としています。**エージェント** ロールの collector を再構成する用途には、この手順は推奨しません。
 </Info>
 
 状況に合ったタブを選択してください:
@@ -403,9 +411,7 @@ collector は **ゲートウェイ** として動作します。つまり、ア�
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## 次のステップ: 独自のデータを送信する
-</div>
+## 次のステップ: 独自のデータを送信する {#next-steps}
 
 上記の合成バーストで確認できるのは、パイプラインが動作していることだけです。実際のテレメトリーの送信を開始するには、[ClickStack SDKs](/ja/clickstack/ingesting-data/sdks/index) を使って独自のサービスをインストルメントしてください。これらの SDK は、Node.js、Python、Go、Java など、先ほど確認した collector エンドポイントに OTLP をエクスポートする各種言語向けのインストルメンテーションを提供します。完全な実例については、[アプリケーションをインストルメントする](/ja/clickstack/managed-onboarding/instrument-application) を参照してください。
 
@@ -414,9 +420,7 @@ collector は **ゲートウェイ** として動作します。つまり、ア�
 * [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラストラクチャのメトリクス、Kubernetes イベントを収集します。
 * [AWS CloudWatch Logs の監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver を介して CloudWatch Logs を転送します。
 
-<div id="further-reading">
-  ## さらに詳しく
-</div>
+## さらに詳しく {#further-reading}
 
 このガイドでは、最もシンプルな構成の単一の collector インスタンスを扱いました。次に何をすべきかについては、[OpenTelemetry Collector リファレンス](/ja/clickstack/ingesting-data/collector)を参照してください。
 

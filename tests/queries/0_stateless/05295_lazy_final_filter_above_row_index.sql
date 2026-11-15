@@ -2,7 +2,6 @@
 -- The latter computes the row index of the read in that filter, so the filter stays right above the read, and lazy
 -- FINAL still finds it and replaces the read.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;

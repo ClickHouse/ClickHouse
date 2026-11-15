@@ -1,7 +1,6 @@
 -- A filter predicate that is constant through `materialize` folds also when the filter column stays in the output:
 -- the filter reads the folded constant, and the kept column keeps its value and its representation.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'pretty';
 
 -- The kept column is read above the filter.
