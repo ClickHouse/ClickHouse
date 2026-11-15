@@ -66,7 +66,7 @@ It is safe to truncate or drop this table at any time.
 - `initial_query_start_time` ([DateTime](/reference/data-types/datetime)) — Start time of the initial query in the same query chain.
 - `initial_query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Start time of the initial query in the same query chain, with microsecond precision.
 - `authenticated_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who was authenticated in the session.
-- `interface` ([Enum8('Unknown' = 0, 'TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10)](/reference/data-types/enum)) — Interface that the query was initiated from, as reported by the client. `Unknown` if the reported interface is not one this server recognizes.
+- `interface` ([Enum8('Unknown' = 0, 'TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10, 'IcebergRESTCatalog' = 11)](/reference/data-types/enum)) — Interface that the query was initiated from, as reported by the client. `Unknown` if the reported interface is not one this server recognizes.
 - `is_secure` ([UInt8](/reference/data-types/int-uint)) — The flag which shows whether the connection was secure.
 - `os_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — OSs username who runs clickhouse-client.
 - `client_hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the client machine where the clickhouse-client or another TCP client is run.

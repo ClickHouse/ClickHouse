@@ -1,5 +1,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Common/SipHash.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -23,7 +24,14 @@ bool RowPolicyFilter::isAlwaysFalse() const
 
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
 {
-    return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);
+    /// The lengths separate the names, so that e.g. ("ab", "c") and ("a", "bc") are hashed differently.
+    SipHash hash;
+    hash.update(key.database.size());
+    hash.update(key.database);
+    hash.update(key.table_name.size());
+    hash.update(key.table_name);
+    hash.update(std::to_underlying(key.filter_type));
+    return hash.get64();
 }
 
 EnabledRowPolicies::EnabledRowPolicies() : params()

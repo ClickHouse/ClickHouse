@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas distribute a simple `IN (subquery)` by shipping the subquery plan: the
 -- shipped fragment keeps the set's query plan (FutureSetFromSubquery::source is preserved through the
 -- in-place index build and serialized while alive), and each replica rebuilds the set over its own
@@ -10,7 +11,6 @@ DROP TABLE IF EXISTS t_pr_in_subquery;
 CREATE TABLE t_pr_in_subquery (k Int64, v Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pr_in_subquery SELECT number, number FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -52,7 +53,7 @@ void LazyReadReplacingFinalStep::initializePipeline(QueryPipelineBuilder & pipel
     pipeline.init(Pipe(std::move(source)));
 }
 
-QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans()
+QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans(bool /*for_explain*/)
 {
     if (!explain_plan)
     {
@@ -64,7 +65,7 @@ QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans()
     return {&*explain_plan};
 }
 
-std::vector<size_t> LazyReadReplacingFinalStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> LazyReadReplacingFinalStep::getStepGroups() const
 {
     return {static_cast<size_t>(Stage::ReadAndAggregate), static_cast<size_t>(Stage::ReplacingMerge)};
 }

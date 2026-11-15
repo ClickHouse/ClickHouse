@@ -80,7 +80,9 @@ Result:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "Prefer maximum block bytes for external sort, reduce the memory usage during merging."}]}]}/>
 
-Prefer maximum block bytes for external sort, reduce the memory usage during merging.
+Preferred block size in bytes for spill files used by external `ORDER BY` and `DISTINCT`. Smaller blocks reduce memory usage when merging spill files.
+
+The block size is estimated from average row size, so blocks with unusually large rows can exceed this target. Set to `0` to size blocks by the row limit only.
 
 ## prefer_global_in_and_join {#prefer_global_in_and_join}
 

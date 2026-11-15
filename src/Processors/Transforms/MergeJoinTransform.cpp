@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -36,7 +37,7 @@ namespace
 
 FullMergeJoinCursor createCursor(const Block & block, const Names & columns, JoinStrictness strictness)
 {
-    std::vector<size_t> indices;
+    VectorWithMemoryTracking<size_t> indices;
     indices.reserve(columns.size());
     for (const auto & name : columns)
         indices.emplace_back(block.getPositionByName(name));
@@ -223,26 +224,28 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
     const size_t start_pos = impl.getRow();
-    size_t run_end = impl.rows;
 
     /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
-    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
-    {
-        const auto * nm = getNullMapData(impl.null_maps[i]);
-        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
+    const size_t run_end = impl.key_runs.findRunEnd(
+        start_pos,
+        impl.rows,
+        [&](size_t i, size_t from, size_t bound)
+        {
+            const auto * nm = getNullMapData(impl.null_maps[i]);
+            const bool ref_is_null = nm && (*nm)[from] != 0;
 
-        if (nm)
-            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
+            size_t column_run_end = bound;
+            if (nm)
+                column_run_end
+                    = findEqualRangeEndAssumeSorted(from, column_run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
 
-        if (!ref_is_null)
-            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+            if (!ref_is_null)
+                column_run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(from, column_run_end, 1);
 
-        if (run_end <= start_pos + 1)
-            break;
-    }
-    const size_t length = run_end - start_pos;
-    impl.pos = start_pos + length;
-    return length;
+            return column_run_end;
+        });
+    impl.pos = run_end;
+    return run_end - start_pos;
 }
 
 /// Lookup the equal range of the cursor, without moving the cursor
@@ -433,7 +436,7 @@ void AsofJoinState::reset()
     value.clear();
 }
 
-FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_)
+FullMergeJoinCursor::FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_)
     : key_indices(std::move(key_indices_))
     , is_asof(is_asof_)
 {
@@ -459,6 +462,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     rows = current_chunk.getNumRows();
     sort_columns.clear();
     null_maps.clear();
+    key_runs.reset(0);
     asof_column = nullptr;
 
     if (!current_chunk)
@@ -484,6 +488,8 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         asof_column = std::move(sort_columns.back());
         sort_columns.pop_back();
     }
+
+    key_runs.reset(sort_columns.size());
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const
