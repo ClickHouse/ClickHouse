@@ -4,7 +4,7 @@
 #include <Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 
 
 namespace DB

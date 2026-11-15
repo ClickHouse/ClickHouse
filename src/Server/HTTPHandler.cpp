@@ -46,7 +46,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include "Processors/Formats/Impl/JSONEachRowRowOutputFormat.h"
+#include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
