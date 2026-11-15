@@ -220,11 +220,12 @@ def _post_review():
 
 
 _APPROVED_REVIEWS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       viewerDidAuthor
-      reviews(states: [APPROVED], first: 100) {
+      reviews(states: [APPROVED], first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes { databaseId viewerDidAuthor commit { oid } }
       }
     }
@@ -253,13 +254,18 @@ def _update_approval(info):
     keep an approval. Raises on failure, failing the job."""
     repo = _pr_repository(info)
     owner, name = repo.split("/")
-    pr = GH._gh_graphql_json(
-        _APPROVED_REVIEWS_QUERY, {"owner": owner, "name": name, "number": int(info.pr_number)}
-    )["data"]["repository"]["pullRequest"]
-    if pr["viewerDidAuthor"]:
-        print("The PR is authored by the reviewing app, which cannot approve its own PR")
-        return
-    own_approvals = [r for r in pr["reviews"]["nodes"] if r["viewerDidAuthor"]]
+    variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
+    own_approvals = []
+    while True:
+        pr = GH._gh_graphql_json(_APPROVED_REVIEWS_QUERY, variables)["data"]["repository"]["pullRequest"]
+        if pr["viewerDidAuthor"]:
+            print("The PR is authored by the reviewing app, which cannot approve its own PR")
+            return
+        own_approvals += [r for r in pr["reviews"]["nodes"] if r["viewerDidAuthor"]]
+        page = pr["reviews"]["pageInfo"]
+        if not page["hasNextPage"]:
+            break
+        variables["after"] = page["endCursor"]
 
     if _review_approves():
         if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
