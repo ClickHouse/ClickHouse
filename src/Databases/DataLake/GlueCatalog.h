@@ -115,7 +115,8 @@ private:
 
     /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
     /// Returns `false` if the pointer no longer names `base_catalog_metadata_location` (empty for a pointerless base).
-    /// Throws `UNKNOWN_STATUS_OF_TRANSACTION` if an attempt may have been applied, but the outcome cannot be established.
+    /// Throws `UNKNOWN_STATUS_OF_TRANSACTION` if an attempt may have been applied, but the outcome cannot be established,
+    /// and on every failure with a pointerless base, because another writer may have listed the new metadata file as its base.
     bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,

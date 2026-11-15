@@ -63,6 +63,7 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace DB::ErrorCodes
 {
@@ -944,9 +945,13 @@ bool GlueCatalog::commitTableUpdate(
     /// Once an `UpdateTable` was sent whose attempt may have been applied (or may still be applied), a failure is reported as
     /// `UNKNOWN_STATUS_OF_TRANSACTION`, so the caller keeps the files the commit references instead of cleaning them up.
     bool update_may_have_landed = false;
+    /// The base of a table without a pointer is the latest metadata file under its location, so another writer may already
+    /// have taken our published metadata file as its base and committed on top of it. Its files must never be removed.
+    const bool base_is_listed = base_catalog_metadata_location.empty();
+    const auto files_may_be_referenced = [&] { return update_may_have_landed || base_is_listed; };
     const auto error_code = [&]
     {
-        return update_may_have_landed ? DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION : DB::ErrorCodes::DATALAKE_DATABASE_ERROR;
+        return files_may_be_referenced() ? DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION : DB::ErrorCodes::DATALAKE_DATABASE_ERROR;
     };
 
     for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
@@ -954,7 +959,22 @@ bool GlueCatalog::commitTableUpdate(
         Aws::Glue::Model::GetTableRequest get_request;
         get_request.SetDatabaseName(namespace_name);
         get_request.SetName(table_name);
-        auto get_outcome = glue_client->GetTable(get_request);
+        std::optional<Aws::Glue::Model::GetTableOutcome> get_outcome_holder;
+        try
+        {
+            get_outcome_holder.emplace(glue_client->GetTable(get_request));
+        }
+        catch (...)
+        {
+            /// The SDK reads a response body lazily and can throw instead of returning an unsuccessful outcome, e.g. on a timeout.
+            if (!files_may_be_referenced())
+                throw;
+            throw DB::Exception(
+                DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+                "Cannot tell whether the commit of {} to Glue table {}.{} was applied: {}",
+                new_metadata_path, namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+        }
+        const auto & get_outcome = *get_outcome_holder;
         if (!get_outcome.IsSuccess())
             throw DB::Exception(
                 error_code(),
@@ -976,11 +996,12 @@ bool GlueCatalog::commitTableUpdate(
         /// A missing pointer is a conflict too, unless the base was also resolved from the location of the same pointerless table:
         /// if another writer removed the pointer, the latest metadata file under the location may be a commit our base lacks.
         const bool same_base = current_metadata_path.empty()
-            ? base_catalog_metadata_location.empty() && isSamePointerlessTable(existing, new_metadata_path)
+            ? base_is_listed && isSamePointerlessTable(existing, new_metadata_path)
             : current_metadata_path == base_catalog_metadata_location;
         if (!same_base)
         {
-            if (!update_may_have_landed)
+            /// Without a pointer, another writer may have listed our metadata file and committed on top of it.
+            if (!files_may_be_referenced() && !current_metadata_path.empty())
             {
                 LOG_DEBUG(log, "Glue table {}.{} points to {} instead of {}, commit of {} conflicts",
                     namespace_name, table_name, current_metadata_path, base_catalog_metadata_location, new_metadata_path);
@@ -994,8 +1015,9 @@ bool GlueCatalog::commitTableUpdate(
 
             throw DB::Exception(
                 DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-                "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
-                new_metadata_path, namespace_name, table_name, current_metadata_path);
+                "Unknown outcome of commit of {} to Glue table {}.{}: it now points to '{}' instead of '{}'. "
+                "The files of the commit are kept, because another writer may have committed on top of them",
+                new_metadata_path, namespace_name, table_name, current_metadata_path, base_catalog_metadata_location);
         }
 
         DB::FailPointInjection::pauseFailPoint(DB::FailPoints::glue_catalog_pause_before_update_table);
@@ -1009,7 +1031,20 @@ bool GlueCatalog::commitTableUpdate(
         bool request_retried = false;
         request.SetRequestRetryHandler([&request_retried](const Aws::AmazonWebServiceRequest &) { request_retried = true; });
 
-        auto response = glue_client->UpdateTable(request);
+        std::optional<Aws::Glue::Model::UpdateTableOutcome> response_holder;
+        try
+        {
+            response_holder.emplace(glue_client->UpdateTable(request));
+        }
+        catch (...)
+        {
+            /// The request may have been applied before the SDK failed to read its response, so the table is read back.
+            update_may_have_landed = true;
+            LOG_INFO(log, "Outcome of the commit of {} to Glue table {}.{} is unknown, reading the table back: {}",
+                new_metadata_path, namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+            continue;
+        }
+        const auto & response = *response_holder;
         if (response.IsSuccess())
             return true;
 

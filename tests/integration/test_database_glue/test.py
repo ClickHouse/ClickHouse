@@ -2786,11 +2786,11 @@ def create_pyiceberg_table(
 
 
 @pytest.mark.parametrize("concurrent", ["append_then_unregister", "unregister_only"])
-def test_glue_commit_rebuilds_after_pointer_removed(started_cluster, concurrent):
+def test_glue_commit_keeps_files_after_pointer_removed(started_cluster, concurrent):
     # Another writer removes `metadata_location` after a ClickHouse INSERT read its base and before it commits, so the table
-    # is published only by its `Location`, and the latest metadata file there may be a commit the base lacks. The commit must
-    # not be applied on its stale base: it is rebuilt on top of the latest metadata file. The INSERT reads its source from the
-    # proxy, which holds the request until the test releases it.
+    # is published only by its `Location`, and other writers take the latest metadata file there as their base, which may be
+    # the one this INSERT already uploaded. The commit must not be applied on its stale base, and must not remove its files.
+    # The INSERT reads its source from the proxy, which holds the request until the test releases it.
     node = started_cluster.instances["node1"]
     test_ref = uuid.uuid4().hex[:12]
     namespace = f"race_{test_ref}"
@@ -2818,14 +2818,56 @@ def test_glue_commit_rebuilds_after_pointer_removed(started_cluster, concurrent)
     glue_table["Parameters"].pop("previous_metadata_location", None)
     put_glue_table(started_cluster, namespace, glue_table)
     query_glue_fault_proxy(started_cluster, f"release/{test_ref}")
-    insert.get_answer()
 
-    ids = [1, 2, 3] if concurrent == "append_then_unregister" else [1, 2]
-    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{i}\n" for i in ids)
-    ours = get_glue_table(started_cluster, namespace, table_name)["Parameters"]["metadata_location"]
-    assert read_ids(started_cluster, ours) == ids
-    # The metadata file of the refused attempt is removed.
-    assert list_metadata_files(started_cluster, table.location()) - foreign == {ours}
+    error = insert.get_error()
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    assert "metadata_location" not in get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+    ours = list_metadata_files(started_cluster, table.location()) - foreign
+    assert len(ours) == 1, ours
+    assert read_ids(started_cluster, ours.pop()) == [1, 2]
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_pointerless_compaction_keeps_files_another_writer_built_on(started_cluster):
+    # A table without `metadata_location`: an INSERT takes the latest metadata file under the location as its base, which
+    # is the one a manifest compaction uploaded and has not committed yet, because the proxy holds its `UpdateTable`. The
+    # INSERT commits on top of it, so the compaction must not remove the consolidated manifests the table now references.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"held_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_listed_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}], [{"id": 2}]])
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    del glue_table["Parameters"]["metadata_location"]
+    glue_table["Parameters"].pop("previous_metadata_location", None)
+    put_glue_table(started_cluster, namespace, glue_table)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    compaction = node.get_query_request(
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        settings={
+            **GLUE_WRITE_SETTINGS,
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 1,
+        },
+    )
+    wait_condition(
+        lambda: query_glue_fault_proxy(started_cluster, f"waiting/{namespace}"),
+        lambda value: value == "1",
+        max_attempts=600,
+    )
+    node.query(f"INSERT INTO {table_ref} VALUES (3)", settings=GLUE_WRITE_SETTINGS)
+    query_glue_fault_proxy(started_cluster, f"release/{namespace}")
+
+    error = compaction.get_error()
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    committed = get_glue_table(started_cluster, namespace, table_name)["Parameters"]["metadata_location"]
+    assert read_ids(started_cluster, committed) == [1, 2, 3]
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "1\n2\n3\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
@@ -2837,6 +2879,8 @@ def test_glue_commit_rebuilds_after_pointer_removed(started_cluster, concurrent)
         "superseded",
         "superseded_unknown",
         "readback_fails",
+        "truncated_readback",
+        "truncated_response",
         "lost_final_error",
         "lost_no_retry",
         "lost_timeout",
@@ -2856,6 +2900,8 @@ def test_glue_commit_with_unknown_outcome(started_cluster, mode):
         "superseded": "superseded_",
         "superseded_unknown": "unknown_",
         "readback_fails": "readbackfail_",
+        "truncated_readback": "truncreadback_",
+        "truncated_response": "truncated_",
         "lost_final_error": "lostfinal_",
         "lost_no_retry": "lostnoretry_",
         "lost_timeout": "losttimeout_",
@@ -2872,7 +2918,7 @@ def test_glue_commit_with_unknown_outcome(started_cluster, mode):
     _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}]])
     create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
     insert = f"INSERT INTO {table_ref} VALUES (2)"
-    if mode in ("superseded_unknown", "readback_fails"):
+    if mode in ("superseded_unknown", "readback_fails", "truncated_readback"):
         error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
         assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
     elif mode == "rejected":
@@ -2898,7 +2944,9 @@ def test_glue_commit_with_unknown_outcome(started_cluster, mode):
             assert parameters["metadata_location"] == ours + "-superseded", parameters
         else:
             assert parameters["metadata_location"] == ours, parameters
-            assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "1\n2\n"
+            # Every `GetTable` of `truncated_readback` stays interrupted, so ClickHouse cannot read the table.
+            if mode != "truncated_readback":
+                assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "1\n2\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 

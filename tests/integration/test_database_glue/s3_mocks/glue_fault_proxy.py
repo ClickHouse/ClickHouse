@@ -28,6 +28,8 @@ FAULTS = {
 # - `unknown_`: like `superseded_`, but the other writer does not record `previous_metadata_location`;
 # - `staleprev_`: like `superseded_`, but the other writer keeps the `previous_metadata_location` the request set;
 # - `readbackfail_`: like `lostresp_`, and the first `GetTable` after the refusal fails with a non-retryable error;
+# - `truncreadback_`: like `lostresp_`, and every `GetTable` after the refusal is interrupted in the middle of its body;
+# - `truncated_`: the request is applied, but its response is interrupted in the middle of its body;
 # - `lostfinal_`: like `lostresp_`, but the next `UpdateTable` (the SDK retry) is refused with `AccessDeniedException`
 #   without being checked or applied;
 # - `lostnoretry_`: the request is applied, but the client gets an HTTP 501, which its SDK does not retry;
@@ -45,6 +47,8 @@ UPDATE_FAULTS = (
     "unknown_",
     "staleprev_",
     "readbackfail_",
+    "truncreadback_",
+    "truncated_",
     "lostfinal_",
     "lostnoretry_",
     "losttimeout_",
@@ -81,6 +85,8 @@ counters = {}
 update_faults_taken = set()
 # Databases whose read-back `GetTable` is armed to fail (`readbackfail_`, after the refusal).
 readback_armed = set()
+# Databases whose every `GetTable` is interrupted (`truncreadback_`, after the refusal).
+truncate_get = set()
 # Databases whose next `UpdateTable` is refused (`lostfinal_`, after the lost response).
 deny_next_update = set()
 # `GET /hold/<key>` answers only after `GET /release/<key>`; `GET /waiting/<key>` returns how many are held.
@@ -158,6 +164,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_truncated(self, body):
+        # Declares more bytes than it sends and closes the connection, so the client fails while reading the body.
+        body = body or b"{}"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-amz-json-1.1")
+        self.send_header("Content-Length", str(len(body) + 64))
+        self.end_headers()
+        self.wfile.write(body[: len(body) // 2])
+        self.wfile.flush()
+        self.close_connection = True
+
     def reply_glue_error(self, status, name, message):
         payload = json.dumps({"__type": name, "message": message}).encode()
         self.reply(status, payload, [("Content-Type", "application/x-amz-json-1.1")])
@@ -209,6 +226,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             if fail:
                 self.reply_glue_error(400, "AccessDeniedException", "Injected read-back failure")
                 return
+            with lock:
+                truncate = database in truncate_get
+            if truncate:
+                _, content, _ = self.call_upstream(body)
+                self.reply_truncated(content)
+                return
         elif target == "AWSGlue.UpdateTable":
             self.update_table(body)
             return
@@ -252,6 +275,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if database.startswith("readbackfail_"):
                     with lock:
                         readback_armed.add(database)
+                if database.startswith("truncreadback_"):
+                    with lock:
+                        truncate_get.add(database)
                 self.reply_glue_error(
                     400, "ConcurrentModificationException", "Update table failed due to concurrent modifications."
                 )
@@ -279,6 +305,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 return
             elif fault == "losttimeout_":
                 self.reply_glue_error(400, "OperationTimeoutException", "Injected timeout.")
+                return
+            elif fault == "truncated_":
+                self.reply_truncated(content)
                 return
             self.reply_glue_error(500, "InternalServiceException", "Injected lost response.")
 
