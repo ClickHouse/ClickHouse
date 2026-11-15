@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'authentication', 'identity provider', 'RS256']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
@@ -23,6 +21,12 @@ This guide covers configuring JWKS providers in the Cloud console. To learn how 
 ClickHouse Cloud lets you authenticate connections to a service with JSON Web Tokens (JWTs) validated against your own JSON Web Key Set (JWKS) endpoints. Instead of managing database credentials, your identity provider issues short-lived tokens that ClickHouse verifies against the public keys published at a JWKS URL you configure.
 
 You configure these JWKS providers yourself, per service, from **Settings → Security** in the ClickHouse Cloud console.
+
+<Tip>
+**Using Microsoft Entra ID?**
+
+Follow [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) for the Entra ID configuration, the provider values to enter, and how to map Entra ID app roles to ClickHouse roles.
+</Tip>
 
 ## Before you begin {#before-you-begin}
 
@@ -54,7 +58,15 @@ ClickHouse validates and fetches the JWKS URL when you add or update a provider,
 
 Navigate to your service, open **Settings**, and scroll to the **Security** section. Find the **JWT authentication** card.
 
-<Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="JWT authentication section in service security settings" force/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![JWT authentication section in service security settings](/images/cloud/security/jwt/jwt-section.png)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Open the providers flyout" id="open-flyout">
 
@@ -92,3 +104,4 @@ Deleting a JWT provider immediately stops accepting tokens issued for it, and an
 ## Related {#related}
 
 - [JWT Authentication](/concepts/features/security/external-authenticators/jwt) — token claims, ephemeral users, and client usage.
+- [JWT authentication with Microsoft Entra ID](/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — configure Entra ID as a JWT provider.

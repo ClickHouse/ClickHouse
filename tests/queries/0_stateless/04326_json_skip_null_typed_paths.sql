@@ -146,7 +146,7 @@ SELECT json FROM test_json_skip_null ORDER BY rowNumberInAllBlocks() LIMIT 2 SET
 
 -- Other output_format_json_* settings must stay at their defaults in Pretty: nan remains quoted.
 SELECT 'Pretty keeps default JSON settings';
-SELECT CAST(tuple(nan::Float64, 1::Int64), 'Tuple(x Float64, y Int64)') AS t SETTINGS type_json_skip_null_typed_paths = 1 FORMAT PrettyCompactMonoBlock;
+SELECT CAST(tuple(nan::Float64, 1::Int64), 'Tuple(x Float64, y Int64)') AS t SETTINGS type_json_skip_null_typed_paths = 1, output_format_pretty_named_tuples_as_subcolumns = 0 FORMAT PrettyCompactMonoBlock;
 
 DROP TABLE test_json_skip_null;
 DROP TABLE test_json_non_nullable;

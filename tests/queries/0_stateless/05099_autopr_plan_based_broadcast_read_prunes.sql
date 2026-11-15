@@ -25,7 +25,6 @@ INSERT INTO t_pb_bcast SELECT number FROM numbers(2000000);
 OPTIMIZE TABLE t_pb_probe FINAL;
 OPTIMIZE TABLE t_pb_bcast FINAL;
 
-SET enable_analyzer = 1;
 -- The broadcast read has to be pruned by its own key condition, not by a filter built from the other
 -- side at runtime.
 SET enable_join_runtime_filters = 0;

@@ -48,19 +48,35 @@ SELECT '-- parallel replicas, remote plan';
 SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5
 SETTINGS parallel_replicas_local_plan = 0;
 
--- enable_analyzer = 1 is pinned only here, where the plan shape is asserted: the local
--- plan for parallel replicas engages only with the analyzer on
--- (canUseLocalPlanForParallelReplicas returns false otherwise), so without the pin a
--- randomized old-analyzer run would silently route the local-plan query through the
--- remote path and leave that half of the regression uncovered.
+-- `description = 0` keeps both checks independent of the implementation of parallel replicas:
+-- the plan-based one carries the shipped fragment as the read step description, and the
+-- fragment's own `ReadFromMergeTree` line would otherwise be counted here as well. The step
+-- itself is matched by the part of the name both implementations share.
 SELECT '-- local plan reads initiator locally';
-SELECT countIf(explain ILIKE '%ReadFromMergeTree%') > 0 AND countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
-FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 1)
-SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ILIKE '%ReadFromMergeTree%') > 0 AND countIf(explain ILIKE '%ParallelReplicas%') > 0
+FROM (EXPLAIN description = 0 SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 1);
 
 SELECT '-- remote plan reads all replicas remotely';
-SELECT countIf(explain ILIKE '%ReadFromMergeTree%') = 0 AND countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
-FROM (EXPLAIN SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 0)
-SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ILIKE '%ReadFromMergeTree%') = 0 AND countIf(explain ILIKE '%ParallelReplicas%') > 0
+FROM (EXPLAIN description = 0 SELECT a, count() FROM t_04371 WHERE a GROUP BY a ORDER BY a LIMIT 5 SETTINGS parallel_replicas_local_plan = 0);
+
+-- The implicit-boolean filter on the projection key with parallel replicas enabled: the shape the
+-- issue reported, with the projection actually chosen. `force_optimize_projection = 1` turns a
+-- skipped projection into PROJECTION_NOT_USED, and `system.query_log` names the projection that
+-- was read, on the initiator and on the replicas alike.
+SELECT '-- local plan uses the projection';
+SELECT b, count() FROM t_04371 WHERE b GROUP BY b ORDER BY b
+SETTINGS parallel_replicas_local_plan = 1, optimize_use_projections = 1,
+         parallel_replicas_support_projection = 1, force_optimize_projection = 1,
+         log_comment = '04371_local_projection';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT projections = [currentDatabase() || '.t_04371.p'], ProfileEvents['ParallelReplicasQueryCount'] > 0
+FROM system.query_log
+WHERE log_comment = '04371_local_projection' AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND is_initial_query
+  AND event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_04371;

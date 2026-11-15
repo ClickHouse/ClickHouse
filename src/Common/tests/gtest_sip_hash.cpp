@@ -83,3 +83,20 @@ TEST(SipHash, UpdateChunkedMatchesWhole)
         EXPECT_EQ(whole, hash.get128()) << "chunk=" << chunk;
     }
 }
+
+/// `sipHash128Padded` must return the same hash as `sipHash128` for every length and alignment of the data.
+TEST(SipHash, PaddedMatchesUpdate)
+{
+    std::vector<char> buffer(300 + 8 + 7);
+    for (size_t i = 0; i < buffer.size(); ++i)
+        buffer[i] = static_cast<char>(i * 131 + 17);
+
+    for (size_t offset = 0; offset < 8; ++offset)
+    {
+        for (size_t size = 0; size <= 300; ++size)
+        {
+            EXPECT_EQ(sipHash128(buffer.data() + offset, size), sipHash128Padded(buffer.data() + offset, size))
+                << "offset=" << offset << " size=" << size;
+        }
+    }
+}

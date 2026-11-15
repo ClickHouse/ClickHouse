@@ -122,6 +122,18 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// A storage that reads this table over the replicas of `cluster_for_parallel_replicas` for the query of `context`,
+    /// or nullptr to read the table itself.
+    virtual StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) const
+    {
+        return nullptr;
+    }
+
+    /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
+    /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
+    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
+    virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
+
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
@@ -202,12 +214,17 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
+    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
+    /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
+    virtual bool hasBucketedMapSerialization() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -231,6 +248,15 @@ public:
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
 
+    /** Returns true for a synthetic storage which stands in for a data source inside the server
+      * instead of a table of the catalog - the source of a projection calculation, for example.
+      * Such a storage is not a table the user can query, and it may borrow the name of an existing
+      * table, so reading from it must not be affected by the row policies and the
+      * `additional_table_filters` of that name, nor split between the replicas by
+      * `parallel_replicas_custom_key`.
+      */
+    virtual bool isSyntheticDataSource() const { return false; }
+
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
 
@@ -248,8 +274,9 @@ public:
     /// The default implementation falls back to the parameterless version.
     virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
@@ -265,6 +292,9 @@ public:
     {
         return metadata.get();
     }
+
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -561,6 +591,10 @@ public:
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
+    /// Checked before `RENAME DATABASE` moves this table into `new_database_name`. Unlike a table rename,
+    /// only the database name changes there: the table name and the table UUID are preserved.
+    virtual void checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const {}
+
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
@@ -782,6 +816,11 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if the table can store its own unreplicated data on disk.
+    /// Such a table cannot be created in a `Replicated` database while
+    /// `database_replicated_allow_only_replicated_engine` is enabled.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -806,6 +845,11 @@ public:
     /// Does takes underlying Storage (if any) into account.
     /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
+
+    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
+    {
+        return totalRows(query_context);
+    }
 
     /// Same as above but also take partition predicate into account.
     /// Passed context pointer must not be `nullptr`.

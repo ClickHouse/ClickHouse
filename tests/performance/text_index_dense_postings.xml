@@ -1,0 +1,38 @@
+<test>
+    <!-- Dense posting lists (`the` in ~75% of rows, `and` in ~50%), single-threaded so that decoding them dominates. -->
+    <settings>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_text_index_dense_postings
+        (
+            text String,
+            INDEX idx (text) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor')
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_text_index_dense_postings
+        SELECT concat(
+            if(cityHash64(number, 1) % 4 != 0, 'the ', ''),
+            if(cityHash64(number, 2) % 2 = 0, 'and ', ''),
+            if(cityHash64(number, 3) % 50 = 0, 'rare ', ''),
+            'w', toString(cityHash64(number, 4) % 100000))
+        FROM numbers_mt(50000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_text_index_dense_postings FINAL</fill_query>
+
+    <query>SELECT count() FROM t_text_index_dense_postings WHERE hasToken(text, 'the')</query>
+    <query>SELECT count() FROM t_text_index_dense_postings WHERE hasToken(text, 'and')</query>
+    <query>SELECT count() FROM t_text_index_dense_postings WHERE hasAllTokens(text, ['the', 'and'])</query>
+    <query>SELECT count() FROM t_text_index_dense_postings WHERE hasAnyTokens(text, ['and', 'rare'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_dense_postings</drop_query>
+</test>
