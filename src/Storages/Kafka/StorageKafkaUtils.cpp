@@ -387,13 +387,23 @@ void registerStorageKafka(StorageFactory & factory)
                     if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
                         continue;
 
-                    String key;
-                    if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &key) || !key.starts_with("kafka."))
+                    String raw_key;
+                    if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &raw_key))
                         continue;
-                    std::ranges::replace(key, '_', '.');
-                    for (size_t dot = key.find('.'); dot != String::npos; dot = key.find('.', dot + 1))
+                    /// `XMLConfiguration` resolves `.kafka[0].consumer.sasl_password` to the same key. An invalid key is
+                    /// rejected only after the query is formatted for logging.
+                    auto key = tryNormalizeNamedCollectionKey(raw_key);
+                    if (!key || Kafka::SETTINGS_TO_HIDE.contains(*key))
                     {
-                        if (KafkaConfigLoader::isSensitiveProperty(std::string_view(key).substr(dot + 1)))
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                        continue;
+                    }
+                    if (!key->starts_with("kafka."))
+                        continue;
+                    std::ranges::replace(*key, '_', '.');
+                    for (size_t dot = key->find('.'); dot != String::npos; dot = key->find('.', dot + 1))
+                    {
+                        if (KafkaConfigLoader::isSensitiveProperty(std::string_view(*key).substr(dot + 1)))
                         {
                             finder.markSecretArgument(i, /* argument_is_named= */ true);
                             break;

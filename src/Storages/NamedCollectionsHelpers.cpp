@@ -24,6 +24,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+std::optional<String> tryNormalizeNamedCollectionKey(std::string_view key)
+{
+    String normalized;
+    for (size_t i = 0; i < key.size(); ++i)
+    {
+        if (key[i] == '[')
+        {
+            auto end = key.find(']', i);
+            if (end == std::string_view::npos)
+                return std::nullopt;
+            i = end;
+        }
+        else if (key[i] == '\\' && i + 1 < key.size())
+            normalized += key[++i];
+        else if (key[i] != '.' || (!normalized.empty() && normalized.back() != '.'))
+            normalized += key[i];
+    }
+    if (!normalized.empty() && normalized.back() == '.')
+        normalized.pop_back();
+    return normalized;
+}
+
 namespace
 {
     std::optional<std::string> getCollectionName(ASTs asts)
@@ -88,24 +110,10 @@ namespace
     /// underlying key names so these spellings cannot disguise an override as a new key.
     String normalizeKey(std::string_view key)
     {
-        String normalized;
-        for (size_t i = 0; i < key.size(); ++i)
-        {
-            if (key[i] == '[')
-            {
-                auto end = key.find(']', i);
-                if (end == std::string_view::npos)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
-                i = end;
-            }
-            else if (key[i] == '\\' && i + 1 < key.size())
-                normalized += key[++i];
-            else if (key[i] != '.' || (!normalized.empty() && normalized.back() != '.'))
-                normalized += key[i];
-        }
-        if (!normalized.empty() && normalized.back() == '.')
-            normalized.pop_back();
-        return normalized;
+        auto normalized = tryNormalizeNamedCollectionKey(key);
+        if (!normalized)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
+        return std::move(*normalized);
     }
 
     /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.

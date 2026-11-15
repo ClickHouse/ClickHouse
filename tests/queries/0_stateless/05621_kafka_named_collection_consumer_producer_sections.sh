@@ -63,9 +63,12 @@ echo "stored values set: $(grep -cE 'Consumer set property (fetch.min.bytes|retr
 echo "changed collection property set: $(grep -c 'Consumer set property fetch.error.backoff.ms:999' <<< "$logs")"
 echo "changed overridden property set: $(grep -c 'Consumer set property fetch.min.bytes:999' <<< "$logs")"
 
-# A secret nested key given in the table definition is hidden in it.
+# A secret nested key given in the table definition is hidden in it, also when spelled with an index or redundant dots.
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE kafka_secret (x UInt64) ENGINE = Kafka($collection, \`kafka.consumer.sasl_password\` = 'secret_05621')
+    CREATE TABLE kafka_secret (x UInt64) ENGINE = Kafka($collection,
+        \`kafka.consumer.sasl_password\` = 'secret_05621',
+        \`kafka[0].producer.sasl_password\` = 'secret_05621',
+        \`.kafka..kafka_topic.sasl_password\` = 'secret_05621')
 "
 echo "secret shown: $($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE kafka_secret" | grep -c 'secret_05621')"
 
