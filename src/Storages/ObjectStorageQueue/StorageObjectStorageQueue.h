@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueBatchSizeOverride.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -179,7 +180,7 @@ private:
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::vector<UInt64> streaming_task_refresh_epochs;
-    std::atomic<size_t> max_files_override{0};
+    ObjectStorageQueueBatchSizeOverride max_files_override;
 
     LoggerPtr log;
 

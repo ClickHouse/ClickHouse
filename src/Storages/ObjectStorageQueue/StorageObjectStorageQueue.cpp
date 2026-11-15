@@ -525,7 +525,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
-    max_files_override = 0;
+    max_files_override.reset();
 }
 
 void StorageObjectStorageQueue::startup()
@@ -1079,7 +1079,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
-        auto effective_max_files = max_files_override.load();
+        const auto batch_size_override = max_files_override.get();
+        const size_t effective_max_files = batch_size_override.max_files;
 
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
@@ -1198,15 +1199,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 /// and only then its retry count will be reduced.
                 /// The override is shared across all tasks so that the halving converges
                 /// regardless of which task encounters the bad file.
-                size_t current_max = max_files_override.load();
-                if (!current_max)
+                size_t configured_max_files = 0;
                 {
                     std::lock_guard lock(mutex);
-                    current_max = commit_settings.max_processed_files_before_commit;
+                    configured_max_files = commit_settings.max_processed_files_before_commit;
                 }
-                if (!current_max)
-                    current_max = processing_progress->processed_files.load();
-                max_files_override = std::max<size_t>(current_max / 2, 1);
+                max_files_override.halveAfterFailure(configured_max_files, processing_progress->processed_files.load());
             }
             catch (Exception & e)
             {
@@ -1226,12 +1224,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         file_iterator->refreshExpiringBucketLocks();
 
         /// Restore the full batch size only after a batch which actually committed files,
-        /// and only if no other task halved the override since this iteration started.
+        /// and only if no insert failed since this iteration started.
         /// Otherwise idle tasks (with `parallel_inserts` there is one task per processing thread)
         /// would keep resetting the halving after committing empty batches,
         /// and the bad file would never end up alone in a batch.
         if (processing_progress->processed_files.load() > 0)
-            max_files_override.compare_exchange_strong(effective_max_files, 0);
+            max_files_override.resetAfterSuccess(batch_size_override);
 
         total_rows += rows;
 
