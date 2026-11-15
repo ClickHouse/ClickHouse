@@ -184,6 +184,11 @@ namespace ErrorCodes
     extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int BROTLI_READ_FAILED;
     extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int UNKNOWN_TYPE;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_INDEX;
+    extern const int ILLEGAL_PREWHERE;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
@@ -1479,13 +1484,27 @@ bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+namespace
+{
+/// With `engine_file_skip_failed_data_files`, the input format must only parse the file: an error of
+/// a condition evaluated by the reader (`PREWHERE`, a row policy pushed down with it) could not be told
+/// apart from an error of a broken file, and the file would be skipped instead of the query failing.
+/// So `PREWHERE` is not supported then, and these conditions are evaluated after the read.
+/// `supportsPrewhere` has no context of its own, so the settings of the query are used.
+bool skipsBrokenDataFilesInCurrentQuery()
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    return query_context && query_context->getSettingsRef()[Setting::engine_file_skip_failed_data_files];
+}
+}
+
 bool StorageFile::supportsPrewhere() const
 {
-    return supports_prewhere;
+    return supports_prewhere && !skipsBrokenDataFilesInCurrentQuery();
 }
 bool StorageFile::canMoveConditionsToPrewhere() const
 {
-    return supports_prewhere;
+    return supports_prewhere && !skipsBrokenDataFilesInCurrentQuery();
 }
 
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
@@ -2025,6 +2044,12 @@ namespace
     {
         return isParseError(code)
             || code == ErrorCodes::CANNOT_PARSE_TEXT
+            /// Raised by input formats on structurally invalid content, e.g. a corrupted type name or
+            /// size in a `Native` file, or a `NULL` for a non-`Nullable` column.
+            || code == ErrorCodes::UNKNOWN_TYPE
+            || code == ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+            || code == ErrorCodes::TOO_LARGE_ARRAY_SIZE
+            || code == ErrorCodes::INCORRECT_INDEX
             || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
             || code == ErrorCodes::UNEXPECTED_END_OF_FILE
             || code == ErrorCodes::FILE_DOESNT_EXIST
@@ -3497,14 +3522,27 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
+    /// With `engine_file_skip_failed_data_files`, no condition of the query is evaluated by the input
+    /// format, so that every error raised by the format can be attributed to the file - see
+    /// `StorageFile::supportsPrewhere`. The filter of the step is evaluated after the read anyway: it is
+    /// passed to the format only to skip data early.
+    const bool skip_failed_data_files = ctx->getSettingsRef()[Setting::engine_file_skip_failed_data_files];
+    if (skip_failed_data_files && (query_info.prewhere_info || query_info.row_level_filter))
+        /// The query was planned with settings in which the setting was disabled, e.g. it is enabled
+        /// only in the `SETTINGS` of a subquery.
+        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+            "Setting engine_file_skip_failed_data_files cannot be used when a PREWHERE or a row policy is evaluated "
+            "while reading the file. Enable it for the whole query, or use WHERE instead of PREWHERE");
+
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+        skip_failed_data_files ? nullptr : info.getFormatFilter(filter_actions_dag),
+        ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->need_row_numbers
         = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
-    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+    format_filter_info->keep_filter_column_statistics = format_filter_info->filter_actions_dag && !storage->use_table_fd && !storage->archive_info
         && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
