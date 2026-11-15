@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422629",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422730",
       "email": "support@clickhouse.com"
     }
   },
@@ -4418,7 +4418,7 @@
       },
       "post": {
         "summary": "Create service JWT provider",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a valid RS256 key set, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a key set with a supported signing key, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
         "operationId": "jwtProviderCreate",
         "parameters": [
           {
@@ -4668,7 +4668,7 @@
       },
       "put": {
         "summary": "Update service JWT provider",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a valid RS256 key set.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a key set with a supported signing key.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
         "operationId": "jwtProviderUpdate",
         "parameters": [
           {
@@ -10835,7 +10835,7 @@
       },
       "put": {
         "summary": "Update ClickPipe settings",
-        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.",
+        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.",
         "operationId": "clickPipeSettingsUpdate",
         "parameters": [
           {
@@ -10961,7 +10961,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -26425,7 +26425,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Present when deletion protection is enabled for the organization or the service is protected.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -28087,7 +28087,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -28206,7 +28206,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -28316,7 +28316,7 @@
       "ClickPipePatchKafkaSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": [
               "string",
               "null"
@@ -31585,37 +31585,6 @@
           "database"
         ]
       },
-      "ClickPipePatchDestination": {
-        "properties": {
-          "columns": {
-            "type": "array",
-            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
-            "items": {
-              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
-            }
-          }
-        }
-      },
-      "ClickPipesCdcScaling": {
-        "properties": {
-          "replicaCpuMillicores": {
-            "description": "CPU in millicores for DB ClickPipes.",
-            "type": "integer",
-            "minimum": 1000,
-            "maximum": 32000,
-            "multipleOf": 1000,
-            "example": 2000
-          },
-          "replicaMemoryGb": {
-            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
-            "type": "number",
-            "minimum": 4,
-            "maximum": 128,
-            "multipleOf": 4,
-            "example": 8
-          }
-        }
-      },
       "ClickPipeSettingsPutRequest": {
         "properties": {
           "streaming_max_insert_wait_ms": {
@@ -31709,6 +31678,37 @@
             "description": "parallel view processing. Whether to enable pushing to attached views concurrently instead of sequentially",
             "type": "boolean",
             "example": false
+          }
+        }
+      },
+      "ClickPipePatchDestination": {
+        "properties": {
+          "columns": {
+            "type": "array",
+            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
+            }
+          }
+        }
+      },
+      "ClickPipesCdcScaling": {
+        "properties": {
+          "replicaCpuMillicores": {
+            "description": "CPU in millicores for DB ClickPipes.",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 32000,
+            "multipleOf": 1000,
+            "example": 2000
+          },
+          "replicaMemoryGb": {
+            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
+            "type": "number",
+            "minimum": 4,
+            "maximum": 128,
+            "multipleOf": 4,
+            "example": 8
           }
         }
       },
@@ -43424,7 +43424,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43464,7 +43464,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43497,7 +43497,7 @@
             "maxLength": 256
           },
           "jwksUrl": {
-            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
             "type": "string",
             "example": "https://auth.example.com/.well-known/jwks.json",
             "maxLength": 256
@@ -43793,7 +43793,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Default is false. Setting it to true requires the `control-plane:service:delete` permission granted for all services in the organization (not service by service), in addition to `control-plane:organization:create-service`, and deletion protection to be enabled for the organization.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Default is false. Setting it to true requires the `control-plane:service:delete` permission granted for all services in the organization (not service by service), in addition to `control-plane:organization:create-service`.",
             "type": "boolean"
           }
         },
@@ -43846,7 +43846,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Changing it in either direction requires the `control-plane:service:delete` permission on the service, in addition to `control-plane:service:manage`; sending the current value changes nothing and needs no extra permission. Turning it on also requires deletion protection to be enabled for the organization; turning it off does not. ClickStack services can't be updated through the API; manage their deletion protection in the console.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Changing it in either direction requires the `control-plane:service:delete` permission on the service, in addition to `control-plane:service:manage`; sending the current value changes nothing and needs no extra permission. ClickStack services can't be updated through the API; manage their deletion protection in the console.",
             "type": "boolean"
           }
         }
@@ -44185,7 +44185,7 @@
             "type": "boolean"
           },
           "deletionProtection": {
-            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Present when deletion protection is enabled for the organization or the service is protected.",
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -44560,7 +44560,7 @@
             "$ref": "#/components/schemas/ClickPipeScaling"
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           },
           "startPaused": {
             "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
@@ -44603,7 +44603,7 @@
             }
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           }
         }
       },

@@ -18,7 +18,7 @@ from textwrap import fill
 from typing import Dict, Iterable, List, Optional, Set
 
 from env_helper import GITHUB_REPOSITORY, IS_CI
-from git_helper import GIT_PREFIX, Git, git_runner, is_shallow
+from git_helper import GIT_PREFIX, git_runner, is_shallow
 from ci.jobs.scripts.clickhouse_version import (
     ClickHouseVersion,
     get_supported_versions,
@@ -315,9 +315,9 @@ class TagAttrs:
     lts: Optional[ClickHouseVersion]
 
 
-def ldf_header(git: Git, directory: Path) -> List[str]:
+def ldf_header(directory: Path) -> List[str]:
     "Generates the header for LDF"
-    script_path = Path(__file__).relative_to(git.root)
+    script_path = Path(__file__).relative_to(git_runner.cwd)
     script_sha = git_runner(f"git log -1 --format=format:%H -- {script_path}")
     repo = f"https://github.com/{GITHUB_REPOSITORY}"
     dl_repo = f"https://github.com/{DOCKER_LIBRARY_REPOSITORY}"
@@ -378,12 +378,11 @@ def generate_ldf(args: argparse.Namespace) -> None:
         assert not path_is_changed(
             directory
         ), f"There are uncommitted changes in {directory}"
-    git = Git(True)
     # Support a few repositories, get the git-root for images directory
     dir_git_root = (
         directory / git_runner(f"git -C {directory} rev-parse --show-cdup")
     ).resolve()
-    lines = ldf_header(git, directory)
+    lines = ldf_header(directory)
     tag_attrs = TagAttrs(versions[-1], None)
 
     # We iterate from the most recent to the oldest version
