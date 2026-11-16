@@ -858,7 +858,8 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -869,7 +870,8 @@ namespace
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
-            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
+            auto compression_name = toContentEncodingName(chooseCompressionMethod(paths[current_index - 1], compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext(), compression_name);
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
@@ -915,9 +917,10 @@ namespace
                     return file_stat.st_mtime;
                 };
 
+                auto compression_name = toContentEncodingName(chooseCompressionMethod(path, compression_method), context->getSettingsRef()[Setting::snappy_mode]);
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(path, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(path, *format, format_settings, context, compression_name);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -928,7 +931,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context, compression_name);
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             /// Now format is known. It should be the same for all files.
@@ -2763,7 +2766,8 @@ void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) 
     if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
         return;
 
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
+    auto compression_name = toContentEncodingName(chooseCompressionMethod(storage->use_table_fd ? "" : path, storage->compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext(), compression_name);
     StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
@@ -2773,7 +2777,8 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
         return std::nullopt;
 
     auto & schema_cache = StorageFile::getSchemaCache(getContext());
-    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
+    auto compression_name = toContentEncodingName(chooseCompressionMethod(storage->use_table_fd ? "" : path, storage->compression_method), getContext()->getSettingsRef()[Setting::snappy_mode]);
+    auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext(), compression_name);
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         return last_mod_time;
