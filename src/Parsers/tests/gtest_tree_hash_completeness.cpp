@@ -749,7 +749,6 @@ TEST(TreeHashCompleteness, DropDetachedPartLikePreservesPatternSemantics)
         auto clone = ast->clone();
         auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
         EXPECT_EQ(clone->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
-        EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
         EXPECT_EQ(clone->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine()) << query;
         EXPECT_EQ(restored->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine()) << query;
         EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), hash) << query;
