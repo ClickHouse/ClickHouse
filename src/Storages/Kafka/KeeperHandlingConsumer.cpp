@@ -299,9 +299,11 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 
     if (assigned_topic_partitions.empty())
     {
-        /// An empty assignment after a full refresh means we tried and got nothing: publish
-        /// the demand (with our retry interval) so neighbours keep free partitions reserved.
-        markDemandInKeeper(retry_interval_ms);
+        /// Only demand when this consumer could use the reserved partitions (a consumer
+        /// with a zero sub-quota cannot take permanent locks, so a reservation is wasted).
+        const size_t node_quota = std::max<size_t>(all_topic_partitions.size() / active_replicas_info.active_replica_count, 1);
+        if (computeConsumerQuota(node_quota) > 0)
+            markDemandInKeeper(retry_interval_ms);
         LOG_TRACE(log, "Consumer {} has no partitions", idx);
         return CannotPollReason::NoPartitions;
     }

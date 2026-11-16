@@ -148,6 +148,7 @@ if [ "$demand_seen" -lt 1 ]; then
     echo "FAIL: the viewless replica did not publish demand although nothing is free" >&2
     exit 1
 fi
+demand_time=$SECONDS
 echo "--- Demand published by a replica that stopped trying ---"
 
 # Resume the healthy replica: it must see the demand, hold a partition reserved for the
@@ -155,7 +156,10 @@ echo "--- Demand published by a replica that stopped trying ---"
 $CLICKHOUSE_CLIENT -q "SYSTEM START ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
 
 # The fresh demand must hold the reservation: the healthy replica leaves one free
-# partition for the demanding (but not retrying) replica.
+# partition for the demanding (but not retrying) replica. Verify the deficit is
+# sustained for most of the declared retention — a transient dip from temporary-lock
+# rotation recovers within one refresh round, and a too-short retention recovers
+# well before the declared interval elapses.
 locks3=999
 deadline=$((SECONDS + 30))
 while [ "$SECONDS" -lt "$deadline" ]; do
@@ -169,12 +173,21 @@ if [ "$locks3" -gt $((PARTITIONS - 1)) ]; then
     echo "FAIL: the fresh demand did not hold the reservation (locks stayed at $locks3)" >&2
     exit 1
 fi
+sustain_deadline=$((demand_time + 50))
+while [ "$SECONDS" -lt "$sustain_deadline" ]; do
+    locks3=$(lock_count)
+    if [ "$locks3" -gt $((PARTITIONS - 1)) ]; then
+        echo "FAIL: the deficit recovered at $((SECONDS - demand_time))s — before the declared retention elapsed" >&2
+        exit 1
+    fi
+    sleep 5
+done
 echo "--- Fresh demand holds the reservation ---"
 
-# The demand value never changes again, so after a bounded number of rounds the
+# The demand value never changes again, so after its declared retention the
 # reservation must lift and full coverage must return.
 locks4=0
-deadline=$((SECONDS + 150))
+deadline=$((demand_time + 150))
 while [ "$SECONDS" -lt "$deadline" ]; do
     locks4=$(lock_count)
     if [ "$locks4" -ge "$PARTITIONS" ]; then
