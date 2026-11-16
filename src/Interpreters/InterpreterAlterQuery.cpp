@@ -49,7 +49,6 @@
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -247,17 +246,25 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-/// `MergeTree` executes a mutation in the background with the database of the table as the current one.
-ContextMutablePtr createMutationContext(const StoragePtr & table, const ContextPtr & context)
+/// A mutation runs later in another context (in the background, with no current database), so the names that depend
+/// on the current database are bound when it is submitted, with the rule of `ON CLUSTER`: the database of `merge` is
+/// the database of the altered table, as for table names, and any other `currentDatabase()` is the session's.
+void bindCurrentDatabase(const ASTAlterQuery & alter, const StorageID & table_id, const ContextPtr & context)
 {
-    auto mutation_context = Context::createCopy(context);
-    if (!resolveStorageProxy(table)->isMergeTree())
-        return mutation_context;
-    String database = table->getStorageID().getDatabaseName();
-    if (auto alias = castStorage<StorageAlias>(table, DeferredTable::Load))
-        database = alias->getTargetChain().back().first;
-    mutation_context->setCurrentDatabase(database);
-    return mutation_context;
+    if (table_id)
+        AddDefaultDatabaseVisitor(context, table_id.getDatabaseName()).substituteDatabaseInTableFunctions(*alter.command_list);
+
+    const String session_database = context->getCurrentDatabase();
+    if (session_database.empty())
+        return;
+
+    AddDefaultDatabaseVisitor visitor(context, session_database, /* only_replace_current_database_function */ true);
+    for (auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::UPDATE || command.type == ASTAlterCommand::DELETE || command.partition)
+            visitor.visitDDL(child);
+    }
 }
 
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
@@ -298,7 +305,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
-                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, createMutationContext(table, context));
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, context);
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
@@ -460,7 +467,7 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
 
     BlockIO res;
-    res.pipeline = table->updateLightweight(mutation_commands, createMutationContext(table, context));
+    res.pipeline = table->updateLightweight(mutation_commands, context);
     res.pipeline.addStorageHolder(table);
     return res;
 }
@@ -539,12 +546,11 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                auto mutation_context = createMutationContext(table, context);
-                auto validation_context = Context::createCopy(mutation_context);
+                auto validation_context = Context::createCopy(context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
-                table->mutate(*mutation_commands, mutation_context);
+                table->mutate(*mutation_commands, context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
@@ -659,23 +665,15 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
 
+    /// Before the query is stored for other hosts by `executeDDLQueryOnCluster` or a replicated database.
+    /// The table identifiers are qualified with the database of the altered table below, on each host.
+    bindCurrentDatabase(alter, table_id, getContext());
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         /// NOLINT(storage-cast): `table` is resolved above.
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
-
-        /// Substitute the database of the altered table into table functions that use the current database
-        /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
-        /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
-        /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
-        if (table_id)
-        {
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            visitor.substituteDatabaseInTableFunctions(*alter.command_list);
-        }
 
         /// The hosts run the entry without the user, unless `distributed_ddl_use_initial_user_and_roles` is on,
         /// so the view's SQL security is authorized here, which needs the view on this host.
