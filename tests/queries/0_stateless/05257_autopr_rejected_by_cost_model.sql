@@ -1,7 +1,9 @@
 -- A query the cost model turns down must say so with `AutoParallelReplicasRejectedByCostModel`, not
 -- only by the absence of every other outcome after `AutoParallelReplicasCostModelEvaluated`.
 -- Every row is read as an 8-byte key and leaves the replicas as a 1000-byte string, so shipping the
--- result costs far more than reading in parallel saves, whatever the thread counts are.
+-- result costs far more than reading in parallel saves, whatever the thread counts are. The string is
+-- built from the key, because a constant one is not shipped at all, and from hashes, because the output
+-- is priced compressed and a repeated character compresses to almost nothing.
 
 DROP TABLE IF EXISTS t_autopr_rejected_by_cost_model;
 
@@ -16,9 +18,9 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
 
 -- Twice: the first run only collects statistics, the second is the one the cost model decides. It decides
 -- at the boundary the first run remembered, without building the plan, and still says why it declined.
-SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
+SELECT arrayStringConcat(arrayMap(i -> hex(cityHash64(key, i)), range(63))) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
 FORMAT Null SETTINGS log_comment = '05257_autopr_rejected_by_cost_model';
-SELECT repeat('x', 1000) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
+SELECT arrayStringConcat(arrayMap(i -> hex(cityHash64(key, i)), range(63))) AS s, key FROM t_autopr_rejected_by_cost_model ORDER BY key
 FORMAT Null SETTINGS log_comment = '05257_autopr_rejected_by_cost_model';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
