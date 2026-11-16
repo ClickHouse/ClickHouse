@@ -767,7 +767,7 @@ A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzs
 
 Introduced in: v22.5.0
 
-Runs the backup on every host of `cluster`, coordinated through ClickHouse Keeper. See [Distributed DDL](/reference/statements/distributed-ddl). The settings `shard_num` and `replica_num` restrict it to one shard or one replica. The hosts run the backup outside the current session, so `Memory` destinations and the temporary tables of the current session cannot be used with `ON CLUSTER`, and `ALL` does not include those temporary tables.
+Runs the backup on every host of `cluster`, coordinated through ClickHouse Keeper. See [Distributed DDL](/reference/statements/distributed-ddl). The setting `shard_num` restricts it to one shard, and `replica_num` to one replica of each shard. The hosts run the backup outside the current session, so `Memory` destinations and the temporary tables of the current session cannot be used with `ON CLUSTER`, and `ALL` does not include those temporary tables.
 
 ## ASYNC and SYNC {#async}
 
@@ -789,7 +789,7 @@ One row with the columns `id` (`String`: the `id` setting, or a generated UUID) 
 | `compression_level` | `-1` | Compression level of a ZIP archive; `-1` is the default level. Not supported for TAR archives. |
 | `password` | `''` | Encrypts a ZIP archive with this password; a directory or TAR backup rejects it. |
 | `s3_storage_class` | `''` | Storage class of the files written to S3, for example `'STANDARD'`. Alias: `s3_storage_class_name`. |
-| `structure_only` | `0` | Stores only the definitions of the objects, without the data of tables. |
+| `structure_only` | `0` | Stores only the definitions of the objects, without the data of tables. The named collections the backup selects are still stored, with their values, unless `backup_named_collections = 0`: see [Named collections](/concepts/features/backup-restore/named-collections#selecting-the-collections). |
 | `async` | `0` | Same as `ASYNC`. |
 | `decrypt_files_from_encrypted_disks` | `0` | Decrypts the files of tables stored on encrypted disks. |
 | `deduplicate_files` | `1` | Stores identical files once within the backup. |
@@ -801,7 +801,7 @@ One row with the columns `id` (`String`: the `id` setting, or a generated UUID) 
 | `azure_attempt_to_create_container` | `1` | Creates the Azure container if it does not exist, which requires permissions at the storage account level. |
 | `read_from_filesystem_cache` | `1` | Uses the existing entries of the filesystem cache without adding new ones. |
 | `shard_num` | `0` | With `ON CLUSTER`, the 1-based index of the only shard to back up; `0` means all shards. |
-| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the only replica to back up; `0` means all replicas. |
+| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the replica to back up in each shard; `0` means all replicas. |
 | `check_parts` | `1` | Checks the checksums of data parts before writing them to the backup. |
 | `check_projection_parts` | `1` | Checks the checksums of projection parts before writing them to the backup. |
 | `allow_backup_broken_projections` | `0` | Allows backing up a table with broken projections. |
@@ -928,7 +928,7 @@ The elements are those of [`BACKUP`](/reference/statements/backup#elements). The
 
 ## Existing objects {#existing-objects}
 
-By default a missing table is created, and an existing table is restored into if it is empty and its definition matches the one in the backup. A different definition fails unless `allow_different_table_def = 1`, and a non-empty table fails unless `allow_non_empty_tables = 1`. Databases are handled the same way, with `create_database` and `allow_different_database_def`. Some engines cannot be recreated by `RESTORE`, for example a standalone `MaterializedPostgreSQL` table, see [Engines that `RESTORE` cannot recreate](/concepts/features/backup-restore/overview#engines-restore-cannot-recreate).
+By default a missing table is created, and an existing table is restored into if it is empty and its definition matches the one in the backup. A different definition fails unless `allow_different_table_def = 1`, and a non-empty table fails unless `allow_non_empty_tables = 1`. Databases are handled the same way, with `create_database` and `allow_different_database_def`. Some engines cannot be recreated by `RESTORE`, for example a standalone `MaterializedPostgreSQL` table, see [Engines that `RESTORE` cannot recreate](/concepts/features/backup-restore/overview#engines-restore-cannot-recreate). A `MaterializedPostgreSQL` database cannot be restored, also with `create_database = 'must-exist'`: restore its tables instead, see [MaterializedPostgreSQL backup and restore](/reference/engines/database-engines/materialized-postgresql#backup-and-restore).
 
 `RESTORE` does not roll back on failure: see [Restore atomicity](/reference/system-tables/backups#restore-atomicity).
 
@@ -951,7 +951,7 @@ By default a missing table is created, and an existing table is restored into if
 | `allow_non_empty_tables` | `0` | Allows restoring into a non-empty table. This can duplicate data. |
 | `async` | `0` | Same as `ASYNC`. |
 | `shard_num` | `0` | With `ON CLUSTER`, the 1-based index of the only shard to restore to; `0` means all shards. |
-| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the only replica to restore to; `0` means all replicas. |
+| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the replica to restore to in each shard; `0` means all replicas. |
 | `shard_num_in_backup` | `0` | 1-based index of the shard in the backup to read the data from. `0`: the only shard of the backup, otherwise the same shard as the restoring host. |
 | `replica_num_in_backup` | `0` | 1-based index of the replica in the backup to read the data from. `0`: the only replica of the shard in the backup, otherwise the same replica as the restoring host. |
 | `create_access` | `'if-not-exists'` | When a restored user, role, settings profile, row policy or quota exists: `'create'` or `1` fails, `'if-not-exists'` keeps the existing one, `'replace'` replaces it. |
