@@ -12803,9 +12803,9 @@ void Settings::write(WriteBuffer & out) const
     impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in)
+void Settings::read(ReadBuffer & in, bool skip_invalid_values)
 {
-    impl->read(in);
+    impl->read(in, skip_invalid_values);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)
