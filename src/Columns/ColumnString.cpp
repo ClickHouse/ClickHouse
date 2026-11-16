@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -563,7 +565,7 @@ struct ColumnString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
@@ -583,7 +585,7 @@ struct ColumnString::ComparatorCollationBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = collator->compare(
             reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
@@ -715,7 +717,13 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
         size_t string_size = offsets[i] - offsets[i - 1];
-        res_chars_size += size_to_replicate * string_size;
+        size_t replicated_size = 0;
+        if (common::mulOverflow(size_to_replicate, string_size, replicated_size)
+            || common::addOverflow(res_chars_size, replicated_size, res_chars_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large size of String column after replication: {} rows",
+                replicate_offsets.back());
     }
     res_chars.resize_exact(res_chars_size);
 
