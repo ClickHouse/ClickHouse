@@ -569,7 +569,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    bool success;
+    bool success = false;
     {
         auto lock = getPriorityGuard().readLock();
         success = collectCandidatesForEvictionImpl(eviction_info, stat, res, eviction_cursor, max_candidates_size, lock);
@@ -591,7 +591,7 @@ bool LRUFileCachePriority::tryCollectCandidatesForEviction(
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    bool success;
+    bool success = false;
     {
         auto lock = getPriorityGuard().tryReadLock();
         if (!lock.owns_lock())

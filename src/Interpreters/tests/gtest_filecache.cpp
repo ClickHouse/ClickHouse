@@ -4595,7 +4595,7 @@ TEST_F(FileCacheTest, SLRUPromotionSkippedWhilePriorityGuardIsBusy)
     auto first = add_range(0, 10);
     auto & priority_guard = first->front().getQueueIterator()->getPriorityGuard();
     /// Released, so that [0, 9] stays releasable for the downgrade at the end.
-    first.reset();
+    first = nullptr;
 
     /// Fill protected to its 50-byte limit, so that the next promotion has to walk it.
     add_range(10, 20);
