@@ -101,6 +101,13 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE (d, x) IN dist_same" 2>&1 \
     | grep -o -m1 'NOT_IMPLEMENTED'
+# A direct read and a table without FROM together keep the numbers of tables equal.
+for in_operator in 'IN' 'NOT IN'; do
+    $CLICKHOUSE_CLIENT --distributed_product_mode local -q "
+        SELECT count() FROM dist_same
+        WHERE (d, x) $in_operator dist_same AND x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.local_data)" 2>&1 \
+        | grep -o -m1 'NOT_IMPLEMENTED'
+done
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_same)" 2>&1 \
     | grep -o -m1 'NOT_IMPLEMENTED'
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM plain_other AS a INNER JOIN dist_same AS b USING (x)" 2>&1 \

@@ -1,3 +1,5 @@
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/TableNode.h>
 #include <Client/IConnections.h>
 #include <Core/Settings.h>
@@ -92,23 +94,38 @@ bool hasPartitionIdColumn(const ASTPtr & ast)
     return std::ranges::any_of(ast->children, hasPartitionIdColumn);
 }
 
-/// Counts the tables of the query tree for a shard that replaced a `Distributed` table of `table`: they have no real storage.
-size_t countTablesOfDistributedTable(const QueryTreeNodePtr & node, const StorageID & table)
+/// The tables named as the remote table in the query tree for a shard, by the place of each of them.
+struct TablesOfShardQuery
 {
-    size_t count = 0;
+    /// Replaced a `Distributed` table in a `FROM` clause: they have no real storage.
+    size_t replaced = 0;
+    /// Replaced a `Distributed` table that is an argument of a function such as `IN`.
+    size_t without_from = 0;
+    /// Read directly by the query.
+    size_t direct = 0;
+};
 
+void countTablesOfShardQuery(const QueryTreeNodePtr & node, const StorageID & table, bool is_function_argument, TablesOfShardQuery & tables)
+{
     if (const auto * table_node = node->as<TableNode>())
     {
         const auto & storage_id = table_node->getStorageID();
-        count += typeid_cast<const StorageDummy *>(table_node->getStorage().get())
-            && storage_id.table_name == table.table_name && storage_id.database_name == table.database_name;
+        if (storage_id.table_name == table.table_name && storage_id.database_name == table.database_name)
+        {
+            if (!typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+                ++tables.direct;
+            else if (is_function_argument)
+                ++tables.without_from;
+            else
+                ++tables.replaced;
+        }
     }
 
+    /// The arguments of a function are the elements of the lists under it.
+    const bool children_are_function_arguments = node->as<FunctionNode>() || (is_function_argument && node->as<ListNode>());
     for (const auto & child : node->getChildren())
         if (child)
-            count += countTablesOfDistributedTable(child, table);
-
-    return count;
+            countTablesOfShardQuery(child, table, children_are_function_arguments, tables);
 }
 
 /// Adds a condition on `_partition_id` to `WHERE` of every `SELECT` of the query for a shard that reads `table`, to skip `partitions`.
@@ -444,15 +461,18 @@ void SelectStreamFactory::createForShard(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot find table {} in the query for a shard while its partitions are moved between shards", main_table.getNameForLogs());
 
+        /// Each table is judged by its own place: a direct read and a table without `FROM` together keep the totals equal.
+        TablesOfShardQuery tables;
+        countTablesOfShardQuery(query_tree, main_table, false, tables);
+
         /// A direct read of the table by the query is not told from a read through the `Distributed` table by its name.
-        const size_t replaced = countTablesOfDistributedTable(query_tree, main_table);
-        if (found > replaced)
+        if (tables.direct || found > tables.replaced)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Table {} is read directly by a query that reads it through a `Distributed` table while its partitions are moved between shards",
                 main_table.getNameForLogs());
 
         /// A table that is the right argument of `IN` has no `WHERE` to put the condition to.
-        if (found < replaced)
+        if (tables.without_from || found < tables.replaced)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Table {} is read by a query for a shard without a `FROM` clause while its partitions are moved between shards",
                 main_table.getNameForLogs());
