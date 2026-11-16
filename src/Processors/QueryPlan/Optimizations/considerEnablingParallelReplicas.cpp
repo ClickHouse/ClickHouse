@@ -623,40 +623,36 @@ std::optional<UInt128> certainOccurrence(const ReadFromMergeTree & read, const T
 /// being optimized, as `transplantAnalysisToAllReads` pairs them: the only read of its table in the single-node plan,
 /// or else the one written in the same place. A read with no certain counterpart gets none. A probe plan that reads a
 /// table a different number of times than the single-node plan is declined by the transplant later.
-MakeSingleNodeReadFinder makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
+FindSingleNodeReadByOccurrence makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
 {
-    return [single_node_reads = collectReadingSteps(single_node_root)](
-               std::shared_ptr<const TableOccurrences> single_node_occurrences,
-               std::shared_ptr<const TableOccurrences> replicas_occurrences) -> FindSingleNodeRead
+    UnorderedMapWithMemoryTracking<const MergeTreeData *, VectorWithMemoryTracking<const ReadFromMergeTree *>> single_node_reads_by_table;
+    for (const auto * read : collectReadingSteps(single_node_root))
+        single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
+
+    return [reads_by_table = std::move(single_node_reads_by_table)](
+               const std::shared_ptr<const TableOccurrences> & single_node_table_occurrences,
+               const std::shared_ptr<const TableOccurrences> & replicas_table_occurrences,
+               const ReadFromMergeTree & read) -> const ReadFromMergeTree *
     {
-        UnorderedMapWithMemoryTracking<const MergeTreeData *, VectorWithMemoryTracking<const ReadFromMergeTree *>> single_node_reads_by_table;
-        for (const auto * read : single_node_reads)
-            single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
+        auto it = reads_by_table.find(&read.getMergeTreeData());
+        if (it == reads_by_table.end())
+            return nullptr;
+        if (it->second.size() == 1)
+            return it->second.front();
 
-        return [reads_by_table = std::move(single_node_reads_by_table),
-                single_node_table_occurrences = std::move(single_node_occurrences),
-                replicas_table_occurrences = std::move(replicas_occurrences)](const ReadFromMergeTree & read) -> const ReadFromMergeTree *
+        auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences);
+        if (!identity)
+            return nullptr;
+        const ReadFromMergeTree * found = nullptr;
+        for (const auto * candidate : it->second)
         {
-            auto it = reads_by_table.find(&read.getMergeTreeData());
-            if (it == reads_by_table.end())
+            if (certainOccurrence(*candidate, *single_node_table_occurrences, *replicas_table_occurrences) != identity)
+                continue;
+            if (found)
                 return nullptr;
-            if (it->second.size() == 1)
-                return it->second.front();
-
-            auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences);
-            if (!identity)
-                return nullptr;
-            const ReadFromMergeTree * found = nullptr;
-            for (const auto * candidate : it->second)
-            {
-                if (certainOccurrence(*candidate, *single_node_table_occurrences, *replicas_table_occurrences) != identity)
-                    continue;
-                if (found)
-                    return nullptr;
-                found = candidate;
-            }
-            return found;
-        };
+            found = candidate;
+        }
+        return found;
     };
 }
 
