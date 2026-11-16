@@ -478,6 +478,8 @@ void NO_INLINE TopKAggregationHeapBase::sampleCollatedSkip(const ColumnRawPtrs &
             source_columns[i]->updateHashWithValue(source_row, hash);
         key_hash = hash.get64();
     }
+    /// Mixed, so that the sampled keys are not a range of `cityHash64` that a table sharded by it could lack.
+    key_hash = intHash64(key_hash);
     if (key_hash >> (64 - collated_skip_sample_shift))
         return;
 

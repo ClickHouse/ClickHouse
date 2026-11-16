@@ -2427,7 +2427,7 @@ The optimization is disabled when the requested `LIMIT` is higher than [query_pl
 
 The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
 
-With `COLLATE` on a ranked key, a row is first looked up in the hash table, and only a row with a new key is compared with the heap boundary under the collation, because such a comparison costs more than the lookup.
+With `COLLATE` on a ranked key, a row is first looked up in the hash table, and only a row with a new key is compared with the heap boundary under the collation, because such a comparison costs more than the lookup. A composite key aggregated with the serialized method is compared first, because its key is costly to build twice.
 
 Possible values:
 
