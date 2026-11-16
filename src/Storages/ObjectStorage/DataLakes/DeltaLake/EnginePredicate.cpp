@@ -152,10 +152,6 @@ namespace
             || !DB::isDateOrDate32(result_type->getTypeId()))
             return std::nullopt;
 
-        /// Removing nullability can throw; pruning must not hide those rows.
-        if (column->result_type->isNullable() && !conversion->result_type->isNullable())
-            return std::nullopt;
-
         /// Mixed temporal comparisons use a common type; a `Date`/`Date32` literal converts exactly or not at all (rejected below), anything else stays untranslated.
         const auto literal_type = getTypeOrNestedType(literal);
         if (!literal_type->equals(*result_type) && !isString(literal_type)

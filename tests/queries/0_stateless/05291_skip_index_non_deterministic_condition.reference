@@ -1,0 +1,29 @@
+-- set index, rows out of 8000 within 11 standard deviations of the expected count
+rand, bulk	1
+rand, per granule	1
+rand in PREWHERE	1
+rand of id	1
+generateUUIDv4	1
+rand in a lambda	1
+rand in if	1
+id = 1 OR rand	1
+id = 1 AND rand	1
+-- set index, is the index used
+rand	0
+rowNumberInBlock	0
+control: id = 1	1
+-- set index on a column named rand()
+rand	1
+id < 10 AND rand	1
+rand, index used	0
+-- text index on map keys: 4000 rows have the key, about 40 of the others pass through rand
+map element	1
+map subcolumn	1
+rand, index used	0
+control: length, rows	4000
+control: length, index used	1
+-- text index on JSON paths
+json path	1
+rand, index used	0
+control: rows	4000
+control: index used	1

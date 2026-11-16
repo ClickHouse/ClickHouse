@@ -372,7 +372,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="Наши решения"
+          title="Наши продукты"
           galaxyEvent="docs.home.solutions"
           description="Я хочу ознакомиться с решениями ClickHouse"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -383,7 +383,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -400,7 +400,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="Real-time аналитика" galaxyEvent="docs.home.real-time-analytics" description="Получайте мгновенные инсайты и панели мониторинга в любом масштабе. Анализируйте миллиарды строк в реальном времени с результатами за миллисекунды." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="Обсервабилити" galaxyEvent="docs.home.observability" description="Храните и запрашивайте журналы, метрики и трейсы в любом масштабе с помощью ClickStack — стека обсервабилити с открытым исходным кодом на базе ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="Обсервабилити" galaxyEvent="docs.home.observability" description="Храните и запрашивайте журналы, метрики и трейсы в любом масштабе с помощью ClickHouse Observability — стека обсервабилити с открытым исходным кодом на базе ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="Хранилище данных" galaxyEvent="docs.home.data-warehousing" description="Мгновенно анализируйте и изучайте данные для получения инсайтов и создания приложений. Быстрее масштабируйтесь, перенося ресурсоемкие рабочие нагрузки." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -443,9 +443,9 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="Универсальный стек обсервабилити на базе ClickHouse, который обеспечивает молниеносные запросы и мощные агрегации по журналам, метрикам, трассировкам, воспроизведениям сеансов и ошибкам." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="Универсальный стек обсервабилити на базе ClickHouse, который обеспечивает молниеносные запросы и мощные агрегации по журналам, метрикам, трассировкам, воспроизведениям сеансов и ошибкам." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Быстрый, масштабируемый сервис Postgres корпоративного уровня с нативной интеграцией с ClickHouse. Легко объединяйте Postgres для транзакций и ClickHouse для аналитики." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Быстрый, масштабируемый сервис Postgres корпоративного уровня с нативной интеграцией с ClickHouse. Легко объединяйте Postgres для транзакций и ClickHouse для аналитики." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 

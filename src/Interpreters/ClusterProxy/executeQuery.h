@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
@@ -162,7 +163,7 @@ struct LocalPlanParallelReplicasInfo
 {
     ParallelReplicasReadingCoordinatorPtr coordinator;
     /// Sized to the coordinator's replica count, with the local replica at `local_replica_index`.
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     /// The local replica's number; matches the coordinator's snapshot replica number.
     std::optional<size_t> local_replica_index;
 };
@@ -170,7 +171,8 @@ struct LocalPlanParallelReplicasInfo
 /// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
 /// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator.
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan);
+/// Returns nothing and leaves the plan intact unless the plan has both a local part and a remote reading step.
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
@@ -196,7 +198,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> pipeline = std::nullopt,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt,
-    std::vector<ConnectionPoolPtr> reused_connection_pools = {},
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools = {},
     std::optional<size_t> reused_local_replica_index = std::nullopt);
 
 void executeQueryWithParallelReplicas(

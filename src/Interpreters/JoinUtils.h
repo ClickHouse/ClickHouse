@@ -6,7 +6,6 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 
@@ -107,6 +106,10 @@ private:
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
+/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
+/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
   * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
@@ -193,8 +196,9 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
+/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
+ColumnPtr filterWithBlanks(
+    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
 
 }
 
