@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -32,6 +31,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
             return nullptr;
 
         if (reading->isParallelReadingEnabled())
+            return nullptr;
+
+        /// A bucketed read of a distributed plan reads only the marks pinned to its bucket. Splitting
+        /// into layers takes the ranges of the whole table, so every bucket would read all rows.
+        if (reading->getDistributedReadBucketCount() > 0)
             return nullptr;
 
         /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
@@ -404,9 +408,8 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             const auto & join = join_step->getJoin();
 
             auto * hash_join = typeid_cast<HashJoin *>(join.get());
-            auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
-            bool is_algo_supported = hash_join || concurrent_hash_join || full_sorting_merge_join;
+            bool is_algo_supported = hash_join || full_sorting_merge_join;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;

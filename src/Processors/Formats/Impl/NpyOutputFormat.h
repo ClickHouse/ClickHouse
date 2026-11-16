@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/NumpyDataTypes.h>
 #include <Columns/IColumn_fwd.h>
-
-#include <vector>
 
 
 namespace DB
@@ -41,7 +40,7 @@ private:
     DataTypePtr nested_data_type;
     std::shared_ptr<NumpyDataType> numpy_data_type;
     UInt64 num_rows = 0;
-    std::vector<UInt64> numpy_shape;
+    VectorWithMemoryTracking<UInt64> numpy_shape;
     Columns columns;
 
     /// static header (version 3.0)
