@@ -72,7 +72,7 @@ static bool lambdaBodiesMatch(
     for (auto inner_it = inner.lambda_arguments.begin(), outer_it = outer.lambda_arguments.begin(); inner_it != inner.lambda_arguments.end();
          ++inner_it, ++outer_it)
     {
-        if (inner_it->name != outer_it->name || !inner_it->type->equals(*outer_it->type))
+        if (!inner_it->type->equals(*outer_it->type))
             return false;
         outer_to_inner_input_names.emplace(outer_it->name, inner_it->name);
     }

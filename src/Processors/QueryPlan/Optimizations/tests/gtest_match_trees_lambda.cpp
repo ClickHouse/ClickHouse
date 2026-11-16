@@ -189,7 +189,7 @@ TEST(MatchTreesLambda, FoldedLambdasWithSameBodyMatch)
     EXPECT_EQ(matchOf(*inner, *outer), inner->mapped);
 }
 
-TEST(MatchTreesLambda, FoldedLambdasWithRenamedArgumentDoNotMatch)
+TEST(MatchTreesLambda, FoldedLambdasWithRenamedArgumentMatch)
 {
     tryRegisterFunctions();
 
@@ -199,7 +199,7 @@ TEST(MatchTreesLambda, FoldedLambdasWithRenamedArgumentDoNotMatch)
     ASSERT_NE(foldedExpression(*inner->lambda), nullptr);
     ASSERT_NE(foldedExpression(*outer->lambda), nullptr);
 
-    EXPECT_EQ(matchOf(*inner, *outer), nullptr);
+    EXPECT_EQ(matchOf(*inner, *outer), inner->mapped);
 }
 
 TEST(MatchTreesLambda, FoldedLambdaCapturingDifferentLambdasDoNotMatch)

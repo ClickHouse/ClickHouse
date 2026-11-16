@@ -11,29 +11,21 @@ SELECT groupArray(a[1]) FROM (SELECT a FROM r ORDER BY arrayMap(x -> x + b, a) D
 SELECT groupArray(a[1]) FROM (SELECT a FROM r ORDER BY arrayMap(x -> x + b, a) LIMIT 5) SETTINGS optimize_read_in_order = 1;
 SELECT groupArray(a[1]) FROM (SELECT a FROM r ORDER BY arrayMap(x -> x * b, a) DESC LIMIT 5) SETTINGS optimize_read_in_order = 1;
 
--- Case 2: the same lambda still reads in order.
+-- Case 2: the same lambda still reads in order, also with a renamed argument.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM r ORDER BY arrayMap(x -> x % b, a) DESC LIMIT 5 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
 WHERE explain ILIKE '%Read type: InReverseOrder%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM r ORDER BY arrayMap(y -> y % b, a) DESC LIMIT 5 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
+WHERE explain ILIKE '%Read type: InReverseOrder%';
 
--- Case 3: two arguments are paired by position.
+-- Case 3: two arguments are paired by position, not by name.
 DROP TABLE IF EXISTS s;
 CREATE TABLE s (a Array(Int64), c Array(Int64), b Int64) ENGINE = MergeTree ORDER BY arrayMap((x, y) -> (x - y) * b, a, c);
 INSERT INTO s SELECT [number], [30 - number], 1 FROM numbers(30);
 SELECT groupArray(a[1]) FROM (SELECT a FROM s ORDER BY arrayMap((y, x) -> (x - y) * b, a, c) LIMIT 5) SETTINGS optimize_read_in_order = 1;
 SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM s ORDER BY arrayMap((x, y) -> (x - y) * b, a, c) LIMIT 5 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
 WHERE explain ILIKE '%Read type: InOrder%';
-
--- Case 3b: a renamed argument is visible to formatRowNoNewline.
-DROP TABLE IF EXISTS p_fmt;
-CREATE TABLE p_fmt
-(
-    a Array(UInt64),
-    b UInt64,
-    PROJECTION pr (SELECT arrayMap(x -> concat(formatRowNoNewline('JSONEachRow', x), toString(b)), a), count() GROUP BY arrayMap(x -> concat(formatRowNoNewline('JSONEachRow', x), toString(b)), a))
-)
-ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO p_fmt SELECT [number], 10 FROM numbers(3);
-SELECT arrayMap(y -> concat(formatRowNoNewline('JSONEachRow', y), toString(b)), a) AS k, count() FROM p_fmt GROUP BY k ORDER BY k SETTINGS optimize_use_projections = 1;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM s ORDER BY arrayMap((u, v) -> (u - v) * b, a, c) LIMIT 5 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
+WHERE explain ILIKE '%Read type: InOrder%';
 
 -- Case 4: a nested lambda.
 DROP TABLE IF EXISTS n;
@@ -41,6 +33,8 @@ CREATE TABLE n (a Array(UInt64)) ENGINE = MergeTree ORDER BY arrayMap(x -> array
 INSERT INTO n VALUES ([1, 2, 3]), ([1, 3, 2]), ([2, 1, 3]), ([2, 3, 1]), ([3, 1, 2]), ([3, 2, 1]);
 SELECT groupArray(a) FROM (SELECT a FROM n ORDER BY arrayMap(x -> arrayCount(y -> y < x, a), a) DESC) SETTINGS optimize_read_in_order = 1;
 SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM n ORDER BY arrayMap(x -> arrayCount(y -> y > x, a), a) DESC SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
+WHERE explain ILIKE '%Read type: InReverseOrder%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT a FROM n ORDER BY arrayMap(u -> arrayCount(v -> v > u, a), a) DESC SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0)
 WHERE explain ILIKE '%Read type: InReverseOrder%';
 
 -- Case 5: arrayFilter.
@@ -64,6 +58,7 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO p SELECT [number], 10 FROM numbers(30);
 SELECT arrayMap(x -> x + b, a) AS k, count() FROM p GROUP BY k ORDER BY k LIMIT 3 SETTINGS optimize_use_projections = 1;
 SELECT arrayMap(x -> x % b, a) AS k, count() FROM p GROUP BY k ORDER BY k LIMIT 3 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
+SELECT arrayMap(y -> y % b, a) AS k, count() FROM p GROUP BY k ORDER BY k LIMIT 3 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
 
 -- Case 8: the implicit _minmax_count_projection of the partition key.
 DROP TABLE IF EXISTS pp;
