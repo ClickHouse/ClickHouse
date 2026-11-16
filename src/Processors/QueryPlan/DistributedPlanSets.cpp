@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -61,7 +62,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
 
     take_sets_and_splice_out(root);
 
-    std::vector<QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push_back(root);
     while (!stack.empty())
     {

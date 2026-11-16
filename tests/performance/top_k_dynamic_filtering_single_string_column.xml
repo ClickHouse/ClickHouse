@@ -8,6 +8,7 @@
     </settings>
 
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10 FORMAT Null</query>
+    <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != 'zzzz' ORDER BY SearchPhrase LIMIT 10 FORMAT Null</query>
     <query>SELECT Title FROM hits_100m_single WHERE Title != '' ORDER BY Title DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT MobilePhoneModel FROM hits_100m_single ORDER BY MobilePhoneModel LIMIT 300 FORMAT Null</query>
 </test>
