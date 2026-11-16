@@ -9,7 +9,7 @@
 using namespace DB;
 
 /// Without an external-aggregation threshold the partitions of a bucket follow the number of producers,
-/// half the bits of their count rounded up, at most 16, and every partition starts with the largest first
+/// half the bits of their count rounded up, at most 8, and every partition starts with the largest first
 /// chunk. The chunk cap is the largest power of two at which one unused chunk in every partition of every
 /// producer fits in 128 MiB, clamped to 4-32 KiB. For example, 8 producers with 4 partitions per bucket
 /// have 8 * 1024 partitions, which afford 16 KiB each; 9 producers afford 14.2 KiB each, so they get
@@ -25,7 +25,9 @@ TEST(AdaptivePartitionLayout, PartitionsFollowProducers)
              {16, 4, 8 << 10},
              {17, 8, 4 << 10},
              {64, 8, 4 << 10},
-             {1024, 16, 4 << 10}})
+             {65, 8, 4 << 10},
+             {192, 8, 4 << 10},
+             {1024, 8, 4 << 10}})
     {
         const auto layout = AdaptivePartitionLayout::forProducers(producers, 0);
         EXPECT_EQ(layout.partitionsPerBucket(), partitions_per_bucket) << producers << " producers";

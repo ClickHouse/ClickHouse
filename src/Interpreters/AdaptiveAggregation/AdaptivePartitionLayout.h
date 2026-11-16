@@ -23,10 +23,13 @@ public:
     /// unit's table to stay in a task's share; every partition, though, costs the producers' appends and the merge's
     /// walk a fixed overhead per chunk, so a small bucket wants few. About the square root of the producers, half the
     /// bits of their count rounded up, balanced the two over the high-cardinality aggregations of ClickBench at 16 and
-    /// 64 threads, with 4 and 8 partitions per bucket. An external-aggregation threshold reduces the subdivision so
-    /// the first chunks of all streams fit within a quarter of it, and below one partition per bucket it reduces the
-    /// first chunks, down to the smallest the staging buffer takes. The four free hash bits allow at most 16 partitions
-    /// per bucket.
+    /// 64 threads, with 4 and 8 partitions per bucket. More producers keep 8: every producer has a stream per
+    /// partition, so the streams grow with the producers times the partitions. With 16 partitions per bucket, 192
+    /// producers have 786,432 streams of a few dozen records each: over the same aggregations at 192 threads that was
+    /// 4% slower than 8 partitions and took a third more memory, and none was measurably faster. An
+    /// external-aggregation threshold reduces the subdivision so the first chunks of all streams fit within a quarter
+    /// of it, and below one partition per bucket it reduces the first chunks, down to the smallest the staging buffer
+    /// takes.
     ///
     /// The chunks of a partition double up to a cap, which trades the merge's cost per chunk against
     /// memory. The merge follows a partition's chunks from header to header, and the hardware prefetchers
