@@ -130,6 +130,15 @@ datasketches::compact_theta_sketch compactThetaSketch(const datasketches::update
     return sketch_union.get_result();
 }
 
+String serializeThetaSketchBlob(const datasketches::compact_theta_sketch & compact)
+{
+    const auto bytes = compact.serialize();
+    String result(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    if (static_cast<UInt8>(result[0]) >= 2)
+        unalignedStoreLittleEndian<Float32>(result.data() + 12, 1.0f);
+    return result;
+}
+
 PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv)
 {
     PuffinBlob blob;
@@ -365,10 +374,9 @@ void PuffinThetaSketchBuilder::write(PuffinWriter & writer)
     for (size_t i = 0; i < sketches.size(); ++i)
     {
         const auto compact = compactThetaSketch(sketches[i].get());
-        const auto bytes = compact.serialize();
         writer.addBlob(
             makeThetaSketchBlobMetadata(field_ids[i], snapshot_id, sequence_number, static_cast<UInt64>(compact.get_estimate())),
-            std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+            serializeThetaSketchBlob(compact));
     }
 }
 
