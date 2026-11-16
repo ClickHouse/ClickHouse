@@ -1,8 +1,8 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the assertions below read ProfileEvents of the initiator query.
 -- Tests that a text index skips granules for a LIKE or ILIKE phrase of several words, such as '%java heap%',
--- and reads fewer dictionary blocks for a case-insensitive prefix such as ILIKE 'ab01%', and that neither
--- changes which rows are returned. Every query is compared against the same query with use_skip_indexes = 0.
+-- and that this does not change which rows are returned. Every query is compared against the same query
+-- with use_skip_indexes = 0.
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -66,7 +66,7 @@ SELECT 'ilike, only word with k, no index', groupArray(id) FROM tab WHERE messag
 SELECT 'ilike, only word with s', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS log_comment = '05315_ilike_s';
 SELECT 'ilike, only word with s, no index', groupArray(id) FROM tab WHERE message ILIKE '%java sunrise%' SETTINGS use_skip_indexes = 0;
 
--- Both 'heap' and 'ab001' can be searched; 'ab001' is chosen, as more of its leading characters narrow the dictionary scan.
+-- Both 'heap' and 'ab001' can be searched; the longer 'ab001' is chosen.
 SELECT 'ilike, two searchable words', groupArray(id) FROM tab WHERE message ILIKE '%java heap ab001%' SETTINGS log_comment = '05315_ilike_two_words';
 SELECT 'ilike, two searchable words, no index', groupArray(id) FROM tab WHERE message ILIKE '%java heap ab001%' SETTINGS use_skip_indexes = 0;
 
@@ -85,13 +85,6 @@ SELECT 'postings budget exhausted, no index', groupArray(id) FROM tab WHERE mess
 SELECT 'like and phrase, postings budget', groupArray(id) FROM tab WHERE message LIKE '%lang%' AND message LIKE '%error budget%' SETTINGS log_comment = '05315_like_and_budget', text_index_like_max_postings_to_read = 0;
 SELECT 'like and phrase, postings budget, no index', groupArray(id) FROM tab WHERE message LIKE '%lang%' AND message LIKE '%error budget%' SETTINGS use_skip_indexes = 0;
 
--- A case-insensitive prefix reads only the dictionary blocks holding the case variants of 'ab01'.
-SELECT 'ilike prefix', groupArray(id) FROM tab WHERE message ILIKE 'AB01%' SETTINGS log_comment = '05315_ilike_prefix';
-SELECT 'ilike prefix, no index', groupArray(id) FROM tab WHERE message ILIKE 'AB01%' SETTINGS use_skip_indexes = 0;
-
--- The same prefix together with an infix pattern, which reads every dictionary block.
-SELECT 'every dictionary block', groupArray(id) FROM tab WHERE message ILIKE 'AB01%' OR message ILIKE '%ab01%' SETTINGS log_comment = '05315_ilike_all_blocks';
-
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -103,8 +96,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND log_comment IN ('05315_like', '05315_like_punctuation', '05315_like_short', '05315_ilike', '05315_ilike_three',
-                      '05315_ilike_kelvin', '05315_ilike_k', '05315_ilike_s', '05315_like_and_ilike', '05315_like_budget',
-                      '05315_ilike_prefix', '05315_ilike_all_blocks')
+                      '05315_ilike_kelvin', '05315_ilike_k', '05315_ilike_s', '05315_like_and_ilike', '05315_like_budget')
 ORDER BY log_comment;
 
 -- Every row is a granule, so a phrase query reads exactly the rows holding a token that matches its searched word.
@@ -199,52 +191,3 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
 ORDER BY log_comment;
 
 DROP TABLE tab_lower;
-
-SELECT 'Array tokenizer';
-
-DROP TABLE IF EXISTS tab_array;
-
--- The array tokenizer keeps the whole value as one token, and the index alone answers an ILIKE prefix,
--- so a token in any letter case must be found. The 'zz' tokens sort between the ASCII and the non-ASCII
--- tokens, so the dictionary block holding the latter holds no token starting with 'sunr'.
-CREATE TABLE tab_array
-(
-    id UInt32,
-    message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 4) GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS index_granularity = 1;
-
-INSERT INTO tab_array SELECT number + 1, concat('ab', leftPad(toString(number), 3, '0')) FROM numbers(32);
-INSERT INTO tab_array VALUES
-    (101, 'AB010x'), (102, 'Ab011'), (103, 'aB012'), (104, concat(unhex('C5BF'), 'unrise sunrise')),
-    (105, 'sunrise'), (106, 'SUNRISE'), (107, concat(unhex('E284AA'), 'elvin kelvin')), (108, 'kelvin');
-INSERT INTO tab_array SELECT 201 + number, concat('zz', leftPad(toString(number), 3, '0')) FROM numbers(8);
-OPTIMIZE TABLE tab_array FINAL;
-
-SELECT 'ilike prefix', groupArray(id) FROM tab_array WHERE message ILIKE 'AB01%' SETTINGS log_comment = '05315_array_prefix';
-SELECT 'ilike prefix, no index', groupArray(id) FROM tab_array WHERE message ILIKE 'AB01%' SETTINGS use_skip_indexes = 0;
-
-SELECT 'ilike exact', groupArray(id) FROM tab_array WHERE message ILIKE 'ab011' SETTINGS log_comment = '05315_array_exact';
-SELECT 'ilike exact, no index', groupArray(id) FROM tab_array WHERE message ILIKE 'ab011' SETTINGS use_skip_indexes = 0;
-
--- ILIKE treats U+017F as 's' here, so a prefix starting with 's' reads every dictionary block.
-SELECT 'ilike prefix with s', groupArray(id) FROM tab_array WHERE message ILIKE 'sunr%' SETTINGS log_comment = '05315_array_s';
-SELECT 'ilike prefix with s, no index', groupArray(id) FROM tab_array WHERE message ILIKE 'sunr%' SETTINGS use_skip_indexes = 0;
-
-SELECT 'ilike prefix with k', groupArray(id) FROM tab_array WHERE message ILIKE 'kelvi%';
-SELECT 'ilike prefix with k, no index', groupArray(id) FROM tab_array WHERE message ILIKE 'kelvi%' SETTINGS use_skip_indexes = 0;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT
-    log_comment,
-    ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-  AND type = 'QueryFinish' AND log_comment IN ('05315_array_prefix', '05315_array_exact', '05315_array_s')
-ORDER BY log_comment;
-
-DROP TABLE tab_array;

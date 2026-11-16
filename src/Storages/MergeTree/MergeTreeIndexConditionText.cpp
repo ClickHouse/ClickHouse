@@ -1082,7 +1082,6 @@ std::optional<InfixPhraseWord> chooseInfixPhraseWord(std::string_view pattern, b
         return {};
 
     std::optional<InfixPhraseWord> best;
-    size_t best_rank = 0;
 
     for (size_t pos = 0; pos < phrase.size();)
     {
@@ -1100,23 +1099,15 @@ std::optional<InfixPhraseWord> chooseInfixPhraseWord(std::string_view pattern, b
         if (word_begin == 0 || word.size() < min_length)
             continue;
 
-        /// A case-insensitive word is searched by the key ranges of its case variants, the more leading characters the fewer blocks.
-        size_t rank = word.size();
-        if (case_insensitive)
-        {
-            if (std::ranges::any_of(word, UTF8::isASCIIReachableByCaseFolding))
-                continue;
-            rank = TextIndexAnalyzer::getCaseVariantPrefixSize(word);
-            if (rank == 0)
-                continue;
-        }
+        /// re2 folds U+017F onto `s` and U+212A onto `k`, so a case-insensitive word starting with them has no literal prefix,
+        /// and searching it reads the whole dictionary.
+        const char first = toLowerIfAlphaASCII(word.front());
+        if (case_insensitive && (first == 's' || first == 'k' || std::ranges::any_of(word, UTF8::isASCIIReachableByCaseFolding)))
+            continue;
 
         const InfixPhraseWord candidate{word, pos < phrase.size()};
-        if (!best || std::tuple(rank, candidate.is_token, word.size()) > std::tuple(best_rank, best->is_token, best->word.size()))
-        {
+        if (!best || std::tuple(word.size(), candidate.is_token) > std::tuple(best->word.size(), best->is_token))
             best = candidate;
-            best_rank = rank;
-        }
     }
 
     return best;
