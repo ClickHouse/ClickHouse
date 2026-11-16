@@ -48,6 +48,22 @@ ATTACH TABLE v_alias_filter;
 SELECT c FROM v_alias_filter;
 DROP VIEW v_alias_filter;
 
+-- CREATE qualifies the table name and expands a common table expression, keeping the alias of the table.
+DROP VIEW IF EXISTS v_alias_table;
+DROP VIEW IF EXISTS v_alias_cte;
+CREATE VIEW v_alias_table AS SELECT t.number FROM src_alias AS {a:Identifier};
+CREATE VIEW v_alias_cte AS WITH c AS (SELECT number FROM src_alias) SELECT t.number FROM c AS {a:Identifier};
+SELECT name, parameterized_view_parameters, position(create_table_query, '{a:Identifier}') > 0
+FROM system.tables WHERE database = currentDatabase() AND name IN ('v_alias_cte', 'v_alias_table') ORDER BY name;
+DETACH TABLE v_alias_table;
+ATTACH TABLE v_alias_table;
+DETACH TABLE v_alias_cte;
+ATTACH TABLE v_alias_cte;
+SELECT * FROM v_alias_table(a = 't');
+SELECT * FROM v_alias_cte(a = 't');
+DROP VIEW v_alias_cte;
+DROP VIEW v_alias_table;
+
 DROP VIEW mv_alias;
 DROP TABLE src_alias;
 DROP VIEW v_alias_only;

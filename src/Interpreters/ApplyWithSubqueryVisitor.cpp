@@ -206,6 +206,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             if (subquery_it != data.subqueries.end())
             {
                 auto old_alias = table.database_and_table_name->tryGetAlias();
+                auto old_parametrised_alias = table.database_and_table_name->as<ASTTableIdentifier &>().parametrised_alias;
                 /// The table name is still part of the query here, as `replace` expects: it may count the query
                 /// for the first time and then refund the table name, which must not be refunded if it was never counted.
                 auto new_subquery = data.budget->replace(table.database_and_table_name, subquery_it->second);
@@ -215,6 +216,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                 table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
                 if (!old_alias.empty())
                     table.subquery->setAlias(old_alias);
+                table.subquery->as<ASTSubquery &>().parametrised_alias = old_parametrised_alias;
                 table.children.emplace_back(table.subquery);
             }
         }

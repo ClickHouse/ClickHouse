@@ -444,6 +444,7 @@ private:
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
+        qualified_identifier->parametrised_alias = identifier.parametrised_alias;
         ast = qualified_identifier;
     }
 

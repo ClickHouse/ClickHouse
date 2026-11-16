@@ -223,6 +223,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     if (!function_alias.empty())
         function_body_to_update->setAlias(function_alias);
 
+    if (auto * body_with_alias = dynamic_cast<ASTWithAlias *>(function_body_to_update.get()); body_with_alias && function.parametrised_alias)
+        body_with_alias->parametrised_alias = function.parametrised_alias;
+
     return function_body_to_update;
 }
 

@@ -24,3 +24,7 @@ y
 SELECT countIf(number > 0) FROM numbers(3)	1
 []
 2
+v_alias_cte	[('a','Identifier')]	1
+v_alias_table	[('a','Identifier')]	1
+7
+7
