@@ -8,6 +8,8 @@
 
 #include <pcg_random.hpp>
 
+#include <atomic>
+#include <exception>
 #include <string>
 #include <thread>
 
@@ -48,7 +50,8 @@ std::string makeChunkedStream(const std::string & data, pcg64 & rng)
 }
 
 /// `appendWithoutWaiting` removes the framing of the chunks that have arrived (in arbitrary fragments) and never waits,
-/// and the normal reading continues correctly after it.
+/// and the normal reading continues correctly after it, also while the rest of the stream is still arriving in fragments
+/// (for example, an end marker of a chunk can arrive byte by byte).
 TEST(ReadBufferFromPocoSocketChunked, AppendWithoutWaiting)
 {
     Poco::Net::ServerSocket server(Poco::Net::SocketAddress("127.0.0.1", 0));
@@ -68,11 +71,13 @@ TEST(ReadBufferFromPocoSocketChunked, AppendWithoutWaiting)
         ReadBufferFromPocoSocketChunked in(accepted, 16 + rng() % 256);
         in.enableChunked();
 
+        /// Send a part of the stream before the normal reading starts and the rest while it is in progress.
+        const size_t sent_before_reading = rng() % (raw.size() + 1);
         size_t sent = 0;
         size_t consumed = 0;
-        while (sent < raw.size())
+        while (sent < sent_before_reading)
         {
-            const size_t fragment = std::min<size_t>(1 + rng() % 12, raw.size() - sent);
+            const size_t fragment = std::min<size_t>(1 + rng() % 12, sent_before_reading - sent);
             client.sendBytes(raw.data() + sent, static_cast<int>(fragment));
             sent += fragment;
             while (accepted.available() == 0)
@@ -92,9 +97,36 @@ TEST(ReadBufferFromPocoSocketChunked, AppendWithoutWaiting)
             }
         }
 
-        /// Everything is sent, so the normal reading does not wait.
+        /// Send the rest in small fragments, each one after the previous one is received, so that the normal reading
+        /// gets the frame headers and the end markers of the chunks in several reads.
+        const UInt64 sender_seed = rng();
+        std::atomic<bool> stop_sending = false;
+        std::thread sender([&raw, &client, &accepted, &stop_sending, sent, sender_seed]
+        {
+            pcg64 sender_rng(sender_seed);
+            for (size_t offset = sent; offset < raw.size() && !stop_sending;)
+            {
+                const size_t fragment = std::min<size_t>(1 + sender_rng() % 3, raw.size() - offset);
+                client.sendBytes(raw.data() + offset, static_cast<int>(fragment));
+                offset += fragment;
+                while (accepted.available() > 0 && !stop_sending)
+                    std::this_thread::yield();
+            }
+        });
+
         std::string rest(data.size() - consumed, '\0');
-        in.readStrict(rest.data(), rest.size());
+        std::exception_ptr read_exception;
+        try
+        {
+            in.readStrict(rest.data(), rest.size());
+        }
+        catch (...)
+        {
+            read_exception = std::current_exception();
+        }
+        stop_sending = true;
+        sender.join();
+        ASSERT_FALSE(read_exception) << "seed " << seed;
         ASSERT_EQ(rest, data.substr(consumed)) << "seed " << seed;
         ASSERT_EQ(in.available(), 0);
         ASSERT_FALSE(in.hasBufferedData()) << "seed " << seed;

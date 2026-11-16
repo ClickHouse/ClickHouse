@@ -249,9 +249,15 @@ bool ReadBufferFromPocoSocketChunked::loadNextChunk(Position c_pos, bool cont)
 
     if (buffered)
         std::memcpy(&next_chunk, c_pos, buffered);
-    if (buffered < sizeof(next_chunk))
-        if (socketReceiveBytesImpl(reinterpret_cast<char *>(&next_chunk) + buffered, sizeof(next_chunk) - buffered) < static_cast<ssize_t>(sizeof(next_chunk) - buffered))
+    /// The rest of the frame header can arrive in several fragments, so a short read is not the end of the stream.
+    /// Only a read of zero bytes is.
+    while (buffered < sizeof(next_chunk))
+    {
+        const ssize_t bytes_read = socketReceiveBytesImpl(reinterpret_cast<char *>(&next_chunk) + buffered, sizeof(next_chunk) - buffered);
+        if (bytes_read <= 0)
             return false;
+        buffered += bytes_read;
+    }
     next_chunk = fromLittleEndian(next_chunk);
 
     if (next_chunk)
