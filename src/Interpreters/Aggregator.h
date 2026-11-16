@@ -267,7 +267,7 @@ public:
             /// link between two steps of the same local plan.
             TopKThresholdTrackerPtr threshold_tracker;
 
-            bool hasCollators() const
+            [[nodiscard]] bool hasCollators() const
             {
                 return std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
             }

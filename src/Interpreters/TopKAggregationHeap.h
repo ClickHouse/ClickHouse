@@ -96,7 +96,7 @@ struct TopKAggregationHeapBase
     /// Whether some ranked key has a `COLLATE`. The aggregation loops then look a row's key up in the hash table before
     /// they call `shouldSkip`: a key already in the table is aggregated without the locale comparison, so the comparison
     /// runs once per row with a new key instead of once per row.
-    bool ranksUnderCollation() const { return has_collators; }
+    [[nodiscard]] bool ranksUnderCollation() const { return has_collators; }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
