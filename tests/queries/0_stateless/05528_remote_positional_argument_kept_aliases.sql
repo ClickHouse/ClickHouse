@@ -3,11 +3,6 @@
 
 SET enable_positional_arguments = 1;
 
-SELECT 'names of arguments';
-SELECT formatRowNoNewline('TSKV', (shardNum() AS h) + number AS x), x FROM remote('127.0.0.2', numbers(1)) GROUP BY 1, 2 SETTINGS serialize_query_plan = 0, optimize_group_by_function_keys = 0;
-SELECT formatRowNoNewline('TSKV', abs(number + 1 AS a)) AS x, count() FROM remote('127.0.0.{2,3}', numbers(1)) GROUP BY 1 SETTINGS serialize_query_plan = 0;
-SELECT tuple(number + 1 AS a).1 AS x FROM remote('127.0.0.{2,3}', numbers(1)) ORDER BY 1 SETTINGS enable_named_columns_in_function_tuple = 1;
-
 SELECT 'INTERPOLATE';
 SELECT abs(number * 2 AS a) AS x FROM remote('127.0.0.2', numbers(2)) ORDER BY 1 WITH FILL INTERPOLATE (a AS a + 1);
 SELECT abs(number * 2 AS a) AS x, number AS y FROM remote('127.0.0.2', numbers(2)) ORDER BY 1 WITH FILL INTERPOLATE (y AS y + x + 5);

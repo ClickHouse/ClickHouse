@@ -90,6 +90,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_function_early_short_circuit;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool transform_null_in;
@@ -2447,6 +2448,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
     }
+
+    has_functions_that_use_names_of_arguments |= function_name == "formatRow" || function_name == "formatRowNoNewline"
+        || (function_name == "tuple" && scope.context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;

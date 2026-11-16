@@ -357,7 +357,7 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
     auto converted_node = toASTImpl(options);
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
-        converted_node->setAlias(alias_is_hidden && !options.write_hidden_aliases ? String{} : alias);
+        converted_node->setAlias(alias_is_hidden && *alias_is_hidden && !options.write_hidden_aliases ? String{} : alias);
 
     converted_node->setParenthesized(parenthesized);
 

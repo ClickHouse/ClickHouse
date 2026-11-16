@@ -264,47 +264,21 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
-/// The result of these functions depends on the names of the arguments, which are built from aliases.
-bool usesNamesOfArguments(const IQueryTreeNode & node)
-{
-    const auto * function_node = node.as<FunctionNode>();
-    if (!function_node || !function_node->isOrdinaryFunction())
-        return false;
-
-    const auto & function_name = function_node->getFunctionName();
-    if (function_name == "tuple")
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(function_node->getResultType().get());
-        return tuple_type && tuple_type->hasExplicitNames();
-    }
-
-    return function_name == "formatRow" || function_name == "formatRowNoNewline";
-}
-
 /// Registers the nodes of an expression whose aliases must not be written to AST. If the expression is a copy of `original`,
 /// it has to be written like `original`. The aliases that another server resolves again are kept.
 void registerAliasesToHide(const QueryTreeNodePtr & expression, const QueryTreeNodePtr & original, ScopeAliases & aliases)
 {
-    enum Position : uint8_t
-    {
-        /// The alias is hidden.
-        OTHER,
-        /// The alias is hidden if the original node loses it.
-        LIKE_ORIGINAL,
-        /// The alias is kept.
-        IN_ARGUMENT_NAME,
-    };
-
     struct Frame
     {
         QueryTreeNodePtr copy;
         QueryTreeNodePtr original;
-        Position position;
+        /// The alias is hidden only if the original node loses it.
+        bool like_original;
     };
 
-    std::vector<Frame> frames{original ? Frame{expression, original, LIKE_ORIGINAL} : Frame{expression, expression, OTHER}};
+    std::vector<Frame> frames{{expression, original ? original : expression, original != nullptr}};
     /// A node can have several parents.
-    std::unordered_set<const IQueryTreeNode *> visited_nodes[3];
+    std::unordered_set<const IQueryTreeNode *> visited_nodes[2];
     auto & registered = aliases.nodes_to_hide_aliases;
     const size_t first_registered = registered.size();
 
@@ -313,36 +287,28 @@ void registerAliasesToHide(const QueryTreeNodePtr & expression, const QueryTreeN
         auto frame = std::move(frames.back());
         frames.pop_back();
 
-        if (!frame.copy || !visited_nodes[frame.position].insert(frame.copy.get()).second)
+        if (!frame.copy || !visited_nodes[frame.like_original].insert(frame.copy.get()).second)
             continue;
 
-        /// The name of an expression without an alias consists of the names of its children.
-        auto children_position = frame.position;
+        bool children_like_original = frame.like_original;
         if (frame.copy->hasAlias())
         {
-            if (frame.position == IN_ARGUMENT_NAME || aliases.alias_names_used_in_ast.contains(frame.copy->getAlias()))
-                children_position = LIKE_ORIGINAL;
+            if (aliases.alias_names_used_in_ast.contains(frame.copy->getAlias()))
+                children_like_original = true;
             else
-                registered.emplace_back(frame.copy, frame.position == LIKE_ORIGINAL ? frame.original : nullptr);
+                registered.emplace_back(frame.copy, frame.like_original ? frame.original : nullptr);
         }
 
         if (isQueryOrUnionNode(frame.copy))
             continue;
 
-        if (usesNamesOfArguments(*frame.copy))
-            children_position = IN_ARGUMENT_NAME;
-
         const auto & copy_children = frame.copy->getChildren();
         const auto & original_children = frame.original->getChildren();
         for (size_t i = 0; i < copy_children.size(); ++i)
-            frames.push_back({copy_children[i], original_children[i], children_position});
+            frames.push_back({copy_children[i], original_children[i], children_like_original});
     }
 
-    const auto is_kept_elsewhere = [&](const auto & nodes)
-    {
-        return visited_nodes[IN_ARGUMENT_NAME].contains(nodes.first.get())
-            || (!nodes.second && visited_nodes[LIKE_ORIGINAL].contains(nodes.first.get()));
-    };
+    const auto is_kept_elsewhere = [&](const auto & nodes) { return !nodes.second && visited_nodes[true].contains(nodes.first.get()); };
     registered.erase(std::remove_if(registered.begin() + first_registered, registered.end(), is_kept_elsewhere), registered.end());
 }
 
@@ -605,6 +571,8 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
     restoreReplacedTableStoragesIfNeeded(node);
     validateCorrelatedSubqueries(node, scope.context);
     inlineMaterializedCTEIfNeeded(node, context);
+
+    *hide_aliases = !has_functions_that_use_names_of_arguments;
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
@@ -7008,8 +6976,18 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
     auto view_query_tree = buildQueryTree(view_ast, view_context);
+
+    /// The result is a part of this query, which is not resolved yet.
+    const auto resolve_part = [&](auto & analyzer, auto & node, const TableExpressionNodePtr & table_expression, const auto & context)
+    {
+        analyzer.hide_aliases = hide_aliases;
+        analyzer.resolve(node, table_expression, context);
+        has_functions_that_use_names_of_arguments |= analyzer.has_functions_that_use_names_of_arguments;
+        *hide_aliases = false;
+    };
+
     QueryAnalyzer view_analyzer(this->only_analyze);
-    view_analyzer.resolve(view_query_tree, {}, view_context);
+    resolve_part(view_analyzer, view_query_tree, {}, view_context);
 
     /// Mark the inlined query as a subquery so it is wrapped in parentheses when serialized to AST
     /// (e.g. for sending to parallel replicas). Without this, it produces `FROM SELECT ...` instead
@@ -7111,7 +7089,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(
             this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
-        filter_analyzer.resolve(filter_node, result_node, scope.context);
+        resolve_part(filter_analyzer, filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>
         auto result_columns = result_node->as<QueryNode>()
@@ -8199,7 +8177,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         for (const auto & [node, original_node] : scope.aliases.nodes_to_hide_aliases)
             if (!original_node || !original_node->hasAlias() || differently_written_aliases.contains(node->getAlias()))
-                node->hideAlias();
+                node->hideAliasIf(hide_aliases);
     }
 
     /// Nested aliases can repeat between different projection expressions

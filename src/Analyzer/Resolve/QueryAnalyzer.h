@@ -363,6 +363,13 @@ private:
     /// Subquery counter
     size_t subquery_counter = 1;
 
+    /// The results of `formatRow` and of a named `tuple` depend on aliases that another server does not get
+    /// (https://github.com/ClickHouse/ClickHouse/issues/130512). Then no aliases are hidden: an exception is better than a wrong result.
+    bool has_functions_that_use_names_of_arguments = false;
+
+    /// It is set when the whole query is resolved, so scalar subqueries are executed with all aliases.
+    std::shared_ptr<bool> hide_aliases = std::make_shared<bool>(false);
+
     /// Global expression node to projection name map
     std::unordered_map<QueryTreeNodePtr, ProjectionName> node_to_projection_name;
 

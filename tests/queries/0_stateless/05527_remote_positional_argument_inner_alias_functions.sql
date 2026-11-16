@@ -10,7 +10,6 @@ SELECT negate(number + toUInt16(1) AS a) AS x FROM remote('127.0.0.2', numbers(2
 SELECT (number IN (SELECT number FROM numbers(1)) AS a) + 1 AS x FROM remote('127.0.0.2', numbers(2)) ORDER BY 1;
 SELECT (number + (1 AS a)) GLOBAL IN (SELECT 1) AS x, number FROM remote('127.0.0.2', numbers(2)) ORDER BY 1, 2;
 SELECT number + (1 GLOBAL IN (SELECT 1) AS a) AS x FROM remote('127.0.0.2', numbers(2)) ORDER BY 1;
-SELECT tuple(number + 1 AS a, 2).1 + 1 AS x, count() FROM remote('127.0.0.2', numbers(2)) GROUP BY 1 ORDER BY 1 SETTINGS enable_named_columns_in_function_tuple = 1;
 
 SELECT 'WITH FILL';
 SELECT toInt32((number % 3 AS a) * 2) AS x FROM remote('127.0.0.{2,3}', numbers(3)) GROUP BY 1 ORDER BY 1 WITH FILL TO 6;

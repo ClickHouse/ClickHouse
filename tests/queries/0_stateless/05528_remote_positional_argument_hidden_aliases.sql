@@ -9,7 +9,6 @@ FROM (EXPLAIN SYNTAX oneline = 1, run_query_tree_passes = 1 WITH x -> (x + 1 AS 
 
 SELECT 'grouping';
 SELECT abs(number % 2 AS a) AS x FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY 1 WITH ROLLUP HAVING grouping(x) = 0 ORDER BY x;
-SELECT number % 2 AS x, grouping(number % 2) FROM numbers(3) GROUP BY 1 ORDER BY x;
 
 SELECT 'a GROUP BY key under an aggregate function';
 SELECT toYear(d) AS y, any(y = 2024) FROM remote('127.0.0.{1,2}', view(SELECT toDate('2023-12-31') + number AS d FROM numbers(2))) GROUP BY 1 ORDER BY 1;

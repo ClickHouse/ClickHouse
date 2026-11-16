@@ -199,11 +199,10 @@ public:
 
                 /// Arguments of the `grouping` function only identify GROUP BY keys, so they are
                 /// not converted to Nullable when `group_by_use_nulls` is enabled and must be
-                /// compared with the keys in their original form. Aliases of expressions do not matter,
-                /// as in `GroupingFunctionsResolvePass`: `SELECT a + 1 AS x, grouping(a + 1) ... GROUP BY 1`.
+                /// compared with the keys in their original form.
                 for (const auto & group_by_key_node : original_group_by_keys_nodes)
                 {
-                    if (compareGroupByKeys(grouping_function_arguments_node, group_by_key_node))
+                    if (grouping_function_arguments_node->isEqual(*group_by_key_node))
                     {
                         found_argument_in_group_by_keys = true;
                         break;
