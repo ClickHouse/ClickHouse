@@ -1620,7 +1620,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                         if (ranges.getMarksCount() < total_granules)
                             skip_index_used[index_idx] = true;
-                        else if (rpn_template_for_part)
+                        else if (rpn_template_for_part && index_and_condition.index->getDeserializedFormat(*part_info_for_reader, index_and_condition.index->getFileName()))
                             indexes_without_own_drops.push_back(index_idx);
                     }
 

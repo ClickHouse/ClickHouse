@@ -176,7 +176,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         ranges = std::move(filtered_ranges);
         if (ranges.getNumberOfMarks() < total_granules)
             add_used_index(index_and_condition.index->index.name);
-        else if (rpn_template_for_part)
+        else if (rpn_template_for_part && index_and_condition.index->getDeserializedFormat(*part_info, index_and_condition.index->getFileName()))
             indexes_without_own_drops.push_back(index_and_condition.index->index.name);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
