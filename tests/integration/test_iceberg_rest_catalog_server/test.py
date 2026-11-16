@@ -1755,7 +1755,7 @@ def test_stage_create(started_cluster):
     assert not table_exists(ns, "events")
     assert list_tables(ns) == []
     assert list_metadata_files(location) == []
-    assert get_keeper().get_children(f"{KEEPER_ROOT}/namespaces/{ns}/tables") == []
+    assert get_keeper().get_children(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables") == []
 
     # Commit: the updates describe the whole table and create it, with the first snapshot.
     snapshot = fake_snapshot(1001, 1)

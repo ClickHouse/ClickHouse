@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogConstants.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
@@ -65,7 +66,7 @@ std::expected<void, String> checkTableUuid(const Poco::JSON::Object & metadata, 
 std::expected<void, String> checkRefSnapshotId(const Poco::JSON::Object & metadata, const Poco::JSON::Object & requirement)
 {
     /// Get expected ref. Missing or null means it expects no existing ref.
-    const auto ref = getString(requirement, "ref");
+    const auto ref = getString(requirement, f_ref);
     const auto expected = getOptionalInteger(requirement, f_metadata_snapshot_id);
 
     /// Get actual ref, if exists.
@@ -96,19 +97,19 @@ std::expected<void, String> checkInteger(
 }
 
 const std::unordered_map<String, RequirementCheck> REQUIREMENT_CHECKS = {
-    {"assert-create", checkCreate},
-    {"assert-table-uuid", checkTableUuid},
-    {"assert-ref-snapshot-id", checkRefSnapshotId},
-    {"assert-current-schema-id",
-     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "current-schema-id", f_current_schema_id); }},
-    {"assert-last-assigned-field-id",
-     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "last-assigned-field-id", f_last_column_id); }},
-    {"assert-last-assigned-partition-id",
-     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "last-assigned-partition-id", f_last_partition_id); }},
-    {"assert-default-spec-id",
-     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "default-spec-id", f_default_spec_id); }},
-    {"assert-default-sort-order-id",
-     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "default-sort-order-id", f_default_sort_order_id); }},
+    {f_assert_create, checkCreate},
+    {f_assert_table_uuid, checkTableUuid},
+    {f_assert_ref_snapshot_id, checkRefSnapshotId},
+    {f_assert_current_schema_id,
+     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, f_current_schema_id, f_current_schema_id); }},
+    {f_assert_last_assigned_field_id,
+     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, f_last_assigned_field_id, f_last_column_id); }},
+    {f_assert_last_assigned_partition_id,
+     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, f_last_assigned_partition_id, f_last_partition_id); }},
+    {f_assert_default_spec_id,
+     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, f_default_spec_id, f_default_spec_id); }},
+    {f_assert_default_sort_order_id,
+     [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, f_default_sort_order_id, f_default_sort_order_id); }},
 };
 
 }
@@ -118,9 +119,9 @@ bool isCreateCommit(const Poco::JSON::Array & requirements)
     size_t assert_create_count = 0;
     for (const auto & requirement : requirements)
     {
-        if (requirement.type() != typeid(Poco::JSON::Object::Ptr))
+        if (!requirements.isObject(requirement))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every requirement must be an object");
-        if (getString(*requirement.extract<Poco::JSON::Object::Ptr>(), f_type) == "assert-create")
+        if (getString(*requirement.extract<Poco::JSON::Object::Ptr>(), f_type) == f_assert_create)
             ++assert_create_count;
     }
     if (assert_create_count && assert_create_count != requirements.size())
@@ -132,7 +133,7 @@ std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & me
 {
     for (const auto & requirement : requirements)
     {
-        if (requirement.type() != typeid(Poco::JSON::Object::Ptr))
+        if (!requirements.isObject(requirement))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every requirement must be an object");
         const auto & requirement_object = requirement.extract<Poco::JSON::Object::Ptr>();
 
@@ -185,7 +186,7 @@ void validateSnapshot(const Poco::JSON::Object & snapshot)
 
 void addSnapshot(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
-    const auto new_snapshot = getObject(update, "snapshot");
+    const auto new_snapshot = getObject(update, f_snapshot);
     validateSnapshot(*new_snapshot);
 
     /// Check the snapshot is indeed new.
@@ -209,7 +210,7 @@ void addSnapshot(Poco::JSON::Object & metadata, const Poco::JSON::Object & updat
 void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
     /// Get ref to update.
-    const auto ref_name = getString(update, "ref-name");
+    const auto ref_name = getString(update, f_ref_name);
     const auto type = getString(update, f_type);
     if (type != f_branch && type != f_tag)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ref type must be 'branch' or 'tag', got '{}'", type);
@@ -252,7 +253,7 @@ void setSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & up
 
 void removeSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
-    const auto ref_name = getString(update, "ref-name");
+    const auto ref_name = getString(update, f_ref_name);
     getObject(metadata, f_refs)->remove(ref_name);
     if (ref_name == f_main)
         metadata.set(f_current_snapshot_id, -1);
@@ -260,7 +261,7 @@ void removeSnapshotRef(Poco::JSON::Object & metadata, const Poco::JSON::Object &
 
 void setProperties(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
-    const auto updates = getObject(update, "updates");
+    const auto updates = getObject(update, f_updates);
     auto properties = getObject(metadata, f_properties);
     for (const auto & [key, value] : *updates)
         properties->set(key, value.convert<String>());
@@ -268,26 +269,26 @@ void setProperties(Poco::JSON::Object & metadata, const Poco::JSON::Object & upd
 
 void removeProperties(Poco::JSON::Object & metadata, const Poco::JSON::Object & update)
 {
-    const auto removals = getArray(update, "removals");
+    const auto removals = getArray(update, f_removals);
     auto properties = getObject(metadata, f_properties);
     for (const auto & key : *removals)
         properties->remove(key.convert<String>());
 }
 
 const std::unordered_map<String, UpdateAction> UPDATE_ACTIONS = {
-    {"add-snapshot", addSnapshot},
-    {"set-snapshot-ref", setSnapshotRef},
-    {"remove-snapshot-ref", removeSnapshotRef},
-    {"set-properties", setProperties},
-    {"remove-properties", removeProperties},
+    {f_add_snapshot, addSnapshot},
+    {f_set_snapshot_ref, setSnapshotRef},
+    {f_remove_snapshot_ref, removeSnapshotRef},
+    {f_set_properties, setProperties},
+    {f_remove_properties, removeProperties},
 };
 
 /// TODO: Support more updates.
 const std::set<String> UNSUPPORTED_UPDATE_ACTIONS = {
-    "assign-uuid", "upgrade-format-version", "add-schema", "set-current-schema", "add-spec", "set-default-spec",
-    "add-sort-order", "set-default-sort-order", "remove-snapshots", "set-location", "set-statistics", "remove-statistics",
-    "set-partition-statistics", "remove-partition-statistics", "remove-partition-specs", "remove-schemas",
-    "add-encryption-key", "remove-encryption-key",
+    f_assign_uuid, f_upgrade_format_version, f_add_schema, f_set_current_schema, f_add_spec, f_set_default_spec,
+    f_add_sort_order, f_set_default_sort_order, f_remove_snapshots, f_set_location, f_set_statistics, f_remove_statistics,
+    f_set_partition_statistics, f_remove_partition_statistics, f_remove_partition_specs, f_remove_schemas,
+    f_add_encryption_key, f_remove_encryption_key,
 };
 
 /// Record the new current snapshot in snapshot-log.
@@ -341,7 +342,7 @@ void applyUpdates(Poco::JSON::Object & metadata, const Poco::JSON::Array & updat
         const auto update_object = getUpdateObject(update);
 
         /// Validate action is supported.
-        const auto action = getString(*update_object, "action");
+        const auto action = getString(*update_object, f_action);
         const auto it = UPDATE_ACTIONS.find(action);
         if (it == UPDATE_ACTIONS.end())
         {
@@ -399,8 +400,8 @@ Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Ar
     for (const auto & update : updates)
     {
         const auto update_object = getUpdateObject(update);
-        const auto action = getString(*update_object, "action");
-        if (action == "assign-uuid")
+        const auto action = getString(*update_object, f_action);
+        if (action == f_assign_uuid)
         {
             uuid = getString(*update_object, f_uuid);
             UUID parsed;
@@ -408,7 +409,7 @@ Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Ar
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid uuid", uuid);
             uuid = toString(parsed);
         }
-        else if (action == "upgrade-format-version")
+        else if (action == f_upgrade_format_version)
         {
             /// The client sends the format version it wants for the new table.
             /// `buildInitialTableMetadata` always builds version 2 metadata, so only version 2 is accepted.
@@ -417,19 +418,19 @@ Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Ar
             if (format_version != 2)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only format-version 2 is supported, got {}", format_version);
         }
-        else if (action == "add-schema")
-            setOnce(schema, getObject(*update_object, "schema"), action);
-        else if (action == "add-spec")
-            setOnce(partition_spec, getObject(*update_object, "spec"), action);
-        else if (action == "add-sort-order")
-            setOnce(write_order, getObject(*update_object, "sort-order"), action);
-        else if (action == "set-current-schema")
+        else if (action == f_add_schema)
+            setOnce(schema, getObject(*update_object, f_schema), action);
+        else if (action == f_add_spec)
+            setOnce(partition_spec, getObject(*update_object, f_spec), action);
+        else if (action == f_add_sort_order)
+            setOnce(write_order, getObject(*update_object, f_sort_order), action);
+        else if (action == f_set_current_schema)
             checkSetsMostRecent(*update_object, f_schema_id);
-        else if (action == "set-default-spec")
+        else if (action == f_set_default_spec)
             checkSetsMostRecent(*update_object, f_spec_id);
-        else if (action == "set-default-sort-order")
-            checkSetsMostRecent(*update_object, "sort-order-id");
-        else if (action == "set-location")
+        else if (action == f_set_default_sort_order)
+            checkSetsMostRecent(*update_object, f_update_sort_order_id);
+        else if (action == f_set_location)
             location = stripTrailingSlashes(getString(*update_object, f_location));
         else
             other_updates.add(update);
