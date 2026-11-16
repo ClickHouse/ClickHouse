@@ -4,7 +4,7 @@
 # collections defined in the server configuration file. Collections created with `CREATE NAMED COLLECTION`
 # are rejected, whether passed in the `credentials` parameter or via the default-credentials settings.
 # The check runs in `resolveAIParams`, before the zero-row early return, so empty inputs exercise it
-# without any HTTP call.
+# without any HTTP call. `count(r)` reads the result: for a plain `count()` the function is not evaluated.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,26 +38,26 @@ CREATE NAMED COLLECTION ai_sql_embed AS
 CREATE TABLE tab (x String) ENGINE = Memory;
 
 SELECT '-- config collection, credentials parameter';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_config_chat')) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_config_chat')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
 
 SELECT '-- SQL collection, credentials parameter';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_sql_chat')) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_sql_chat')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
 
 SELECT '-- config collection, default-credentials settings';
 SET ai_function_text_default_credentials = 'ai_config_chat', ai_function_embedding_default_credentials = 'ai_config_embed';
-SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
+SELECT count(r) FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
 
 SELECT '-- SQL collection, default-credentials settings';
 SET ai_function_text_default_credentials = 'ai_sql_chat', ai_function_embedding_default_credentials = 'ai_sql_embed';
-SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
+SELECT count(r) FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
 "
 
 # Prints result rows as they are and replaces each error with its code name.
