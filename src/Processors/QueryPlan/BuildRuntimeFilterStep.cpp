@@ -30,6 +30,7 @@
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -398,7 +399,7 @@ bool BuildRuntimeFilterStep::canRemoveUnusedColumns() const
     return std::ranges::count_if(header, [&](const auto & column) { return column.name == filter_column_name; }) == 1;
 }
 
-IQueryPlanStep::UnneededInputPositions BuildRuntimeFilterStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+IQueryPlanStep::UnneededInputPositions BuildRuntimeFilterStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     auto unneeded = unneeded_output_positions;
     std::erase(unneeded, input_headers.front()->getPositionByName(filter_column_name));
@@ -406,7 +407,7 @@ IQueryPlanStep::UnneededInputPositions BuildRuntimeFilterStep::getUnneededColumn
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-BuildRuntimeFilterStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+BuildRuntimeFilterStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & inputs)
 {
     const auto & pruned = inputs.at(0);
 

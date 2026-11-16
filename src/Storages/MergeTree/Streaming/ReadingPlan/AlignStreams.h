@@ -23,7 +23,7 @@ class AlignStreamsStep : public IQueryPlanStep
 public:
     AlignStreamsStep(SharedHeader metadata_header_, SharedHeader data_header_, String partition_id_, Field initial_watermark_);
 
-    String getName() const override { return "AlignStreams"; }
+    [[nodiscard]] String getName() const override { return "AlignStreams"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
     void describePipeline(FormatSettings & settings) const override;

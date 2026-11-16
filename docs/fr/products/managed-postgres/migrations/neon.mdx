@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: 'Migrer de Neon vers ClickHouse Managed Postgres'
 description: 'Découvrez comment migrer vos données PostgreSQL de Neon vers ClickHouse Managed Postgres'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -64,7 +63,16 @@ Avec ClickPipes, les clients peuvent migrer des bases de données Postgres de pl
 Neon propose une création de branches instantanée en copy-on-write. ClickHouse Managed Postgres s&#39;appuie sur du stockage NVMe local pour offrir des performances Postgres rapides, prévisibles et fiables.
 En contrepartie, les branches ne sont pas instantanées : elles sont créées sous forme de deployments indépendants via la [récupération à un instant précis (PITR)](/fr/products/managed-postgres/backup-and-restore). Elles sont généralement disponibles en quelques minutes.
 
-Pour le développement au quotidien, nous recommandons de maintenir une base de données de développement ClickHouse Managed Postgres de taille réduite, contenant des données de production représentatives et anonymisées — quelques gigaoctets par exemple — et d&#39;en créer des branches PITR selon les besoins. La création et le nettoyage des branches peuvent être automatisés au moyen de [clickhousectl](/fr/concepts/features/interfaces/cli), notre CLI officielle, ou via [OpenAPI](/fr/products/managed-postgres/openapi) ou [Terraform](/fr/products/managed-postgres/terraform)
+Pour le développement au quotidien, nous recommandons de maintenir une base de données de développement ClickHouse Managed Postgres de taille réduite, contenant des données de production représentatives et anonymisées — quelques gigaoctets par exemple — et d&#39;en créer des branches PITR selon les besoins. La création et le nettoyage des branches peuvent être automatisés au moyen de [clickhousectl](/fr/concepts/features/interfaces/cli), notre CLI officielle, de l&#39;[OpenAPI](/fr/products/managed-postgres/openapi) ou de [Terraform](/fr/products/managed-postgres/terraform). Avec clickhousectl et une API key, créer une branche revient à effectuer une restauration à un instant donné dans un nouveau service :
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` renvoie l&#39;ID du nouveau service, mais aucun mot de passe : définissez-en un avec `reset-password` une fois que la branche est à l&#39;état `running`. La branche hérite des règles d&#39;accès IPv4 actuelles de la source, sauf si vous spécifiez des règles `--ip-allow` ou l&#39;option `--block-public-access`. `delete` supprime définitivement la branche et ses données.
 
 Certains clients recourent à cette approche pour gérer des centaines d&#39;environnements de développement. Nous améliorons activement l&#39;expérience de fork et de sandbox. Consultez la [documentation sur la création de branches](/fr/products/managed-postgres/branching).
 
@@ -96,7 +104,7 @@ ClickHouse Managed Postgres prend en charge par défaut 500 connexions Postgres 
 * Utiliser un pool de connexions côté application.
 * Utiliser l&#39;instance PgBouncer intégrée, qui prend en charge jusqu&#39;à 5 000 connexions client.
 * Augmenter `max_connections` si davantage de connexions directes sont nécessaires.
-  * `max_connections` peut être modifié depuis **Settings → Edit parameters**. Certaines modifications nécessitent un redémarrage. Consultez la [documentation de configuration](/fr/products/managed-postgres/settings#changing-configuration).
+  * `max_connections` peut être modifié depuis **Settings → Edit parameters**, ou avec `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000`. Certaines modifications nécessitent un redémarrage, que vous pouvez déclencher avec `clickhousectl cloud postgres restart <postgres-id>`. Consultez la [documentation de configuration](/fr/products/managed-postgres/settings#changing-configuration).
 
 ### Modifications de schéma pendant la migration {#schema-changes}
 

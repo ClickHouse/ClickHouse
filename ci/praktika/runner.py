@@ -338,7 +338,7 @@ class Runner:
     def _pre_run(self, workflow, job, local_job_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state before job start:\n{dirty}")
         else:
@@ -633,12 +633,6 @@ class Runner:
                     f"Custom param for local tests must be of type str, got [{type(param)}]"
                 )
 
-        if Settings.SECRET_CI_DB_CONNECTION and not env.LOCAL_RUN:
-            try:
-                os.environ[CIDB.READ_URL_ENV] = CIDB.lookup_read_url(workflow)
-            except Exception as e:
-                print(f"WARNING: no CI DB read URL for the job, ex [{e}]")
-
         if job.enable_gh_auth:
             if not GHAuth.auth(workflow, no_strict=True):
                 Utils.raise_with_error("GH auth failed - required by job")
@@ -771,10 +765,22 @@ class Runner:
                 settings = rewritten_settings
 
             local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e CI_DB_READ_URL -e PYTHONPATH={container_pythonpath_q} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
+            read_token_flag = "-e GITHUB_TOKEN" if job.enable_gh_read_token else ""
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONSAFEPATH=1 -e PYTHONPATH={container_pythonpath_q} {read_token_flag} {local_env_flag} --volume {host_dir_q}:{current_dir_q} --volume {package_dir_q}:{package_dir_q} {extra_mounts} {gh_mount} --workdir={current_dir_q} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
         job_env = _job_python_env()
+        if job.enable_gh_read_token:
+            # Keep the read token out of the parent process: report publication
+            # authenticates separately, after the job command finishes.
+            read_token = (
+                os.environ.get("PRAKTIKA_GITHUB_READ_TOKEN")
+                or os.environ.get("GITHUB_TOKEN")
+            )
+            if read_token:
+                job_env["GITHUB_TOKEN"] = read_token
+            elif not env.LOCAL_RUN:
+                raise RuntimeError("GitHub read token is missing or empty")
 
         if param:
             print(f"Custom --param [{param}] will be passed to job's script")
@@ -1152,6 +1158,7 @@ class Runner:
                                     test_case_result.name,
                                     failure_patterns=Settings.TEST_FAILURE_PATTERNS,
                                     test_output=test_case_result.info,
+                                    url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
                                     pr_base_branches=[
@@ -1335,7 +1342,7 @@ class Runner:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
 
-        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        dirty = Shell.get_output("git status --short --ignore-submodules=dirty", verbose=False) or ""
         if dirty:
             print(f"NOTE: Dirty repo state after job:\n{dirty}")
         else:

@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
@@ -594,7 +595,7 @@ void LogSink::onFinish()
 
 ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndTypePair & name_and_type)
 {
-    return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
+    return [this, name_and_type] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
@@ -1464,11 +1465,15 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
         checkStorageSettingNames(args);
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(args.columns.getAll(), args.engine_name);
 
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
