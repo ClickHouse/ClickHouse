@@ -9,6 +9,7 @@
 #include <Common/setThreadName.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <future>
 #include <thread>
 
@@ -254,7 +255,12 @@ TEST(SchedulerCPUSlotsAllocation, GrantFailsAllocationIfNextQueueIsPurged)
             return e.code();
         }
     });
-    ASSERT_EQ(acquire.wait_for(std::chrono::seconds(30)), std::future_status::ready);
+    if (acquire.wait_for(std::chrono::seconds(30)) != std::future_status::ready)
+    {
+        // The allocation is stranded: the waiting thread and the destructor of the allocation would wait forever
+        ADD_FAILURE() << "The allocation neither failed nor granted all slots";
+        std::abort();
+    }
     EXPECT_EQ(acquire.get(), ErrorCodes::RESOURCE_ACCESS_DENIED);
     EXPECT_LE(slots.size(), 1u);
     EXPECT_TRUE(schedulerIsAlive(scheduler));
