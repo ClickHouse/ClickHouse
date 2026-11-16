@@ -29,7 +29,7 @@ struct FormatStringHelperImpl
     template<typename T>
     FormatStringHelperImpl(fmt::runtime_format_string<T> && str) : fmt_str(std::forward<fmt::runtime_format_string<T>>(str)) {} /// NOLINT
 
-    PreformattedMessage format(Args && ...args) const;
+    [[nodiscard]] PreformattedMessage format(Args && ...args) const;
 };
 
 template <typename... Args>

@@ -52,7 +52,7 @@ struct URI
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
     /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.
-    bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const;
+    bool checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_error = true) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Checks the S3 rules for a bucket name. A caller passing `validate_bucket_name = false` to the constructor
     /// checks the rules of its own service instead (e.g. native GCS allows dotted bucket names of up to 222 characters).

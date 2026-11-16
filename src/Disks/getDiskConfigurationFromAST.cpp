@@ -11,6 +11,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -21,6 +22,7 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/NumberParser.h>
+#include <Poco/String.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -46,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -62,25 +65,6 @@ namespace ServerSetting
     extern const ServerSettingsBool s3_allow_server_credentials_for_system_table_disks;
 }
 
-/// Parses a literal boolean argument of a dynamic disk with the rules of `Poco::Util::AbstractConfiguration::getBool`,
-/// which the backends use to read it back from the generated configuration: an integer (nonzero is true) or, ignoring
-/// case, `true` / `yes` / `on` and `false` / `no` / `off`. Returns `std::nullopt` for anything else, including a value
-/// with a `${...}` reference that the configuration would expand, so that a credential check never decides on a value
-/// the backend reads differently.
-static std::optional<bool> parseLiteralConfigBool(const std::string & value)
-{
-    if (value.contains('$'))
-        return std::nullopt;
-    int number = 0;
-    if (Poco::NumberParser::tryParse(value, number))
-        return number != 0;
-    if (boost::iequals(value, "true") || boost::iequals(value, "yes") || boost::iequals(value, "on"))
-        return true;
-    if (boost::iequals(value, "false") || boost::iequals(value, "no") || boost::iequals(value, "off"))
-        return false;
-    return std::nullopt;
-}
-
 [[noreturn]] static void throwBadConfiguration(const std::string & message = "")
 {
     throw Exception(
@@ -89,7 +73,30 @@ static std::optional<bool> parseLiteralConfigBool(const std::string & value)
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata, DynamicS3DiskCredentialInfo * info, bool for_system_database)
+/// A Boolean value of a disk setting as the disk reads it (`Poco::Util::AbstractConfiguration::parseBool`):
+/// an integer, or `true`, `yes`, `on`, `false`, `no`, `off` in any case. `std::nullopt` if it is not a Boolean,
+/// in which case the disk does not accept the configuration.
+static std::optional<bool> parseDiskConfigurationBool(const std::string & value)
+{
+    int number = 0;
+    if (Poco::NumberParser::tryParse(value, number))
+        return number != 0;
+    for (const auto * true_value : {"true", "yes", "on"})
+        if (Poco::icompare(value, true_value) == 0)
+            return true;
+    for (const auto * false_value : {"false", "no", "off"})
+        if (Poco::icompare(value, false_value) == 0)
+            return false;
+    return std::nullopt;
+}
+
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
+    const ASTs & disk_args,
+    ContextPtr context,
+    bool is_loading_from_existing_metadata,
+    DynamicS3DiskCredentialInfo * info,
+    bool for_system_database,
+    bool stored_definition)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -158,6 +165,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     {
         return startsWith(v, "from_env") || startsWith(v, "from_zk") || v.contains("${");
     };
+    /// The keys that the disks read as lists (all their occurrences): the headers of S3 disks and the keys of encrypted disks.
+    /// None of them is used by the checks below.
+    auto is_list_key = [](const std::string & k)
+    {
+        return k == "key" || k == "key_hex" || k == "key_aws" || k == "key_gcp" || k == "key_azure"
+            || startsWith(k, "header") || startsWith(k, "access_header");
+    };
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
@@ -179,16 +193,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "google_adc_client_secret" || k == "google_adc_refresh_token" || k == "google_adc_token_uri";
     };
 
-    /// The checks below read one value per key, while `Poco::Util::XMLConfiguration` resolves duplicate
-    /// siblings to the first one, so a repeated key (e.g. `no_sign_request = 0, no_sign_request = 1`) would let
-    /// them reason about a value the disk does not use. Reject repeats of every key they inspect.
-    auto is_singleton_key = [&](const std::string & k)
-    {
-        return k == "type" || k == "object_storage_type" || k == "access_key_id" || k == "secret_access_key"
-            || k == "no_sign_request" || k == "http_client" || k == "use_environment_credentials" || k == "role_arn"
-            || k == "service_account_key_file" || k == "_server_credentials_allowed" || is_gcs_credential_field(k);
-    };
-    std::unordered_set<std::string> seen_singleton_keys;
+    std::unordered_set<std::string> seen_keys;
 
     for (const auto & arg : disk_args)
     {
@@ -209,8 +214,16 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         std::string key = key_identifier->name();
-        if (is_singleton_key(key) && !seen_singleton_keys.insert(key).second)
-            throwBadConfiguration(fmt::format("the key `{}` is specified more than once", key));
+
+        /// The disk is built from an `XMLConfiguration`, which resolves a repeated key to its first occurrence,
+        /// so a later occurrence must not be able to change what the checks below see. A repeated key is
+        /// rejected in a fresh definition. A definition stored before this check may still have one; it is
+        /// loaded (on server startup and on short `ATTACH`), and only the first occurrence of each key counts
+        /// for the checks, as it does for the disk.
+        const bool is_repeated_key = !seen_keys.insert(key).second && !is_list_key(key);
+        /// A `Replicated` database replays the definitions committed by other replicas, maybe by an older version.
+        if (is_repeated_key && !is_loading_from_existing_metadata && !stored_definition && !isSecondaryDDLReplay(context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key `{}` is specified more than once in the disk configuration", key);
 
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
         root->appendChild(key_element);
@@ -234,8 +247,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         if (!indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
             ast_gcs_headers.emplace(key, value_str);
 
+        /// Every `include` is resolved, not only the first one.
         if (key == "include")
             has_include = true;
+        else if (is_repeated_key)
+        {
+            /// Not used by the disk, see above.
+        }
         else if (key == "type" || key == "object_storage_type")
         {
             /// A `${key}` property reference counts as indirect too (see `is_indirect_value`): with
@@ -273,7 +291,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "secret_access_key")
             has_secret_access_key = !value_str.empty() && !indirect;
         else if (key == "no_sign_request")
-            has_no_sign_request = !indirect && parseLiteralConfigBool(value_str) == true;
+            has_no_sign_request = !indirect && parseDiskConfigurationBool(value_str) == true;
         else if (key == "http_client")
             wants_gcp_oauth = !indirect && boost::iequals(value_str, "gcp_oauth");
         else if (key == "google_adc_client_id")
@@ -285,7 +303,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "google_service_account_key")
             has_google_service_account_key = !value_str.empty() && !indirect;
         else if (key == "use_environment_credentials")
-            use_environment_credentials_off = !indirect && parseLiteralConfigBool(value_str) == false;
+            use_environment_credentials_off = !indirect && parseDiskConfigurationBool(value_str) == false;
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
         else if (key == "service_account_key_file")
@@ -298,7 +316,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "access_token")
             has_gcs_access_token = !value_str.empty() && !indirect;
         else if (key == S3_SERVER_CREDENTIALS_MARKER)
-            has_server_credentials_marker = !indirect && parseLiteralConfigBool(value_str) == true;
+            has_server_credentials_marker = !indirect && parseDiskConfigurationBool(value_str) == true;
 
         if (key == "include")
         {
@@ -539,20 +557,28 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
     /// config. Remove them from the resolved config here -- at the single point that forces a disk anonymous --
     /// rather than in `getClient`, which cannot tell a forced-anonymous disk from an operator-configured
     /// `no_sign_request` disk that legitimately keeps its headers and encryption keys.
+    /// A key can be repeated (`header`, `header[1]`, ...), and removing one occurrence renumbers the next ones,
+    /// so remove the keys until none is left. The number of attempts is bounded by the number of elements.
     const String enum_root = prefix.empty() ? "" : prefix.substr(0, prefix.size() - 1);
+    auto is_sensitive_key = [](const String & key)
+    {
+        return key.starts_with("header") || key.starts_with("access_header")
+            || key.starts_with("server_side_encryption_customer_key_base64")
+            || key.starts_with("server_side_encryption_kms_key_id")
+            || key.starts_with("server_side_encryption_kms_encryption_context");
+    };
     Poco::Util::AbstractConfiguration::Keys backend_keys;
     config.keys(enum_root, backend_keys);
-    for (const auto & key : backend_keys)
+    for (size_t attempts = backend_keys.size() + 1;; --attempts)
     {
-        if (key.starts_with("header") || key.starts_with("access_header"))
-            config.remove(prefix + key);
-    }
-    for (const auto * sse_key : {"server_side_encryption_customer_key_base64",
-                                 "server_side_encryption_kms_key_id",
-                                 "server_side_encryption_kms_encryption_context"})
-    {
-        if (config.has(prefix + sse_key))
-            config.remove(prefix + sse_key);
+        auto it = std::ranges::find_if(backend_keys, is_sensitive_key);
+        if (it == backend_keys.end())
+            break;
+        if (attempts == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove the key `{}` from the configuration of a disk", *it);
+        config.remove(prefix + *it);
+        backend_keys.clear();
+        config.keys(enum_root, backend_keys);
     }
 }
 
