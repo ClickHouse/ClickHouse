@@ -6753,7 +6753,9 @@ class QueryResultElement extends HTMLElement
 
     /// Reset coloring on both layers of every cell in a column: the inner `.cell-content` div
     /// (used by bar mode) and the `<td>` itself (used by heatmap/categorical to fill the whole cell).
-    /// Also drops any categorical same-value font-weight emphasis.
+    /// Also drops any categorical same-value font-weight emphasis, and forgets it when this is the
+    /// emphasized column: otherwise the next `_refreshCategoricalEmphasis` would see the same column
+    /// and value, take its fast path and leave the peers unemphasized after a repaint.
     _clearColumnColor(col_idx)
     {
         for (const row of this._colorTargetRows())
@@ -6763,6 +6765,12 @@ class QueryResultElement extends HTMLElement
             cell.style.background = '';
             const div = cell.querySelector('.cell-content');
             if (div) { div.style.background = ''; div.style.fontWeight = ''; div.style.color = ''; }
+        }
+        if (col_idx === this._emphasized_col_idx)
+        {
+            this._emphasized_col_idx = null;
+            this._emphasized_value = null;
+            this._emphasized_active_cell = null;
         }
     }
 

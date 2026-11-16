@@ -5,8 +5,8 @@ compact single line of the row. The contract pinned here: only the layout change
 numbers beyond the precision or the range of a double, string escapes, repeated keys and the key
 order come out exactly as the server sent them - and text that is not JSON throws. Selecting the
 cell also must not change its category for categorical coloring: equal values keep one hue and the
-selected cell's peers are emphasized, before and after the coloring is enabled, and when the
-selection moves or is cleared.
+selected cell's peers are emphasized before and after the coloring is enabled, when the
+selection moves or is cleared, and when the column is repainted.
 
 The stateless suite has no JavaScript runtime, so the contracts are driven by a Node.js
 harness (`json_harness.js`) executed inside the `clickhouse/mysql-js-client` container

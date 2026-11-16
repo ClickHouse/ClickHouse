@@ -15,7 +15,8 @@
 ///  - text that is not JSON throws instead of being shown as something else;
 ///  - selecting a `JSON` cell does not change its category: with categorical coloring, equal values
 ///    get equal hues and the selected cell's peers are emphasized whether the coloring is enabled
-///    before or after the selection, and moving or clearing the selection keeps that consistent.
+///    before or after the selection, and moving or clearing the selection or repainting the column
+///    keeps that consistent.
 ///    This runs the REAL selection, coloring and emphasis methods of `QueryResultElement` against
 ///    a minimal stand-in for the table cells.
 ///
@@ -114,6 +115,7 @@ function checkCategoricalSelection(js, prettyPrintJSON) {
         '_selectCell', 'clearSelection', '_expandJSON', '_collapseJSON',
         '_hashHue', '_clearColumnColor', '_applyColumnColor', '_categoricalCellText',
         '_setCellEmphasis', '_clearCategoricalEmphasis', '_refreshCategoricalEmphasis',
+        'applyColumnColors',
     ], sandbox);
 
     const A = '{"a":[1,2],"b":{"c":"x"}}';
@@ -135,6 +137,9 @@ function checkCategoricalSelection(js, prettyPrintJSON) {
         _removeCellFilterControls() {},
         _appendCellFilterButton() {},
         _positionCellControls() {},
+        _updateColorizeToggleVisibility() {},
+        _willTranspose: () => false,
+        applyPinnedColumns() {},
         /// Synchronously, rather than after the 100 ms quiet period of the page.
         _scheduleCategoricalEmphasis() { this._refreshCategoricalEmphasis(); },
     });
@@ -191,6 +196,18 @@ function checkCategoricalSelection(js, prettyPrintJSON) {
     check('clear-selection', 'the cell is collapsed back to the compact form', cells[0].content.innerText, A);
     recolor();
     check('clear-selection', 'the hues are kept', hues(), hues_unselected);
+
+    /// Repaint the column directly, the way `postImpl` does when the query completes, without
+    /// switching the coloring off first: the emphasis of the peers must survive the repaint.
+    el._selectCell(cells[0]);
+    check('repaint', 'the peers are emphasized before the repaint', emphasized(), [false, true, false, false, true]);
+    el.applyColumnColors();
+    check('repaint', 'the hues are kept', hues(), hues_unselected);
+    check('repaint', 'the peers are emphasized after the repaint', emphasized(), [false, true, false, false, true]);
+    el.applyColumnColors();
+    el._selectCell(cells[1]);
+    check('repaint', 'moving to a peer after the repaint emphasizes the whole group', emphasized(), [true, false, false, false, true]);
+    el.clearSelection();
 }
 
 let failures = 0;
