@@ -860,7 +860,7 @@ struct ColumnPredicateBuilder
 
     /// `compared` holds for a row only while the column is within `[min, max]`. Keeps the rows outside
     /// undecided: `(min <= column <= max AND compared) OR ((column < min OR column > max) AND unknown)`.
-    uintptr_t fenced(uintptr_t compared, Int64 min, Int64 max, uintptr_t unknown) const
+    [[nodiscard]] uintptr_t fenced(uintptr_t compared, Int64 min, Int64 max, uintptr_t unknown) const
     {
         auto in_range = andOf(compare(ffi::visit_predicate_ge, min), compare(ffi::visit_predicate_le, max));
         auto out_of_range = orOf(compare(ffi::visit_predicate_lt, min), compare(ffi::visit_predicate_gt, max));
