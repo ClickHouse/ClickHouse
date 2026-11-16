@@ -11,7 +11,6 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -20,20 +19,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/JoinOperator.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageJoin.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 
-#include <set>
 #include <unordered_set>
 
 namespace DB
@@ -116,35 +106,6 @@ void collectEnforcedConjuncts(const QueryTreeNodePtr & join_tree, QueryTreeNodes
     }
 }
 
-/// A runtime filter is not built for a `GLOBAL` join.
-bool hasGlobalJoin(const QueryTreeNodePtr & join_tree)
-{
-    if (const auto * join = join_tree->as<JoinNode>())
-        return join->getLocality() == JoinLocality::Global || hasGlobalJoin(join->getLeftTableExpressionNode())
-            || hasGlobalJoin(join->getRightTableExpressionNode());
-    if (const auto * cross_join = join_tree->as<CrossJoinNode>())
-        return std::ranges::any_of(cross_join->getTableExpressions(), hasGlobalJoin);
-    if (const auto * array_join = join_tree->as<ArrayJoinNode>())
-        return hasGlobalJoin(array_join->getTableExpressionNode());
-    return false;
-}
-
-/// A `Join` table, a dictionary or a key-value storage on the right side of a join is looked up by the keys
-/// instead of being read into a hash table, so no runtime filter is built from it. On the left side, it has no
-/// row estimate, so the join sides are not swapped, and the runtime filter would restrict this table only.
-bool isJoinedByLookup(const IQueryTreeNode * table_expression)
-{
-    StoragePtr storage;
-    if (const auto * table = table_expression->as<TableNode>())
-        storage = table->getStorage();
-    else if (const auto * table_function = table_expression->as<TableFunctionNode>())
-        storage = table_function->getStorage();
-    if (!storage)
-        return false;
-    return castStorage<StorageJoin>(storage, DeferredTable::Load) || castStorage<StorageDictionary>(storage, DeferredTable::Load)
-        || castStorage<IKeyValueEntity>(storage, DeferredTable::Load);
-}
-
 std::pair<const ColumnNode *, const ColumnNode *> asColumnEquality(const QueryTreeNodePtr & node)
 {
     const auto * function = node->as<FunctionNode>();
@@ -207,26 +168,6 @@ bool isDeterministicExpression(QueryTreeNodePtr node)
                 result = false;
         },
         [&](QueryTreeNodePtr &) { result = false; });
-    return result;
-}
-
-/// The rule of the filter push-down below a join: functions that are deterministic in the scope of the query,
-/// no `arrayJoin`. A subquery is computed once for the query, e.g. the set of `IN`.
-bool isDeterministicInScopeOfQueryExpression(QueryTreeNodePtr node)
-{
-    bool result = true;
-    visitExpression(
-        node,
-        [&](QueryTreeNodePtr & current)
-        {
-            const auto * function = current->as<FunctionNode>();
-            if (!function || !function->isOrdinaryFunction())
-                return;
-            const auto & function_base = function->getFunctionOrThrow();
-            if (!function_base->isDeterministicInScopeOfQuery() || function_base->getName() == "arrayJoin")
-                result = false;
-        },
-        [](QueryTreeNodePtr &) {});
     return result;
 }
 
@@ -321,26 +262,6 @@ private:
         for (auto & candidate : candidates)
             by_target[candidate.target].push_back(&candidate);
 
-        const QueryPlanOptimizationSettings optimization_settings(getContext());
-        /// Without the filter push-down, no condition restricts the windows.
-        if (!optimization_settings.filter_push_down)
-            return;
-        const JoinSettings join_settings(getSettings());
-        const auto & join_algorithms = join_settings.join_algorithms;
-        const bool can_run_grace_hash = join_settings.canRunGraceHash();
-        /// A runtime filter restricts only the probe (left) side of a join. With the automatic swap of the join sides,
-        /// the larger table becomes the probe side, and the window over a smaller one is small. With a fixed choice,
-        /// the target may stay on the build side, as without the join order optimization, which makes the swap.
-        /// An `ie_join` listed first takes the joins with inequalities, and builds no runtime filter.
-        const bool runtime_join_filters = optimization_settings.enable_join_runtime_filters
-            /// The conditions come only from the ON of `ALL` and `ANY` joins, see `collectEnforcedConjuncts`.
-            && std::ranges::any_of(join_algorithms, [can_run_grace_hash](JoinAlgorithm join_algorithm)
-                { return QueryPlanOptimizations::supportsRuntimeFilter(join_algorithm, can_run_grace_hash, JoinStrictness::All); })
-            && !optimization_settings.join_swap_table.has_value()
-            && optimization_settings.query_plan_optimize_join_order_limit > 0
-            && join_algorithms.front() != JoinAlgorithm::IE_JOIN
-            && !hasGlobalJoin(query_node.getJoinTreeNode());
-
         for (auto & [target, target_candidates] : by_target)
         {
             /// Any other subquery reading the target (including candidates for other targets) would still
@@ -363,8 +284,14 @@ private:
                 std::erase_if(common_keys, [&](const String & key) { return !std::ranges::contains(candidate->keys, key); });
 
             /// A candidate that is not rewritten would refer to the table moved into the derived table.
-            if (!has_other_references && mayRestrictKeys(target, enforced, common_keys, runtime_join_filters))
-                rewriteTarget(query_node_ptr, *tables.at(target).slot, target_candidates);
+            if (has_other_references)
+                continue;
+
+            /// Without a condition on the keys the windows read the whole table, while the decorrelated plan needs
+            /// memory per key only.
+            auto key_conditions = collectKeyConditions(target, enforced, common_keys);
+            if (!key_conditions.empty())
+                rewriteTarget(query_node_ptr, *tables.at(target).slot, target_candidates, key_conditions);
         }
     }
 
@@ -554,83 +481,16 @@ private:
         return candidate;
     }
 
-    /// The windows read the whole table unless a condition restricts `keys`, which all of them are partitioned by:
-    /// - a deterministic one depending only on its keys, which is pushed below the window (as in the filter push-down
-    ///   below a window, a non-deterministic one is not pushed, because it would also remove rows inside the partitions
-    ///   it keeps);
-    /// - one only on tables joined to the target on one of its keys (directly or through other joined tables), when
-    ///   the join can build a runtime filter: it is on the join key, and only a filter on the `PARTITION BY` keys is
-    ///   pushed below the window. The runtime filter is not built for a small probe side, but then the window is small.
-    ///   The condition must also be one the filter push-down below a join moves to the joined table, otherwise it
-    ///   does not shrink the table the runtime filter is built from. A table joined by lookups builds no runtime filter.
-    /// Otherwise the decorrelated plan, which needs memory per key only, is better.
-    static bool mayRestrictKeys(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys, bool runtime_join_filters)
+    /// The deterministic conditions on `keys` only, which all the windows are partitioned by. They are also put below
+    /// the windows, where a condition on the keys removes whole partitions only: the filter push-down does not pass a
+    /// window. A non-deterministic condition is not taken, because it would also remove rows inside the partitions it
+    /// keeps, and neither is one with a correlated subquery.
+    static QueryTreeNodes collectKeyConditions(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys)
     {
-        auto is_key = [&](const ColumnNode & column) { return std::ranges::contains(keys, column.getColumnName()); };
-
-        /// The tables joined to the target on one of its keys, directly or through other joined tables.
-        std::unordered_set<const IQueryTreeNode *> joined_on_keys;
-        auto reached = [&](const ColumnNode & column, const IQueryTreeNode * source)
-        { return (source == target && is_key(column)) || joined_on_keys.contains(source); };
-        /// A runtime filter is not built for a join with a key pair without a common supertype, also a computed one.
-        std::set<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> joins_without_filter;
-        auto column_sources = [](QueryTreeNodePtr node)
-        {
-            std::unordered_set<const IQueryTreeNode *> sources;
-            visitExpression(
-                node,
-                [&](QueryTreeNodePtr & current)
-                {
-                    if (const auto * column = current->as<ColumnNode>())
-                        sources.insert(column->getColumnSourceOrNull().get());
-                },
-                [](QueryTreeNodePtr &) {});
-            return sources;
-        };
+        QueryTreeNodes result;
         for (const auto & conjunct : enforced)
         {
-            const auto * function = conjunct->as<FunctionNode>();
-            if (!function || function->getFunctionName() != "equals" || function->getArguments().getNodes().size() != 2)
-                continue;
-            const auto & arguments = function->getArguments().getNodes();
-            if (tryGetLeastSupertype(DataTypes{arguments[0]->getResultType(), arguments[1]->getResultType()}))
-                continue;
-            const auto rhs_sources = column_sources(arguments[1]);
-            for (const auto * lhs_source : column_sources(arguments[0]))
-                for (const auto * rhs_source : rhs_sources)
-                    joins_without_filter.insert(std::minmax(lhs_source, rhs_source));
-        }
-
-        auto join = [&](const ColumnNode & from, const IQueryTreeNode * from_source, const IQueryTreeNode * to_source)
-        {
-            return reached(from, from_source) && to_source != target && !joined_on_keys.contains(to_source)
-                && !isJoinedByLookup(to_source) && joined_on_keys.insert(to_source).second;
-        };
-        for (bool changed = true; changed;)
-        {
-            changed = false;
-            for (const auto & conjunct : enforced)
-            {
-                auto [lhs, rhs] = asColumnEquality(conjunct);
-                if (!lhs || !rhs)
-                    continue;
-                const auto * lhs_source = lhs->getColumnSourceOrNull().get();
-                const auto * rhs_source = rhs->getColumnSourceOrNull().get();
-                if (!lhs_source || !rhs_source || joins_without_filter.contains(std::minmax(lhs_source, rhs_source)))
-                    continue;
-                changed |= join(*lhs, lhs_source, rhs_source);
-                changed |= join(*rhs, rhs_source, lhs_source);
-            }
-        }
-
-        bool joined_table_condition = false;
-        for (const auto & conjunct : enforced)
-        {
-            if (auto [lhs, rhs] = asColumnEquality(conjunct); lhs && rhs)
-                continue;
-
-            /// The table expressions the condition depends on, `nullptr` for an unknown one.
-            std::unordered_set<const IQueryTreeNode *> sources;
+            bool reads_keys = false;
             bool only_keys = true;
             QueryTreeNodePtr node = conjunct;
             visitExpression(
@@ -643,37 +503,29 @@ private:
                     auto source = column->getColumnSourceOrNull();
                     if (source && source->as<LambdaNode>())
                         return;
-                    sources.insert(source.get());
-                    if (source.get() == target)
-                        only_keys &= is_key(*column);
+                    if (source.get() == target && std::ranges::contains(keys, column->getColumnName()))
+                        reads_keys = true;
+                    else
+                        only_keys = false;
                 },
                 [&](QueryTreeNodePtr & subquery)
                 {
                     const auto * query = subquery->as<QueryNode>();
-                    if (!query)
-                    {
-                        sources.insert(nullptr);
-                        return;
-                    }
-                    for (const auto & column : query->getCorrelatedColumns().getNodes())
-                    {
-                        const auto * source = column->as<ColumnNode &>().getColumnSourceOrNull().get();
-                        sources.insert(source);
-                        if (source == target)
-                            only_keys = false;
-                    }
+                    if (!query || !query->getCorrelatedColumns().getNodes().empty())
+                        only_keys = false;
                 });
 
-            if (sources.size() == 1 && sources.contains(target) && only_keys && isDeterministicExpression(conjunct))
-                return true;
-            joined_table_condition |= !sources.empty()
-                && std::ranges::all_of(sources, [&](const IQueryTreeNode * source) { return joined_on_keys.contains(source); })
-                && isDeterministicInScopeOfQueryExpression(conjunct);
+            if (reads_keys && only_keys && isDeterministicExpression(conjunct))
+                result.push_back(conjunct);
         }
-        return joined_table_condition && runtime_join_filters;
+        return result;
     }
 
-    void rewriteTarget(QueryTreeNodePtr & query_node_ptr, QueryTreeNodePtr & target_slot, const std::vector<Candidate *> & candidates)
+    void rewriteTarget(
+        QueryTreeNodePtr & query_node_ptr,
+        QueryTreeNodePtr & target_slot,
+        const std::vector<Candidate *> & candidates,
+        const QueryTreeNodes & key_conditions)
     {
         auto target = std::static_pointer_cast<ITableExpressionNode>(target_slot);
         const auto & storage_snapshot = target->as<TableNode &>().getStorageSnapshot();
@@ -762,6 +614,12 @@ private:
             resolveOrdinaryFunctionNodeByName(*function, name, context);
             return function;
         };
+
+        /// The derived table reads only the partitions the conditions keep; the enclosing query keeps the conditions too.
+        QueryTreeNodes where;
+        for (const auto & condition : key_conditions)
+            where.push_back(condition->clone());
+        derived->getWhere() = where.size() == 1 ? where.front() : resolve_function("and", std::move(where));
 
         for (auto * candidate : candidates)
         {

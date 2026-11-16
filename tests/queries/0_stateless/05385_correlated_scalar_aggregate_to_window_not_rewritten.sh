@@ -33,7 +33,6 @@ check "outer key inside an expression argument" "SELECT u.k AS k, t.v AS v, (SEL
 check "NULL inside a Tuple key" "SELECT toString(o.k) AS k, o.v AS v, (SELECT count() FROM tn AS s WHERE s.k = o.k) AS c FROM tn AS o WHERE toString(o.k) != '' ORDER BY v"
 check "NULL in a Variant key" "SELECT o.v AS v, (SELECT count() FROM vt AS s WHERE s.k = o.k) AS c FROM vt AS o WHERE toString(variantType(o.k)) != 'x' ORDER BY v"
 check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
-check "no filter push-down" "SELECT o.k AS k, o.v AS v, (SELECT count() FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 1 ORDER BY k, v SETTINGS query_plan_filter_push_down = 0"
 check "conditions on the keys of different windows" "SELECT o.id AS id, (SELECT max(v) FROM tp AS s WHERE s.k = o.k) AS a, (SELECT max(v) FROM tp AS s WHERE s.id = o.id) AS b FROM tp AS o WHERE o.k = 1 AND o.id = 2"
 check "aggregate with parameters over only NULLs" "SELECT o.k AS k, (SELECT uniqUpTo(5)(NULL) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE o.k > 0 ORDER BY k"
 

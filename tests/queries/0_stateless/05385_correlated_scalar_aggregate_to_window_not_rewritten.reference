@@ -117,10 +117,6 @@
 1	30	\N
 2	5	10
 2	1e308	10
-=== no filter push-down: rewritten 0 ===
-2	5	2
-2	1e308	2
-3	-7	1
 === conditions on the keys of different windows: rewritten 0 ===
 2	40	20
 === aggregate with parameters over only NULLs: rewritten 0 ===
