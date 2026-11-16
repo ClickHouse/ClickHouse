@@ -187,11 +187,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty)
-        {
-            if (auto rows = table->totalRows(getContext()); rows > 0)
-                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
-        }
 
         AccessFlags drop_storage;
 
@@ -201,6 +196,26 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             drop_storage = AccessType::DROP_DICTIONARY;
         else
             drop_storage = AccessType::DROP_TABLE;
+
+        if (query.if_empty)
+        {
+            /// The stand-in of a lazily loaded table (see the `lazy_load_tables` database setting) does not know
+            /// its row count, so the table is loaded to check it. Authorize first: a user without the right
+            /// to drop the table must not be able to load it.
+            const StoragePtr storage_to_count = [&]
+            {
+                const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+                if (!proxy || !proxy->isLazyStandIn())
+                    return table;
+                if (query.kind == ASTDropQuery::Kind::Truncate)
+                    context_->checkAccess(AccessType::TRUNCATE, table_id);
+                else if (query.kind != ASTDropQuery::Kind::Drop || !query.no_access_check)
+                    context_->checkAccess(drop_storage, table_id);
+                return proxy->getNested();
+            }();
+            if (auto rows = storage_to_count->totalRows(getContext()); rows > 0)
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
+        }
 
         /// Authorize before asking whether the table supports transactions: for a lazily loaded table
         /// (see the `lazy_load_tables` database setting) that loads the table and reveals its engine.
