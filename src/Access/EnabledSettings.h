@@ -22,7 +22,7 @@ public:
         SettingsProfileElements settings_from_enabled_roles;
         SettingsProfileElements settings_from_user;
 
-        auto toTuple() const { return std::tie(user_id, enabled_roles, settings_from_enabled_roles, settings_from_user); }
+        [[nodiscard]] auto toTuple() const { return std::tie(user_id, enabled_roles, settings_from_enabled_roles, settings_from_user); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
