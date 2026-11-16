@@ -1133,9 +1133,18 @@ static bool writeMetadataFiles(
     };
     std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
 
+    /// Snapshot id -> nearest snapshot at or above it that the rewrite keeps.
+    std::unordered_map<Int64, Int64> nearest_kept;
+
     for (const auto & history_record : plan.history)
     {
+        /// A dropped parent is replaced by its nearest kept ancestor. -1 means no parent.
+        Int64 kept_parent_id = -1;
+        if (auto it = nearest_kept.find(history_record.parent_id); it != nearest_kept.end())
+            kept_parent_id = it->second;
+
         auto append = tryGetAppendUpdate(history_record);
+        nearest_kept[history_record.snapshot_id] = append ? history_record.snapshot_id : kept_parent_id;
         if (!append)
         {
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
@@ -1149,16 +1158,16 @@ static bool writeMetadataFiles(
             live.files_size += data_file->new_bytes_count;
             ++live.data_files;
         }
-        /// The `total-*` counters add the `added_*` values to the parent's totals only when the parent is rewritten too.
+        /// What the table held at the parent. A snapshot added the difference to it.
         LiveTotals parent;
-        if (auto it = snapshot_id_to_live_totals.find(history_record.parent_id); it != snapshot_id_to_live_totals.end())
+        if (auto it = snapshot_id_to_live_totals.find(kept_parent_id); it != snapshot_id_to_live_totals.end())
             parent = it->second;
         snapshot_id_to_live_totals[history_record.snapshot_id] = live;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
+            kept_parent_id,
             live.data_files - parent.data_files,
             live.records - parent.records,
             live.files_size - parent.files_size,
