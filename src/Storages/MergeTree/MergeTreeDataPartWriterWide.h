@@ -47,7 +47,7 @@ public:
     void finish(bool sync) final;
     void cancel() noexcept override;
 
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
     static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
@@ -125,12 +125,12 @@ private:
     /// that adjustLastMarkIfNeedAndFlushToDisk completed without a call carrying its rows.
     void completeGranuleWithoutRows();
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
     /// Settings with the getters and callbacks bound to the streams of the column.
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
         const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+    [[nodiscard]] ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
 
     /// A stream of a column resolved once in `addStreams`; its name is `stream->escaped_column_name`. The list of
@@ -144,11 +144,11 @@ private:
     };
     using ResolvedStreams = std::vector<ResolvedStream>;
 
-    const ResolvedStreams & getResolvedStreams(const String & column_name) const;
+    [[nodiscard]] const ResolvedStreams & getResolvedStreams(const String & column_name) const;
 
     /// The stream of `substream_path` of `column`, or null for an offsets stream written before this writer
     /// (`written_offset_substreams`). Throws for a stream `addStreams` did not register.
-    const ResolvedStream * resolveStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+    [[nodiscard]] const ResolvedStream * resolveStream(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
