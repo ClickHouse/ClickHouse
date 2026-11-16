@@ -39,6 +39,16 @@ namespace ErrorCodes
 }
 
 
+void checkDescribeTableAccess(const StoragePtr & storage, const StorageID & table_id, const ContextPtr & context)
+{
+    context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
+    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
+        alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+}
+
 static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
@@ -64,15 +74,12 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
-            auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
+            auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            checkDescribeTableAccess(storage_ptr, table_id, context);
 
-            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
-            /// privilege on the target that describing the target requires.
-            if (const auto * alias = storage_ptr->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+            /// Only after the access check, to report a missing database or table with the usual error.
+            if (!storage_ptr)
+                storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
 
             auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
             return metadata_snapshot->getColumns();
@@ -179,6 +186,20 @@ ColumnsDescription getStructureOfRemoteTable(
 
             return res;
         }
+    }
+
+    /// The structure was not obtained in-process (`isLocal`), but a shard reached over the network may still be this
+    /// server (e.g. `127.0.0.2`, or `prefer_localhost_replica = 0`). Its `DESC` runs under the connection's credentials,
+    /// bypassing the caller's own `SHOW_COLUMNS` (or table function) access check, so do that check here.
+    if (cluster.hasShardOnThisServer(context->getTCPPort(), context->getTCPPortSecure()))
+    {
+        if (table_func_ptr)
+            TableFunctionFactory::instance().get(table_func_ptr, context)->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
+        else
+            /// Not `getTable`: for a missing table it builds name hints, which enumerate the tables of every database,
+            /// and that can recurse into a `Remote` database whose resolution calls this function (see `DatabaseRemote`).
+            /// A table that does not exist here exposes nothing, and the connection reports it as missing.
+            checkDescribeTableAccess(DatabaseCatalog::instance().tryGetTable(table_id, context), table_id, context);
     }
 
     for (const auto & shard_info : shards_info)

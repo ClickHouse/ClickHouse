@@ -95,6 +95,41 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 }
 
 
+bool Cluster::Address::routesToThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const
+{
+    if (port != tcp_port && !(tcp_port_secure && port == *tcp_port_secure))
+        return false;
+
+    std::vector<Poco::Net::SocketAddress> resolved;
+    try
+    {
+        resolved = DNSResolver::instance().resolveAddressList(host_name, port);
+    }
+    catch (...)
+    {
+        /// The connection will fail as well, unless the name starts to resolve later, maybe to this server.
+        /// Apply the stricter access check: it takes no other action than checking the caller's grants.
+        return true;
+    }
+
+    for (const auto & socket_address : resolved)
+    {
+        Poco::Net::IPAddress address = socket_address.host();
+
+        /// `::ffff:a.b.c.d` connects to `a.b.c.d`, which the interface scan of `isLocalAddress` matches only in the IPv4 form.
+        if (address.family() == Poco::Net::AddressFamily::IPv6 && address.isIPv4Mapped())
+            address = Poco::Net::IPAddress(static_cast<const char *>(address.addr()) + 12, 4);
+
+        /// `isLocalAddress` treats `127.0.0.{2..255}` as remote (tests use them to emulate a cluster), and the
+        /// unspecified address (`0.0.0.0`, `::`) connects to localhost on Linux, but this server answers both.
+        if (address.isLoopback() || address.isWildcard() || isLocalAddress(address))
+            return true;
+    }
+
+    return false;
+}
+
+
 Cluster::Address::Address(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -1040,6 +1075,20 @@ std::vector<Strings> Cluster::getHostIDs() const
             host_ids[i][j] = addresses[j].toString();
     }
     return host_ids;
+}
+
+bool Cluster::hasShardOnThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const
+{
+    for (const auto & shard_info : shards_info)
+        if (shard_info.isLocal())
+            return true;
+
+    for (const auto & replicas : addresses_with_failover)
+        for (const auto & replica : replicas)
+            if (replica.routesToThisServer(tcp_port, tcp_port_secure))
+                return true;
+
+    return false;
 }
 
 std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const

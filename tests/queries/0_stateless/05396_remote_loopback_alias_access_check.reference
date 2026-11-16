@@ -1,0 +1,55 @@
+--- 127.0.0.2:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- 127.0.0.1:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- 0.0.0.0:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- [::ffff:127.0.0.2]:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- [::]:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- localhost:9000
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- table function with the structure given explicitly
+
+ACCESS_DENIED
+
+--- Remote engine
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- Remote database engine
+ACCESS_DENIED
+ACCESS_DENIED
+--- an unrelated table function target is allowed
+0
+1
+2
+--- with grants
+secret
+
+granted
+secret
+
+granted
+secret
+granted
+secret

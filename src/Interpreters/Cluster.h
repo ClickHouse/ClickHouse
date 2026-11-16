@@ -240,6 +240,13 @@ public:
         /// Returns resolved address if it does resolve.
         [[nodiscard]] std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
+        /// True if a connection to this address may be answered by this server: the port is one of the
+        /// server's native TCP ports and any address the host resolves to is a loopback or unspecified
+        /// address, or an address of this machine. Unlike `isLocal`, it treats `127.0.0.{2..255}` as this
+        /// server, so it decides only whether access checks for local execution apply, never routing.
+        /// If the host does not resolve, it returns true: the stricter access check is applied.
+        [[nodiscard]] bool routesToThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const;
+
         [[nodiscard]] auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
@@ -280,6 +287,12 @@ public:
 
     [[nodiscard]] const ShardsInfo & getShardsInfo() const { return shards_info; }
     [[nodiscard]] const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
+
+    /// True if any shard is local, or any replica may be answered by this server (see `Address::routesToThisServer`).
+    /// `ShardInfo::isLocal` is false for `127.0.0.{2..255}` (used in tests to emulate a cluster on one machine), yet
+    /// a query sent there is executed by this server under the credentials of the connection, so the access checks
+    /// that protect local execution must cover such shards too.
+    [[nodiscard]] bool hasShardOnThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const;
 
     /// Returns addresses of some replicas according to specified `only_shard_num` and `only_replica_num`.
     /// `only_shard_num` is 1-based index of a shard, 0 means all shards.

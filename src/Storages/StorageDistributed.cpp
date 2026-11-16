@@ -1151,14 +1151,10 @@ void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const
     if (!is_remote_database_proxy)
         return;
 
-    for (const auto & shard_info : getCluster()->getShardsInfo())
-    {
-        if (shard_info.isLocal())
-        {
-            local_context->checkAccess(access, remote_database, remote_table);
-            return;
-        }
-    }
+    /// Not only a local shard: a shard reached over a connection that this server answers (e.g. `127.0.0.2`)
+    /// executes the query here under the engine credentials. See `Cluster::hasShardOnThisServer`.
+    if (getCluster()->hasShardOnThisServer(local_context->getTCPPort(), local_context->getTCPPortSecure()))
+        local_context->checkAccess(access, remote_database, remote_table);
 }
 
 void StorageDistributed::read(
@@ -2986,16 +2982,6 @@ void registerStorageRemote(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, args.getContext());
 
-        bool has_local_shard = false;
-        for (const auto & shard_info : parsed.cluster->getShardsInfo())
-        {
-            if (shard_info.isLocal())
-            {
-                has_local_shard = true;
-                break;
-            }
-        }
-
         /// When the structure is not specified, infer it from the remote table under the user's
         /// context. `StorageDistributed` stores only the global context and would otherwise infer
         /// the structure under it, bypassing the `SHOW_COLUMNS` access check in
@@ -3049,6 +3035,14 @@ void registerStorageRemote(StorageFactory & factory)
         const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode)
             || args.query.attach_short_syntax
             || args.getLocalContext()->isRecoveryFromStoredMetadata();
+
+        /// A shard served by this server is guarded like a local shard even when it is reached over a connection,
+        /// e.g. `127.0.0.2`: a query sent there is executed by this server under the engine credentials, and
+        /// its peer address `127.0.0.1` satisfies `HOST LOCAL` restrictions of the account.
+        /// See `Cluster::hasShardOnThisServer`. In this function, "a local shard" means such a shard.
+        /// It is used only by the checks that are skipped for already-validated metadata, so it is not computed then.
+        const bool has_local_shard = !loading_from_existing_metadata
+            && parsed.cluster->hasShardOnThisServer(args.getContext()->getTCPPort(), args.getContext()->getTCPPortSecure());
 
         ColumnsDescription columns = args.columns;
 
