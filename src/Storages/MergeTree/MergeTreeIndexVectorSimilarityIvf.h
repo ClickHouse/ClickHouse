@@ -76,10 +76,9 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     std::vector<float> rotated_centroids;
 
     std::vector<IvfListBucket> buckets;
-    std::shared_ptr<TemporaryDataBuffer> vectors;
 
 private:
-    static constexpr UInt64 FILE_FORMAT_VERSION = 3;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 4;
 
     size_t entryBytes() const;
     size_t entries() const { return list_offsets.empty() ? 0 : list_offsets.back(); }
@@ -87,7 +86,6 @@ private:
     std::shared_ptr<GPU::IvfCentroids> getDeviceCentroids() const;
 
     UInt64 lists_byte_begin = 0;
-    UInt64 vectors_byte_begin = 0;
 
     DataPartStoragePtr data_part_storage;
     String index_file_name;

@@ -242,8 +242,9 @@ void registerTableFunctionVectorSearch(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionVectorSearch>(
         {.description = R"(
-The `k` nearest rows to each of several query vectors, searched in one batch on the GPU by a `vector_similarity` index of the `ivf` method. Every list of the index that any of the
-queries probes (`vector_search_ivf_probes`) is read once for the whole batch.
+The `k` nearest rows to each of several query vectors by the 4-bit codes of a `vector_similarity` index of the `ivf` method,
+searched in one batch on the GPU. Every list of the index that any of the queries probes (`vector_search_ivf_probes`) is read once
+for the whole batch.
 
 ```sql
 SELECT query, part, part_offset, distance FROM vectorSearch(database, table, index_name, queries, k)
@@ -251,7 +252,9 @@ SELECT query, part, part_offset, distance FROM vectorSearch(database, table, ind
 
 `queries` is a constant `Array(Array(Float32))`, for example `(SELECT groupArray(vec) FROM queries_table)`. The result has a row for
 each of the `k` nearest rows of each query: the number of the query in `queries`, the part and the number of the row in it (as
-`_part` and `_part_offset`), and the distance: the squared `L2Distance` or the `cosineDistance`, as the index is declared.
+`_part` and `_part_offset`), and the distance by the codes, an approximation of the squared `L2Distance` or of the `cosineDistance`,
+as the index is declared. For exact distances, join the result with the table on `_part` and `_part_offset` and compute them from
+the vectors, ideally asking for a few times more than `k` candidates.
 )", .category = FunctionDocumentation::Category::TableFunction},
         SecretArgumentsSpec{},
         {.allow_readonly = true});

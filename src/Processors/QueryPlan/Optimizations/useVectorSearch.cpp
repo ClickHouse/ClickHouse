@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -430,11 +431,23 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    bool optimize_plan = !settings.vector_search_with_rescoring;
+    /// The `ivf` index ranks its candidates by 4-bit codes: their exact distances are always computed from the column.
+    const auto & search_column_name = vector_search_parameters.value().column;
+    const bool index_needs_rescoring = std::ranges::any_of(read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices(),
+        [&search_column_name](const IndexDescription & index)
+        {
+            if (!isIvfVectorSimilarityIndex(index))
+                return false;
+            auto required_columns = index.expression->getRequiredColumns();
+            return required_columns.size() == 1 && required_columns[0] == search_column_name;
+        });
+    const bool rescoring = settings.vector_search_with_rescoring || index_needs_rescoring;
+
+    bool optimize_plan = !rescoring;
     /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
     /// vector row hints only describe the original candidates and must not filter
     /// rows added for the final merge.
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
+    bool apply_row_filter_for_rescoring = rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
