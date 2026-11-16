@@ -74,10 +74,12 @@ public:
     /// so that finish() can correctly find tasks belonging to this storage.
     void updateStorageID(const StorageID & new_id);
 
-    bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
-    bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
-    bool scheduleMoveTask(ExecutableTaskPtr move_task);
-    bool scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
+    /// Transfer the scheduling caller's task reference before the executor can start it. This keeps
+    /// an idle executor equivalent to destruction of every task accepted through an assignee.
+    bool scheduleMergeMutateTask(ExecutableTaskPtr && merge_task);
+    bool scheduleFetchTask(ExecutableTaskPtr && fetch_task);
+    bool scheduleMoveTask(ExecutableTaskPtr && move_task);
+    bool scheduleCommonTask(ExecutableTaskPtr && common_task, bool need_trigger);
 
     /// Just call finish
     ~BackgroundJobsAssignee();

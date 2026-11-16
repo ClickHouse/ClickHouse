@@ -1,9 +1,10 @@
 #pragma once
 
-#include <mutex>
+#include <chrono>
 #include <condition_variable>
-#include <variant>
+#include <mutex>
 #include <utility>
+#include <variant>
 
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
@@ -296,6 +297,29 @@ template <class Queue>
 class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
+    class SchedulingPause
+    {
+    public:
+        SchedulingPause(SchedulingPause && other) noexcept
+            : executor(std::exchange(other.executor, nullptr))
+        {
+        }
+
+        ~SchedulingPause();
+
+        bool waitForIdle(std::chrono::steady_clock::time_point deadline) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+    private:
+        friend class MergeTreeBackgroundExecutor;
+
+        explicit SchedulingPause(MergeTreeBackgroundExecutor & executor_)
+            : executor(&executor_)
+        {
+        }
+
+        MergeTreeBackgroundExecutor * executor;
+    };
+
     MergeTreeBackgroundExecutor(
         ThreadName name_,
         size_t threads_count_,
@@ -331,6 +355,12 @@ public:
     size_t getMaxTasksCount() const;
 
     bool trySchedule(ExecutableTaskPtr task);
+
+    /// Prevent new tasks and foreground task-slot reservations from entering this executor.
+    /// Already accepted work continues normally. The returned guard keeps scheduling paused until
+    /// it is destroyed; use `SchedulingPause::waitForIdle` to wait for accepted work to release all
+    /// of its task slots.
+    SchedulingPause pauseScheduling();
 
     /// Reserve up to `desired` free slots for merges that run outside this executor (e.g. the
     /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
@@ -385,6 +415,12 @@ private:
     /// because the metric also counts in-flight background tasks whose steady churn on a busy
     /// server would otherwise starve a waiting foreground reservation indefinitely.
     std::atomic<Int64> reserved_task_slots = 0;
+
+    /// Non-zero while stable-memory checkpoints reject new work. Guarded by `mutex`; a count makes
+    /// independently acquired pauses nest safely.
+    size_t scheduling_pause_count TSA_GUARDED_BY(mutex) = 0;
+
+    void resumeScheduling() noexcept;
 
     void routine(TaskRuntimeDataPtr item);
 
