@@ -1697,12 +1697,14 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 res.pipeline = std::move(*distributed);
             }
-            if (!res.pipeline.initialized())
+            /// Other nodes would insert into their own tables, which the requirements consumed here did not check.
+            const bool can_insert_on_other_nodes = consumed_insert_expectations.empty();
+            if (!res.pipeline.initialized() && can_insert_on_other_nodes)
             {
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-            if (!res.pipeline.initialized())
+            if (!res.pipeline.initialized() && can_insert_on_other_nodes)
             {
                 auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)
