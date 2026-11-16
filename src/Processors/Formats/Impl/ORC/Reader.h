@@ -38,6 +38,10 @@ struct ReaderOptions
     UInt64 hole_size_limit = 8192;
     /// ... and the combined range is at most this size.
     UInt64 range_size_limit = 32 * 1024 * 1024;
+    /// Cached file suffix: compressed metadata and footer, postscript, and its length byte.
+    std::string serialized_file_tail;
+    /// Retain the suffix read from the file so it can be inserted into the metadata cache.
+    bool keep_serialized_file_tail = false;
 };
 
 struct RowReaderOptions
@@ -71,6 +75,8 @@ public:
 
     const Proto::Footer & getFooter() const { return footer; }
     const Proto::PostScript & getPostScript() const { return postscript; }
+    /// Available when `ReaderOptions::keep_serialized_file_tail` is enabled.
+    const std::string & getSerializedFileTail() const { return options.serialized_file_tail; }
     CompressionKind getCompression() const { return postscript.compression; }
     /// Whether the bloom filters of the file were written by a version of the C++ writer
     /// that hashed the integers incorrectly (ORC-1024), so they must not be used.

@@ -1069,7 +1069,8 @@ static void getFileReader(
     bool use_prefetch,
     size_t min_bytes_for_seek,
     std::atomic<int> & is_stopped,
-    const std::string & serialized_tail = {})
+    const std::string & serialized_tail = {},
+    bool keep_serialized_file_tail = false)
 {
     if (is_stopped)
         return;
@@ -1080,10 +1081,9 @@ static void getFileReader(
     options.hole_size_limit = min_bytes_for_seek;
     options.range_size_limit = std::max<UInt64>(default_range_size_limit, min_bytes_for_seek);
 
-    /// If we have a cached file tail (PostScript + Footer + Metadata), inject it so that the
-    /// reader does not need to re-read and re-parse the footer from (remote) disk.
-    if (!serialized_tail.empty())
-        options.setSerializedFileTail(serialized_tail);
+    /// Parse the cached file tail without reading it again from storage.
+    options.serialized_file_tail = serialized_tail;
+    options.keep_serialized_file_tail = keep_serialized_file_tail;
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = createORCReader(std::move(input_stream), options);
@@ -1311,7 +1311,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
                 cache_key,
                 [&]() -> String
                 {
-                    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+                    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped, {}, true);
                     /// If the query was cancelled the reader is not built. Throw instead of returning
                     /// an empty tail: `getOrSet` never caches a value produced by a throwing loader,
                     /// so we avoid poisoning the cache with an empty entry that would turn every
@@ -1331,7 +1331,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         }
 
         /// On a cache hit the loader did not run, so `in` is untouched: build the reader
-        /// once with the cached tail injected (skips re-reading/parsing the footer).
+        /// once with the cached tail injected (skips reading the footer from storage).
         if (!file_reader && !is_stopped)
             getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped, serialized_tail);
     }
