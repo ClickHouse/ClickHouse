@@ -130,6 +130,12 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
+    /// Routing information of the `ABR` table engine. 0 / empty for queries that do not read from an `ABR` table.
+    UInt64 abr_duration_ms = 0;
+    std::map<UInt64, Int32> abr_exception_codes; /// sample interval -> error code
+    UInt64 abr_interval = 0;
+    UInt64 abr_min_date = 0;
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();

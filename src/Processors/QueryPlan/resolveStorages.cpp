@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
@@ -202,6 +203,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
+
+    /// The initiator sends the SQL of such a query instead of a plan, unless its own table of that name can be read from a plan.
+    if (storage->readRequiresFullQuery())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} cannot be read from a serialized query plan: it needs the whole query, which the plan does not carry. "
+            "Disable `serialize_query_plan` to send the query as SQL",
+            storage->getStorageID().getNameForLogs());
 
     if (select_query_info.table_expression_modifiers)
         snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
@@ -353,6 +361,44 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         if (node->children.empty())
             addResources(replaceReadingFromTable(*node, nodes, context));
     }
+}
+
+bool queryPlanReadsStorageRequiringFullQuery(const QueryPlan & plan, const ContextPtr & context)
+{
+    /// Walks the plan as `QueryPlan::resolveStorages` does.
+    std::stack<const QueryPlan::Node *> stack;
+    stack.push(plan.getRootNode());
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & set : delayed_creating_sets->getSets())
+            {
+                const auto * set_plan = set->getQueryPlan();
+                if (set_plan && queryPlanReadsStorageRequiringFullQuery(*set_plan, context))
+                    return true;
+            }
+        }
+
+        if (const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node->step.get()))
+        {
+            auto table_node = IdentifierResolver::tryResolveTableIdentifier(parseTableIdentifier(reading_from_table->getTable(), context), context);
+            if (table_node && table_node->getStorage()->readRequiresFullQuery())
+                return true;
+        }
+        else if (const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node->step.get()))
+        {
+            if (reading_from_table_function->readsStorageRequiringFullQuery())
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push(child);
+    }
+    return false;
 }
 
 }

@@ -1,0 +1,10 @@
+user with access to the source tables
+ts		1	1	1
+value		1	1	1
+note	\'xyzzy\'	0	0	0
+user with access to the ABR table only
+ACCESS_DENIED
+user with access to the columns of the finest source table
+ts		1	1	1
+value		1	1	1
+note	\'xyzzy\'	0	0	0

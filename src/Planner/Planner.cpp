@@ -300,6 +300,10 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             return true;
         if (typeid_cast<const StorageView *>(raw))
             return true;
+        /// A storage that needs the whole query executes the filter itself, so there is no `Filter` step above its read either.
+        /// Wrappers such as `Alias` and lazily loaded tables answer for the table they forward to.
+        if (storage_ptr->readRequiresFullQuery())
+            return true;
         return false;
     };
 
@@ -1192,16 +1196,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_packed_string_keys_in_aggregation]);
 
-    bool is_remote_storage = false;
-    bool parallel_replicas_from_merge_tree = false;
+    bool produces_mergeable_state = false;
 
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
     if (table_expression_node_to_data.size() == 1)
-    {
-        auto it = table_expression_node_to_data.begin();
-        is_remote_storage = it->second.isRemote();
-        parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
-    }
+        produces_mergeable_state = table_expression_node_to_data.begin()->second.producesMergeableState();
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentHeader(),
@@ -1209,7 +1208,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.grouping_sets_parameters_list,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings[Setting::distributed_aggregation_memory_efficient] && (is_remote_storage || parallel_replicas_from_merge_tree)
+        settings[Setting::distributed_aggregation_memory_efficient] && produces_mergeable_state
             && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
         settings[Setting::aggregation_memory_efficient_merge_threads],
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,

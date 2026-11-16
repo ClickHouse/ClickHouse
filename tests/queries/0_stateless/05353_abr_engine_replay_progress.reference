@@ -1,0 +1,12 @@
+read_rows of the ABR query minus the one of the query on the source table
+0	0
+The totals and extremes replayed from the attempt
+0	50
+1	50
+
+0	100
+
+0	50
+1	50
+A query on the ABR table within the read_rows quota
+4950

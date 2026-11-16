@@ -1,0 +1,15 @@
+DateTime, inclusive
+1
+10
+DateTime, exclusive
+1
+10
+UInt64, inclusive
+1
+10
+Int64, exclusive
+1
+10
+Boundary of the first table
+1	10
+1	9

@@ -1,0 +1,16 @@
+ts	DateTime
+payload	JSON
+d	Dynamic
+t	Tuple(x Dynamic)
+full columns
+2026-01-01 00:00:00	{"a":"x","b":{"c":"y"}}	1	(2)
+2026-01-02 00:00:00	{"a":"z"}	str	('s')
+subcolumns
+x	y	1	\N	UInt64
+z	\N	\N	str	String
+subcolumns, old analyzer
+x	1	\N
+z	\N	str
+subcolumns, grants on their columns
+x	1	UInt64
+z	\N	String

@@ -100,6 +100,8 @@ template String checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt64 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt8 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template bool checkAndGetLiteralArgument(const ASTPtr &, const String &);
+template Array checkAndGetLiteralArgument(const ASTPtr &, const String &);
+template Tuple checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template String checkAndGetLiteralArgument(const ASTLiteral &, const String &);
 template UInt64 checkAndGetLiteralArgument(const ASTLiteral &, const String &);
 template std::optional<String> tryGetLiteralArgument(const ASTPtr & arg, const String & arg_name);

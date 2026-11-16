@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -287,6 +288,13 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_db.createDirectories();
         other_db.waitDatabaseStarted();
     }
+
+    /// Load lazily loaded tables before taking the lock: loading may need it, and `checkTableCanBeRenamed` below loads them.
+    if (const auto table = tryGetTable(table_name, local_context))
+        resolveStorageProxyLoading(table);
+    if (exchange)
+        if (const auto other_table = other_db.tryGetTable(to_table_name, local_context))
+            resolveStorageProxyLoading(other_table);
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);

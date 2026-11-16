@@ -2806,6 +2806,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             sample_block,
                             std::move(table_function_serialized_ast),
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                        reading_from_table_function->setReadsStorageRequiringFullQuery(table_function_node->getStorage()->readRequiresFullQuery());
 
                         query_plan.addStep(std::move(reading_from_table_function));
                     }

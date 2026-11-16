@@ -1,0 +1,11 @@
+SELECT without privileges on the source tables
+ACCESS_DENIED 0
+ACCESS_DENIED 0
+SELECT with privileges on the coarse source table only
+ACCESS_DENIED 0
+ACCESS_DENIED 0
+SELECT limited to the coarse source table
+10
+SELECT with privileges on all the source tables
+1
+10

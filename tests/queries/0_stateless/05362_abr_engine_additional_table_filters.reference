@@ -1,0 +1,14 @@
+enable_analyzer = 1
+fully qualified key: NOT_IMPLEMENTED
+table name key: NOT_IMPLEMENTED
+table alias key: NOT_IMPLEMENTED
+Alias table key: NOT_IMPLEMENTED
+source table key: 50
+other table key: 100
+enable_analyzer = 0
+fully qualified key: NOT_IMPLEMENTED
+table name key: NOT_IMPLEMENTED
+table alias key: NOT_IMPLEMENTED
+Alias table key: NOT_IMPLEMENTED
+source table key: 50
+other table key: 100

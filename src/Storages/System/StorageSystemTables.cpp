@@ -485,10 +485,8 @@ protected:
                             continue;
 
                         const auto * alias = table.second->as<StorageAlias>();
-                        const bool can_expose_metadata
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
-                        const bool can_show_columns_temp
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
+                        const bool can_expose_metadata = table.second->isExposedMetadataGranted(context, AccessType::SHOW_TABLES, {});
+                        const bool can_show_columns_temp = table.second->isExposedMetadataGranted(context, AccessType::SHOW_COLUMNS, {});
                         const bool can_expose_declared_definition
                             = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
                         /// As for a persistent alias below, the CREATE query is checked against the declared
@@ -670,8 +668,7 @@ protected:
                 /// `table` being non-null.
 
                 const auto * alias = table ? table->as<StorageAlias>() : nullptr;
-                const bool can_expose_metadata
-                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+                const bool can_expose_metadata = table && table->isExposedMetadataGranted(context, AccessType::SHOW_TABLES, {});
                 const bool can_expose_declared_definition
                     = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
 
@@ -680,7 +677,7 @@ protected:
                 /// privilege `DESCRIBE` and `SHOW CREATE TABLE` require for the same object.
                 const bool can_show_columns = !need_to_check_access_for_columns
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
+                        && (!table || table->isExposedMetadataGranted(context, AccessType::SHOW_COLUMNS, {})));
 
                 /// The CREATE query is the alias's own stored definition, which may carry its declared
                 /// target's columns inlined, so the declared target is checked rather than the whole chain.

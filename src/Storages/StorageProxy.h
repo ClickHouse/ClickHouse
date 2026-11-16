@@ -27,7 +27,9 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
+    bool producesMergeableState(const ContextPtr & query_context) const override { return getNested()->producesMergeableState(query_context); }
     bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
+    bool readRequiresFullQuery() const override { return getNested()->readRequiresFullQuery(); }
     std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
@@ -120,6 +122,8 @@ public:
     {
         getNested()->truncate(query, metadata_snapshot, context, lock);
     }
+
+    void checkTableCanBeRenamed(const StorageID & new_name) const override { getNested()->checkTableCanBeRenamed(new_name); }
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override
     {

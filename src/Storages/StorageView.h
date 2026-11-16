@@ -35,6 +35,10 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
+    /// True if the query of the view reads a table that needs the whole query, such as `ABR`, directly or through other
+    /// views: that table gets the filters of the outer query only through `readImpl`.
+    bool readRequiresFullQuery() const override;
+
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
