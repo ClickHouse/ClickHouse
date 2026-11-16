@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
 
@@ -106,7 +107,6 @@ void collapseCSVHeaderTupleNames(
     Names leaf_names; /// all candidates' leaves, contiguous per candidate
     Names leaf_types;
     VectorWithMemoryTracking<Candidate> candidates;
-    VectorWithMemoryTracking<size_t> leaf_owner; /// leaf position -> candidate index
     for (const auto & column : header)
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column.type.get());
@@ -115,33 +115,47 @@ void collapseCSVHeaderTupleNames(
         size_t first_leaf = leaf_names.size();
         flattenField(column.name, column.type, leaf_names, leaf_types);
         candidates.push_back({&column, first_leaf, leaf_names.size() - first_leaf});
-        leaf_owner.resize(leaf_names.size(), candidates.size() - 1);
     }
     if (candidates.empty())
         return;
 
-    /// Built only after `leaf_names` is complete: the map keeps views into it.
-    CaseAwareBlockNameMap leaf_indexes(format_settings.input_format_column_matching_case_sensitivity);
-    leaf_indexes.setSize(leaf_names.size());
-    for (size_t i = 0; i < leaf_names.size(); ++i)
-        leaf_indexes.add(leaf_names[i], i);
+    auto spells = [&](const Candidate & candidate, size_t pos, bool ignore_case)
+    {
+        if (pos + candidate.num_leaves > names.size())
+            return false;
+        for (size_t k = 0; k < candidate.num_leaves; ++k)
+        {
+            std::string_view name = names[pos + k];
+            std::string_view leaf = leaf_names[candidate.first_leaf + k];
+            if (ignore_case ? !equalsCaseInsensitive(name, leaf) : name != leaf)
+                return false;
+        }
+        return true;
+    };
 
+    auto find_candidate = [&](size_t pos, bool ignore_case) -> const Candidate *
+    {
+        for (const auto & candidate : candidates)
+            if (spells(candidate, pos, ignore_case))
+                return &candidate;
+        return nullptr;
+    };
+
+    using MatchingMode = FormatSettings::InputFormatColumnMatchingCaseSensitivity;
+    const auto matching_mode = format_settings.input_format_column_matching_case_sensitivity;
     auto match_at = [&](size_t pos) -> const Candidate *
     {
-        /// A name that is a column keeps mapping to it (checked first, before any leaf lookup).
-        if (column_indexes_by_names.get(names[pos]) != CaseAwareBlockNameMap::NOT_FOUND)
+        /// Like a column name: an exact match first, then a case-insensitive one.
+        const Candidate * match = matching_mode == MatchingMode::IGNORE_CASE ? nullptr : find_candidate(pos, false);
+        if (!match && matching_mode != MatchingMode::MATCH_CASE)
+            match = find_candidate(pos, true);
+        if (!match)
             return nullptr;
-        size_t leaf = leaf_indexes.get(names[pos]);
-        if (leaf == CaseAwareBlockNameMap::NOT_FOUND)
-            return nullptr;
-        const auto & candidate = candidates[leaf_owner[leaf]];
-        if (leaf != candidate.first_leaf || pos + candidate.num_leaves > names.size())
-            return nullptr;
-        for (size_t k = 1; k < candidate.num_leaves; ++k)
-            if (column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND
-                || leaf_indexes.get(names[pos + k]) != candidate.first_leaf + k)
+        /// A name that is a column keeps mapping to it.
+        for (size_t k = 0; k < match->num_leaves; ++k)
+            if (column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND)
                 return nullptr;
-        return &candidate;
+        return match;
     };
 
     const bool collapse_types = type_names.size() == names.size();

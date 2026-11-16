@@ -22,5 +22,8 @@ SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(UInt64, String), `t.1` UI
 1,5,"x"$$);
 SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(UInt64, String)', $$"id","t","t.1","t.2"
 1,5,6,"x"$$); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(`a.b` UInt8, a Tuple(b UInt8))', $$"id","t.a.b","t.a.b"
+1,1,2$$);
+SELECT * FROM format(CSV, 'Name String, name String, t Tuple(UInt8)', $$NAME,foo,1$$);
 
 DROP TABLE tr;
