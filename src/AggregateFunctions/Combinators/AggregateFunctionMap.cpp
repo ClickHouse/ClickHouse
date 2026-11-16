@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
@@ -347,7 +348,19 @@ public:
             KeyType key{};
 
             this->data(place).readKey(key, buf);
-
+            if constexpr (std::is_same_v<KeyType, String>)
+            {
+                /// `keyAt` reads exactly N bytes of a `FixedString(N)` key, so a key of another length
+                /// could never be found again (e.g. by `rollbackInsertResult`).
+                if (key_type->getTypeId() == TypeIndex::FixedString)
+                {
+                    const size_t n = assert_cast<const DataTypeFixedString &>(*key_type).getN();
+                    if (key.size() != n)
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Key of size {} in the serialized state of aggregate function {} does not match its type {}",
+                            key.size(), getName(), key_type->getName());
+                }
+            }
             /// Take the slot before creating the state. `emplace` on a key that is already present
             /// does not insert, so creating first would abandon the fresh state: nothing would
             /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
