@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Esta página ofrece pautas concretas para evitar los JOIN siempre que sea posible y reducir su coste cuando sean imprescindibles. Para la sintaxis y la semántica, consulta la [referencia de la cláusula `JOIN`](/es/reference/statements/select/join). Para los algoritmos de ejecución y cómo elegir entre ellos, consulta [Unión de tablas](/es/concepts/features/operations/select/joining-tables).
 
 ## Evitar los JOIN siempre que sea posible {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ Si su principal métrica de optimización es el rendimiento y desea ejecutar la 
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Árbol de decisión para optimizar el rendimiento de las uniones" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árbol de decisión para optimizar el rendimiento de las uniones](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ Si desea optimizar una unión para minimizar el uso de memoria en lugar de reduc
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Árbol de decisión para la optimización de memoria en uniones" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árbol de decisión para la optimización de memoria en uniones](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

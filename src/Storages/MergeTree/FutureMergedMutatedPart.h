@@ -28,8 +28,8 @@ struct FutureMergedMutatedPart
     MergeType merge_type = MergeType::Regular;
     bool final = false;
 
-    const MergeTreePartition & getPartition() const { return parts.front()->partition; }
-    bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
+    [[nodiscard]] const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+    [[nodiscard]] bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection);
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);

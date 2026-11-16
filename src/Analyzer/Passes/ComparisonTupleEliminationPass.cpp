@@ -158,7 +158,7 @@ public:
     }
 
 private:
-    QueryTreeNodePtr tryOptimizeComparisonTupleFunctions(
+    [[nodiscard]] QueryTreeNodePtr tryOptimizeComparisonTupleFunctions(
         const QueryTreeNodePtr & lhs_function_node,
         const QueryTreeNodePtr & rhs_function_node,
         const std::string & comparison_function_name) const
@@ -195,7 +195,7 @@ private:
         return makeEquivalentTupleComparisonFunction(std::move(tuple_arguments_equals_functions), comparison_function_name);
     }
 
-    QueryTreeNodePtr tryOptimizeComparisonTupleFunctionAndConstant(
+    [[nodiscard]] QueryTreeNodePtr tryOptimizeComparisonTupleFunctionAndConstant(
         const QueryTreeNodePtr & function_node,
         const QueryTreeNodePtr & constant_node,
         const std::string & comparison_function_name) const
@@ -244,7 +244,7 @@ private:
         return makeEquivalentTupleComparisonFunction(std::move(tuple_arguments_equals_functions), comparison_function_name);
     }
 
-    QueryTreeNodePtr makeEquivalentTupleComparisonFunction(QueryTreeNodes tuple_arguments_equals_functions,
+    [[nodiscard]] QueryTreeNodePtr makeEquivalentTupleComparisonFunction(QueryTreeNodes tuple_arguments_equals_functions,
         const std::string & comparison_function_name) const
     {
         /// A remote server analyzes the query again and names a folded constant that depends on a column differently.
@@ -277,12 +277,12 @@ private:
         return result_function;
     }
 
-    QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
+    [[nodiscard]] QueryTreeNodePtr makeEqualsFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument) const
     {
         return makeComparisonFunction(std::move(lhs_argument), std::move(rhs_argument), "equals");
     }
 
-    QueryTreeNodePtr makeComparisonFunction(QueryTreeNodePtr lhs_argument,
+    [[nodiscard]] QueryTreeNodePtr makeComparisonFunction(QueryTreeNodePtr lhs_argument,
         QueryTreeNodePtr rhs_argument,
         const std::string & comparison_function_name) const
     {
@@ -296,7 +296,7 @@ private:
         return comparison_function;
     }
 
-    QueryTreeNodePtr makeNonFoldingComparisonFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument,
+    [[nodiscard]] QueryTreeNodePtr makeNonFoldingComparisonFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument,
         const std::string & comparison_function_name) const
     {
         auto comparison_function = makeComparisonFunction(std::move(lhs_argument), std::move(rhs_argument), comparison_function_name);

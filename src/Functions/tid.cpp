@@ -15,20 +15,20 @@ namespace
         static constexpr auto name = "tid";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTid>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        size_t getNumberOfArguments() const override { return 0; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-        String getSignatureString() const override { return "() -> UInt64"; }
+        [[nodiscard]] String getSignatureString() const override { return "() -> UInt64"; }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeUInt64>();
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();
             return DataTypeUInt64().createColumnConst(input_rows_count, current_tid);

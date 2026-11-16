@@ -31,7 +31,7 @@ namespace
         ProfileEvents::Count slots_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed];
         ProfileEvents::Count queries_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed];
 
-        DelayedMetrics diff() const
+        [[nodiscard]] DelayedMetrics diff() const
         {
             return {
                 ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed] - slots_before,
