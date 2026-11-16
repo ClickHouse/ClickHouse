@@ -33,6 +33,7 @@ BASE="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}
 
 # Optional curl arguments, e.g. basic auth for a dedicated user.
 CURL_AUTH=
+TEST_USER="user_${CLICKHOUSE_DATABASE}"
 
 # Prints the status, the number of result series and the response text following the `data` object.
 print_response()
@@ -46,14 +47,14 @@ tail = raw[min(starts):-1] if starts else ""
 print(d["status"], len(d["data"]["result"]) if d["status"] == "success" else "-", tail)'
 }
 
-# instant <time> <query> [extra_url_param]
+# instant <time> <query> [extra_url_param...]
 instant()
 {
     echo "query: $2"
     ${CLICKHOUSE_CURL} -sS --get "${BASE}/query" --data-urlencode "query=$2" --data-urlencode "time=$1" \
         --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" \
         --data-urlencode "enable_time_series_aggregate_functions=1" \
-        ${CURL_AUTH} ${3:+--data-urlencode "$3"} | print_response
+        ${CURL_AUTH} "${@:3}" | print_response
 }
 
 # range <query>
@@ -118,7 +119,7 @@ instant $T 'sum(
 
 echo "--- annotations are collected from the original tree, before the pushdown of label matchers"
 instant $T 'rate(foo[5m]) and on(job) bar_total{job="missing"}'
-instant $T 'rate(foo[5m]) and on(job) bar_total{job="missing"}' 'promql_push_down_label_matchers=0'
+instant $T 'rate(foo[5m]) and on(job) bar_total{job="missing"}' --data-urlencode 'promql_push_down_label_matchers=0'
 
 echo "--- a subquery argument is reported at 1:1, as Prometheus does"
 instant $T 'rate(foo[5m:1m])'
@@ -139,31 +140,41 @@ range 'rate(foo[5m])'
 echo "--- the annotation probe is a helper of the query: public result limits and quotas do not apply to it"
 # The probe of this query returns the two non-counter metric names (foo and baz), so it is limited
 # by max_result_rows=1 if it is not exempt from the request's public result limits.
-instant $T 'count(rate({__name__=~"foo|baz"}[5m]))' 'max_result_rows=1'
+instant $T 'count(rate({__name__=~"foo|baz"}[5m]))' --data-urlencode 'max_result_rows=1'
 # The probe is a separate query if it is not exempt from the quota; with a quota of one query the
 # request succeeds only if the probe is not charged against the user's quota.
 $CLICKHOUSE_CLIENT -q "
-CREATE USER promo;
-GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO promo;
-CREATE QUOTA promo_quota TO promo MAX 1 query per 1 hour;
+CREATE USER ${TEST_USER};
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${TEST_USER};
+GRANT CREATE TEMPORARY TABLE ON *.* TO ${TEST_USER};
+CREATE QUOTA ${TEST_USER} FOR INTERVAL 1 hour MAX queries = 1 TO ${TEST_USER};
 "
-CURL_AUTH="-u promo"
+CURL_AUTH="-u ${TEST_USER}:"
 instant $T 'rate(foo[5m])'
 CURL_AUTH=
 $CLICKHOUSE_CLIENT -q "
-DROP QUOTA promo_quota;
-DROP USER promo;
+DROP QUOTA ${TEST_USER};
+DROP USER ${TEST_USER};
 "
 
 echo "--- the annotation probe's query result cache write is finalized"
 # The probe's SELECT is eligible for the query result cache. If its write is not finalized, the
 # pending entry is discarded when the probe's pipeline is destroyed and the entry never appears.
-instant $T 'rate(foo[5m])' 'use_query_cache=1'
-$CLICKHOUSE_CLIENT -q "SELECT count() AS probe_cache_entries FROM system.query_cache WHERE query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%'" | grep -o '[0-9]*'
-instant $T 'rate(foo[5m])' 'use_query_cache=1'
-$CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS;
-SELECT query_cache_usage FROM system.query_log WHERE has(databases, current_database()) AND query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%' ORDER BY event_time_microseconds DESC LIMIT 1"
+instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save'
+$CLICKHOUSE_CLIENT -q "SELECT count() AS probe_cache_entries FROM system.query_cache WHERE query LIKE '%${CLICKHOUSE_DATABASE}%' AND query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%'" | grep -o '[0-9]*'
+instant $T 'rate(foo[5m])' --data-urlencode 'use_query_cache=1' --data-urlencode 'query_cache_nondeterministic_function_handling=save'
+# The query log entry is written after the HTTP response is sent, so retry until it appears.
+for _ in {1..60}; do
+    usage=$($CLICKHOUSE_CLIENT -q "
+SYSTEM FLUSH LOGS query_log;
+SELECT query_cache_usage FROM system.query_log
+WHERE (current_database = currentDatabase() OR query LIKE '%${CLICKHOUSE_DATABASE}%') AND type = 'QueryFinish'
+    AND query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%' AND query NOT LIKE '%probe_cache_entries%'
+ORDER BY event_time_microseconds DESC LIMIT 1")
+    [ "$usage" = "Read" ] && break
+    sleep 0.5
+done
+echo "$usage"
 
 echo "--- no annotations in an error"
 instant $T 'quantile(2, foo) + rate(foo)'

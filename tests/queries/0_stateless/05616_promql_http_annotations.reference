@@ -80,6 +80,11 @@ query: sum(
   rate(
     foo[5m]))
 success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (3:5)"]
+--- annotations are collected from the original tree, before the pushdown of label matchers
+query: rate(foo[5m]) and on(job) bar_total{job="missing"}
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m]) and on(job) bar_total{job="missing"}
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
 --- a subquery argument is reported at 1:1, as Prometheus does
 query: rate(foo[5m:1m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
@@ -103,6 +108,18 @@ query_range: quantile_over_time(2, baz[5m])
 success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
 query_range: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- the annotation probe is a helper of the query: public result limits and quotas do not apply to it
+query: count(rate({__name__=~"foo|baz"}[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:12)"]
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- the annotation probe's query result cache write is finalized
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+1
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+Read
 --- no annotations in an error
 query: quantile(2, foo) + rate(foo)
 error - 
