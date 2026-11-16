@@ -3749,7 +3749,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// Ranges of rows to decode, relative to the row subgroup. With an offset index, a range must
         /// not cover a page without passing rows (or a page not listed at all): it may not be fetched.
         const size_t subgroup_start = row_subgroup.start_row_idx;
-        std::vector<std::pair<size_t, size_t>> ranges;
+        VectorWithMemoryTracking<std::pair<size_t, size_t>> ranges;
         if (column.data_pages.empty())
             ranges.emplace_back(first, last);
         else

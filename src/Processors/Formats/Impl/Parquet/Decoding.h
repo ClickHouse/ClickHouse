@@ -316,7 +316,7 @@ struct IntConverter : public FixedSizeConverter
     {
         return !output_size.has_value() && date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
     }
-    bool canRejectValues() const override { return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw; }
+    [[nodiscard]] bool canRejectValues() const override { return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
@@ -438,7 +438,7 @@ struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
         input_size = input_size_;
     }
 
-    bool canRejectValues() const override { return true; }
+    [[nodiscard]] bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -454,7 +454,7 @@ extern template struct BigEndianDecimalWideIntegerConverter<UInt256>;
 template <typename T>
 struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
 {
-    bool canRejectValues() const override { return true; }
+    [[nodiscard]] bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -474,7 +474,7 @@ struct BigEndianDecimalStringConverter : public StringConverter
 
     explicit BigEndianDecimalStringConverter(UInt32 scale_) : scale(scale_) {}
 
-    bool canRejectValues() const override { return true; }
+    [[nodiscard]] bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
@@ -494,7 +494,7 @@ struct Int96Converter : public FixedSizeConverter
 
     Int96Converter();
 
-    bool canRejectValues() const override { return true; }
+    [[nodiscard]] bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
 };
 
@@ -506,7 +506,7 @@ struct GeoConverter : public StringConverter
     GeoConverter(const GeoColumnMetadata & geo_metadata_, bool precise_float_parsing_)
         : geo_metadata(geo_metadata_), precise_float_parsing(precise_float_parsing_) {}
 
-    bool canRejectValues() const override { return true; }
+    [[nodiscard]] bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };
 
