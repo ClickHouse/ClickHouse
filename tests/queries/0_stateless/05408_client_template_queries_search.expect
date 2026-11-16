@@ -50,3 +50,26 @@ expect ":) "
 
 send -- "exit\r"
 expect eof
+
+# The same from the normal mode of the `--vim` keymap. Ctrl-J submits there.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --enable-template-queries-search --history_file=$history_file --vim"
+expect ":) "
+
+send -- "SELECT 'vim_kept' || '_line'"
+# Escape, then a pause longer than the escape delay of the vim mode, so that it is not read as Meta.
+send -- "\033"
+sleep 0.1
+send -- "\017"
+expect {
+    -re "requires a build with skim support|skim failed" {}
+    -ex "\033\[?1000h" { send -- "\033" }
+}
+
+expect "SELECT 'vim_kept' || '_line'"
+
+send -- "\n"
+expect "vim_kept_line"
+expect ":) "
+
+send -- "\4"
+expect eof

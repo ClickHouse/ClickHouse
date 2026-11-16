@@ -832,7 +832,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// Ctrl-O searches the template queries when enabled. It is not bound by default.
     if (template_queries_loader && !options.embedded_mode)
-        rx.bind_key(Replxx::KEY::control('O'), [this](char32_t code) { return templateQuerySearch(code); });
+        bind_non_editing_key(Replxx::KEY::control('O'), [this](char32_t code) { return templateQuerySearch(code); });
 
     /// Change cursor style for overwrite mode to blinking (see console_codes(5))
     rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
