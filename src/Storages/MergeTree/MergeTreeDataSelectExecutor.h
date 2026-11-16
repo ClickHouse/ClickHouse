@@ -377,9 +377,6 @@ public:
         MarkCache * mark_cache = nullptr;
         UncompressedCache * uncompressed_cache = nullptr;
         VectorSimilarityIndexCache * vector_similarity_index_cache = nullptr;
-        /// Per skip index (by position in `skip_indexes.useful_indices`), the positions of its columns in the
-        /// part-level minmax hyperrectangle, when all of them are covered by it; empty otherwise.
-        const std::vector<std::vector<size_t>> * index_to_partition_minmax_positions = nullptr;
     };
 
     /// References into the caller's per-part state.
@@ -406,6 +403,12 @@ public:
         PartRangesForIndexAnalysis ranges,
         IndexAnalysisStats & stats,
         std::span<IndexAnalysisStat> skip_index_stats);
+
+    /// Whether the part-level minmax index of the partition key proves the condition of the skip index for every row
+    /// of the part, so evaluating the index on its granules cannot drop any. Used both by the index analysis and by
+    /// the evaluation of skip indexes on data read.
+    static bool isSkipIndexConditionTrueOnWholePart(
+        const MergeTreeIndexWithCondition & index_and_condition, const IMergeTreeDataPartInfoForReader & part, const LoggerPtr & log);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.

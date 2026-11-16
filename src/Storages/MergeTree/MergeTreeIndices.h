@@ -399,6 +399,9 @@ struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
     ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
+    /// Positions of the index columns in the part-level minmax index of the partition key, if all of them are
+    /// there; empty otherwise. See `MergeTreeDataSelectExecutor::isSkipIndexConditionTrueOnWholePart`.
+    std::vector<size_t> partition_minmax_positions;
 
     MergeTreeIndexWithCondition(
         MergeTreeIndexPtr index_,

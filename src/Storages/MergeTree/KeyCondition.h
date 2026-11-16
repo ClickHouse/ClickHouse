@@ -145,10 +145,12 @@ public:
         /// Treat `FUNCTION_UNKNOWN` as `(true, false)` instead of `(true, true)`, so an unknown leaf
         /// under `AND` does not force `can_be_false`. The result then means "true assuming the unknown
         /// parts are true", which is what `alwaysTrueOnHyperrectangle`-style checks need.
-        /// Requires `!hasFunctionNot()`.
+        /// Requires `isConjunctionOfAtoms()`.
         bool optimistic_unknowns = false) const;
 
-    [[nodiscard]] bool hasFunctionNot() const;
+    /// Whether the RPN has no `NOT`, `OR` or atom group, so it is a conjunction of atoms: only then an unknown atom
+    /// taken as true cannot make the whole condition look true where it is not (`NOT` swaps the flags, `OR` absorbs them).
+    [[nodiscard]] bool isConjunctionOfAtoms() const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.

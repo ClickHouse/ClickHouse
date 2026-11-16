@@ -7897,9 +7897,13 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
-bool KeyCondition::hasFunctionNot() const
+bool KeyCondition::isConjunctionOfAtoms() const
 {
-    return std::ranges::any_of(rpn, [](const RPNElement & e) { return e.function == RPNElement::FUNCTION_NOT; });
+    return std::ranges::none_of(rpn, [](const RPNElement & e)
+    {
+        return e.function == RPNElement::FUNCTION_NOT || e.function == RPNElement::FUNCTION_OR
+            || e.function == RPNElement::FUNCTION_ATOM_GROUP;
+    });
 }
 
 /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`
@@ -8124,8 +8128,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
     bool optimistic_unknowns) const
 {
-    /// Treating `UNKNOWN` as `(true, false)` is sound only without `FUNCTION_NOT`, which swaps the two flags.
-    chassert(!optimistic_unknowns || !hasFunctionNot());
+    /// Treating `UNKNOWN` as `(true, false)` is sound only in a conjunction of atoms, see `isConjunctionOfAtoms`.
+    chassert(!optimistic_unknowns || isConjunctionOfAtoms());
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)

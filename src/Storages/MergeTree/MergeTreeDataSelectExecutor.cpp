@@ -92,6 +92,7 @@ namespace ProfileEvents
 extern const Event FilteringMarksWithPrimaryKeyProcessedMarks;
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+extern const Event SkipIndexEvaluationsAvoidedByPartMinMax;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
@@ -1374,6 +1375,33 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
     return index_order;
 }
 
+bool MergeTreeDataSelectExecutor::isSkipIndexConditionTrueOnWholePart(
+    const MergeTreeIndexWithCondition & index_and_condition, const IMergeTreeDataPartInfoForReader & part, const LoggerPtr & log)
+{
+    const auto & positions = index_and_condition.partition_minmax_positions;
+    if (positions.empty())
+        return false;
+
+    /// `getMinMaxIndex` may load the index from disk, so it is called only for an index over partition key columns.
+    const auto part_minmax_index = part.getMinMaxIndex();
+    if (!part_minmax_index || !part_minmax_index->initialized)
+        return false;
+
+    Hyperrectangle hyperrectangle;
+    hyperrectangle.reserve(positions.size());
+    for (size_t position : positions)
+        hyperrectangle.push_back(part_minmax_index->hyperrectangle.at(position));
+
+    const auto & condition = index_and_condition.condition_template->generateForPart(part);
+    if (!condition || !condition->alwaysTrueOnHyperrectangle(hyperrectangle))
+        return false;
+
+    ProfileEvents::increment(ProfileEvents::SkipIndexEvaluationsAvoidedByPartMinMax);
+    LOG_TRACE(log, "Skip index {} is not evaluated for part {}: the part-level minmax index proves its condition for every row",
+        backQuote(index_and_condition.index->index.name), part.getPartName());
+    return true;
+}
+
 bool MergeTreeDataSelectExecutor::analyzeSinglePart(
     const SinglePartIndexAnalysisParams & params,
     const IMergeTreeDataPartInfoForReader & part,
@@ -1511,31 +1539,10 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
                 continue;
             }
 
-            /// `getMinMaxIndex` may lazy-load from disk, so only call it for candidate indexes.
-            const auto * partition_minmax_positions
-                = params.index_to_partition_minmax_positions ? &(*params.index_to_partition_minmax_positions)[index_idx] : nullptr;
-            const auto part_minmax_index
-                = partition_minmax_positions && !partition_minmax_positions->empty() ? part.getMinMaxIndex() : nullptr;
-            if (part_minmax_index && part_minmax_index->initialized)
+            if (isSkipIndexConditionTrueOnWholePart(index_and_condition, part, log))
             {
-                const auto & part_hyperrectangle = part_minmax_index->hyperrectangle;
-                Hyperrectangle sub_hyperrectangle;
-                sub_hyperrectangle.reserve(partition_minmax_positions->size());
-                for (size_t pos : *partition_minmax_positions)
-                    sub_hyperrectangle.push_back(part_hyperrectangle[pos]);
-
-                const auto & condition = index_and_condition.condition_template->generateForPart(part);
-                if (condition->alwaysTrueOnHyperrectangle(sub_hyperrectangle))
-                {
-                    LOG_TRACE(
-                        log,
-                        "Skipping granule-level evaluation of skip index {} on part {}: "
-                        "condition is already provably true from the part-level minmax",
-                        backQuote(index_and_condition.index->index.name),
-                        part.getPartName());
-                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                    continue;
-                }
+                stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                continue;
             }
 
             if (!is_index_supported_on_data_read(index_and_condition.index))
@@ -1682,43 +1689,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes_for_disjunctions = useSkipIndexesForDisjunctions(
         use_skip_indexes_for_disjunctions_, use_skip_indexes_on_data_read_, key_condition_rpn_template.get(), settings);
 
-    /// Positions in the part-level minmax hyperrectangle of each skip index's columns, when all of them
-    /// are covered by it; empty otherwise.
-    std::vector<std::vector<size_t>> index_to_partition_minmax_positions(skip_indexes.useful_indices.size());
-    if (metadata_snapshot->hasPartitionKey() && !parts_with_ranges.empty())
-    {
-        std::unordered_map<String, size_t> partition_minmax_col_pos;
-        /// `PARTITION_KEY_ONLY` keeps positions aligned regardless of appended `_block_number` / `_block_offset`.
-        const auto partition_minmax_names = MergeTreeData::getMinMaxColumns(
-            metadata_snapshot->getPartitionKey(),
-            parts_with_ranges.front().data_part->storage.getSettings(),
-            MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
-        partition_minmax_col_pos.reserve(partition_minmax_names.size());
-        for (size_t i = 0; i < partition_minmax_names.size(); ++i)
-            partition_minmax_col_pos.emplace(partition_minmax_names[i], i);
-
-        for (size_t i = 0; i < skip_indexes.useful_indices.size(); ++i)
-        {
-            const auto & cols = skip_indexes.useful_indices[i].index->index.column_names;
-            if (cols.empty())
-                continue;
-            std::vector<size_t> positions;
-            positions.reserve(cols.size());
-            for (const auto & col : cols)
-            {
-                auto it = partition_minmax_col_pos.find(col);
-                if (it == partition_minmax_col_pos.end())
-                {
-                    positions.clear();
-                    break;
-                }
-                positions.push_back(it->second);
-            }
-            if (!positions.empty())
-                index_to_partition_minmax_positions[i] = std::move(positions);
-        }
-    }
-
     /// Whether the read drops lightweight-deleted rows: by the deleted mask or by an explicit filter on `_row_exists`.
     bool query_hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask];
     if (!query_hides_lightweight_deleted_rows)
@@ -1778,7 +1748,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .mark_cache = mark_cache.get(),
             .uncompressed_cache = uncompressed_cache.get(),
             .vector_similarity_index_cache = vector_similarity_index_cache.get(),
-            .index_to_partition_minmax_positions = &index_to_partition_minmax_positions,
         };
         const size_t num_indexes = skip_indexes.useful_indices.size();
 

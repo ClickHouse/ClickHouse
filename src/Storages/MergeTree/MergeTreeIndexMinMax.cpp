@@ -211,10 +211,10 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
-    , condition_has_function_not(condition.hasFunctionNot())
 {
     /// The granule bound comes from `getExtremes`, which skips NaN.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+    condition_is_conjunction_of_atoms = condition.isConjunctionOfAtoms();
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -241,9 +241,11 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
 
 bool MergeTreeIndexConditionMinMax::alwaysTrueOnHyperrectangle(const Hyperrectangle & hyperrectangle) const
 {
+    /// With `OR` or `NOT`, an unknown atom (a condition on another column) cannot be taken as true, so the
+    /// condition is proven only if it holds whatever the unknown atoms are.
     if (hyperrectangle.size() != index_data_types.size())
         return false;
-    const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {}, !condition_has_function_not);
+    const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {}, condition_is_conjunction_of_atoms);
     return mask.can_be_true && !mask.can_be_false;
 }
 

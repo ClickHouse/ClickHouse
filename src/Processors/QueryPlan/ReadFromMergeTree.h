@@ -645,7 +645,7 @@ public:
         ReadFromMergeTree::Indexes & indexes,
         const IndexAnalysisFilter & filter,
         const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettings & data_settings,
+        const MergeTreeSettingsPtr & data_settings,
         [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
         [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
         const ContextPtr & query_context,

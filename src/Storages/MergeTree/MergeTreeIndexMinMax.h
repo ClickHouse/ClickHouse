@@ -71,7 +71,7 @@ public:
 private:
     DataTypes index_data_types;
     KeyCondition condition;
-    bool condition_has_function_not;
+    bool condition_is_conjunction_of_atoms = false;
 };
 
 
