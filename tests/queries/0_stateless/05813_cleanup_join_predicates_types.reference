@@ -7,3 +7,8 @@ Join conditions: x = CAST(t AS Nullable(Int32))
 Join conditions: t = v
 merge keys	1
 merge keys, written order	1
+dphyp	0
+dpsize	0
+dpsub	0
+greedy	0
+mixed integer keys	5000
