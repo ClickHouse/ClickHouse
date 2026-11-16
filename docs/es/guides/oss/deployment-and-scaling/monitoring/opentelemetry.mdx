@@ -9,13 +9,17 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) es un estándar abierto para recopilar trazas y métricas de aplicaciones distribuidas. ClickHouse ofrece cierta compatibilidad con OpenTelemetry.
 
-## Proporcionar el contexto de traza a ClickHouse {#supplying-trace-context-to-clickhouse}
+<div id="supplying-trace-context-to-clickhouse">
+  ## Proporcionar el contexto de traza a ClickHouse
+</div>
 
 ClickHouse acepta encabezados HTTP de contexto de traza, como se describe en la [recomendación del W3C](https://www.w3.org/TR/trace-context/). También acepta contexto de traza a través de un protocolo nativo que se utiliza para la comunicación entre servidores de ClickHouse o entre el cliente y el servidor. Para realizar pruebas manuales, se pueden proporcionar a `clickhouse-client` encabezados de contexto de traza conformes con la recomendación Trace Context mediante las opciones `--opentelemetry-traceparent` y `--opentelemetry-tracestate`.
 
 Si no se proporciona un contexto de traza padre, o si el contexto de traza proporcionado no cumple con el estándar W3C mencionado anteriormente, ClickHouse puede iniciar una nueva traza, con una probabilidad controlada por la configuración [opentelemetry&#95;start&#95;trace&#95;probability](/es/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
-## Propagación del contexto de traza {#propagating-the-trace-context}
+<div id="propagating-the-trace-context">
+  ## Propagación del contexto de traza
+</div>
 
 El contexto de traza se propaga a los servicios posteriores en los siguientes casos:
 
@@ -23,27 +27,15 @@ El contexto de traza se propaga a los servicios posteriores en los siguientes ca
 
 * Función de tabla [url](/es/reference/functions/table-functions/url). La información del contexto de traza se envía en las cabeceras HTTP.
 
-## Spans de consultas distribuidas {#spans-of-distributed-queries}
-
-En un `SELECT` distribuido, cada lectura de un segmento remoto queda cubierta por un span `RemoteQueryExecutor::execute`. Estos spans llevan atributos que identifican el fragmento de la consulta:
-
-* `clickhouse.cluster` y `clickhouse.shard_num`: el cluster y el segmento desde el que lee el executor;
-* `clickhouse.query_id` y `clickhouse.initial_query_id`: los identificadores de consulta desde la perspectiva del initiator;
-* `clickhouse.target_host`: las direcciones de las conexiones establecidas.
-
-El `status_code` de dicho span indica cómo terminó el fragmento:
-
-* `OK`: el segmento entregó su resultado completo.
-* `ERROR`: el fragmento falló, ya sea porque el segmento devolvió una excepción, porque el initiator no pudo leer los datos o porque no se pudo cancelar el segmento.
-* `UNSET`: ni éxito ni fallo. Estos spans incluyen un atributo que aporta más contexto.
-
-Las consultas `INSERT` sobre una tabla `Distributed` generan spans análogos en `DistributedSink`, con las mismas claves de atributo `clickhouse.cluster` y `clickhouse.shard_num`.
-
-## Trazado de solicitudes de ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
+<div id="tracing-clickhouse-keeper-requests">
+  ## Trazado de solicitudes de ClickHouse Keeper
+</div>
 
 ClickHouse admite trazado de OpenTelemetry para las solicitudes de [ClickHouse Keeper](/es/guides/oss/deployment-and-scaling/keeper/index) (servicio de coordinación compatible con ZooKeeper). Esta función proporciona visibilidad detallada del ciclo de vida de las operaciones de Keeper, desde el envío de la solicitud por parte del cliente hasta su procesamiento en el servidor.
 
-### Habilitar el trazado de Keeper {#enabling-keeper-tracing}
+<div id="enabling-keeper-tracing">
+  ### Habilitar el trazado de Keeper
+</div>
 
 Para habilitar el trazado de las solicitudes a Keeper, configure los siguientes ajustes en la configuración de su cliente de ZooKeeper/Keeper:
 
@@ -60,7 +52,9 @@ Para habilitar el trazado de las solicitudes a Keeper, configure los siguientes 
 </clickhouse>
 ```
 
-### Tipos de spans de Keeper {#keeper-span-types}
+<div id="keeper-span-types">
+  ### Tipos de spans de Keeper
+</div>
 
 Cuando el trazado está habilitado, ClickHouse crea spans tanto para las operaciones de Keeper en el cliente como en el servidor:
 
@@ -81,16 +75,20 @@ Cuando el trazado está habilitado, ClickHouse crea spans tanto para las operaci
 * `keeper.dispatcher.requests_queue` — Puesta en cola de solicitudes en el dispatcher
 * `keeper.write.pre_commit` — Preprocesamiento de solicitudes de escritura antes del commit de Raft
 * `keeper.write.commit` — Procesamiento de solicitudes de escritura después del commit de Raft
-* `keeper.read.wait_for_write` — Solicitudes de lectura en cola a la espera de que se complete un lote de solicitudes en curso
+* `keeper.read.wait_for_write` — Solicitudes de lectura en espera de escrituras de las que dependen
 * `keeper.read.process` — Procesamiento de solicitudes de lectura
 * `keeper.dispatcher.responses_queue` — Puesta en cola de respuestas en el dispatcher
 * `keeper.send_response` — Envío de la respuesta al cliente
 
-### Muestreo y rendimiento {#sampling-and-performance}
+<div id="sampling-and-performance">
+  ### Muestreo y rendimiento
+</div>
 
 Para gestionar la sobrecarga del trazado, Keeper implementa muestreo dinámico. La tasa de muestreo se ajusta automáticamente entre 1/10,000 y 1/10 en función del tamaño de la solicitud. La duración de todas las solicitudes (muestreadas y no muestreadas) se registra en métricas de histograma para supervisar el rendimiento.
 
-## Trazado del propio ClickHouse {#tracing-the-clickhouse-itself}
+<div id="tracing-the-clickhouse-itself">
+  ## Trazado del propio ClickHouse
+</div>
 
 ClickHouse crea `trace spans` para cada consulta y para algunas etapas de ejecución de la consulta, como la planificación de consultas o las consultas distribuidas.
 
@@ -100,11 +98,15 @@ La tabla debe estar habilitada en la configuración del servidor; consulte el el
 
 Las etiquetas o atributos se guardan como dos arrays paralelos que contienen las claves y los valores. Use [ARRAY JOIN](/es/reference/statements/select/array-join) para trabajar con ellos.
 
-## Log-query-settings {#log-query-settings}
+<div id="log-query-settings">
+  ## Log-query-settings
+</div>
 
 La configuración [log&#95;query&#95;settings](/es/reference/settings/session-settings/log-query#log_query_settings) permite registrar los cambios en los ajustes de la consulta durante su ejecución. Cuando está habilitada, cualquier modificación realizada en los ajustes de la consulta se registrará en el registro del span de OpenTelemetry. Esta función resulta especialmente útil en entornos de producción para hacer un seguimiento de los cambios de configuración que pueden afectar al rendimiento de la consulta.
 
-## Integración con sistemas de monitoreo {#integration-with-monitoring-systems}
+<div id="integration-with-monitoring-systems">
+  ## Integración con sistemas de monitoreo
+</div>
 
 Por el momento, no existe una herramienta lista que pueda exportar los datos de trazado de ClickHouse a un sistema de monitoreo.
 
@@ -131,6 +133,8 @@ FROM system.opentelemetry_span_log
 
 En caso de error, la parte de los datos de registro en la que se haya producido se perderá sin aviso. Consulte el log del servidor para ver los mensajes de error si los datos no llegan.
 
-## Contenido relacionado {#related-content}
+<div id="related-content">
+  ## Contenido relacionado
+</div>
 
 * Blog: [Cómo crear una solución de observabilidad con ClickHouse - Parte 2 - Trazas](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

@@ -6,9 +6,9 @@
 --
 -- Without the look-through, m_alias['k'] reads the entire Map while m['k'] reads
 -- only the matching key subcolumn, so the alias path was orders of magnitude slower.
--- The key subcolumn rewrite applies only to bucketed Maps, so the tables with Maps use `with_buckets`.
 
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_alias_map;
@@ -32,8 +32,7 @@ CREATE TABLE t_alias_map
     a_bad ALIAS mapApply((k, v) -> (k, v + 1), m),
     a_after_bad ALIAS a_bad
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_alias_map (id, m)
     SELECT number, map('key1', number, 'key2', number + 1) FROM numbers(10);
@@ -154,8 +153,7 @@ CREATE TABLE t_demo
     some_alias ALIAS attributes,
     chained_alias ALIAS some_alias
 )
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_demo (attributes) VALUES
     (map('key1810', 'value-a', 'other', 'value-b')),
@@ -184,8 +182,7 @@ CREATE TABLE t_alias_map_pk
     m Map(String, UInt64),
     a ALIAS m
 )
-ENGINE = MergeTree ORDER BY (id, m)
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY (id, m);
 
 INSERT INTO t_alias_map_pk (id, m) SELECT number, map('key1', number) FROM numbers(10);
 
@@ -235,7 +232,7 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_alias_nullable (id, n) VALUES (1, 'a'), (2, NULL), (3, 'b');
 
-SELECT '-- isNull(n_alias) rewrites to not(not(n.null))';
+SELECT '-- isNull(n_alias) rewrites to n.null';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT isNull(n_alias) FROM t_alias_nullable) WHERE explain LIKE '%n.null%';
 
 SELECT '-- isNotNull(n_chain) rewrites to not(n.null) through chain';
@@ -285,8 +282,7 @@ CREATE TABLE t_alias_correctness
     a3 ALIAS a2,
     a_bad ALIAS mapApply((k, v) -> (k, v + 1), m)
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_alias_correctness (id, m)
     SELECT number, map('key1', number, 'key2', number * 10) FROM numbers(5);
@@ -328,8 +324,7 @@ CREATE TABLE t_array_join
     id UInt64,
     arr Array(Map(String, UInt64))
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_array_join VALUES
     (1, [map('key1', 10, 'key2', 20), map('key1', 11)]),
@@ -350,10 +345,8 @@ DROP TABLE t_array_join;
 -- both sides. The walk must stop at the ListNode and not try to rewrite the join'd Map.
 DROP TABLE IF EXISTS t_using_left;
 DROP TABLE IF EXISTS t_using_right;
-CREATE TABLE t_using_left  (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
-CREATE TABLE t_using_right (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+CREATE TABLE t_using_left  (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_using_right (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_using_left  VALUES (1, map('key1', 10)), (2, map('key1', 20));
 INSERT INTO t_using_right VALUES (1, map('key1', 10)), (2, map('key1', 20));
@@ -378,8 +371,7 @@ CREATE TABLE t_subquery_inner
     id UInt64,
     m Map(String, UInt64)
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_subquery_inner VALUES
     (1, map('key1', 100, 'key2', 200)),

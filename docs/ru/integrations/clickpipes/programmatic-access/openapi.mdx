@@ -9,7 +9,9 @@ keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 
 Все типы ClickPipes можно создавать, обновлять и удалять программно с помощью [ClickHouse Cloud OpenAPI](/ru/products/cloud/api-reference/clickpipes/list-clickpipes). На этой странице описаны аутентификация и доступные конечные точки ClickPipes, а также приведены примеры запросов `curl` для каждого типа ClickPipe.
 
-## Аутентификация {#authentication}
+<div id="authentication">
+  ## Аутентификация
+</div>
 
 ClickHouse Cloud API использует аутентификацию HTTP Basic. Вам потребуется ключ API (ID ключа + секрет ключа) с разрешениями для целевого сервиса. Инструкции по созданию см. в разделе [Управление ключами API](/ru/products/cloud/features/admin-features/api/openapi).
 
@@ -22,13 +24,17 @@ export ORG_ID=<your_organization_id>
 export SERVICE_ID=<your_service_id>
 ```
 
-## Базовый URL {#base-url}
+<div id="base-url">
+  ## Базовый URL
+</div>
 
 ```bash
 https://api.clickhouse.cloud/v1
 ```
 
-## Конечные точки {#endpoints}
+<div id="endpoints">
+  ## Конечные точки
+</div>
 
 Все конечные точки ClickPipes привязаны к сервису ClickHouse Cloud:
 
@@ -53,16 +59,22 @@ https://api.clickhouse.cloud/v1
 
 Полные схемы запросов и ответов для каждой конечной точки см. в [справочнике API](/ru/products/cloud/api-reference/clickpipes/list-clickpipes).
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-### Получение списка ClickPipes {#list-clickpipes}
+<div id="list-clickpipes">
+  ### Получение списка ClickPipes
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Получить ClickPipe {#get-clickpipe}
+<div id="get-clickpipe">
+  ### Получить ClickPipe
+</div>
 
 ```bash
 CLICKPIPE_ID=<your_clickpipe_id>
@@ -71,7 +83,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-### Остановить или запустить ClickPipe {#stop-start-clickpipe}
+<div id="stop-start-clickpipe">
+  ### Остановить или запустить ClickPipe
+</div>
 
 ```bash
 # Остановить
@@ -89,7 +103,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID/state"
 ```
 
-### Удалить ClickPipe {#delete-clickpipe}
+<div id="delete-clickpipe">
+  ### Удалить ClickPipe
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -97,11 +113,15 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
-## Создание ClickPipes {#creating-clickpipes}
+<div id="creating-clickpipes">
+  ## Создание ClickPipes
+</div>
 
 Тело запроса `POST /clickpipes` зависит от типа источника. В примерах ниже показана структура для каждого поддерживаемого типа ClickPipe. Эталонные JSON-схемы см. в [справочнике API](/ru/products/cloud/api-reference/clickpipes/list-clickpipes).
 
-### Kafka {#create-kafka}
+<div id="create-kafka">
+  ### Kafka
+</div>
 
 Поддерживаемые источники, совместимые с Kafka: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
@@ -141,7 +161,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Amazon Kinesis {#create-kinesis}
+<div id="create-kinesis">
+  ### Amazon Kinesis
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -151,16 +173,11 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     "name": "My Kinesis ClickPipe",
     "source": {
       "kinesis": {
-        "format": "AvroConfluent",
+        "format": "JSONEachRow",
         "streamName": "my-stream",
         "region": "us-east-1",
         "iteratorType": "TRIM_HORIZON",
         "authentication": "IAM_USER",
-        "schemaRegistry": {
-          "type": "glue",
-          "glueRegion": "us-east-1",
-          "glueRegistryName": "my-registry"
-        },
         "accessKey": {
           "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
           "secretKey": "<secret_key>"
@@ -182,9 +199,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-В этом примере настраивается Avro с AWS Glue Schema Registry. Чтобы декодировать Protobuf с помощью Glue, задайте для `format` значение `Protobuf` и оставьте `schemaRegistry`. Если же нужно загрузить схему Protobuf, задайте для `format` значение `Protobuf` и передайте в `protobufSchema` файл `.proto` в кодировке base64 или сериализованный `FileDescriptorSet`; в этом случае не указывайте `schemaRegistry` в запросе.
-
-### Amazon S3 {#create-s3}
+<div id="create-s3">
+  ### Amazon S3
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -219,7 +236,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Google Cloud Storage {#create-gcs}
+<div id="create-gcs">
+  ### Google Cloud Storage
+</div>
 
 `serviceAccountKey` должен содержать содержимое JSON-файла ключа сервисного аккаунта GCP, закодированное в base64.
 
@@ -253,7 +272,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Azure Blob Storage {#create-abs}
+<div id="create-abs">
+  ### Azure Blob Storage
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -286,7 +307,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### Postgres CDC {#create-postgres}
+<div id="create-postgres">
+  ### Postgres CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -322,7 +345,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MySQL CDC {#create-mysql}
+<div id="create-mysql">
+  ### MySQL CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -357,7 +382,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### MongoDB CDC {#create-mongodb}
+<div id="create-mongodb">
+  ### MongoDB CDC
+</div>
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -392,7 +419,9 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
 
-### BigQuery {#create-bigquery}
+<div id="create-bigquery">
+  ### BigQuery
+</div>
 
 `serviceAccountFile` должен содержать содержимое JSON-файла ключа сервисного аккаунта GCP в кодировке base64.
 

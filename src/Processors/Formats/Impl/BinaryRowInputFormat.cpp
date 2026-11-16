@@ -77,9 +77,9 @@ BinaryFormatReader<with_defaults>::BinaryFormatReader(ReadBuffer & in_, const Fo
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRow()
+std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 {
-    VectorWithMemoryTracking<String> fields;
+    std::vector<String> fields;
     String field;
     for (size_t i = 0; i < read_columns; ++i)
     {
@@ -90,7 +90,7 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRo
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
+std::vector<String> BinaryFormatReader<with_defaults>::readNames()
 {
     readVarUInt(read_columns, *in);
     if (read_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
@@ -99,10 +99,10 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
 }
 
 template <bool with_defaults>
-VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
+std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 {
     read_data_types.reserve(read_columns);
-    VectorWithMemoryTracking<String> type_names;
+    Names type_names;
     if (format_settings.binary.decode_types_in_binary_format)
     {
         type_names.reserve(read_columns);
@@ -123,7 +123,7 @@ VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
+bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
     return readFieldImpl(column, serialization);
 }
@@ -1444,8 +1444,6 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 <Note>
 More complex functions like `uniq`, `quantile`, or `groupArray` use implementation-specific formats. If you need to read or write these states, consult the ClickHouse source code for the specific function.
 </Note>
-
-With the setting `aggregate_function_input_format` set to `value` or `array`, an `AggregateFunction(func, T)` column is read as a value of type `T` (or a `Tuple` of the argument types if there are several of them), or as an `Array` of such values, encoded exactly as that type is encoded in RowBinary. The state is built from the values on the server side. For example, with `aggregate_function_input_format = 'array'`, a cell of `AggregateFunction(avg, UInt32)` is an `Array(UInt32)`: a LEB128 length followed by the elements.
 
 ### QBit {#qbit}
 

@@ -67,27 +67,27 @@ std::string getOrdinalSuffix(T n)
 
 /// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.
 
-constexpr bool isASCII(char c)
+inline bool isASCII(char c)
 {
     return static_cast<unsigned char>(c) < 0x80;
 }
 
-constexpr bool isLowerAlphaASCII(char c)
+inline bool isLowerAlphaASCII(char c)
 {
     return (c >= 'a' && c <= 'z');
 }
 
-constexpr bool isUpperAlphaASCII(char c)
+inline bool isUpperAlphaASCII(char c)
 {
     return (c >= 'A' && c <= 'Z');
 }
 
-constexpr bool isAlphaASCII(char c)
+inline bool isAlphaASCII(char c)
 {
     return isLowerAlphaASCII(c) || isUpperAlphaASCII(c);
 }
 
-constexpr bool isNumericASCII(char c)
+inline bool isNumericASCII(char c)
 {
     /// This is faster than
     /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
@@ -102,7 +102,7 @@ inline bool isHexDigit(char c)
         || (c >= 'A' && c <= 'F');
 }
 
-constexpr bool isAlphaNumericASCII(char c)
+inline bool isAlphaNumericASCII(char c)
 {
     return isAlphaASCII(c)
         || isNumericASCII(c);
@@ -135,16 +135,6 @@ inline bool isWhitespaceASCII(char c)
 inline bool isWhitespaceASCIIOneLine(char c)
 {
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
-}
-
-/// Remove the leading and trailing ASCII whitespace.
-inline std::string_view trimWhitespace(std::string_view str)
-{
-    while (!str.empty() && isWhitespaceASCII(str.front()))
-        str.remove_prefix(1);
-    while (!str.empty() && isWhitespaceASCII(str.back()))
-        str.remove_suffix(1);
-    return str;
 }
 
 inline bool isControlASCII(char c)
@@ -431,9 +421,6 @@ inline void trim(std::string & str, char c = ' ')
 
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
-
-/// Position of the first byte >= 0x80, or `size` if there is none.
-size_t findFirstNonASCII(const UInt8 * data, size_t size);
 
 constexpr bool containsGlobs(const std::string & str)
 {
