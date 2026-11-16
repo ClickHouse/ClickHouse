@@ -6,7 +6,7 @@
 #include <Common/CoroutineStack.h>
 #include <Common/Exception.h>
 #include <Common/FiberLocal.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 
 namespace DB::ErrorCodes
 {
@@ -90,7 +90,7 @@ public:
     static CoroutinePtr & getCurrentCoroutine();
 
     /// Empty during teardown (see `unwind`).
-    const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
+    [[nodiscard]] const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
 
 private:
     template <typename Fn>
