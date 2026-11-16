@@ -34,6 +34,9 @@ apache-datasketches-theta-v1	123	7	[20]		{'ndv':'135'}
 --- reading: Puffin skips Theta sketch blobs ---
 0
 0
+--- reading: blobs of unknown types are listed by PuffinMetadata and skipped by Puffin ---
+some-future-blob	[1]	4	3	zstd	{}
+0
 --- errors ---
 Unknown Puffin blob type 'unknown'
 has 1 field ids, but 2 columns are written

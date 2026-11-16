@@ -85,6 +85,15 @@ echo "--- reading: Puffin skips Theta sketch blobs ---"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$OUT/field_ids.puffin', Puffin)"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$OUT/field_ids.puffin', Puffin, 'referenced_data_file String')"
 
+echo "--- reading: blobs of unknown types are listed by PuffinMetadata and skipped by Puffin ---"
+$CLICKHOUSE_LOCAL -q "
+WITH '{\"blobs\":[{\"type\":\"some-future-blob\",\"fields\":[1],\"snapshot-id\":1,\"sequence-number\":2,\"offset\":4,\"length\":3,\"compression-codec\":\"zstd\"}]}' AS footer
+SELECT concat('PFA1', 'abc', 'PFA1', footer, reinterpretAsFixedString(toInt32(length(footer))), repeat('\\0', 4), 'PFA1')
+INTO OUTFILE '$OUT/unknown.puffin' FORMAT RawBLOB
+"
+$CLICKHOUSE_LOCAL -q "SELECT blob_type, fields, offset, length, compression_codec, properties FROM file('$OUT/unknown.puffin', PuffinMetadata)"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$OUT/unknown.puffin', Puffin)"
+
 echo "--- errors ---"
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e1.puffin', Puffin) SETTINGS output_format_puffin_blob_type = 'unknown' SELECT 1 AS x" 2>&1 | grep -o -m1 "Unknown Puffin blob type 'unknown'"
 $CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('$OUT/e2.puffin', Puffin) SETTINGS $THETA, output_format_puffin_field_ids = '1' SELECT 1 AS x, 2 AS y" 2>&1 | grep -o -m1 "has 1 field ids, but 2 columns are written"
