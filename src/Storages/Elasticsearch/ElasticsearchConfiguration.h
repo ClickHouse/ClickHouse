@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
@@ -31,9 +32,11 @@ struct ElasticsearchConfiguration
 
     String named_collection_name;
 
-    HTTPHeaderEntries authorizationHeaders() const;
+    [[nodiscard]] HTTPHeaderEntries authorizationHeaders() const;
 
     static ElasticsearchConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
 };
+
+SecretArgumentsSpec elasticsearchSecretArguments();
 
 }

@@ -1,0 +1,5 @@
+SELECT a.`.b`.f(1)	1
+SELECT * FROM `.db`.pv(p = 1)	1
+SELECT * FROM db.`.pv`(p = 1)	1
+SELECT * FROM db.`pv.`(p = 1)	1
+SELECT * FROM `127`.`0`.`0`.`{4`.`.7}`.pv(p = 1)	1

@@ -39,12 +39,15 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -56,8 +59,13 @@ namespace DataLakeStorageSetting
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
-    if (!object_storage)
+    /// A client created read-only does not create a missing Azure container, which a write needs. The container
+    /// is created only while a client is built, so a cached writable client can also serve a read-only request.
+    if (!object_storage || (object_storage_is_readonly && !create_readonly))
+    {
         object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
+        object_storage_is_readonly = create_readonly;
+    }
     return object_storage;
 }
 
@@ -73,6 +81,14 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 : "";
             if (!disk_name.empty())
             {
+                /// Only Iceberg and Delta Lake support the `disk` setting; other data lakes (Paimon, Hudi)
+                /// have no configuration over a disk.
+                const std::string_view function_name = Definition::name;
+                const bool is_iceberg = function_name.starts_with("iceberg");
+                const bool is_delta_lake = function_name.starts_with("deltaLake");
+                if (!is_iceberg && !is_delta_lake)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `disk` is not supported by table function {}", function_name);
+
                 auto disk = context->getDisk(disk_name);
                 switch (disk->getObjectStorage()->getType())
                 {
@@ -81,10 +97,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     if (Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
-#if USE_PARQUET
-                    else
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -98,10 +114,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "azure")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
-#if USE_PARQUET
-                    else
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -114,10 +130,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "deltaLakeCluster" &&
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
-#if USE_PARQUET
-                    else
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -125,6 +141,9 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
                 }
+
+                if (!configuration)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No configuration over disk {} was created for table function {}", disk_name, function_name);
             }
             else
                 configuration = std::make_shared<Configuration>(settings);
@@ -194,12 +213,12 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 ColumnsDescription TableFunctionObjectStorage<
-    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration->structure == "auto")
     {
         configuration->check(context);
-        auto storage = getObjectStorage(context, !is_insert_query);
+        auto storage = getObjectStorage(context, /*create_readonly=*/ true);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
@@ -251,12 +270,18 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
+    /// `ReadFromDeltaLakeTableChangesStep`, which does not distribute work either, so every replica would return all changes.
+    const bool is_delta_lake_change_data_feed = configuration->isDataLakeConfiguration()
+        && (query_settings[Setting::delta_lake_snapshot_start_version] != -1
+            || query_settings[Setting::delta_lake_snapshot_end_version] != -1);
     const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
-        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
+        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster")
+        && !is_delta_lake_change_data_feed;
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -349,6 +374,8 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
 | `extra_credentials`                     | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps. |
 | `storage_class_name`                    | Parameter is optional. Supported values: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). Defaults to `STANDARD`. |
+| `upload_checksum_algorithm`             | Parameter is optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.                                                                                                                                                                                                                          |
+| `delete_checksum_algorithm`             | Parameter is optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.                                                                                                                                                              |
 
 <Info>
 **GCS**
@@ -724,11 +751,11 @@ When reading Avro files that contain **nested records** which diverge across fil
 
 > The number of leaves in record doesn't match the number of elements in tuple...
 
-This happens because ClickHouse expects all nested record structures to match the same schema.  
+This happens because ClickHouse expects all nested record structures to match the same schema.
 To handle this scenario, you can:
 
-- Use `schema_inference_mode='union'` to merge different nested record schemas, or  
-- Manually align your nested structures and enable  
+- Use `schema_inference_mode='union'` to merge different nested record schemas, or
+- Manually align your nested structures and enable
   `use_structure_from_insertion_table_in_table_functions=1`.
 
 <Info>
@@ -774,7 +801,7 @@ gcs(named_collection[, option=value [,..]])
 <Tip>
 **GCS**
 
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys.
 See the [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 </Tip>
 
@@ -1556,7 +1583,7 @@ ENGINE = IcebergS3(
 
 Or, using AWS Glue Data Catalog with S3:
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -1591,12 +1618,12 @@ ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/s
 ### Basic usage {#basic-usage}
 
  ```sql
- SELECT * FROM example_table ORDER BY 1 
+ SELECT * FROM example_table ORDER BY 1
  SETTINGS iceberg_timestamp_ms = 1714636800000
  ```
 
  ```sql
- SELECT * FROM example_table ORDER BY 1 
+ SELECT * FROM example_table ORDER BY 1
  SETTINGS iceberg_snapshot_id = 3547395809148285433
  ```
 
@@ -1621,37 +1648,30 @@ Consider this sequence of operations:
  ```sql
  -- Create a table with two columns
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
     (1, 'Mars')
 
   ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+
   ts2 = now()
 
-- - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-   ts3 = now()
+  ts3 = now()
 
-- - Query the table at each timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -1659,7 +1679,15 @@ Consider this sequence of operations:
 |           1|        Mars|
 +------------+------------+
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -1681,23 +1709,23 @@ A time travel query at a current moment might show a different schema than the c
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
 -- Insert initial data into the table
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
 -- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
 -- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -1706,8 +1734,10 @@ A time travel query at a current moment might show a different schema than the c
     +------------+------------+
 
 -- Query the table at a current moment
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
@@ -1723,16 +1753,16 @@ The second one is that while doing time travel you can't get state of table befo
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 In ClickHouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with ClickHouse Select queries and it will work the same way.
@@ -1753,7 +1783,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -1766,10 +1797,10 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -1872,7 +1903,7 @@ y: 993
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. With `iceberg_insert_single_manifest_for_all_partitions` enabled, each insert stream of an `INSERT` writes the files of all partitions it received into one manifest (exactly one manifest per `INSERT` with `max_insert_threads = 1`), so a partition written by the same `INSERT` as other partitions cannot be dropped. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
@@ -2120,7 +2151,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
 - The current snapshot is always preserved, even if it is older than the specified timestamp
 - Requires the `allow_insert_into_iceberg` setting to be enabled
-- Requires the `allow_experimental_expire_snapshots` setting to be enabled
+- Requires the `allow_expire_snapshots` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
 </Note>
 
@@ -2288,15 +2319,27 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 ## Limitations {#limitations}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable.
 
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
 deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
 A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
 it can be read again.
+
+Each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by
+Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
+
+Fields inside a `ROW` column are matched to data files by name, not by Paimon field id, so **data files written before a
+field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared
+case-insensitively) was added, cannot be read**: the result would contain `NULL` for the renamed field and the dropped
+field's values for the re-added one. Reading such a data file therefore throws. Adding and dropping fields is supported.
+Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`,
+makes the snapshots created after it readable.
 
 ## Defining a named collection {#defining-a-named-collection}
 
@@ -2345,7 +2388,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2354,6 +2397,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 Data types supported in Paimon partition keys:
@@ -2585,6 +2629,10 @@ A table with the specified structure for reading data in the specified Hudi tabl
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
+
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
 
 ## Related {#related}
 

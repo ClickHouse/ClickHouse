@@ -375,9 +375,9 @@ private:
         CompareInt a = 1;
         CompareInt b = 1;
 
-        bool none() const { return a == 1 && b == 1; }
-        bool left() const { return a != 1; }
-        bool right() const { return b != 1; }
+        [[nodiscard]] bool none() const { return a == 1 && b == 1; }
+        [[nodiscard]] bool left() const { return a != 1; }
+        [[nodiscard]] bool right() const { return b != 1; }
     };
 
     template <bool check_overflow, typename T, typename U>
@@ -680,7 +680,7 @@ private:
     template <bool check_overflow, bool scale_left, bool scale_right>
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4<check_overflow, scale_left, scale_right>(a, b, c, scale);
