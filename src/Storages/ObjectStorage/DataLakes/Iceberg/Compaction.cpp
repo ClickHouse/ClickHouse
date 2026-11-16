@@ -1213,6 +1213,15 @@ static bool writeMetadataFiles(
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
 
+    /// Restore the current snapshot of the source table.
+    Int64 source_current_snapshot_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    if (auto it = nearest_kept.find(source_current_snapshot_id); it != nearest_kept.end() && it->second >= 0)
+    {
+        Int64 current_snapshot_id = it->second;
+        metadata_object->set(Iceberg::f_current_snapshot_id, current_snapshot_id);
+        metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, current_snapshot_id);
+    }
+
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
