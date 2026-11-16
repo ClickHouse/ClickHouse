@@ -103,11 +103,6 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         return;
     }
 
-    appendColumnNameOfValue(value, ostr);
-}
-
-void ASTLiteral::appendColumnNameOfValue(const Field & value, WriteBuffer & ostr)
-{
     /// 100 - just arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 
