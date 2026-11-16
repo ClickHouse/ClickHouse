@@ -3,15 +3,15 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>;
 
 /** The type SimpleAggregateFunction(fct, type) is meant to be used in an AggregatingMergeTree. It behaves like a standard
  * data type but when rows are merged, an aggregation function is applied.
@@ -39,12 +39,11 @@ public:
     DataTypeCustomSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
-    [[nodiscard]] AggregateFunctionPtr getFunction() const { return function; }
-    [[nodiscard]] String getFunctionName() const;
-    [[nodiscard]] const DataTypes & getArgumentsDataTypes() const { return argument_types; }
-    [[nodiscard]] const Array & getParameters() const { return parameters; }
-    [[nodiscard]] String getName() const override;
-    [[nodiscard]] DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
+    AggregateFunctionPtr getFunction() const { return function; }
+    String getFunctionName() const;
+    const DataTypes & getArgumentsDataTypes() const { return argument_types; }
+    const Array & getParameters() const { return parameters; }
+    String getName() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

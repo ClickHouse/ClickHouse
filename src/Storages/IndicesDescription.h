@@ -50,16 +50,16 @@ struct IndexDescription
     Block sample_block;
 
     /// Index granularity, make sense for skip indices
-    size_t granularity{};
+    size_t granularity;
 
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns
-    bool is_implicitly_created{};
+    bool is_implicitly_created;
 
     /// This is here for compatibility reasons. Prior to 26.1 index filenames weren't escaped, which could lead to issues with some
     /// characters in index names producing broken parts. We have this flag to maintain compatibility and be able to load older indices
     /// (if using the `escape_index_filenames`).
-    bool escape_filenames{};
+    bool escape_filenames;
 
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(
@@ -80,11 +80,11 @@ struct IndexDescription
     /// if something change in columns.
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
-    [[nodiscard]] bool isImplicitlyCreated() const { return is_implicitly_created; }
+    bool isImplicitlyCreated() const { return is_implicitly_created; }
 
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
-    [[nodiscard]] bool isSimpleSingleColumnIndex() const;
+    bool isSimpleSingleColumnIndex() const;
 };
 
 /// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
@@ -105,27 +105,27 @@ bool hasTextIndexPreOrPostProcessor(const IndexDescription & index);
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
-    [[nodiscard]] bool has(const String & name) const;
+    bool has(const String & name) const;
     /// Get index by name; throws if not found
-    [[nodiscard]] const IndexDescription & getByName(const String & name) const;
+    const IndexDescription & getByName(const String & name) const;
     /// Index with type exists
-    [[nodiscard]] bool hasType(const String & type) const;
+    bool hasType(const String & type) const;
 
     /// Convert description to string. Includes only explicitly created indices
-    [[nodiscard]] String explicitToString() const;
+    String explicitToString() const;
 
     /// Convert description to string. Includes all indices.
     /// It should only used for compatibility or debugging. Otherwise prefer explicitToString()
-    [[nodiscard]] String allToString() const;
+    String allToString() const;
 
     /// Parse description from string
     static IndicesDescription
     parse(const String & str, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context);
 
     /// Return common expression for all stored indices
-    [[nodiscard]] ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
+    ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 };
 
 /// Extract Field value from an index argument AST node.

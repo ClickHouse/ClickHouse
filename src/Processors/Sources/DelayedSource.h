@@ -15,7 +15,7 @@ namespace DB
 /// Then, DelayedSource just move data from inputs to outputs until finished.
 ///
 /// It main output port of DelayedSource is never needed, callback won't be called.
-class DelayedSource final : public IProcessor
+class DelayedSource : public IProcessor
 {
 public:
     using Creator = std::function<QueryPipelineBuilder()>;
@@ -25,7 +25,7 @@ public:
 
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
 
     OutputPort & getPort() { return *main; }
     OutputPort * getTotalsPort() { return totals; }

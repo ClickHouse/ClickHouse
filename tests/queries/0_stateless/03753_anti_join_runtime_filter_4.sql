@@ -11,6 +11,7 @@ INSERT INTO customer SELECT number, 7, 7 FROM numbers(10000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
 
+SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
 
@@ -29,9 +30,9 @@ SETTINGS enable_join_runtime_filters=0;
 SELECT count()
 FROM customer LEFT ANTI JOIN nation
 ON c_nationkey = n_nationkey AND n_name = 'FRANCE'
-SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
+SETTINGS enable_join_runtime_filters=1;
 
 SELECT count()
 FROM customer LEFT ANTI JOIN (SELECT * FROM nation WHERE n_name = 'FRANCE') AS n
 ON c_nationkey = n.n_nationkey
-SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
+SETTINGS enable_join_runtime_filters=1;

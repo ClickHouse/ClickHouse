@@ -10,15 +10,6 @@
 namespace DB
 {
 
-/// `nats_GetLastError` returns a null pointer when the thread has not recorded an error yet, and
-/// formatting a null `const char *` throws `fmt::format_error` instead of reporting the failure
-/// that is being logged. Never hand its result to a format string directly.
-inline const char * getNATSLastError()
-{
-    const char * last_error = nats_GetLastError(nullptr);
-    return last_error ? last_error : "none";
-}
-
 struct NATSConfiguration
 {
     String url;
@@ -28,27 +19,14 @@ struct NATSConfiguration
     String password;
     String token;
     String credential_file;
-    String credentials;
-    String ca_file;
-    String client_cert_file;
-    String client_key_file;
 
-    UInt64 max_connect_tries{};
-    int reconnect_wait{};
+    UInt64 max_connect_tries;
+    int reconnect_wait;
 
-    bool secure{};
+    bool secure;
 };
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
-using NATSStatisticsPtr = std::unique_ptr<natsStatistics, decltype(&natsStatistics_Destroy)>;
-
-/// Loads the TLS material into `options`. Both calls parse the files immediately, so one which
-/// cannot be read or parsed is reported here instead of at connect time.
-void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration);
-
-/// Loads the TLS material into throwaway options, which reports a file that cannot be read or parsed
-/// without opening a connection.
-void validateNATSCertificates(const NATSConfiguration & configuration);
 
 class NATSConnection
 {
@@ -68,14 +46,9 @@ public:
     void disconnect();
 
     natsConnection * getConnection() { return connection.get(); }
-    [[nodiscard]] int getReconnectWait() const { return configuration.reconnect_wait; }
+    int getReconnectWait() const { return configuration.reconnect_wait; }
 
-    /// How many times the client has re-established this connection. The client restores a
-    /// subscription itself, but only its `SUB` line, so anything a subscription was waiting for on
-    /// the broker is gone: whoever needs it back has to notice this count changing.
-    UInt64 getReconnectCount();
-
-    [[nodiscard]] String connectionInfoForLog() const;
+    String connectionInfoForLog() const;
 
     /// The error the client library recorded last on the connection, `Authorization Violation`
     /// for a connection it closed for good after the server rejected the credentials twice. The
@@ -85,9 +58,9 @@ public:
     String lastErrorForLog();
 
 private:
-    [[nodiscard]] bool isConnectedImpl(const Lock & connection_lock) const;
-    [[nodiscard]] bool isDisconnectedImpl(const Lock & connection_lock) const;
-    [[nodiscard]] bool isClosedImpl(const Lock & connection_lock) const;
+    bool isConnectedImpl(const Lock & connection_lock) const;
+    bool isDisconnectedImpl(const Lock & connection_lock) const;
+    bool isClosedImpl(const Lock & connection_lock) const;
 
     void connectImpl(const Lock & connection_lock);
 
@@ -101,7 +74,6 @@ private:
     LoggerPtr log;
 
     NATSOptionsPtr options;
-    NATSStatisticsPtr statistics;
     std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> connection;
 
     std::mutex mutex;
