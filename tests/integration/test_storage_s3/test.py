@@ -1,5 +1,6 @@
 import gzip
 import io
+import json
 import logging
 import os
 import random
@@ -1184,6 +1185,83 @@ def test_request_payer(started_cluster):
         error = other.query_and_get_error(query, settings=payer)
         assert 'HTTP header "x-amz-request-payer" is forbidden' in error, error
     other.query("DROP TABLE t_request_payer_src SYNC")
+
+
+def test_request_payer_does_not_send_endpoint_headers(started_cluster):
+    # Both endpoint sections of `requester_pays.xml` also have `Authorization: Bearer endpoint-header-token`. Under the
+    # default `s3_allow_server_credentials_in_user_queries = 0` it must reach no request next to `request_payer`,
+    # including the redirected requests and those of `S3` tables loaded at startup.
+    node = started_cluster.instances["dummy_without_named_collections"]
+    resolver = started_cluster.get_container_id("resolver")
+    base = f"http://resolver:8085/{started_cluster.minio_bucket}"
+    keyed = f"{base}/requester_pays_endpoint/headers.csv"
+    keyless = f"{base}/requester_pays_keyless/headers.csv"
+
+    def sent(redirected, query, error=False):
+        # `redirected`: whether the mock accepted the request (signed with the payer header) and redirected it.
+        started_cluster.exec_in_container(
+            resolver, ["curl", "-s", "-X", "POST", "http://localhost:8085/__reset"]
+        )
+        result = node.query_and_get_error(query) if error else node.query(query)
+        requests = json.loads(
+            started_cluster.exec_in_container(
+                resolver, ["curl", "-s", "http://localhost:8085/__requests"]
+            )
+        )
+        assert requests, query
+        assert redirected == any(
+            r["path"].startswith("/__redirected/") for r in requests
+        ), (query, requests)
+        assert not any(
+            "endpoint-header-token" in value
+            for r in requests
+            for _, value in r["headers"]
+        ), (query, requests)
+        return result
+
+    def denied(error):
+        return "Access Denied" in error or "HTTP response code: 403" in error
+
+    tables = ["t_rp_headers", "t_rp_headers_keyless", "t_rp_headers_src"]
+    try:
+        sent(
+            True,
+            f"INSERT INTO FUNCTION s3('{keyed}', 'CSV', 'x UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1",
+        )
+        assert (
+            sent(True, f"SELECT count() FROM s3('{keyed}', 'CSV', 'x UInt64')")
+            == "10\n"
+        )
+        assert denied(
+            sent(
+                False,
+                f"SELECT count() FROM s3('{keyless}', 'CSV', 'x UInt64')",
+                error=True,
+            )
+        )
+        node.query(
+            f"CREATE TABLE t_rp_headers (x UInt64) ENGINE = S3('{keyed}', 'CSV')"
+        )
+        node.query(
+            f"CREATE TABLE t_rp_headers_keyless (x UInt64) ENGINE = S3('{keyless}', 'CSV')"
+        )
+        node.query(
+            "CREATE TABLE t_rp_headers_src (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT 1"
+        )
+        sent(
+            True,
+            f"BACKUP TABLE t_rp_headers_src TO S3('{base}/requester_pays_endpoint/backup_{uuid.uuid4().hex}')",
+        )
+        for restart in [False, True]:
+            if restart:
+                node.restart_clickhouse()
+            assert sent(True, "SELECT count() FROM t_rp_headers") == "10\n"
+            assert denied(
+                sent(False, "SELECT count() FROM t_rp_headers_keyless", error=True)
+            )
+    finally:
+        for table in tables:
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 def test_infinite_redirect(started_cluster):
