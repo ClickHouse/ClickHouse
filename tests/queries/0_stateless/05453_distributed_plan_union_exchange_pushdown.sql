@@ -90,7 +90,7 @@ FROM (EXPLAIN actions = 0 SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL 
 -- P16: forced narrowing also respects stricter explicit and ratio-based stream limits.
 SELECT count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1)
 SETTINGS max_threads = 4, max_streams_for_union_step = 1, max_streams_for_union_step_to_max_threads_ratio = 0, log_comment = '05453_union_scatter_p16a';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT 'P16a', max(streams) FROM
 (
     SELECT query_id, count() AS streams FROM system.processors_profile_log
@@ -103,7 +103,7 @@ SELECT 'P16a', max(streams) FROM
 );
 SELECT count() FROM (SELECT k FROM t1 UNION ALL SELECT k FROM t1)
 SETTINGS max_threads = 4, max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0.25, log_comment = '05453_union_scatter_p16b';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT 'P16b', max(streams) FROM
 (
     SELECT query_id, count() AS streams FROM system.processors_profile_log
