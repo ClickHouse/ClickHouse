@@ -113,6 +113,10 @@ public:
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
 
+    /// See `ITableFunction::getParallelReplicasReadID`. Resolved once and stored, rather than asked of
+    /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
+    const std::optional<String> & getParallelReplicasReadID() const { return parallel_replicas_read_id; }
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
@@ -172,6 +176,7 @@ private:
     TableFunctionPtr table_function;
     StoragePtr storage;
     StorageID storage_id;
+    std::optional<String> parallel_replicas_read_id;
     StorageSnapshotPtr storage_snapshot;
     VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;

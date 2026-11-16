@@ -153,7 +153,7 @@ struct Impl
 
 template <typename T> Impl<T> impl;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 namespace
 {
@@ -251,6 +251,18 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// All 4 args must be numeric (lat1, lon1, lat2, lon2). The result type is
+    /// `Float64` when any argument is `Float64` and the `geo_distance_returns_
+    /// float64_on_float64_arguments` setting is on (the default); otherwise
+    /// `Float32`. The two underlying classes (`SPHERE_DEGREES`/`SPHERE_METERS`
+    /// vs. `WGS84_METERS`) share this rule.
+    String getSignatureString() const override
+    {
+        if (always_float32)
+            return "(Number, Number, Number, Number) -> Float32";
+        return "(A : Number, B : Number, C : Number, D : Number) -> selectIf(anyFloat64(A, B, C, D), Float64, Float32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         bool has_float64 = false;
@@ -331,7 +343,7 @@ private:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -342,7 +354,7 @@ public:
     explicit FunctionGeoDistance(ContextPtr context)
         : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);

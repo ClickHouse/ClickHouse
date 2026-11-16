@@ -6,6 +6,7 @@
 #include <Core/SettingsFields.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Client.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util
 {
@@ -82,6 +83,16 @@ struct S3AuthSettings
 
     UnorderedSetWithMemoryTracking<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+
+    /// Whether the Google credential (`google_service_account_key` or the ADC triple) was supplied by the query, a named
+    /// collection or a BigLake catalog rather than merged from the server `<s3>`/endpoint config. Only such a credential
+    /// is explicit for a session restricted by `s3_allow_server_credentials_in_user_queries`. The value of a credential
+    /// cannot tell its origin, so the origin is recorded when the settings are built and kept through every copy and
+    /// client rebuild; merging the server config (`updateIfChanged`) never sets it.
+    /// It is not part of `serialize`: its callers ship `S3ObjectStorage::getS3SettingsForExternalClients`, which carries
+    /// only the credentials the client has already resolved (keys, or a GCS bearer token as a header), never a Google key
+    /// or ADC triple, so there is no Google credential whose origin would have to be restored.
+    bool google_credentials_explicit = false;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;
     static S3AuthSettings deserialize(ReadBuffer & in, ContextPtr context);

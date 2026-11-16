@@ -344,4 +344,16 @@ public:
     static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
     static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
 };
+
+template <>
+struct hash<BFloat16>
+{
+    std::size_t operator()(const BFloat16 & x) const noexcept
+    {
+        /// `BFloat16` equality compares through `Float32`, so `-0` is equal to `+0` and has to produce
+        /// the same hash despite the different raw bits. Distinct `NaN` payloads never compare equal,
+        /// so hashing them by the raw bits is fine.
+        return std::hash<UInt16>()(x == BFloat16{} ? UInt16{} : x.raw());
+    }
+};
 }

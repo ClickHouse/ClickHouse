@@ -18,7 +18,7 @@ namespace DB
   */
 
 class QueryNode;
-class TableNode;
+class ITableExpressionNode;
 class UnionNode;
 
 struct FiltersForTableExpression
@@ -39,7 +39,7 @@ class GlobalPlannerContext
 public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
-        const TableNode * parallel_replicas_table_,
+        const ITableExpressionNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
         FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
@@ -80,7 +80,8 @@ public:
     const QueryNode * const parallel_replicas_node = nullptr;
     /// Table which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
-    const TableNode * const parallel_replicas_table = nullptr;
+    /// It's either a table, or a table function that is only a reference to a table.
+    const ITableExpressionNode * const parallel_replicas_table = nullptr;
     /// UNION node whose every child query reads from a table eligible for parallel replicas.
     /// When set, each branch retains parallel replicas reading instead of having it disabled.
     const UnionNode * const parallel_replicas_table_union = nullptr;
@@ -211,6 +212,9 @@ public:
     /// receiving node cannot resolve it.
     bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
+    /// See `SelectQueryOptions::view_source_in_subqueries`.
+    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -226,6 +230,8 @@ private:
     bool is_ast_level_optimization_allowed;
 
     bool may_be_serialized_for_remote_execution = false;
+
+    bool view_source_in_subqueries = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

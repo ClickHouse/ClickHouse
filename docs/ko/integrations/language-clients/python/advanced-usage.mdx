@@ -13,7 +13,7 @@ ClickHouse 데이터와 네이티브 또는 서드파티 데이터 타입 및 �
 
 ### Client `raw_query` 메서드 {#client-rawquery-method}
 
-`Client.raw_query` 메서드를 사용하면 클라이언트 connection을 통해 ClickHouse HTTP 쿼리 인터페이스를 직접 사용할 수 있습니다. 반환값은 가공되지 않은 `bytes` 객체입니다. 이 메서드는 최소한의 인터페이스로 매개변수 바인딩, 오류 처리, 재시도, 설정 관리를 제공하는 편리한 래퍼입니다.
+`Client.raw_query` 메서드를 사용하면 클라이언트 연결을 통해 ClickHouse HTTP 쿼리 인터페이스를 직접 사용할 수 있습니다. 반환값은 가공되지 않은 `bytes` 객체입니다. 이 메서드는 최소한의 인터페이스로 매개변수 바인딩, 오류 처리, 재시도 가능한 읽기 작업의 재시도, 설정 관리를 제공하는 편리한 래퍼입니다. 자세한 내용은 [HTTP 재시도](/ko/integrations/language-clients/python/driver-api#http-retries)를 참조하십시오.
 
 | 매개변수                 | 유형               | 기본값    | 설명                                                                                                             |
 | -------------------- | ---------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
@@ -35,17 +35,19 @@ ClickHouse 데이터와 네이티브 또는 서드파티 데이터 타입 및 �
 
 `Client.raw_insert` 메서드를 사용하면 클라이언트 연결을 통해 `bytes` 객체 또는 `bytes` 객체 생성기를 직접 삽입할 수 있습니다. 이 메서드는 삽입 payload를 별도로 처리하지 않으므로 성능이 매우 뛰어납니다. 또한 설정과 삽입 포맷을 지정하는 옵션을 제공합니다:
 
-| 매개변수                 | 유형                                   | 기본값      | 설명                                                                                                 |
-| -------------------- | ------------------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
-| `table`              | str                                  | Required | 단순 테이블 이름 또는 데이터베이스를 포함한 정규화된 대상 테이블입니다.                                                           |
-| `column_names`       | Sequence[str]                        | `None`   | 삽입 block의 컬럼 이름입니다. `fmt`에 이름이 포함되지 않으면 필요합니다.                                                     |
-| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | 삽입할 데이터입니다. 문자열은 클라이언트 인코딩을 사용해 인코딩됩니다.                                                            |
+| 매개변수                 | 유형                                   | 기본값      | 설명                                                                                     |
+| -------------------- | ------------------------------------ | -------- | -------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Required | 단순 테이블 이름 또는 데이터베이스를 포함한 정규화된 대상 테이블입니다.                                               |
+| `column_names`       | Sequence[str]                        | `None`   | 삽입 block의 컬럼 이름입니다. `fmt`에 이름이 포함되지 않으면 필요합니다.                                         |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | 삽입할 데이터입니다. 문자열은 클라이언트 인코딩을 사용해 인코딩됩니다.                                                |
 | `settings`           | dict                                 | `None`   | [설정 인수](/ko/integrations/language-clients/python/driver-api#settings-argument-1)를 참조하십시오. |
-| `fmt`                | str                                  | `None`   | `insert_block` payload의 ClickHouse 입력 형식입니다. 포맷을 지정하지 않으면 `네이티브`가 사용됩니다.                         |
-| `compression`        | str                                  | `None`   | `"gzip"`, `"lz4"`, `"zstd"`와 같이 `insert_block`에 이미 적용된 압축 방식입니다.                                   |
-| `transport_settings` | dict                                 | `None`   | 이 요청에 추가되는 HTTP headers입니다.                                                                        |
+| `fmt`                | str                                  | `None`   | `insert_block` payload의 ClickHouse 입력 형식입니다. 포맷을 지정하지 않으면 `네이티브`가 사용됩니다.               |
+| `compression`        | str                                  | `None`   | `"gzip"`, `"lz4"`, `"zstd"`와 같이 `insert_block`에 이미 적용된 압축 방식입니다.                       |
+| `transport_settings` | dict                                 | `None`   | 이 요청에 추가되는 HTTP headers입니다.                                                            |
 
-호출자는 `insert_block`이 지정한 포맷이며 지정한 compression method를 사용하도록 보장할 책임이 있습니다. ClickHouse Connect는 파일 업로드와 PyArrow Tables에 이러한 원시 삽입을 사용하며, parsing은 ClickHouse 서버에 위임합니다.
+호출자는 `insert_block`이 지정한 포맷이며 지정한 compression method를 사용하도록 보장할 책임이 있습니다. ClickHouse Connect는 파일 업로드와 PyArrow Tables에 이러한 원시 삽입을 사용하며, 파싱은 ClickHouse 서버에 위임합니다.
+
+문자열 및 bytes payload는 원격 연결이 종료된 후에도 재시도할 수 있습니다. 반면 생성기와 열린 파일은 다시 전송할 수 없습니다. 자세한 내용은 [삽입 재시도 및 중복 제거](/ko/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication)를 참조하십시오.
 
 ## 쿼리 결과를 파일로 저장하기 {#saving-query-results-as-files}
 
@@ -85,7 +87,7 @@ if __name__ == "__main__":
 
 ## 멀티스레드, 멀티프로세스 및 async/이벤트 기반 사용 사례 {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
-ClickHouse Connect는 멀티스레드, 멀티프로세스, 이벤트 루프 기반/비동기 애플리케이션에서 잘 작동합니다. 모든 쿼리 및 삽입 처리는 단일 스레드에서 이루어지므로, 작업은 일반적으로 스레드 안전합니다. (일부 작업을 하위 수준에서 병렬로 처리해 단일 스레드에 따른 성능 저하를 완화하는 기능이 향후 개선 사항으로 추가될 수 있지만, 그 경우에도 스레드 안전성은 유지됩니다.)
+ClickHouse Connect는 멀티스레드, 멀티프로세스, asyncio 애플리케이션을 지원합니다. 동기 HTTP 클라이언트는 동시 호출이 같은 ClickHouse 세션을 사용하지 않는 한 여러 스레드에서 공유할 수 있습니다. 자세한 내용은 아래의 세션 관련 설명을 참조하십시오. 비동기 클라이언트는 일부 파싱 및 삽입 준비 작업을 worker 스레드에서 실행합니다.
 
 각 쿼리 또는 삽입 실행은 각각 자체 `QueryContext` 또는 `InsertContext` 객체에 상태를 유지하므로, 이러한 도우미 객체는 스레드 안전하지 않으며 여러 처리 스트림 간에 공유해서는 안 됩니다. context 객체에 대한 추가 설명은 [QueryContexts](/ko/integrations/language-clients/python/advanced-querying#querycontexts) 및 [InsertContexts](/ko/integrations/language-clients/python/advanced-inserting#insertcontexts) 섹션을 참조하십시오.
 
@@ -119,6 +121,8 @@ asyncio.run(main())
 ```
 
 비동기 클라이언트는 동기 클라이언트와 동일한 쿼리, 삽입, raw, Arrow, 스트리밍 인터페이스를 따릅니다. 네트워크 I/O에는 aiohttp를 사용합니다. CPU 바운드인 네이티브 포맷 파싱은 이벤트 루프를 차단하지 않도록 실행기에서 처리될 수 있습니다.
+
+`insert_arrow`와 `insert_df_arrow`는 스트리밍 쿼리 리더와는 별도로, 클라이언트마다 전용 worker에서 데이터프레임 변환과 Arrow 인코딩을 수행합니다. 각 클라이언트는 임시 메모리 사용량을 제한하기 위해 한 번에 하나의 준비 작업만 실행합니다. 작업이 끝나면 `async with` 또는 `await client.close()`로 클라이언트를 닫으십시오. 다만 Python의 전역 인터프리터 잠금(GIL)을 점유하는 PyArrow 작업은 여전히 다른 코루틴을 일시 중지시킬 수 있습니다.
 
 비동기 클라이언트는 하나의 이벤트 루프에서 생성된 aiohttp 세션을 소유합니다. 클라이언트를 다른 이벤트 루프로 옮기려면 먼저 클라이언트를 소유한 루프에서 닫은 다음, 새 루프에서 요청을 보내기 전에 `await client._initialize()`를 호출하십시오. 소유 루프가 이미 닫혔다면 현재 루프에서 `await client.close()`를 호출한 후 `await client._initialize()`를 호출하십시오. 소유 루프가 닫힌 뒤에야 정리 작업이 시작되면 aiohttp가 닫히지 않은 전송(transport)을 보고할 수 있으므로, 가능하면 다른 루프로 옮기기 전에 클라이언트를 닫으십시오.
 

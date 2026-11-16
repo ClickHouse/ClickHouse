@@ -16,6 +16,8 @@ namespace DB
 
 [[noreturn]] void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit);
 [[noreturn]] void throwUnsupportedIndexesColumnType(const std::string & name);
+/// Out of line and taking values by value: an inlined `throw` gives the per-row `insertRangeFrom` a stack canary.
+[[noreturn]] void throwInsertRangeFromOutOfBound(std::string_view column_name, size_t start, size_t length, size_t size);
 
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)

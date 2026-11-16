@@ -14,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -67,16 +66,9 @@ public:
     /// function on a single row and stamp that one fuzzed value onto every row of the result.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be String or FixedString",
-                getName());
-
-        if (!arguments[1].column || !isFloat(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
-
-        return arguments[0].type;
+        return "(T : StringOrFixedString, const Float) -> T";
     }
 
     bool isDeterministic() const override { return false; }
@@ -86,8 +78,9 @@ public:
     {
         auto col_in_untyped = arguments[0].column;
 
+        /// Not a constant even for 0 rows: the header must not claim that every row holds the unfuzzed value.
         if (input_rows_count == 0)
-            return col_in_untyped;
+            return col_in_untyped->convertToFullColumnIfConst();
 
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
 

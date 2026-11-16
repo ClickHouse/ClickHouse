@@ -716,7 +716,8 @@ void registerStorageRedis(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
-    factory.registerStorage("Redis", createStorageRedis, features, Documentation{
+    /// Redis('host:port', 'db_index', 'password', 'pool_size')
+    factory.registerStorage("Redis", createStorageRedis, SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"password"}}, features, Documentation{
         .description = R"DOCS_MD(
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 

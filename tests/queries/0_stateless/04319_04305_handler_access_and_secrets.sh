@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # ^ Handlers are a global, server-wide namespace and this test also creates a server-wide user, so it
 #   uses fixed names; running several copies concurrently would race on those names.
+# no-fasttest: the fast test build has no `s3` table function, whose secret it then does not mask
 
 # Tests access control for the system.handlers introspection table:
 #   - reading it requires the SHOW HANDLERS privilege (row filtering);

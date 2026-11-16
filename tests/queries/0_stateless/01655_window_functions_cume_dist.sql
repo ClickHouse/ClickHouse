@@ -2,8 +2,6 @@
 -- { echo }
 -- Test for the cume_dist window function.
 
-SET enable_analyzer = 1;
-
 SELECT '-- Basic functionality';
 SELECT number, cume_dist() OVER (ORDER BY number) FROM numbers(5);
 

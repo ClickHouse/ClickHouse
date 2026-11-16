@@ -16,8 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -56,7 +56,18 @@ public:
         return ignore_set ? 0 : 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
+    {
+        /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
+        /// hence the optional second argument there.
+        return ignore_set ? "(Any, [Any]) -> UInt8" : "(Any, Any) -> UInt8";
+    }
+
+    /// The `Any` matchers document the arity and return type, but they cannot express the legacy
+    /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
+    /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
+    /// delegate to the signature.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(
@@ -65,10 +76,10 @@ public:
                 getName(),
                 arguments.size());
 
-        if (arguments[0]->hasDynamicStructure())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt8>();
+        if (arguments[0].type->hasDynamicStructure())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a

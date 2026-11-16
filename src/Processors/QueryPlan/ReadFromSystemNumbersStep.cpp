@@ -1,5 +1,12 @@
 #include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Core/ProtocolDefines.h>
+#include <Planner/Utils.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/numbersLikeUtils.h>
 
 #include <Core/ColumnWithTypeAndName.h>
@@ -19,6 +26,17 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+}
+
 namespace
 {
 
@@ -422,7 +440,6 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
@@ -444,7 +461,7 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     /// Add storage limits.
     for (const auto & processor : pipe.getProcessors())
-        processor->setStorageLimits(storage_limits);
+        processor->setStorageLimits(query_info.storage_limits);
 
     /// Add to processors to get processor info through explain pipeline statement.
     for (const auto & processor : pipe.getProcessors())
@@ -456,6 +473,112 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
 {
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
+}
+
+
+void ReadFromSystemNumbersStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+}
+
+
+void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
+{
+    const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
+
+    /// Only the table's parameters are written. The pushed-down LIMIT and the source filter are not:
+    /// the replica optimizes the plan it receives, and `optimizePrimaryKeyConditionAndLimit` sets both
+    /// again from the `LimitStep` and `FilterStep`s shipped above this read.
+    UInt8 flags = 0;
+    if (numbers_storage.multithreaded)
+        flags |= 1;
+    if (numbers_storage.descending)
+        flags |= 2;
+    if (numbers_storage.limit.has_value())
+        flags |= 4;
+    writeIntBinary(flags, ctx.out);
+
+    /// An unbounded read (`system.numbers`, `numbers()`) has no range length; it is ended by the plan's own
+    /// limiting and filtering steps, or by cancelling the query, the same as when it runs locally.
+    if (numbers_storage.limit.has_value())
+        writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
+    writeBinaryLittleEndian(numbers_storage.step, ctx.out);
+}
+
+
+QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
+{
+    /// The column is `number`, or `generate_series` for `generate_series(...)`. The step outputs exactly
+    /// that one column, and the output header is serialized with every step, so the name is taken from it.
+    if (ctx.output_header->columns() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ReadFromSystemNumbers step must have exactly one output column, got {}", ctx.output_header->columns());
+    const String column_name = ctx.output_header->getByPosition(0).name;
+
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    const bool multithreaded = flags & 1;
+    const bool descending = flags & 2;
+
+    std::optional<UInt128> storage_limit;
+    if (flags & 4)
+    {
+        UInt128 value = 0;
+        readBinaryLittleEndian(value, ctx.in);
+        storage_limit = value;
+    }
+
+    UInt64 offset = 0;
+    readBinaryLittleEndian(offset, ctx.in);
+
+    UInt64 step = 0;
+    readBinaryLittleEndian(step, ctx.in);
+    if (step == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: step must be positive");
+
+    /// Only `numbers()`, `numbers_mt()` and `system.numbers` are unbounded, and they count up by 1;
+    /// only `generate_series` counts down, and it always has a range length.
+    if (!storage_limit && step != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: an unbounded read must have step 1");
+    if (!storage_limit && descending)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: a descending read must have a range length");
+
+    const UInt64 max_block_size = ctx.settings[QueryPlanSerializationSetting::max_block_size];
+
+    auto storage = std::make_shared<StorageSystemNumbers>(
+        StorageID{"system", "numbers"}, multithreaded, column_name, storage_limit, offset, step, descending);
+    /// The handle's conversion to `StorageMetadataPtr` is deleted for rvalues, so keep it alive here.
+    const auto metadata = storage->getInMemoryMetadataPtr(ctx.context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata, ctx.context);
+
+    /// The query info is read for a pushed-down LIMIT, which the replica sets again when it optimizes the plan,
+    /// and for the storage limits. Those are not serialized, and `ISource` falls back to an empty list, so
+    /// without this the byte limits and the read-speed and timeout checks would not be enforced for this read
+    /// on a replica. Derive them from the settings that arrived with the query, as `ReadFromMergeTree::deserialize` does.
+    SelectQueryInfo query_info;
+    auto storage_limits = std::make_shared<StorageLimitsList>();
+    storage_limits->emplace_back(buildStorageLimits(*ctx.context, SelectQueryOptions(QueryProcessingStage::FetchColumns)));
+    query_info.storage_limits = std::move(storage_limits);
+
+    auto step_ptr = std::make_unique<ReadFromSystemNumbersStep>(
+        Names{column_name}, query_info, storage_snapshot, ctx.context, storage, max_block_size, /*num_streams_=*/1);
+
+    ctx.storage_holders.push_back(std::move(storage));
+    return step_ptr;
+}
+
+
+void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry);
+void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry)
+{
+    /// Declared with the version that introduced the step rather than the default "since version 0":
+    /// an older peer does not know the name, so the registry must not write it into a stream below
+    /// that version.
+    registry.registerStep(
+        "ReadFromSystemNumbers",
+        &ReadFromSystemNumbersStep::deserialize,
+        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS}});
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()
@@ -524,7 +647,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             return pipe;
         }
 
-        NumbersLikeUtils::checkLimits(context->getSettingsRef(), total_count);
+        NumbersLikeUtils::checkLimits(*context, total_count);
 
         UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
         auto source = std::make_shared<SimpleSteppedNumbersSource>(
@@ -665,7 +788,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
     }
 
-    NumbersLikeUtils::checkLimits(context->getSettingsRef(), size_t(total_size));
+    NumbersLikeUtils::checkLimits(*context, size_t(total_size));
 
     /// Don't start more streams than can be meaningfully filled with at least one block.
     if (total_size / max_block_size < num_streams)

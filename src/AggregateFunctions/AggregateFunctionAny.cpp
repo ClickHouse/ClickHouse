@@ -485,6 +485,7 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
     factory.registerFunction("any", {createAggregateFunctionAny, documentation, default_properties});
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("arbitrary", "any", AggregateFunctionFactory::Case::Insensitive);
 
     /// anyLast documentation
     FunctionDocumentation::Description anyLast_description = R"(

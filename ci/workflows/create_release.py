@@ -8,7 +8,8 @@ robot_token_secret = Secret.Config(
 )
 
 release_job = Job.Config(
-    name="CreateRelease",
+    # Differs from the workflow name: both results share one S3 key otherwise
+    name="Create Release",
     runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/release_job.py",
     timeout=2 * 3600,
@@ -35,6 +36,8 @@ workflow = Workflow.Config(
     # release_branches / pull_request do, so a failed release is not silent.
     enable_concurrency_queue=True,
     enable_slack_feed=True,
+    # Uploads the job's `Result.files` (the reprepro, createrepo_c and geesefs logs) to S3
+    enable_report=True,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",

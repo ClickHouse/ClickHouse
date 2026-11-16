@@ -33,7 +33,7 @@ struct MemorySettings
     MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
-    ASTPtr getSettingsChangesQuery();
+    ASTPtr getSettingsChangesQuery() const;
     void sanityCheck() const;
     void applyChanges(const SettingsChanges & changes);
 

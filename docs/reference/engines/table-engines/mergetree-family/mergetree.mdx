@@ -77,7 +77,7 @@ Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled
 
 #### PARTITION BY {#partition-by}
 
-`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning is primarily a data management technique, not a query optimization tool: to speed up queries, rely on the ORDER BY expression first. You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
@@ -222,9 +222,11 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. To reorder the rows of every inserted block to improve compressibility, enable the `optimize_row_order_if_no_order_by` setting. It applies to ordinary `MergeTree`-family tables, including `ReplicatedMergeTree`. Specialized engines of the family, e.g. `ReplacingMergeTree` or `AggregatingMergeTree`, are never row-order optimized and keep the order of the inserted rows.
 
-To select data in the initial order, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries.
+To enable reordering, set `optimize_row_order_if_no_order_by = 1` in the table's `SETTINGS` clause. When inserting data with `INSERT ... SELECT` queries, also set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads) to preserve the optimized order.
+
+When reordering is disabled, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries to select data in the insertion order. When reordering is enabled, a single-threaded `SELECT` query preserves the on-disk order.
 
 ### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -573,6 +575,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitive](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8)    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
@@ -979,9 +983,10 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
-- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to an online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 - `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
   * If _all_ volumes are tagged, they are prioritized in given order.
@@ -1297,7 +1302,8 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
   - for any column: the number of rows equal to the type's default value (`0` for integers and floats, `''` for `String`, `[]` for `Array`, `NULL` for `Nullable`, etc.), which lets the optimizer estimate `col = <default>` predicates and `IS NULL` filters;
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for integer and `Decimal` columns that are not `Nullable` or `LowCardinality`: the exact sum of values, from which `sum`, `avg` and `sumCount` without `GROUP BY` and filters are answered (see the `use_statistics_for_sum_avg_aggregation` setting).
 
     A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
@@ -1333,14 +1339,14 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
-|----------|----------------------------------------------------|------|-----------------------|----------------|
-| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
-| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
-| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
-| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
-| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
-| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | UUID | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗    | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗    | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗    | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 

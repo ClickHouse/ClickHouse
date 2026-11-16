@@ -24,6 +24,7 @@ struct ServerSettingsImpl;
 #define SERVER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AsynchronousMetricsKeyValuesMode) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \

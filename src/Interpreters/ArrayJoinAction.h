@@ -73,11 +73,14 @@ private:
     void initAnyArray();
     const PaddedPODArray<UInt64> & anyOffsets() const;
     ColumnPtr cutAnyArray(size_t start, size_t length) const;
+    /// Window of the joined column `name` as a full ColumnArray, padded for aligned LEFT ARRAY JOIN.
+    ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;
     bool enable_lazy_columns_replication;
 
+    /// Array of the first joined column, padded for LEFT ARRAY JOIN and resized if unaligned.
     ColumnPtr any_array_map_ptr;
     /// Null if the joined column is replicated, then replicated_offsets is used instead.
     const ColumnArray * any_array = nullptr;

@@ -57,6 +57,27 @@ public:
         /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
         if (rhs.grower.bufSize() > Base::grower.bufSize())
             Base::resize(rhs.size() + Base::size());
+        else if constexpr (GrowerWithRobinHood<Grower>)
+        {
+            /// The cells of `rhs` are inserted in position order, so they sweep each `rhs.bufSize()`-cell segment of this table from left
+            /// to right, and the keys that outnumber the cells of a segment pile up right after the insertion point until the table grows.
+            if (Base::size() + rhs.size() > Base::grower.bufSize())
+            {
+                constexpr size_t max_cells_to_estimate_new_keys = 256;
+                size_t sampled = 0;
+                size_t new_keys = 0;
+                for (size_t i = 0; i < rhs.grower.bufSize() && sampled < max_cells_to_estimate_new_keys; ++i)
+                {
+                    if (rhs.buf[i].isZero(*this))
+                        continue;
+                    ++sampled;
+                    new_keys += !this->has(rhs.buf[i].getKey(), rhs.buf[i].getHash(*this));
+                }
+                const size_t expected_size = Base::size() + (sampled ? rhs.size() * new_keys / sampled : 0);
+                if (expected_size > Base::grower.bufSize())
+                    Base::resize(expected_size);
+            }
+        }
 
         if (!this->hasZero() && rhs.hasZero())
         {
@@ -85,6 +106,57 @@ public:
     template <typename Func>
     void forEachMapped(Func &&)
     {
+    }
+
+    /// Inserts the keys, which must fit without a resize. Prefetches the cell of the key `prefetch_distance` ahead, if
+    /// it is not zero. The fields are kept in local variables, because the stores into the cells could alias them.
+    template <size_t prefetch_distance>
+    void ALWAYS_INLINE insertManyWithoutResize(const Key * __restrict keys, size_t num_keys)
+    {
+        Cell * __restrict cells = this->buf;
+        const Grower local_grower = this->grower;
+        size_t local_size = this->m_size;
+        bool has_zero = this->hasZero();
+
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if constexpr (prefetch_distance != 0)
+            {
+                if (i + prefetch_distance < num_keys)
+                    __builtin_prefetch(&cells[local_grower.place(this->hash(keys[i + prefetch_distance]))]);
+            }
+
+            const Key key = keys[i];
+            if (Cell::isZero(key, *this))
+            {
+                has_zero = true;
+                continue;
+            }
+
+            const size_t hash_value = this->hash(key);
+            size_t place = local_grower.place(hash_value);
+            while (true)
+            {
+                Cell & cell = cells[place];
+                if (cell.keyEquals(key, hash_value, *this))
+                    break;
+                if (cell.isZero(*this))
+                {
+                    new (&cell) Cell(key, *this);
+                    cell.setHash(hash_value);
+                    ++local_size;
+                    break;
+                }
+                place = local_grower.next(place);
+            }
+        }
+
+        if (has_zero && !this->hasZero())
+        {
+            this->setHasZero();
+            ++local_size;
+        }
+        this->m_size = local_size;
     }
 
     /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing

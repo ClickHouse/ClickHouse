@@ -4,8 +4,6 @@
 -- (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`), this referenced columns missing from
 -- the aggregated block and threw NOT_FOUND_COLUMN_IN_BLOCK.
 
-SET enable_analyzer = 1;
-
 SELECT ((v0.c0, v0.c1)) FROM (SELECT 1 c0, 2 c1) v0 GROUP BY ALL ORDER BY ALL
     SETTINGS optimize_injective_functions_in_group_by = 0;
 

@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -30,9 +31,12 @@ namespace ErrorCodes
 namespace
 {
 
-const EVP_MD * getHashAlgorithm(const std::string_view & mode)
+using EVP_MD_ptr = std::unique_ptr<EVP_MD, decltype(&EVP_MD_free)>;
+
+/// EVP_MD_fetch returns a reference-counted handle that must be released; the digest itself stays cached by OpenSSL.
+EVP_MD_ptr getHashAlgorithm(const std::string_view & mode)
 {
-    return EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr);
+    return EVP_MD_ptr(EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr), EVP_MD_free);
 }
 
 class FunctionHMAC final : public IFunction
@@ -115,18 +119,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        validateFunctionArguments(
-            *this,
-            arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "Hash algorithm name (e.g., 'sha256')"},
-                {"message", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Message to be authenticated"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "Secret key for HMAC"},
-            });
-
-        return std::make_shared<DataTypeString>();
+        return "(const StringOrFixedString, StringOrFixedString, StringOrFixedString) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -137,7 +132,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const std::string_view mode = arguments[0].column->getDataAt(0);
-        const EVP_MD * evp_md = getHashAlgorithm(mode);
+        const EVP_MD_ptr evp_md = getHashAlgorithm(mode);
 
         if (evp_md == nullptr)
             throw Exception(
@@ -153,7 +148,7 @@ public:
         ColumnString::Chars & result_data = result_column->getChars();
         ColumnString::Offsets & result_offsets = result_column->getOffsets();
 
-        const size_t digest_length = EVP_MD_size(evp_md);
+        const size_t digest_length = EVP_MD_size(evp_md.get());
 
         // Pre-allocate result data
         const size_t total_size = input_rows_count * digest_length;
@@ -168,7 +163,7 @@ public:
 
             unsigned int actual_digest_length = 0;
             const unsigned char * hmac_result = HMAC(
-                evp_md,
+                evp_md.get(),
                 key_value.data(),
                 static_cast<int>(key_value.size()),
                 reinterpret_cast<const unsigned char *>(message_value.data()),
@@ -207,6 +202,19 @@ public:
             return fmt::format("{}", fmt::join(formatted_algorithms, ", "));
     }
 };
+
+/// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+void findHMACSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 3)
+        return;
+
+    /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+    /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+    /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+    finder.result.start = 2;
+    finder.result.count = finder.function->arguments->size() - 2;
+}
 
 }
 
@@ -287,7 +295,7 @@ SELECT
         category
     };
 
-    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHMAC>(documentation, FunctionFactory::Case::Insensitive, SecretArgumentsSpec{.custom = findHMACSecretArguments});
 }
 
 }

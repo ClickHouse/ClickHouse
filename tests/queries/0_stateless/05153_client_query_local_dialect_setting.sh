@@ -14,4 +14,4 @@ ${CLICKHOUSE_LOCAL} -q "SELECT 'local_query_local_dialect_prql', 2 SETTINGS dial
 ${CLICKHOUSE_CLIENT} -q "SELECT 'client_query_local_dialect', 3 SETTINGS dialect = 'kusto'"
 
 # The setting still takes effect for the statements that follow it.
-${CLICKHOUSE_LOCAL} --multiquery -q "SET dialect = 'kusto'; SET allow_experimental_kusto_dialect = 1; print 'kusto_after_set'"
+${CLICKHOUSE_LOCAL} --multiquery -q "SET dialect = 'kusto'; SET enable_kusto_dialect = 1; print 'kusto_after_set'"

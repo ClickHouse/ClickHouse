@@ -4,7 +4,7 @@
 
 #include <ranges>
 #include <algorithm>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <Columns/ColumnVector.h>
 
@@ -447,7 +447,7 @@ public:
         std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
         WebAssembly::WasmModule::Config module_cfg_,
         StopToken stop_token_)
-        : Base(limit, getLogger("WasmCompartmentPool"))
+        : Base(limit, getLogger("WasmCompartmentPool"), /* pool_outlives_query_ = */ false)
         , wasm_module(std::move(wasm_module_))
         , module_cfg(std::move(module_cfg_))
         , stop_token(std::move(stop_token_))

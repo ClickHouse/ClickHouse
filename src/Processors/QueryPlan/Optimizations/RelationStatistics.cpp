@@ -82,4 +82,13 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     }
 }
 
+UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
+}
+
 }

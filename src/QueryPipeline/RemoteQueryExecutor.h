@@ -31,6 +31,8 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
+using ProfileEventsCallback = std::function<void(const Block & block)>;
+
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
@@ -219,6 +221,9 @@ public:
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback);
 
+    /// Set callback for profile events. It will be called on ProfileEvents packet.
+    void setProfileEventsCallback(ProfileEventsCallback callback);
+
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
     void setQueryId(const std::string& query_id_) { chassert(!sent_query); query_id = query_id_; }
@@ -242,11 +247,15 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
+    /// The skip decision on its own; `needToSkipUnavailableShard` also reports it.
+    bool shouldSkipUnavailableShard() const;
     bool needToSkipUnavailableShard();
 
     /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
     /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded, and
+    /// `ALL_CONNECTION_TRIES_FAILED` once every execution unit was skipped without returning data.
+    /// Because it throws, finish the skipped shard's fragment span first, or the skip is lost from it.
     void reportShardSkipped();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
@@ -285,6 +294,7 @@ private:
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
+    ProfileEventsCallback profile_events_callback;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
@@ -402,6 +412,10 @@ private:
     void sendExternalTables();
 
     void processReadTaskRequest();
+
+    /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
+    /// passes it on to the client.
+    void processProfileEventsPacket(Block block);
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);

@@ -7,7 +7,7 @@ for key 'lambda' has no 'arguments' list
 for key 'parameters' has no 'arguments' list
 for key 'function_core' has no 'arguments' list
 UNKNOWN_FUNCTION
-Function in (children 1)
+Function in (
 Literal UInt64_9
 for key 'select' has no 'arguments' list
 for key 'where' has no 'arguments' list

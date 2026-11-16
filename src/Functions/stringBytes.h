@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -34,19 +33,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(),
-                getName());
-
         if constexpr (std::is_same_v<ResultType, UInt16>)
-            return std::make_shared<DataTypeUInt16>();
+            return "(String) -> UInt16";
         else if constexpr (std::is_same_v<ResultType, Float64>)
-            return std::make_shared<DataTypeFloat64>();
+            return "(String) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -65,13 +57,14 @@ public:
         const ColumnString::Chars & data = col_str->getChars();
         const ColumnString::Offsets & offsets = col_str->getOffsets();
 
+        Impl impl;
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * data_ptr = data.data() + prev_offset;
             const size_t size = offsets[i] - prev_offset;
 
-            vec_res[i] = Impl::process(data_ptr, size);
+            vec_res[i] = impl.process(data_ptr, size);
             prev_offset = offsets[i];
         }
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
@@ -32,7 +34,7 @@ public:
     struct Result
     {
         const NamesAndTypesList names_and_types;
-        const std::vector<String> fields;
+        const VectorWithMemoryTracking<String> fields;
         const size_t score = 0;
         const size_t type_score = 0;
         /// Offset of the end of the parsed fields from the beginning of the row.
@@ -41,7 +43,7 @@ public:
         const bool parse_till_newline_as_one_string = false;
     };
 
-    using NamesAndFields = std::vector<std::pair<String, String>>;
+    using NamesAndFields = VectorWithMemoryTracking<std::pair<String, String>>;
 
     // We only need the offset on the initial run to determine the schema, we don't need it for successive runs to parse fields.
     template <bool with_offset>
@@ -75,7 +77,7 @@ class JSONFieldMatcher : public FieldMatcher
 public:
     using FieldMatcher::FieldMatcher;
     String getName() const override { return "JSONFieldMatcher"; }
-    std::vector<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
+    VectorWithMemoryTracking<std::pair<String, String>> readFieldsByEscapingRule(PeekableReadBuffer & in, unsigned index) const override;
 };
 
 class CSVFieldMatcher : public FieldMatcher
@@ -143,10 +145,10 @@ public:
     struct Solution
     {
         NamesAndTypes columns;
-        std::vector<uint8_t> matchers_order;
+        VectorWithMemoryTracking<uint8_t> matchers_order;
         /// For every element of `matchers_order`, the position in `columns` of the first column it produces:
         /// a matcher produces the columns up to the first column of the next one.
-        std::vector<unsigned> first_columns;
+        VectorWithMemoryTracking<unsigned> first_columns;
         size_t score = 0;
         unsigned size = 0;
     };
@@ -173,13 +175,13 @@ public:
 private:
     /// The matchers tried for a field, in the order of priority; the last one is the
     /// `RestOfLineFieldMatcher`, which is only tried where the previous field asks for it.
-    std::vector<FieldMatcherPtr> matchers;
-    std::vector<FormatSettings::EscapingRule> rules;
-    std::vector<bool> whole_line;
+    VectorWithMemoryTracking<FieldMatcherPtr> matchers;
+    VectorWithMemoryTracking<FormatSettings::EscapingRule> rules;
+    VectorWithMemoryTracking<bool> whole_line;
     Solution final_solution;
 
-    std::vector<String> matched_fields;
-    std::unordered_map<String, unsigned> field_name_to_index;
+    VectorWithMemoryTracking<String> matched_fields;
+    UnorderedMapWithMemoryTracking<String, unsigned> field_name_to_index;
 
     // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
     // we could reconsider using settings_.max_rows_to_read_for_schema_inference once we are able to store solutions
@@ -197,7 +199,7 @@ private:
     /// (the `input_format_freeform_max_search_steps` setting, 0 means unlimited) and stops at the limits of the query.
     void buildSolutions(
         Solution current_solution,
-        std::vector<Solution> & solutions,
+        VectorWithMemoryTracking<Solution> & solutions,
         bool one_string,
         size_t offset,
         size_t & search_steps,
@@ -208,11 +210,11 @@ private:
     /// Reads one row with the fields of `solution` and calls `on_field(column, matcher_index, type, field)` for every
     /// column. Throws if the row does not fill every column of the solution exactly once or does not end after them.
     template <typename OnField>
-    void readRowBySolution(const Solution & solution, const std::unordered_map<String, unsigned> & column_index, OnField && on_field);
+    void readRowBySolution(const Solution & solution, const UnorderedMapWithMemoryTracking<String, unsigned> & column_index, OnField && on_field);
     /// Prepares the chosen `final_solution` for `parseRow`.
     void setFinalSolution(const Solution & solution);
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
-    std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
+    VectorWithMemoryTracking<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
@@ -237,7 +239,7 @@ private:
     std::unique_ptr<FreeformFieldMatcher> matcher;
 
     /// For every field of the inferred solution, the position of the header column it is read into.
-    std::vector<size_t> header_positions;
+    VectorWithMemoryTracking<size_t> header_positions;
 
     void buildHeaderPositions();
     bool readField(unsigned index, MutableColumns & columns);

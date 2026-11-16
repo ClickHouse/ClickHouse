@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 #include <algorithm>
 
@@ -8,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
@@ -988,14 +990,8 @@ namespace detail
 template <typename GetColumn, typename GetHint>
 size_t equalRangeEndAcrossColumns(size_t count, size_t begin, size_t end, GetColumn && column, GetHint && hint)
 {
-    size_t run_end = end;
-    for (size_t i = 0; i < count; ++i)
-    {
-        run_end = column(i)->getEqualRangeEndAssumeSorted(begin, run_end, hint(i));
-        if (run_end <= begin + 1)
-            break; /// single-row run: cannot shrink further
-    }
-    return run_end;
+    return findKeyRangeEndAssumeSorted(
+        count, begin, end, [&](size_t i, size_t from, size_t bound) { return column(i)->getEqualRangeEndAssumeSorted(from, bound, hint(i)); });
 }
 }
 
@@ -1016,7 +1012,7 @@ size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size
   */
 template <typename TColumns>
 size_t getEqualRangeEndAssumeSorted(
-    const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+    const TColumns & columns, std::span<const size_t> positions, size_t begin, size_t end, int nan_direction_hint)
 {
     return detail::equalRangeEndAcrossColumns(
         positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
@@ -1030,5 +1026,44 @@ size_t getEqualRangeEndAssumeSorted(const TColumns & columns, const TSortDescrip
 {
     return detail::equalRangeEndAcrossColumns(
         descr.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t i) { return descr[i].nulls_direction; });
+}
+
+/** Same as the overloads above, for a caller that finds the runs of one range one after another (see `SortedKeyRuns`).
+  * `runs` must be sized to the number of key columns and reset as `SortedKeyRuns` requires.
+  */
+template <typename TColumns>
+ALWAYS_INLINE size_t getEqualRangeEndAssumeSorted(SortedKeyRuns & runs, const TColumns & columns, size_t begin, size_t end, int nan_direction_hint)
+{
+    if (columns.size() < 2)
+        return getEqualRangeEndAssumeSorted(columns, begin, end, nan_direction_hint);
+    chassert(runs.keySize() == columns.size());
+    return runs.findRunEnd(
+        begin, end, [&](size_t i, size_t from, size_t bound) { return columns[i]->getEqualRangeEndAssumeSorted(from, bound, nan_direction_hint); });
+}
+
+template <typename TColumns>
+ALWAYS_INLINE size_t getEqualRangeEndAssumeSorted(
+    SortedKeyRuns & runs, const TColumns & columns, std::span<const size_t> positions, size_t begin, size_t end, int nan_direction_hint)
+{
+    if (positions.size() < 2)
+        return getEqualRangeEndAssumeSorted(columns, positions, begin, end, nan_direction_hint);
+    chassert(runs.keySize() == positions.size());
+    return runs.findRunEnd(
+        begin,
+        end,
+        [&](size_t i, size_t from, size_t bound) { return columns[positions[i]]->getEqualRangeEndAssumeSorted(from, bound, nan_direction_hint); });
+}
+
+template <typename TColumns, typename TSortDescription>
+requires requires (const TSortDescription & d) { d.size(); d[0].nulls_direction; }
+ALWAYS_INLINE size_t getEqualRangeEndAssumeSorted(SortedKeyRuns & runs, const TColumns & columns, const TSortDescription & descr, size_t begin, size_t end)
+{
+    if (descr.size() < 2)
+        return getEqualRangeEndAssumeSorted(columns, descr, begin, end);
+    chassert(runs.keySize() == descr.size());
+    return runs.findRunEnd(
+        begin,
+        end,
+        [&](size_t i, size_t from, size_t bound) { return columns[i]->getEqualRangeEndAssumeSorted(from, bound, descr[i].nulls_direction); });
 }
 }

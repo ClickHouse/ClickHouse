@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
@@ -30,7 +29,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Откройте панель Memory с помощью значка **Memories** (мозг) в левой навигации. На панели отображаются сохранённые записи памяти, а также элементы управления для создания, редактирования, удаления и фильтрации записей.
 
-<Image img="/images/cloud/agent-builder/memory/memories.webp" alt="Панель Memories, где в левой навигации выделен значок мозга, показаны поле фильтра, кнопка Add, флажок Use memory, запись памяти с элементами управления редактированием и удалением, а также кнопка Admin Settings" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Панель Memories, где в левой навигации выделен значок мозга, показаны поле фильтра, кнопка Add, флажок Use memory, запись памяти с элементами управления редактированием и удалением, а также кнопка Admin Settings](/images/cloud/agent-builder/memory/memories.webp)
+
+</Frame>
+
+</div>
 
 Memory доступна только вашему пользователю. Агенты других пользователей никогда не увидят ваши записи, а ваши агенты — их записи.
 
@@ -40,7 +47,15 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите кнопку **+** в верхней части панели, чтобы открыть диалог **Create Memory**. Введите **Key** (только строчные буквы и символы подчеркивания) и **Value**, затем нажмите **Create**.
 
-<Image img="/images/cloud/agent-builder/memory/create.webp" alt="Панель Memory с выделенной кнопкой + для Create Memory" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Панель Memory с выделенной кнопкой + для Create Memory](/images/cloud/agent-builder/memory/create.webp)
+
+</Frame>
+
+</div>
 
 <div id="filter-memories">
   ### Фильтрация записей
@@ -48,7 +63,15 @@ Memory доступна только вашему пользователю. Аг
 
 Используйте поле **Filter memories** в верхней части панели, чтобы найти запись по ключу.
 
-<Image img="/images/cloud/agent-builder/memory/filter.webp" alt="Панель Memory с выделенным полем Filter memories и введённым значением 'demo'" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Панель Memory с выделенным полем Filter memories и введённым значением 'demo'](/images/cloud/agent-builder/memory/filter.webp)
+
+</Frame>
+
+</div>
 
 <div id="edit-memory">
   ### Изменение записи Memory
@@ -56,7 +79,15 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите значок карандаша рядом с записью Memory, чтобы открыть диалоговое окно **Редактирование Memory**. Измените ключ или значение и нажмите **Сохранить**.
 
-<Image img="/images/cloud/agent-builder/memory/edit.webp" alt="Запись Memory с выделенным значком карандаша «Редактирование Memory»" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Запись Memory с выделенным значком карандаша «Редактирование Memory»](/images/cloud/agent-builder/memory/edit.webp)
+
+</Frame>
+
+</div>
 
 <div id="delete-memory">
   ### Удалить запись Memory
@@ -64,7 +95,15 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите на значок корзины рядом с записью Memory, чтобы удалить её.
 
-<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="Запись Memory с выделенным значком корзины для удаления" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Запись Memory с выделенным значком корзины для удаления](/images/cloud/agent-builder/memory/delete.webp)
+
+</Frame>
+
+</div>
 
 <div id="toggle-memory">
   ## Включение и выключение памяти
@@ -74,7 +113,15 @@ Memory доступна только вашему пользователю. Аг
 
 Когда память выключена, агент не читает данные из хранилища памяти и не записывает их туда.
 
-<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Панель памяти с выделенным в верхней части флажком «Use memory»" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Панель памяти с выделенным в верхней части флажком «Use memory»](/images/cloud/agent-builder/memory/toggle.webp)
+
+</Frame>
+
+</div>
 
 <div id="memory-best-practices">
   ## Рекомендации по использованию Memory

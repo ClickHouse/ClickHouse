@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <gtest/gtest.h>
 #include <arrow/chunked_array.h>

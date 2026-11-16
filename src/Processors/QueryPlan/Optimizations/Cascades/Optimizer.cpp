@@ -8,11 +8,14 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -24,6 +27,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -39,6 +43,36 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace QueryPlanOptimizations
+{
+    bool keyTypeBreaksHashSharding(const IDataType & type);
+}
+
+/// The partition keys of a partitioned sort as stream-disjointness columns, or empty when
+/// the split cannot be reproduced safely: the keys must be a prefix of the sort (so a
+/// rebuilt sort can split by them), be columns of the sort's input, and hash in agreement
+/// with `compareAt` (floats, `JSON`, `Dynamic` hash `-0.` and `0.` differently while they
+/// compare equal, so a hash split would tear one group apart).
+static DistributionColumns streamSplitColumns(const SortingStep & sorting_step)
+{
+    const auto & partition_by = sorting_step.getPartitionByDescription();
+    const auto & sort_description = sorting_step.getSortDescription();
+    if (sort_description.size() < partition_by.size()
+        || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
+        return {};
+
+    const auto & input_header = sorting_step.getInputHeaders().front();
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
+    {
+        if (!input_header->has(partition_column.column_name)
+            || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
+    }
+    return columns;
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -101,6 +135,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
@@ -128,12 +163,15 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createDistinctImplementation());
+    addRule(createMergingAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
     addRule(createReplicatedReadImplementation());
     addRule(createReplicatedSubplanImplementation());
     addRule(createTopNImplementation());
     addRule(createTwoStageTopN());
+    addRule(createWindowImplementation());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
 }
@@ -171,6 +209,17 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
+        /// The stream layout the sort produced is part of the requirement: a plain sort
+        /// merges each node's streams into one, a partitioned sort (the planner builds them
+        /// for windows) keeps streams disjoint on the partition keys. A partitioned sort
+        /// whose keys cannot split safely demands one stream, which keeps every group whole.
+        DistributionColumns disjoint_columns;
+        if (sorting_step->hasPartitions())
+            disjoint_columns = streamSplitColumns(*sorting_step);
+        if (!disjoint_columns.empty())
+            stripped_props.setDisjointStreams(std::move(disjoint_columns));
+        else
+            stripped_props.stream_layout = StreamLayout::Single;
         return {child_group_id, stripped_props};
     }
 
@@ -376,6 +425,17 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
+/// The partial aggregation under a merge per bucket produces its result in bucket order only for the
+/// memory-efficient merge on one node, which shares its memo group: the shuffle between them does not
+/// keep any order, and with the order the partial aggregation would send its result from one stream.
+static void dropBucketOrderOfPartialAggregationBelow(QueryPlan::Node * node)
+{
+    while (node->children.size() == 1 && dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+        node = node->children.front();
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get()); aggregating_step && !aggregating_step->isFinal())
+        aggregating_step->setShouldProduceResultsInBucketOrder(false);
+}
+
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
 {
     const auto & cost_config = memo.getContext().cost_config;
@@ -462,6 +522,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else if (frame.expression->inputs.size() == 1)
         {
             result = std::move(frame.child_plans[0]);
+            if (frame.expression->strategy == strategySingleton<ShuffleMergeStrategy>())
+                dropBucketOrderOfPartialAggregationBelow(result->getRootNode());
             auto step = cloneStepForBestPlan(*frame.expression);
             addConvertingExpression(*result, step->getInputHeaders().at(0));
             result->addStep(std::move(step));
