@@ -4,7 +4,7 @@
 #include <Common/ConcurrencyControl.h>
 #include <base/scope_guard.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/Sinks/EmptySink.h>
 
@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 using namespace DB;
-using namespace DB::Runtime::V1;
 
 namespace
 {
@@ -151,7 +150,7 @@ TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStartEagerAllocation)
 TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
 {
     ExecutorTasks tasks;
-    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr);
     tasks.upscale(0);
     tasks.upscale(1);
     EXPECT_FALSE(tasks.hasThreadsToSpawn());
@@ -172,7 +171,7 @@ TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
 TEST(PipelineExecutor, RequestedThreadsDroppedWhenThreadGoesIdle)
 {
     ExecutorTasks tasks;
-    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr);
     tasks.upscale(0);
     tasks.upscale(1);
     tasks.requestThreads(2);
@@ -220,7 +219,7 @@ TEST(PipelineExecutor, RequestedThreadsKeptWhileAsyncTasksPending)
     PendingAsyncProcessor processor(fds[0]);
 
     ExecutorTasks tasks;
-    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr);
     tasks.upscale(0);
     tasks.upscale(1);
 

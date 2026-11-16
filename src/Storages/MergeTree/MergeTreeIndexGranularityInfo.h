@@ -24,9 +24,9 @@ struct MarkType
     MarkType(bool adaptive_, bool compressed_, bool with_substreams_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);
-    [[nodiscard]] std::string getFileExtension() const;
+    std::string getFileExtension() const;
 
-    [[nodiscard]] std::string describe() const;
+    std::string describe() const;
 
     bool adaptive = false;
     bool compressed = false;
@@ -55,16 +55,16 @@ public:
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 
-    [[nodiscard]] String getMarksFilePath(const String & path_prefix) const
+    String getMarksFilePath(const String & path_prefix) const
     {
         return path_prefix + mark_type.getFileExtension();
     }
 
-    [[nodiscard]] size_t getMarkSizeInBytes(size_t columns_num = 1) const;
+    size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
     static std::optional<MarkType> getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage);
 
-    [[nodiscard]] std::string describe() const;
+    std::string describe() const;
 };
 
 constexpr auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }

@@ -1,5 +1,0 @@
-a	false	(NULL,NULL,NULL,NULL,NULL)
-b	true	(5,0,NULL,'1','5')
-c	true	(5,0,NULL,'2.000000','5.000000')
-d	true	(5,0,NULL,'0','1')
-element	true	(8,2,NULL,'1','3')

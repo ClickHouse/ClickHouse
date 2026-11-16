@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -26,8 +25,7 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
         if (!filter_dag)
             continue;
-        /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
-        const String filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
+        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
         QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
         step->setStepDescription("Join filter");
 
@@ -60,7 +58,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     /// `tryPushDownVolumeReducingFunction` moves these functions below the filter so that the wide
     /// argument column is not copied by the filter. Keeping them in the filter part here prevents
     /// the two optimizations from moving the same nodes in opposite directions forever.
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> volume_reducing_functions;
+    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
     if (settings.push_down_volume_reducing_functions)
         volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expr, filter_dag_node);
 
@@ -69,11 +67,6 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (split.second.trivial())
         return 0;
 
-    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
-    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
-
-    /// A renamed filter column reaches the second half as an input under the new name, with an alias back to the old
-    /// one, and removeUnusedResult removes the alias together with the input.
     bool remove_filter = false;
     if (filter_step->removesFilterColumn())
         remove_filter = split.second.removeUnusedResult(filter_column_name);
@@ -84,13 +77,14 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
 
-    auto new_filter_step = std::make_unique<FilterStep>(
+    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
+    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
+
+    filter_node.step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
-    new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-    filter_node.step = std::move(new_filter_step);
 
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 

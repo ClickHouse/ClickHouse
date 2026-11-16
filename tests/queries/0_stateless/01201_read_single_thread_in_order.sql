@@ -14,7 +14,6 @@ SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_
 INSERT INTO t SELECT number FROM numbers(1000000);
 
 SET max_threads = 1, max_block_size = 12345;
--- The test checks the order of a single-threaded local read, which parallel replicas split between replicas.
-SELECT arrayDistinct(arrayPopFront(arrayDifference(groupArray(number)))) FROM t SETTINGS enable_parallel_replicas = 0;
+SELECT arrayDistinct(arrayPopFront(arrayDifference(groupArray(number)))) FROM t;
 
 DROP TABLE t;

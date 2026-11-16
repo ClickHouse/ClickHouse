@@ -43,7 +43,7 @@ struct TablesStatusRequest
     void read(ReadBuffer & in, UInt64 client_protocol_revision);
 
     /// Deterministic, order-independent digest of `tables` for the interserver auth hash.
-    [[nodiscard]] std::string getAuthDigest() const;
+    std::string getAuthDigest() const;
 };
 
 struct TablesStatusResponse

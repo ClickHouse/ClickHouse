@@ -11,12 +11,12 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) にあり、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
+<div id="distributed_plan_default_reader_bucket_count">
+  ## distributed_plan_default_reader_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -27,7 +27,9 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散クエリで並列読み取りを行う際のデフォルトのタスク数です。タスクはレプリカ間に分散されます。
 ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいて読み取りのファンアウトを選択するため、この設定は使用しません。
 
-## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
+<div id="distributed_plan_default_shuffle_join_bucket_count">
+  ## distributed_plan_default_shuffle_join_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -38,39 +40,9 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 分散 shuffle-hash-join のデフォルトのバケット数。
 ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいてファンアウトを選択するため、この設定は使用しません。
 
-## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="String" default_value="LZ4" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "新しい設定: 分散クエリプランの streaming エクスチェンジ は、`network_compression_method` のコーデックではなく `LZ4` で圧縮されるようになりました。"}]}]} />
-
-分散クエリプランのタスク間で行われる streaming エクスチェンジ において、パケットの圧縮に使用するコーデックです。一時ファイルを介したエクスチェンジには、サーバーのデフォルトコーデックが使用されます。
-
-設定可能な値:
-
-* `''` — [network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) のコーデックを使用します。
-* `NONE` — 圧縮しません。
-* `LZ4` — LZ4 コーデックを使用します。
-* `LZ4HC` — LZ4HC コーデックをデフォルトのレベル 9 で使用します。圧縮速度は `LZ4` の数倍以上遅くなります。
-* `ZSTD` — [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level) で指定したレベルで ZSTD コーデックを使用します。
-
-## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Int64" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "分散クエリプランの streaming exchange における ZSTD 圧縮レベルを指定する新しい設定。"}]}]} />
-
-分散クエリプランの streaming exchange で使用する ZSTD 圧縮のレベルです。[distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ja/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。
-
-設定可能な値:
-
-* 1 から 22 までの整数。レベルが高いほど圧縮率は高くなりますが、処理速度は低下します。
-
-## distributed_plan_execute_locally {#distributed_plan_execute_locally}
+<div id="distributed_plan_execute_locally">
+  ## distributed_plan_execute_locally
+</div>
 
 <ExperimentalBadge />
 
@@ -80,17 +52,9 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 分散クエリプランのすべてのタスクをローカルで実行します。テストやデバッグに有用です。
 
-## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "プランを分散化できない場合にローカル実行へフォールバックするための新しい設定（`make_distributed_plan` が有効な場合にのみ有効になります）。"}]}]} />
-
-クエリプランに分散実行に対応していないステップが含まれている場合、例外をスローするのではなく、その理由をログに記録してイニシエーター上でクエリを実行します。無効にすると、代わりに例外がスローされます。
-
-`make_distributed_plan` (プライベートプレビュー) が有効な場合にのみ有効になります。
-
-## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
+<div id="distributed_plan_force_exchange_kind">
+  ## distributed_plan_force_exchange_kind
+</div>
 
 <ExperimentalBadge />
 
@@ -104,7 +68,9 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 * &#39;Persisted&#39; - オブジェクトストレージ内の一時ファイルを使用します。
 * &#39;Streaming&#39; - Exchange データをネットワーク経由でストリーミングします。
 
-## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
+<div id="distributed_plan_force_shuffle_aggregation">
+  ## distributed_plan_force_shuffle_aggregation
+</div>
 
 <ExperimentalBadge />
 
@@ -113,29 +79,10 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
 
 分散クエリプランでは、PartialAggregation + Merge の代わりに Shuffle 集約戦略を使用します。
-Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROUPING SETS` の場合や、集約が bucket 順で結果を生成しなければならない場合には無視されます。
 
-## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい実験的な設定"}]}]} />
-
-`make_distributed_plan` 使用時に、あるステージで構築された JOINランタイムフィルタを、プローブ側を読み取るステージへ送信します。これにより、それらのステージは行を送信する前にフィルタリングできます。フィルタが届かなかった場合、行はフィルタリングされずにそのまま渡されます。`enable_join_runtime_filters` を有効にする必要があります。
-
-## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="UInt64" default_value="100000" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "新しい設定。ステートレスワーカーのタスクが、ステータスポーリングの合間にコーディネーターへ転送するためにバッファリングするログ行数の上限を指定します。上限を超えた行は破棄され、その件数がカウントされます。新機能のため、以前の値はデフォルト値と同じです。"}]}]} />
-
-`send_logs_level` によってステートレスワーカーのタスクログがコーディネーターへ転送される場合、各workerタスクがステータスポーリングの合間にバッファリングするログ行数は、この値が上限となります。上限を超えた行は破棄され、その件数がクライアントに報告されます。`0` は無制限を意味します (行が破棄されることはありませんが、ステータスポーリングが停滞するとバッファが際限なく増大する可能性があります)。
-
-## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
+<div id="distributed_plan_max_rows_to_broadcast">
+  ## distributed_plan_max_rows_to_broadcast
+</div>
 
 <ExperimentalBadge />
 
@@ -146,7 +93,9 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 分散クエリプランで、shuffle join の代わりに broadcast join を使用する際の最大行数。
 ルールベースの分散プランナーにおけるヒューリスティックです。コストベースのオプティマイザが有効な場合、broadcast と shuffle の選択は推定コストに基づいて行われるため、この設定は効果がありません。
 
-## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
+<div id="distributed_plan_optimize_exchanges">
+  ## distributed_plan_optimize_exchanges
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -154,21 +103,11 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 分散クエリプラン内の不要な Exchange を削除します。デバッグ時は無効にしてください。
 
-## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+<div id="distributed_plan_prefer_replicas_over_workers">
+  ## distributed_plan_prefer_replicas_over_workers
+</div>
 
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい実験的設定: 分散集約において、入力行ではなく部分集約状態をshuffleします。"}]}]} />
-
-分散集約が `GROUP BY` キーに基づいてデータをshuffleする前に、データを読み取るノード上で部分集約を行います。これにより、shuffle時にはすべての入力行ではなく、各ノードからグループごとに 1 つの集約状態のみが送信され、各バケットは担当するキーの状態をマージします。
-ルールベースのプランナーは、カラム STATISTICS に基づき、部分集約を行ってもデータ量が半分以下にならないと判断した場合は、従来どおり入力行をshuffleします。`enable_cascades_optimizer` が有効な場合、この設定により、オプティマイザはバケットごとにこのマージを行うかどうかをコストに基づいて選択できます。
-この設定は `make_distributed_plan = 1` と併用した場合にのみ有効です。入力行をshuffleする `distributed_plan_force_shuffle_aggregation` と併用した場合は効果がありません。
-
-## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
-
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -176,29 +115,11 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 レプリカで実行できるよう、分散クエリプランをシリアライズします。
 
-## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
 
 <ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "分散クエリプランにおける `ORDER BY` の read-in-order 最適化を有効にできるようにする新しい設定。テーブルのソーティングキー順に読み取ることで、ソートを省略して早期に処理を打ち切れます。デフォルトでは無効です。現時点で安全なのは、読み取りとソートの間に exchange が残らない shape のみです。"}]}]} />
-
-分散クエリプランにおける `ORDER BY` の read-in-order 最適化を許可します。これにより、スキャンしてソートする代わりに、テーブルのソーティングキー順に読み取ることでソートを省略し、早期に処理を打ち切れます。
-
-デフォルトでは無効です。ソートを分散させる rewrite は、対象のソートが「入力が既に順序付けられていること」に依存しないことを前提としていますが、実際に依存するソートに対しては、順序を保持しない exchange を経由して行が供給される可能性があります。現時点で安全なのは、読み取りとソートの間に exchange が残らない shape のみです。
-
-## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
-
-<PrivatePreviewBadge />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "分散実行計画の実行に使用するステートレスワーカークラスターを選択するための新しい設定。"}]}]} />
-
-このクエリの分散実行計画を実行するステートレスワーカークラスターの名前です。デフォルト値 (空文字列) の場合は、設定済みのデフォルトクラスターが選択されます。その他のクラスターは `stateless_worker_client.clusters` で設定します。
-
-## distributed_plan_workers_num {#distributed_plan_workers_num}
-
-<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -206,13 +127,15 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 このクエリの実行に使用するステートレスワーカーの数。0 を指定すると、分散プランでのステートレスワーカーのリースは無効になります。
 
-## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
+<div id="distributed_plan_workers_provisioning_timeout_ms">
+  ## distributed_plan_workers_provisioning_timeout_ms
+</div>
 
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "実行前にリースされたステートレスワーカーが到達可能になるまでクエリが待機する時間を制限する新しい設定。26.8 未満の `compatibility` では、以前の待機なしの動作に復元されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "実行前にリースされたステートレスワーカーが到達可能になるまでクエリが待機する時間を制限する新しい設定。`compatibility` を 26.9 未満にすると、以前の待機しない動作に戻ります。"}]}]} />
 
 実行前に、クエリがステートレスワーカーのプロビジョニングに費やせる合計実時間 (ミリ秒) 。これには、discovery service からのワーカーのリースと、その到達可能性の検証が含まれます。クエリは、リースされたワーカーの準備が完了するまで、この時間の範囲内でブロックします。時間切れになると、それまでに検証済みのワーカーでクエリを続行するか、利用可能なワーカーが1つもない場合は失敗します。ゼロの場合は、最初のリースと検証のパスでのみ待機します (再試行は行いません) 。
 

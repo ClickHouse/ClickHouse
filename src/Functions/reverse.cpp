@@ -26,32 +26,24 @@ class FunctionReverse final : public IFunction
 public:
     static constexpr auto name = "reverse";
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return true;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// `FunctionReverse` covers String/FixedString/Tuple inputs — the
-    /// `ReverseOverloadResolver` routes Array(...) inputs to `arrayReverse`
-    /// before this class is built, so Array is not part of this signature.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(S : StringOrFixedString) -> S OR (T : Tuple) -> reverseTuple(T)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isArray(arguments[0]) && !isTuple(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
@@ -82,9 +74,9 @@ public:
         return arguments[0];
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -138,15 +130,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-
-    /// `reverse` works on arrays (delegated to `arrayReverse`), strings,
-    /// fixed strings, and tuples. The DSL signature is authoritative.
-    String getSignatureString() const override
-    {
-        return "(Array(T : Any)) -> Array(T)"
-               " OR (S : StringOrFixedString) -> S"
-               " OR (T : Tuple) -> reverseTuple(T)";
-    }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

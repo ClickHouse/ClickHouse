@@ -2,6 +2,8 @@
 -- Correlated subquery with a table function should not fail with "Context has expired".
 -- https://github.com/ClickHouse/ClickHouse/issues/92991
 
+SET enable_analyzer = 1;
+
 CREATE TABLE t0_03927 (c0 Int) ENGINE = Memory();
 INSERT INTO t0_03927 VALUES (1);
 

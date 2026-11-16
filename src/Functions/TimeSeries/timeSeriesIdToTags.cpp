@@ -26,51 +26,29 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesIdToTags>(context); }
     explicit FunctionTimeSeriesIdToTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
     /// Function timeSeriesIdToTags returns information stored in the query context, it's deterministic in the scope of the current query.
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    [[nodiscard]] bool isStateful() const override { return true; }
+    bool isStateful() const override { return true; }
 
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
     /// The collector handles dictionary-encoded identifiers itself, resolving only the dictionary
     /// keys referenced by some row. The default implementation would run the function over the
     /// whole dictionary, and a shared dictionary can contain identifiers whose rows were all
     /// filtered out and which are therefore unknown to the collector.
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// The declarative signature below is documentation-only — the exact accepted shapes
-    /// aren't expressible in the DSL yet: it advertises any `FixedString` (the helper
-    /// `checkArgumentTypeForID` accepts only `FixedString(16)`) and omits the
-    /// helper-accepted `LowCardinality` wrappers (`LowCardinality(UUID)` /
-    /// `LowCardinality(FixedString(16))`). The `ColumnsWithTypeAndName` override below is
-    /// authoritative (it runs the helper). Route the types-only path to it too, so the base
-    /// `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the approximate
-    /// signature string as a validator.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(UInt64 | UInt128 | UUID | FixedString) -> Array(Tuple(String, String))";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
@@ -87,7 +65,7 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto tags = tags_collector->getTagsByID(arguments[0].column);
         chassert(tags.size() == input_rows_count);

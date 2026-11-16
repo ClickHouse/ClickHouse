@@ -47,9 +47,7 @@ if (NOT LICENSES_RESULT EQUAL 0)
     file(REMOVE ${GENERATED_LICENSES_SRC}.tmp)
     message(FATAL_ERROR "Failed to generate StorageSystemLicenses.generated.cpp")
 endif()
-# Keep the timestamp of an unchanged file, so that a CMake re-run does not recompile it.
-file(COPY_FILE ${GENERATED_LICENSES_SRC}.tmp ${GENERATED_LICENSES_SRC} ONLY_IF_DIFFERENT)
-file(REMOVE ${GENERATED_LICENSES_SRC}.tmp)
+file(RENAME ${GENERATED_LICENSES_SRC}.tmp ${GENERATED_LICENSES_SRC})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
 

@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['репликация', 'высокая доступность', 'настройка кластера', 'избыточность данных', 'отказоустойчивость']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import ConfigExplanation from '/snippets/ru/_config_explanation.mdx';
 import ListenHost from '/snippets/ru/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ru/_server_parameter_table.mdx';
@@ -15,7 +17,6 @@ import KeeperConfigExplanation from '/snippets/ru/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ru/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ru/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ru/_working_example.mdx';
-
 import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 > В этом примере вы узнаете, как настроить простой кластер ClickHouse с
@@ -25,15 +26,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 Ниже показана архитектура кластера, который вы будете настраивать:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree" />
 
 <DedicatedKeeperServers />
 
@@ -149,7 +142,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
-### Настройка сервера
+    ### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
@@ -216,14 +209,14 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Каталог                                                   | Файл                                                                                                                                                                             |
+    | Каталог                                                   | File                                                                                                                                                                             |
     | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
 
     Каждый раздел приведённого выше конфигурационного файла подробно описан ниже.
 
-#### Сеть и логирование
+    #### Сеть и логирование
 
     <ListenHost />
 
@@ -242,7 +235,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Дополнительные сведения о конфигурации логирования см. в комментариях в стандартном [файле конфигурации](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse.
 
-#### Конфигурация кластера
+    #### Конфигурация кластера
 
     Конфигурация кластера задаётся в блоке `<remote_servers>`.
     Здесь определяется имя кластера `cluster_1S_2R`.
@@ -278,7 +271,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-#### Конфигурация Keeper
+    #### Конфигурация Keeper
 
     Секция `<ZooKeeper>` указывает ClickHouse, где запущен ClickHouse Keeper (или ZooKeeper).
     Поскольку мы используем кластер ClickHouse Keeper, необходимо указать каждый узел (`<node>`) кластера
@@ -308,7 +301,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       в промышленной среде мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных хостах.
     </Note>
 
-#### Конфигурация макросов
+    #### Конфигурация макросов
 
     Кроме того, раздел `<macros>` используется для определения подстановок параметров для
     реплицированных таблиц. Они перечислены в `system.macros` и позволяют использовать подстановки
@@ -326,7 +319,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       Они будут определяться по-разному в зависимости от конфигурации кластера.
     </Note>
 
-### Конфигурация пользователя
+    ### Конфигурация пользователя
 
     Теперь внесите следующие изменения в каждый пустой файл конфигурации `users.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`:
@@ -344,6 +337,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
+                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -351,6 +345,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -369,7 +364,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Каталог                                                  | Файл                                                                                                                                                                          |
+    | Каталог                                                  | File                                                                                                                                                                          |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -383,7 +378,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-### Настройка Keeper
+    ### Настройка Keeper
 
     <KeeperConfig />
 

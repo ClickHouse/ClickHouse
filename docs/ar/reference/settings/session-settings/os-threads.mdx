@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، ويجري إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## os_threads_nice_value_materialized_view {#os_threads_nice_value_materialized_view}
+<div id="os_threads_nice_value_materialized_view">
+  ## os_threads_nice_value_materialized_view
+</div>
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
@@ -25,13 +27,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيم الممكنة: من -20 إلى 19.
 
-## os_threads_nice_value_query {#os_threads_nice_value_query}
+<div id="os_threads_nice_value_query">
+  ## os_threads_nice_value_query
+</div>
 
 **الأسماء البديلة**: `os_thread_priority`
 
 <SettingsInfoBlock type="Int32" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد، ويُعدّ `os_thread_priority` اسمًا بديلًا له."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
 
 قيمة `nice` في Linux لخيوط معالجة الاستعلامات. تعني القيم الأقل أولوية أعلى للـ CPU.
 

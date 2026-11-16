@@ -55,24 +55,24 @@ struct PackedHashMapCell : public HashMapCell<Key, TMapped, Hash, TState, Packed
 
     void setZero() { PackedZeroTraits::set(this->value); }
 
-    [[nodiscard]] Key getKey() const { return this->value.first; }
+    Key getKey() const { return this->value.first; }
     static Key getKey(const value_type & value_) { return value_.first; }
 
     Mapped & getMapped() { return this->value.second; }
-    [[nodiscard]] Mapped getMapped() const { return this->value.second; }
-    [[nodiscard]] value_type getValue() const { return this->value; }
+    Mapped getMapped() const { return this->value.second; }
+    value_type getValue() const { return this->value; }
 
-    [[nodiscard]] bool keyEquals(const Key key_) const { return bitEqualsByValue(this->value.first, key_); }
-    [[nodiscard]] bool keyEquals(const Key key_, size_t /*hash_*/) const { return bitEqualsByValue(this->value.first, key_); }
-    [[nodiscard]] bool keyEquals(const Key key_, size_t /*hash_*/, const State & /*state*/) const { return bitEqualsByValue(this->value.first, key_); }
+    bool keyEquals(const Key key_) const { return bitEqualsByValue(this->value.first, key_); }
+    bool keyEquals(const Key key_, size_t /*hash_*/) const { return bitEqualsByValue(this->value.first, key_); }
+    bool keyEquals(const Key key_, size_t /*hash_*/, const State & /*state*/) const { return bitEqualsByValue(this->value.first, key_); }
 
-    [[nodiscard]] bool isZero(const State & state) const { return isZero(this->value.first, state); }
+    bool isZero(const State & state) const { return isZero(this->value.first, state); }
     static bool isZero(const Key key, const State & /*state*/) { return ZeroTraits::check(key); }
 
     static bool bitEqualsByValue(key_type a, key_type b) { return a == b; }
 
     template <size_t I>
-    [[nodiscard]] auto get() const
+    auto get() const
     {
         if constexpr (I == 0) return this->value.first;
         else if constexpr (I == 1) return this->value.second;

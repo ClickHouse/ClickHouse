@@ -101,7 +101,6 @@ And then import the data:
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
-    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -176,38 +175,14 @@ password, then select the Postgres database and destination schema where the
 ClickHouse tables should be imported. Click **Connect** to create the foreign
 server and import the schema.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![pg_clickhouse setup form for the taxi database in the ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="pg_clickhouse setup form for the taxi database in the ClickHouse Cloud console" size="lg" border/>
 
 When setup is complete, the console displays a confirmation and the foreign
 server appears in the server list.
 
-<div className="ch-image-lg">
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Completed pg_clickhouse setup for the taxi database in the ClickHouse Cloud console" size="lg" border/>
 
-<Frame>
-
-![Completed pg_clickhouse setup for the taxi database in the ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg">
-
-<Frame>
-
-![Foreign server list showing the taxi pg_clickhouse connection](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Foreign server list showing the taxi pg_clickhouse connection" size="lg" border/>
 
 You can now open the Postgres **SQL console** and query the imported tables:
 
@@ -710,7 +685,7 @@ Generally, we avoid using `SELECT *` in PostgreSQL and ClickHouse. You
 should only retrieve the columns you actually need.
 </Note>
 
-  [ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "New York taxi data"
+  [ClickHouse tutorial]: /get-started/quickstarts/tutorial "ClickHouse Advanced Tutorial"
   [psql]: https://www.postgresql.org/docs/current/app-psql.html
     "PostgreSQL Client Applications: psql"
   [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html

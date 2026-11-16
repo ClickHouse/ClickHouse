@@ -231,7 +231,7 @@ def test_jbod_disk_failover(start_cluster):
 
     # Check which disk has the latest part
     parts_info = node_jbod.query(
-        "SELECT disk_name, rows FROM system.parts WHERE table = 'test_jbod' AND active ORDER BY max_block_number DESC LIMIT 1"
+        "SELECT disk_name, rows FROM system.parts WHERE table = 'test_jbod' AND active ORDER BY modification_time DESC LIMIT 1"
     ).strip()
 
     assert (

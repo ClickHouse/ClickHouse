@@ -53,30 +53,12 @@ public:
 private:
     const OpTypes op_type;
 
-    [[nodiscard]] String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
+    String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Documentation-only — combines maps (or pairs of `Array(K)`+`Array(V)`)
-    /// element-wise on matching keys, summing or subtracting the values.
-    /// Value-type promotion follows the same rule as the underlying numeric
-    /// op (e.g. `Map(K, UInt8) + Map(K, UInt8)` → `Map(K, UInt64)`), which
-    /// isn't expressible in the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Map(K : Any, Any), ...) -> Map(K, Any)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
@@ -99,7 +81,7 @@ private:
         }
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
+    DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -145,7 +127,7 @@ private:
         return res;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
+    DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -176,7 +158,7 @@ private:
         return res;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
@@ -333,7 +315,7 @@ private:
         }
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         DataTypePtr key_type;
         size_t row_count = 0;

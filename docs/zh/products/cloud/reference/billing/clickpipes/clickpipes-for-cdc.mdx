@@ -9,19 +9,25 @@ keywords: ['计费', 'clickpipes', 'cdc 定价', '成本', '定价']
 
 本节介绍 ClickPipes 中 CDC (变更数据捕获) 连接器的定价模式。
 
-## OLTP CDC（变更数据捕获） {#cdc-oltp}
+<div id="cdc-oltp">
+  ## OLTP CDC
+</div>
 
-| 连接器              | 功能生命周期      | 计费状态                                                                              |
-| ---------------- | ----------- | --------------------------------------------------------------------------------- |
-| **Postgres CDC（变更数据捕获）** | 正式发布 (GA)   | 按所列[定价维度](#pricing-dimensions-oltp)计费。                                            |
-| **MySQL CDC（变更数据捕获）**    | 正式发布 (GA)   | 自 2026 年 9 月 1 日起，按所列[定价维度](#pricing-dimensions-oltp)计费。                          |
-| **MongoDB CDC（变更数据捕获）**  | Public Beta | Public Beta 期间**免费**。该连接器晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。 |
+| 连接器              | 功能生命周期      | 计费状态                                                                                                  |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| **Postgres CDC** | 正式发布 (GA)   | 按所列[定价维度](#pricing-dimensions-oltp)计费。                                                                |
+| **MySQL CDC**    | Public Beta | Public Beta 期间**免费**。该连接器于 **2026 年 9 月 1 日**晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。 |
+| **MongoDB CDC**  | Public Beta | Public Beta 期间**免费**。该连接器晋升为正式发布 (GA) 后，将按所列[定价维度](#pricing-dimensions-oltp)开始计费。                     |
 
-### 定价维度 {#pricing-dimensions-oltp}
+<div id="pricing-dimensions-oltp">
+  ### 定价维度
+</div>
 
 OLTP CDC 连接器的定价基于两个维度：[数据量](#data-volume-oltp)和[计算](#compute-oltp)。
 
-#### 数据量 {#data-volume-oltp}
+<div id="data-volume-oltp">
+  #### 数据量
+</div>
 
 从数据库复制 stream 读取并摄取到 ClickHouse 的原始未压缩字节数。定价取决于摄取阶段：
 
@@ -34,7 +40,9 @@ OLTP CDC 连接器的定价基于两个维度：[数据量](#data-volume-oltp)�
 | **初始加载 / 重新同步** | $0.10 / GB |
 | **持续复制 (CDC)**  | $0.20 / GB |
 
-#### 计算资源 {#compute-oltp}
+<div id="compute-oltp">
+  #### 计算资源
+</div>
 
 为 CDC ClickPipes **按服务**预配的计算单元，**由**同一服务中的所有 CDC ClickPipes 共享。默认预配的计算单元取决于您的 organization 所属的层级。
 
@@ -45,18 +53,22 @@ OLTP CDC 连接器的定价基于两个维度：[数据量](#data-volume-oltp)�
 
 由于计算资源由服务内的 CDC ClickPipes 共享，随着 CDC ClickPipes 使用量的增加，此定价项的每服务费用保持**不变**。您可以通过[扩缩容 CDC ClickPipes 服务](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeCdcScalingUpdate)预配额外的计算单元，价格将按比例线性增长。
 
-### 示例 {#example-oltp}
+<div id="example-oltp">
+  ### 示例
+</div>
 
 <Note>
-  本示例结合多个 连接器，说明 CDC（变更数据捕获） ClickPipes 的共享 计算资源 定价模式。
+  本示例结合多个 connector，说明 CDC ClickPipes 的共享 compute 定价模式。请注意，[MySQL CDC 在 Public Beta 期间免费](#cdc-oltp)。
 </Note>
 
 假设某个 **Scale** 层级的服务具有以下配置：
 
-* 1 个 **Postgres CDC（变更数据捕获）** ClickPipe，复制 8 张表，初始加载量为 200 GB，每月 CDC（变更数据捕获）变更量为 100 GB。
-* 1 个 **MySQL CDC（变更数据捕获） ClickPipe**，复制 5 张表，初始加载量为 100 GB，每月 CDC（变更数据捕获）变更量为 50 GB。
+* 1 个 **Postgres CDC** ClickPipe，复制 8 张表，初始加载量为 200 GB，每月 CDC 变更量为 100 GB。
+* 1 个 **MySQL CDC ClickPipe**，复制 5 张表，初始加载量为 100 GB，每月 CDC 变更量为 50 GB。
 
-#### 每月费用明细 {#cost-breakdown-oltp}
+<div id="cost-breakdown-oltp">
+  #### 每月费用明细
+</div>
 
 ##### 首月 {#cost-breakdown-first-month-oltp}
 
@@ -84,7 +96,9 @@ $$\$30 \text{ (CDC)} + \$146 \text{ (compute)} = \$176 \text{ per month}$$
 
 为避免性能 bottleneck 并高效复用 service 内已 provisioned 的 compute，我们建议通过单个 ClickPipe 复制同一 upstream database instance 中的所有表；除非确有充分理由，否则不必将 workload split 到多个 ClickPipes 或进行 scale up。
 
-## 数据仓库 CDC {#cdc-dwh}
+<div id="cdc-dwh">
+  ## 数据仓库 CDC
+</div>
 
 数据仓库 CDC 连接器的定价仍在制定中。
 
@@ -92,7 +106,9 @@ $$\$30 \text{ (CDC)} + \$146 \text{ (compute)} = \$176 \text{ per month}$$
 | ---------------- | ------ | ------------- |
 | **BigQuery CDC** | 私有预览   | 私有预览期间**免费**。 |
 
-## CDC ClickPipes 常见问题 {#faq-cdc}
+<div id="faq-cdc">
+  ## CDC ClickPipes 常见问题
+</div>
 
 <Accordion title="可以将 ClickHouse Cloud credits 用于 CDC ClickPipes 吗？">
   可以。ClickPipes 的定价纳入统一的 ClickHouse Cloud 定价体系。您拥有的任何

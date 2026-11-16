@@ -138,20 +138,6 @@ def main():
         "beta-and-experimental",
     ]
 
-    fenced_links = (
-        'Outside <a href="/missing">link</a>.\n\n'
-        '```xml\n'
-        '<a href="/play">ClickHouse Web UI</a>\n'
-        '```\n'
-    )
-    rewritten_fenced_links = migrate.rewrite_links(
-        fenced_links, None, migrate.Lookups(), [],
-    )
-    unknown_slug_marker = "{/" + "* MIGRATE: unknown slug */}"
-    assert f'<a href="/missing"{unknown_slug_marker}>link</a>' in rewritten_fenced_links
-    assert '<a href="/play">ClickHouse Web UI</a>' in rewritten_fenced_links
-    assert 'href="/play"{/* MIGRATE:' not in rewritten_fenced_links
-
     for badge in (
         "CloudNotSupportedBadge",
         "CloudSupportedBadge",

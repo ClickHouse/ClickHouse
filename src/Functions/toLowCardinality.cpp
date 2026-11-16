@@ -23,22 +23,24 @@ public:
     static constexpr auto name = "toLowCardinality";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToLowCardinality>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T) -> LowCardinality(T)";
+        if (arguments[0]->lowCardinality())
+            return arguments[0];
+
+        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
     {
         const auto & arg = arguments[0];
 
@@ -53,9 +55,9 @@ public:
         return column;
     }
 
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override { return true; }
 
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = true };
     }

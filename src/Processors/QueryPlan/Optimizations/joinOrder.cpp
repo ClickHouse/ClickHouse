@@ -1,9 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
-#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
@@ -13,9 +9,7 @@
 #include <utility>
 #include <vector>
 #include <Core/Joins.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -44,7 +38,7 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
@@ -92,11 +86,9 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
 
         if (left_it != column_stats.end() && right_it != column_stats.end())
         {
-            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
-                left_it->second,
-                right_it->second,
-                join_operator.kind,
-                join_operator.strictness);
+            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
+            left_it->second.num_distinct_values = min_ndv;
+            right_it->second.num_distinct_values = min_ndv;
         }
     }
 
@@ -149,8 +141,6 @@ void QueryGraph::buildColumnEquivalences()
         if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
             || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
-        if (null_supplying_subtree_relations.test(*lhs_rel) || null_supplying_subtree_relations.test(*rhs_rel))
-            continue;
 
         if (outer_join_conditions.contains(edge))
             continue;
@@ -193,31 +183,13 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///   1. Remove predicates whose endpoints are already equivalent from child joins.
 ///      Non-redundant predicates are added to the equivalence classes immediately,
 ///      so later predicates at the same step can also be detected as redundant.
-///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
-///      and right subtrees that the remaining predicates do not connect. If predicates remain,
-///      only for classes whose members have one type up to Nullable and LowCardinality
-///      (equality across types is not transitive), and not when a side is a prepared storage.
+///   2. If no predicates remain (transitive-only join), synthesize one per equivalence
+///      class spanning the left and right subtrees.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
-    const EquivalenceClasses<JoinActionRef> & column_equivalences,
-    const BitSet & prepared_storage_relations)
+    const EquivalenceClasses<JoinActionRef> & column_equivalences)
 {
     using EquivClasses = EquivalenceClasses<JoinActionRef>;
-
-    auto is_prepared_storage = [&](const DPJoinEntryPtr & side)
-    {
-        auto relation = side->relations.getSingleBit();
-        return relation && prepared_storage_relations.test(*relation);
-    };
-
-    auto has_single_type = [](const EquivClasses::Class & members)
-    {
-        auto type = removeLowCardinalityAndNullable(members.front().getType());
-        return std::ranges::all_of(members, [&](const JoinActionRef & member)
-        {
-            return removeLowCardinalityAndNullable(member.getType())->equals(*type);
-        });
-    };
 
     std::function<EquivClasses(const DPJoinEntryPtr &)> process =
         [&](const DPJoinEntryPtr & entry) -> EquivClasses
@@ -265,35 +237,14 @@ static void cleanupJoinPredicates(
             return false;
         });
 
-        /// Phase 2: Synthesize predicates for equivalence classes spanning both subtrees.
-        const bool has_predicates = !expressions.empty();
-        if (is_inner && !(has_predicates && (is_prepared_storage(entry->left) || is_prepared_storage(entry->right))))
+        /// Phase 2: Synthesize predicates for transitive-only joins.
+        if (expressions.empty() && isInner(entry->join_operator.kind))
         {
             const auto & left_rels = entry->left->relations;
             const auto & right_rels = entry->right->relations;
 
-            auto is_from = [](const BitSet & rels, const JoinActionRef & member)
-            {
-                auto rel = member.getSourceRelations().getSingleBit();
-                return rel && rels.test(*rel);
-            };
-
-            auto is_connected = [&](const EquivClasses::Class & members)
-            {
-                for (const auto & lhs : members)
-                {
-                    auto lhs_class = is_from(left_rels, lhs) ? equiv.getClass(lhs) : nullptr;
-                    if (!lhs_class)
-                        continue;
-                    for (const auto & rhs : members)
-                        if (is_from(right_rels, rhs) && equiv.getClass(rhs) == lhs_class)
-                            return true;
-                }
-                return false;
-            };
-
             using ConstClassPtr = EquivClasses::ConstClassPtr;
-            UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
+            std::unordered_set<ConstClassPtr> visited;
 
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
@@ -303,9 +254,6 @@ static void cleanupJoinPredicates(
 
                 auto equiv_class = column_equivalences.getClass(member);
                 if (!equiv_class || !visited.insert(equiv_class).second)
-                    continue;
-
-                if (has_predicates && (is_connected(*equiv_class) || !has_single_type(*equiv_class)))
                     continue;
 
                 for (const auto & other : *equiv_class)
@@ -344,7 +292,7 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `QueryPlanOptimizationSettings::query_plan_optimize_join_order_algorithm` is std::vector
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
@@ -362,28 +310,11 @@ public:
 private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
-    const std::vector<JoinOrderAlgorithm> enabled_algorithms; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `QueryPlanOptimizationSettings::query_plan_optimize_join_order_algorithm` is std::vector
+    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = DB::getJoinOrderOptimizerLogger();
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
 };
-
-/// The tables of a join graph and the joins of its original tree, for an exception message.
-static String dumpJoinGraph(const QueryGraph & query_graph)
-{
-    WriteBufferFromOwnString out;
-    out << "relations:";
-    for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
-        out << (i ? ", " : " ") << i << " " << query_graph.relation_stats[i].table_name;
-    out << "; joins:";
-    for (size_t i = 0; i < query_graph.conflict_ops.size(); ++i)
-    {
-        const auto & op = query_graph.conflict_ops[i];
-        out << (i ? ", " : " ") << toString(op.strictness) << " " << toString(op.kind)
-            << " " << toString(op.left) << " x " << toString(op.right);
-    }
-    return out.str();
-}
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 {
@@ -391,17 +322,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
 
-    /// Only DPsub with a conflict detector may plan a graph that `join_kinds` does not describe (see
-    /// `requires_conflict_detector`); another algorithm would reorder its semi/anti and outer joins
-    /// as if they were inner joins and quietly change the answer. It should never come to that, but
-    /// the damage would be wrong rows, so fail loudly rather than silently.
     for (const auto & algorithm : enabled_algorithms)
     {
-        if (query_graph.requires_conflict_detector && algorithm != JoinOrderAlgorithm::DPSUB)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Join order algorithm {} cannot plan a join graph that only DPsub with a conflict detector can reorder. "
-                "This graph should not have reached it. Join graph: {}", toString(algorithm), dumpJoinGraph(query_graph));
-
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
@@ -446,19 +368,10 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         query_graph.buildColumnEquivalences();
         column_equivalences = query_graph.column_equivalences;
     }
-    auto prepared_storage_relations = query_graph.prepared_storage_relations;
 
     /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
-    query_graph.join_swap_table = optimization_settings.join_swap_table;
-    query_graph.use_interesting_orders = query_graph.use_interesting_orders && optimization_settings.enable_join_transitive_predicates;
-    query_graph.reuse_join_output_order = optimization_settings.optimize_sorting_by_input_stream_properties;
-    /// The runtime filter skips granules at read time only with `use_skip_indexes_on_data_read`, taken as the query runs it.
-    query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters
-        && optimization_settings.enable_join_runtime_filters_index_analysis
-        && optimization_settings.use_skip_indexes_on_data_read_at_execution;
-    query_graph.shard_merge_by_pk_ranges = optimization_settings.query_plan_join_shard_by_pk_ranges;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
@@ -469,7 +382,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
     if (optimization_settings.enable_join_transitive_predicates)
-        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
+        cleanupJoinPredicates(best_plan, column_equivalences);
     return best_plan;
 }
 

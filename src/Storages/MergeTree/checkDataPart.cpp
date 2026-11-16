@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -158,27 +157,6 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
-bool isIOErrorException(std::exception_ptr exception_ptr)
-{
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
-    catch (const ErrnoException & e)
-    {
-        return e.getErrno() == EIO;
-    }
-    catch (const std::filesystem::filesystem_error & e)
-    {
-        return e.code() == std::errc::io_error;
-    }
-    catch (...)
-    {
-        /// Ok: any other exception is not an I/O error.
-        return false;
-    }
-}
-
 /// A query that was killed or hit `max_execution_time` can throw from inside a part read, e.g. from
 /// `FileSegment::wait`, from the S3 client or from the marks loader. Such an exception says nothing
 /// about the data on disk, so a reader must not report the part as broken because of it.
@@ -265,9 +243,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isIOErrorException(std::current_exception()))
-                throw;
-
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
@@ -384,23 +359,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_name = it->name();
 
-        /// Skip temporary metadata files (e.g. checksums.txt.tmp) that an interrupted metadata
-        /// rewrite may have left behind. They are not part of the part's data and must not be
-        /// checksummed: doing so would record a file that the next rewrite deletes, making the
-        /// recalculated checksums self-invalidating.
-        if (file_name.ends_with(".tmp"))
-            continue;
-
         /// We will check projections later.
         if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
         }
-
-        /// Written next to `txn_version.txt` and renamed over it while the part's version changes.
-        if (file_name == VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME)
-            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.

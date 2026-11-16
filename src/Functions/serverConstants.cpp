@@ -33,7 +33,7 @@ namespace
     {
     public:
         using FunctionConstantBase<Derived, T, ColumnT>::FunctionConstantBase;
-        [[nodiscard]] bool isServerConstant() const override { return true; }
+        bool isServerConstant() const override { return true; }
     };
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
@@ -311,7 +311,6 @@ SELECT timezone()
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
-    factory.registerAlias("current_timezone", "timezone", FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ServerTimezone)

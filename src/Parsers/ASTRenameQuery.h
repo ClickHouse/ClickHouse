@@ -22,14 +22,14 @@ public:
         ASTPtr database;
         ASTPtr table;
 
-        [[nodiscard]] String getDatabase() const
+        String getDatabase() const
         {
             String name;
             tryGetIdentifierNameInto(database, name);
             return name;
         }
 
-        [[nodiscard]] String getTable() const
+        String getTable() const
         {
             String name;
             tryGetIdentifierNameInto(table, name);

@@ -6,6 +6,8 @@ description: 'Surveiller la JVM avec ClickStack'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -39,15 +41,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre environnemen
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Clé API ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
   </Step>
 
   <Step title="Télécharger l’agent Java OpenTelemetry" id="download-agent">
@@ -216,41 +210,17 @@ Pour vous aider à surveiller les applications JVM avec ClickStack, nous fournis
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, dans le menu à points de suspension
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Bouton d’importation du tableau de bord](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
 
     3. Téléversez le fichier `jvm-metrics-dashboard.json` et cliquez sur **Finish Import**
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Terminer l’importation](/images/clickstack/jvm/jvm-metrics-import.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Terminer l’importation" />
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations préconfigurées :
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Tableau de bord des métriques Kafka](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Tableau de bord des métriques Kafka" />
 
     <Note>
       Pour le jeu de données de démonstration, réglez l’intervalle de temps sur **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Adaptez-le à votre fuseau horaire local.

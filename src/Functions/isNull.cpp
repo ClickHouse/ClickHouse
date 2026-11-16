@@ -13,13 +13,22 @@
 
 namespace DB
 {
-FunctionPtr FunctionIsNull::create(ContextPtr)
+namespace Setting
 {
-    return std::make_shared<FunctionIsNull>();
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
+FunctionPtr FunctionIsNull::create(ContextPtr context)
+{
+    return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
 }
 
 ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
 {
+    /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+    if (!use_analyzer)
+        return nullptr;
+
     /// SELECT arrayFilter(x -> (x IS NULL), []) can trigger `defaultImplementationForNothing()`
     /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
     if (isNothing(result_type))

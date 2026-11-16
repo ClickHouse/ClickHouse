@@ -32,6 +32,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -44,16 +45,19 @@ public:
     explicit FunctionMidpoint(ContextPtr) { }
 
 private:
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(T1, ...) -> leastSupertype(T1, ...)";
+        if (types.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
+
+        return getLeastSupertype(types);
     }
 
     template <typename T>
@@ -222,7 +226,7 @@ private:
     }
 
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const bool result_is_nullable = result_type->isNullable();
         const DataTypePtr nested_result_type = result_is_nullable ? removeNullable(result_type) : result_type;
@@ -515,9 +519,12 @@ public:
         return std::make_unique<FunctionToFunctionBaseAdaptor>(FunctionMidpoint::create(context), argument_types, return_type);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(T1, ...) -> leastSupertype(T1, ...)";
+        if (types.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
+
+        return getLeastSupertype(types);
     }
 
 private:

@@ -52,10 +52,6 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
-    /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
-    NameToNameMap interpolated_column_names;
-    /// INTERPOLATE target name -> name of its column in the `FillingStep` header; the target name unless another column has it.
-    NameToNameMap interpolate_target_column_names;
 };
 
 struct LimitByAnalysisResult
@@ -81,7 +77,7 @@ public:
         return projection_analysis_result;
     }
 
-    [[nodiscard]] bool hasWhere() const
+    bool hasWhere() const
     {
         return where_analysis_result.filter_actions != nullptr;
     }
@@ -96,10 +92,9 @@ public:
         where_analysis_result = std::move(where_analysis_result_);
     }
 
-    [[nodiscard]] bool hasAggregation() const
+    bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
-            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
     AggregationAnalysisResult & getAggregation()
@@ -112,7 +107,7 @@ public:
         aggregation_analysis_result = std::move(aggregation_analysis_result_);
     }
 
-    [[nodiscard]] bool hasHaving() const
+    bool hasHaving() const
     {
         return having_analysis_result.filter_actions != nullptr;
     }
@@ -127,7 +122,7 @@ public:
         having_analysis_result = std::move(having_analysis_result_);
     }
 
-    [[nodiscard]] bool hasWindow() const
+    bool hasWindow() const
     {
         return !window_analysis_result.window_descriptions.empty();
     }
@@ -142,7 +137,7 @@ public:
         window_analysis_result = std::move(window_analysis_result_);
     }
 
-    [[nodiscard]] bool hasQualify() const
+    bool hasQualify() const
     {
         return qualify_analysis_result.filter_actions != nullptr;
     }
@@ -157,7 +152,7 @@ public:
         qualify_analysis_result = std::move(qualify_analysis_result_);
     }
 
-    [[nodiscard]] bool hasSort() const
+    bool hasSort() const
     {
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
@@ -172,7 +167,7 @@ public:
         sort_analysis_result = std::move(sort_analysis_result_);
     }
 
-    [[nodiscard]] bool hasLimitBy() const
+    bool hasLimitBy() const
     {
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
@@ -187,7 +182,7 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
-    [[nodiscard]] bool hasLimitRange() const
+    bool hasLimitRange() const
     {
         return limit_range_analysis_result.before_limit_range_actions != nullptr;
     }

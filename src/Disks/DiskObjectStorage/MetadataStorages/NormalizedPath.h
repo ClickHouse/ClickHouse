@@ -9,7 +9,7 @@ namespace DB
 class NormalizedPath : public std::filesystem::path
 {
 public:
-    [[nodiscard]] NormalizedPath parent_path() const;
+    NormalizedPath parent_path() const;
 };
 
 NormalizedPath normalizePath(std::string path);

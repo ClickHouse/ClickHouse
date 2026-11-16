@@ -5,7 +5,6 @@
 #include <memory>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -40,12 +39,6 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view function_name,
     int exception_code,
     std::string_view exception_function_name,
-    std::string_view exception_place_message);
-
-/// throws on arrayJoin that the step runs itself: outside aggregate and window functions and outside the ready columns
-void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
-    const std::vector<QueryTreeNodePtr> & ready_columns,
-    int exception_code,
     std::string_view exception_place_message);
 
 /** Validate tree size. If size of tree is greater than max size throws exception.

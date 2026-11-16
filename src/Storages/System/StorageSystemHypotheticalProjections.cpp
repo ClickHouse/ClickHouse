@@ -9,7 +9,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Core/Field.h>

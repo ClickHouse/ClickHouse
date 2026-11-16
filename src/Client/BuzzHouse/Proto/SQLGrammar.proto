@@ -91,9 +91,6 @@ enum SQLTableFunc {
     TFytsaurus = 85;
     TFzeros = 86;
     TFzeros_mt = 87;
-    TFtimeSeriesSamples = 89;
-    TFtimeSeriesTimeRanges = 90;
-    TFtimeSeriesMetricFamilies = 91;
 }
 
 message SQLIdentifier {
@@ -404,7 +401,6 @@ message ExprInType {
         ExprList tuple = 3;
         ExplainQuery sel = 4;
         bool empty_list = 5;
-        ExprSchemaTable tbl = 6;
     }
 }
 
@@ -463,12 +459,9 @@ message ExprLike {
         LIKE = 1;
         ILIKE = 2;
         REGEXP = 3;
-        SIMILAR_TO = 4;
     }
     required PossibleKeywords keyword = 3;
     required Expr expr2 = 4;
-    /// Quoted `ESCAPE` literal, not for `REGEXP`
-    optional string escape = 5;
 }
 
 message CondExpr {
@@ -484,31 +477,11 @@ message LambdaExpr {
     required Expr expr = 3;
 }
 
-/// A call with argument placeholders, e.g. `plus(_, 1)` or `minus(_2, _1)`; each argument is printed as is
-message PlaceholderCall {
-    required string func = 1;
-    repeated string args = 2;
-}
-
-message ComposeStage {
-    oneof stage_oneof {
-        LambdaExpr lambda = 1;
-        string func_name = 2;
-        PlaceholderCall call = 3;
-    }
-}
-
-/// The function composition operator `f | g`, valid where a function is expected
-message FuncComposition {
-    repeated ComposeStage stages = 1;
-}
-
 message SQLFuncArg {
     oneof func_arg_oneof {
         LambdaExpr lambda = 1;
         Expr expr = 2;
         string func_name = 3;
-        FuncComposition composition = 4;
     }
 }
 
@@ -787,7 +760,6 @@ message JoinCore {
     optional JoinType join_op = 4;
     required TableOrSubquery tos = 5;
     required JoinConstraint join_constraint = 6;
-    optional bool lateral = 7;
 }
 
 message ArrayJoin {
@@ -1052,7 +1024,6 @@ message TableFunction {
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
         ExprSchemaTable mtcodecblocks = 25;
-        Select obfuscate = 28;
     }
     optional SettingValues setting_values = 26;
     repeated HTTPHeader http_headers = 27;
@@ -1159,11 +1130,8 @@ message LimitByStatement {
 }
 
 message LimitStatement {
-    optional Expr limit = 1;
+    required Expr limit = 1;
     optional bool with_ties = 2;
-    optional Expr limit_after = 3;
-    optional bool after_all = 4;
-    optional Expr limit_until = 5;
 }
 
 message FetchStatement {
@@ -1199,7 +1167,6 @@ message SelectStatementCore {
     optional LimitByStatement limit_by = 11;
     optional LimitStatement limit = 12;
     optional OffsetStatement offset = 13;
-    optional bool shuffle = 14;
 }
 
 message SetQuery {
@@ -1261,10 +1228,6 @@ enum DatabaseEngineValues {
     DSQLite = 9;
     DBackup = 10;
     DMaterializedPostgreSQL = 11;
-    DCluster = 12;
-    DRemote = 13;
-    DRemoteSecure = 14;
-    DOverlay = 15;
 }
 
 message BackupParam {
@@ -1350,7 +1313,6 @@ message ColumnPathList {
 message JSONPathType {
     required ColumnPath col = 1;
     required TopTypeName type = 2;
-    optional bool shared = 3;
 }
 
 message JSONDefItem {
@@ -1563,13 +1525,17 @@ message IndexDef {
     optional uint32 granularity = 5;
 }
 
+message ProjectionSelectDef {
+    required Select select = 1;
+    optional SettingValues setting_values = 2;
+}
+
 message ProjectionDef {
     required SQLIdentifier proj = 1;
     oneof projection_oneof {
-        Select sel_def = 2;
+        ProjectionSelectDef sel_def = 2;
         IndexDef idx_def = 3;
     }
-    optional SettingValues setting_values = 4;
 }
 
 message ConstraintDef {
@@ -1588,7 +1554,6 @@ message TableDefItem {
         IndexDef idx_def = 2;
         ProjectionDef proj_def = 3;
         ConstraintDef const_def = 4;
-        ColumnCodec codec_decl = 5;
     }
 }
 
@@ -1737,28 +1702,6 @@ message TTLExpr {
     repeated TTLEntry other_ttl = 2;
 }
 
-/// `DATA` and `METRICS` are the older names of `SAMPLES` and `METRIC FAMILIES`
-enum TimeSeriesTarget {
-    TS_SAMPLES = 1;
-    TS_RECENT_SAMPLES = 2;
-    TS_TAGS = 3;
-    TS_TIME_RANGES = 4;
-    TS_METRIC_FAMILIES = 5;
-    TS_DATA = 6;
-    TS_METRICS = 7;
-}
-
-/// The `INNER UUID`, `INNER COLUMNS` and `[INNER] ENGINE` clauses of one target table, or an existing table instead
-message TimeSeriesInnerTable {
-    required TimeSeriesTarget target = 1;
-    optional TableEngineValues engine = 2;
-    optional TableEngineOption toption = 3;
-    optional TableDef columns = 4;
-    optional string inner_uuid = 5;
-    optional ExprSchemaTable target_table = 6;
-    optional bool skip_inner = 7;
-}
-
 message TableEngine {
     optional TableEngineOption toption = 1;
     optional TableEngineValues engine = 2;
@@ -1770,7 +1713,6 @@ message TableEngine {
     optional TableKey sample_by = 8;
     optional TTLExpr ttl_expr = 9;
     optional SettingValues setting_values = 10;
-    repeated TimeSeriesInnerTable ts_inner_tables = 11;
 }
 
 message CreateTableAs {
@@ -1816,7 +1758,6 @@ enum SQLObject {
     ROW_POLICY = 6;
     MASKING_POLICY = 7;
     HYPOTHETICAL_INDEX = 8;
-    HYPOTHETICAL_PROJECTION = 9;
 }
 
 message SQLObjectName {
@@ -1826,7 +1767,6 @@ message SQLObjectName {
         SQLIdentifier function = 3;
         SQLIdentifier policy = 4;
         SQLIdentifier index = 5;
-        SQLIdentifier projection = 6;
     }
 }
 
@@ -1841,7 +1781,7 @@ message Drop {
     optional ExprSchemaTable target = 8;
     optional bool sync = 9;
     optional SettingValues setting_values = 10;
-    /// DROP ALL HYPOTHETICAL INDEXES, DROP ALL HYPOTHETICAL PROJECTIONS
+    /// DROP ALL HYPOTHETICAL INDEXES
     optional bool all = 11;
 }
 
@@ -1867,7 +1807,6 @@ message Insert {
         string query = 7;
     }
     optional SettingValues setting_values = 8;
-    optional Select returning = 9;
 }
 
 message PartitionExpr {
@@ -1887,8 +1826,6 @@ message SinglePartitionExpr {
 message Delete {
     optional SinglePartitionExpr single_partition = 1;
     required WhereStatement where = 2;
-    /// `IN PARTITION p1, p2, ...`, after `single_partition`
-    repeated PartitionExpr other_partitions = 3;
 }
 
 message LightDelete {
@@ -1908,8 +1845,6 @@ message Update {
     repeated UpdateSet other_updates = 2;
     optional SinglePartitionExpr single_partition = 3;
     required WhereStatement where = 4;
-    /// `IN PARTITION p1, p2, ...`, after `single_partition`
-    repeated PartitionExpr other_partitions = 5;
 }
 
 message LightUpdate {
@@ -2056,19 +1991,9 @@ message IdxInPartition {
     optional SinglePartitionExpr single_partition = 2;
 }
 
-message ModifyProjection {
-    optional bool if_exists = 1;
-    required ProjectionDef def = 2;
-}
-
 message ProjectionInPartition {
     required SQLIdentifier proj = 1;
     optional SinglePartitionExpr single_partition = 2;
-}
-
-message ColumnCodec {
-    required ColumnPath col = 1;
-    required string codecs = 2;
 }
 
 message RemoveColumnProperty {
@@ -2131,7 +2056,6 @@ message RefreshableView {
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;
-    optional bool incremental = 8;
 }
 
 message CreateMatViewTo {
@@ -2388,17 +2312,13 @@ message AlterItem {
         AddEnumValues add_enum_values = 51;
         /// For Iceberg tables
         ExecuteCommand execute_command = 52;
-        /// For MergeTree tables: the codec of a column or subcolumn
-        ColumnCodec column_modify_codec = 53;
         /// For views
-        SelectParen modify_query = 54;
-        RefreshableView refresh = 55;
+        SelectParen modify_query = 53;
+        RefreshableView refresh = 54;
         /// For tables, views and databases
-        string comment = 56;
+        string comment = 55;
         /// For policies
-        AlterPolicyContent alter_policy = 57;
-        /// For MergeTree tables
-        ModifyProjection modify_projection = 58;
+        AlterPolicyContent alter_policy = 56;
     }
 }
 
@@ -2465,25 +2385,9 @@ enum DeltaKernelTraceLevel {
     TRACE = 5;
 }
 
-message DropDistributedCache {
-    oneof target {
-        bool connections = 1;
-        string server_id = 2;
-    }
-}
-
 message UnlockSnapshot {
     required string name = 1;
     optional BackupOut from = 2;
-}
-
-message ResetFileLog {
-    required ExprSchemaTable table = 1;
-    optional string file = 2;
-    oneof position {
-        uint64 offset = 3;
-        bool to_end = 4;
-    }
 }
 
 message SystemCommand {
@@ -2586,7 +2490,7 @@ message SystemCommand {
         bool sync_transaction_log = 95;
         bool start_thread_fuzzer = 96;
         bool stop_thread_fuzzer = 97;
-        DropDistributedCache drop_distributed_cache = 98;
+        bool drop_distributed_cache = 98;
         UnlockSnapshot unlock_snapshot = 99;
         FlushObjectStorageQueue flush_object_storage_queue = 100;
         ExprSchemaTable stop_virtual_parts_update = 101;
@@ -2611,17 +2515,6 @@ message SystemCommand {
         bool pause_all_background = 118;
         bool cancel_all_background = 119;
         bool refresh_all_background = 120;
-        ExprSchemaTable drop_time_series_caches = 121;
-        bool drop_statistics_cache = 122;
-        bool drop_columns_cache = 123;
-        bool drop_encryption_headers_cache = 124;
-        bool drop_paimon_metadata_cache = 125;
-        bool drop_point_in_polygon_cache = 126;
-        bool drop_avro_schema_cache = 127;
-        string drop_disk_metadata_cache = 128;
-        /// Fail points are node-local, so no `ON CLUSTER`
-        bool disable_all_failpoints = 129;
-        ResetFileLog reset_filelog = 130;
     }
 }
 
@@ -2644,9 +2537,6 @@ message BackupRestoreElement {
         bool all = 2;
     }
     repeated ExprSchemaTable except_tables = 3;
-    /// EXCEPT DATA FROM TABLE[S], BACKUP only
-    optional bool except_data_plural = 4;
-    repeated ExprSchemaTable except_data_tables = 5;
 }
 
 message BackupRestore {
@@ -2787,12 +2677,6 @@ message CreateHypotheticalIndex {
     optional bool if_not_exists = 3;
 }
 
-message CreateHypotheticalProjection {
-    required ProjectionDef create_def = 1;
-    required ExprSchemaTable est = 2;
-    optional bool if_not_exists = 3;
-}
-
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -2822,7 +2706,6 @@ message SQLQueryInner {
         CreatePolicy create_policy = 25;
         SnapshotQuery snapshot_query = 26;
         CreateHypotheticalIndex create_hypo_index = 27;
-        CreateHypotheticalProjection create_hypo_projection = 28;
     }
 }
 
@@ -2855,12 +2738,6 @@ message ExplainOption {
         compact_repeated_processor_chains = 25;
         processors = 26;
         single_record = 27;
-        fragments = 28;
-        projection_scan_budget_rows = 29;
-        index_scan_budget_rows = 30;
-        matches = 31;
-        time = 32;
-        estimates = 33;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;

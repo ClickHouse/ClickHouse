@@ -21,10 +21,10 @@ class PartBlockNumberRanges
 public:
     void addPart(Int64 left, Int64 right);
 
-    [[nodiscard]] bool isCovered(Int64 block_number) const;
-    [[nodiscard]] std::optional<BlockNumberRange> getNext(Int64 block_number) const;
+    bool isCovered(Int64 block_number) const;
+    std::optional<BlockNumberRange> getNext(Int64 block_number) const;
 
-    [[nodiscard]] String dumpStructure() const;
+    String dumpStructure() const;
 
 private:
     std::map<Int64, BlockNumberRange> left_index;
@@ -37,9 +37,9 @@ class MergeTreeCursorPromoter
 public:
     MergeTreeCursorPromoter(std::set<Int64> committing_parts_, PartBlockNumberRanges virtual_parts_);
 
-    [[nodiscard]] bool canPromote(Int64 block_number, Int64 left) const;
+    bool canPromote(Int64 block_number, Int64 left) const;
 
-    [[nodiscard]] String dumpStructure() const;
+    String dumpStructure() const;
 
 private:
     std::set<Int64> committing_parts;

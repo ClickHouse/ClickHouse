@@ -6,6 +6,8 @@ title: 'Интеграция Google Cloud Storage с ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 GCS ClickPipe предоставляет полностью управляемый и отказоустойчивый способ ингестии данных из Google Cloud Storage (GCS). Он поддерживает как **однократную** ингестию, так и **непрерывную ингестию** с семантикой «ровно один раз».
 
 GCS ClickPipes можно развёртывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
@@ -36,13 +38,17 @@ GCS ClickPipes можно развёртывать и настраивать в�
 
 Когда включена непрерывная ингестия, ClickPipes непрерывно принимает данные из указанного пути. Для определения порядка ингестии GCS ClickPipe по умолчанию использует неявный [лексикографический порядок](#continuous-ingestion-lexicographical-order) файлов. Его также можно настроить на ингестию файлов [в любом порядке](#continuous-ingestion-any-order) с помощью подписки [Google Cloud Pub/Sub](https://cloud.google.com/pubsub), [настроенной для отправки уведомлений для бакета](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
 
-#### Лексикографический порядок {#continuous-ingestion-lexicographical-order}
+<div id="continuous-ingestion-lexicographical-order">
+  #### Лексикографический порядок
+</div>
 
 GCS ClickPipe предполагает, что файлы добавляются в бакет в лексикографическом порядке, и опирается на этот неявный порядок для последовательного приёма файлов. Это означает, что любой новый файл **должен** быть лексикографически больше последнего принятого файла. Например, файлы с именами `file1`, `file2` и `file3` будут приниматься последовательно, но если в бакет будет добавлен новый `file 0`, он будет **проигнорирован**, поскольку имя этого файла не лексикографически больше имени последнего принятого файла.
 
 В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по указанному пути, а затем с настраиваемым интервалом проверяет наличие новых файлов (по умолчанию — каждые 30 секунд). Чтобы начать непрерывную ингестию после определённого файла, настройте **Start after**. ClickPipes пропустит файлы, которые лексикографически меньше или равны настроенному значению, и продолжит приём более новых файлов с этого момента.
 
-#### В любом порядке {#continuous-ingestion-any-order}
+<div id="continuous-ingestion-any-order">
+  #### В любом порядке
+</div>
 
 <Tip>
   См. [Настройка неупорядоченного режима для непрерывной ингестии](/ru/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode) с пошаговыми инструкциями.
@@ -51,10 +57,10 @@ GCS ClickPipe предполагает, что файлы добавляются
 Можно настроить GCS ClickPipe на приём файлов, у которых нет естественного порядка, создав подписку [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications), получающую уведомления от бакета. Это позволяет ClickPipes отслеживать события создания объектов и принимать любые новые файлы независимо от схемы их именования.
 
 <Note>
-  Неупорядоченный режим **не** поддерживается для публичных бакетов. Для него требуется аутентификация через служебную учётную запись (с помощью загруженного ключа или GCP Workload Identity) и подписка [Google Cloud Pub/Sub](https://cloud.google.com/pubsub), подключённая к бакету.
+  Неупорядоченный режим **не** поддерживается для публичных бакетов. Для него требуется аутентификация через **Service Account** и подписка [Google Cloud Pub/Sub](https://cloud.google.com/pubsub), подключённая к бакету.
 </Note>
 
-В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по выбранному пути, а затем отслеживает уведомления `OBJECT_FINALIZE` через подписку Pub/Sub, соответствующие указанному пути. Любые сообщения о ранее обнаруженном файле, файле, не соответствующем пути, или событии другого типа будут **игнорироваться**. Чтобы принимать только файлы, доставленные через подписку, включите **Пропустить первоначальную загрузку**. При включении этой опции ClickPipes пропускает начальное сканирование существующих файлов по выбранному пути и обрабатывает только файлы, доставленные через подписку Pub/Sub.
+В этом режиме GCS ClickPipe выполняет начальную загрузку **всех файлов** по выбранному пути, а затем отслеживает уведомления `OBJECT_FINALIZE` через подписку Pub/Sub, соответствующие указанному пути. Любые сообщения о ранее обнаруженном файле, файле, не соответствующем пути, или событии другого типа будут **игнорироваться**. Чтобы принимать только файлы, доставленные через подписку, включите **Пропустить начальную загрузку**. При включении этой опции ClickPipes пропускает начальное сканирование существующих файлов по выбранному пути и обрабатывает только файлы, доставленные через подписку Pub/Sub.
 
 <div id="file-pattern-matching">
   ### Сопоставление имён файлов по шаблону
@@ -145,29 +151,19 @@ ClickPipe для GCS поддерживает публичные и приват
 
 При использовании [неупорядоченного режима](#continuous-ingestion-any-order) с уведомлениями Pub/Sub требуется аутентификация через сервисный аккаунт. Выберите **Service Account** в качестве метода аутентификации и загрузите JSON‑файл ключа сервисного аккаунта.
 
-#### Идентификация рабочих нагрузок GCP (бета) {#gcp-workload-identity}
-
-Следуйте [руководству по идентификации рабочих нагрузок GCP](/ru/integrations/clickpipes/security/gcp-workload-identity), чтобы получить управляемую служебную учётную запись из контекста сервиса ClickPipes. Назначьте ей роль `roles/storage.objectViewer` для исходного бакета и создайте пайп с типом аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Для неупорядоченной ингестии дополнительно назначьте ей роли `roles/pubsub.subscriber` и `roles/pubsub.viewer` для существующей подписки на уведомления и укажите полное имя этой подписки: `projects/<project-id>/subscriptions/<subscription-id>`.
-
-<a id="hmac-credentials" />
-#### Учетные данные HMAC
+<div id="hmac-credentials">
+  #### Учетные данные HMAC
+</div>
 
 Чтобы использовать [HMAC-ключи](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) для аутентификации, при настройке подключения ClickPipe выберите `Credentials` в разделе **метод аутентификации**. Затем укажите ключ доступа (например, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) и секретный ключ (например, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) в полях `Access key` и `Secret key` соответственно.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Учетные данные HMAC для GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="Учетные данные HMAC для GCS ClickPipes" size="lg" border />
 
 Следуйте [этому руководству](/ru/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret), чтобы создать сервисный аккаунт с HMAC-ключом.
 
-<a id="network-access" />
-### Сетевой доступ
+<div id="network-access">
+  ### Сетевой доступ
+</div>
 
 GCS ClickPipes используют два разных сетевых маршрута для обнаружения метаданных и ингестии данных: сервис ClickPipes и сервис ClickHouse Cloud соответственно. Если вы хотите настроить дополнительный уровень сетевой безопасности (например, в целях соответствия требованиям), сетевой доступ **должен быть настроен для обоих маршрутов**.
 
@@ -178,8 +174,9 @@ GCS ClickPipes используют два разных сетевых марш�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<a id="advanced-settings" />
-## Расширенные настройки
+<div id="advanced-settings">
+  ## Расширенные настройки
+</div>
 
 ClickPipes предоставляет разумные значения по умолчанию, которые подходят для большинства сценариев использования. Если вашему сценарию требуется более тонкая настройка, вы можете изменить следующие параметры:
 
@@ -198,15 +195,7 @@ ClickPipes предоставляет разумные значения по у�
 | `Parallel view processing`           | false                 | Нужно ли включать отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing).     |
 | `Use cluster function`               | true                  | Нужно ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                                  |
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Расширенные настройки ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
 
 <div id="scaling">
   ### Масштабирование

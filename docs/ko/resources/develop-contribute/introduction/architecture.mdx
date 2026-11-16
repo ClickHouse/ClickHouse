@@ -16,25 +16,33 @@ ClickHouse는 진정한 컬럼 지향 DBMS입니다. 데이터는 컬럼별로 �
 
 쿼리 처리 속도를 높이는 방식에는 두 가지가 있습니다. 벡터화된 쿼리 실행과 런타임 코드 생성입니다. 후자는 모든 간접 참조와 동적 디스패치를 제거합니다. 이 두 접근 방식 중 어느 하나가 다른 하나보다 절대적으로 우수하다고 할 수는 없습니다. 런타임 코드 생성은 여러 연산을 결합해 CPU 실행 유닛과 파이프라인을 충분히 활용할 수 있을 때 더 유리할 수 있습니다. 벡터화된 쿼리 실행은 캐시에 기록했다가 다시 읽어야 하는 임시 벡터를 수반하므로 덜 실용적일 수 있습니다. 임시 데이터가 L2 캐시에 들어가지 않으면 문제가 될 수 있습니다. 하지만 벡터화된 쿼리 실행은 CPU의 SIMD capability를 더 쉽게 활용할 수 있습니다. 동료들이 작성한 [연구 논문](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf)에서는 두 접근 방식을 결합하는 편이 더 낫다는 점을 보여줍니다. ClickHouse는 벡터화된 쿼리 실행을 사용하며, 런타임 코드 생성도 제한적으로 초기 지원합니다.
 
-## 컬럼 {#columns}
+<div id="columns">
+  ## 컬럼
+</div>
 
 메모리에서 컬럼(실제로는 컬럼 청크)을 표현하는 데 `IColumn` 인터페이스를 사용합니다. 이 인터페이스는 다양한 관계형 연산자를 구현하는 데 도움이 되는 메서드를 제공합니다. 거의 모든 연산은 불변입니다. 즉, 원본 컬럼을 수정하지 않고 수정된 새 컬럼을 만듭니다. 예를 들어 `IColumn :: filter` 메서드는 필터링 바이트 마스크를 받습니다. 이 메서드는 `WHERE` 및 `HAVING` 관계형 연산자에 사용됩니다. 추가 예시로, `ORDER BY`를 지원하는 `IColumn :: permute` 메서드와 `LIMIT`를 지원하는 `IColumn :: cut` 메서드가 있습니다.
 
 다양한 `IColumn` 구현체(`ColumnUInt8`, `ColumnString` 등)는 컬럼의 메모리 레이아웃을 담당합니다. 메모리 레이아웃은 보통 연속된 배열입니다. 정수형 컬럼은 `std :: vector`처럼 하나의 연속된 배열만 사용합니다. `String` 및 `배열` 컬럼은 두 개의 벡터를 사용합니다. 하나는 모든 배열 요소를 연속적으로 저장하고, 다른 하나는 각 배열의 시작 위치에 대한 오프셋을 저장합니다. 메모리에는 값 하나만 저장하지만 컬럼처럼 보이는 `ColumnConst`도 있습니다.
 
-## 필드 {#field}
+<div id="field">
+  ## 필드
+</div>
 
 그렇더라도 개별 값 단위로 작업할 수도 있습니다. 개별 값을 표현할 때는 `Field`를 사용합니다. `Field`는 `UInt64`, `Int64`, `Float64`, `String`, 배열에 대한 판별 유니언일 뿐입니다. `IColumn`에는 n번째 값을 `Field`로 가져오는 `operator []` 메서드와, `Field`를 컬럼 끝에 추가하는 `insert` 메서드가 있습니다. 이러한 메서드는 개별 값을 나타내는 임시 `Field` 객체를 다뤄야 하므로 그다지 효율적이지 않습니다. `insertFrom`, `insertRangeFrom` 등 더 효율적인 메서드도 있습니다.
 
 `Field`에는 테이블의 특정 데이터 타입에 관한 정보가 충분하지 않습니다. 예를 들어 `UInt8`, `UInt16`, `UInt32`, `UInt64`는 모두 `Field`에서는 `UInt64`로 표현됩니다.
 
-## 새는 추상화 {#leaky-abstractions}
+<div id="leaky-abstractions">
+  ## 새는 추상화
+</div>
 
 `IColumn`에는 데이터의 일반적인 관계형 변환을 위한 메서드가 있지만, 모든 요구 사항을 충족하지는 못합니다. 예를 들어 `ColumnUInt64`에는 두 컬럼의 합을 계산하는 메서드가 없고, `ColumnString`에는 부분 문자열을 검색하는 메서드가 없습니다. 이처럼 수많은 루틴은 `IColumn` 외부에서 구현됩니다.
 
 컬럼에 대한 다양한 함수는 `IColumn` 메서드로 `Field` 값을 추출하는 일반적이지만 비효율적인 방식으로 구현할 수도 있고, 특정 `IColumn` 구현의 데이터 내부 메모리 레이아웃에 대한 지식을 활용하는 특화된 방식으로 구현할 수도 있습니다. 이는 함수를 특정 `IColumn` 유형으로 캐스팅한 뒤 내부 표현을 직접 다루는 방식으로 이루어집니다. 예를 들어 `ColumnUInt64`에는 내부 배열에 대한 참조를 반환하는 `getData` 메서드가 있으며, 그러면 별도의 루틴이 그 배열을 직접 읽거나 채울 수 있습니다. 다양한 루틴을 효율적으로 특화할 수 있도록 이러한 &quot;새는 추상화&quot;를 사용합니다.
 
-## 데이터 타입 {#data_types}
+<div id="data_types">
+  ## 데이터 타입
+</div>
 
 `IDataType`는 직렬화와 역직렬화를 담당합니다. 즉, 컬럼의 청크나 개별 값을 바이너리 또는 텍스트 형식으로 읽고 쓰는 역할을 합니다. `IDataType`는 테이블의 데이터 타입에 직접 대응합니다. 예를 들어 `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` 등이 있습니다.
 
@@ -44,7 +52,9 @@ ClickHouse는 진정한 컬럼 지향 DBMS입니다. 데이터는 컬럼별로 �
 
 `IDataType`에는 다양한 데이터 포맷을 위한 헬퍼 메서드도 있습니다. 예를 들어 값에 따옴표 처리가 필요할 수 있을 때 이를 직렬화하는 메서드, 값을 JSON용으로 직렬화하는 메서드, 값을 XML 포맷의 일부로 직렬화하는 메서드가 있습니다. 하지만 데이터 포맷과 직접 대응되지는 않습니다. 예를 들어 서로 다른 데이터 포맷인 `Pretty`와 `TabSeparated`가 `IDataType` 인터페이스의 동일한 `serializeTextEscaped` 헬퍼 메서드를 사용할 수 있습니다.
 
-## Block {#block}
+<div id="block">
+  ## Block
+</div>
 
 `Block`은 메모리에서 테이블의 일부(청크)를 나타내는 컨테이너입니다. 이는 `(IColumn, IDataType, column name)` 형태의 3개 요소 집합일 뿐입니다. 쿼리 실행 중에는 데이터가 `Block` 단위로 처리됩니다. `Block`이 있으면 데이터(`IColumn` 객체에 있음)가 있고, 해당 컬럼을 어떻게 처리해야 하는지 알려주는 타입 정보(`IDataType`에 있음)가 있으며, 컬럼 이름도 있습니다. 이 이름은 테이블의 원래 컬럼 이름일 수도 있고, 계산의 임시 결과를 얻기 위해 부여한 인위적인 이름일 수도 있습니다.
 
@@ -52,15 +62,21 @@ ClickHouse는 진정한 컬럼 지향 DBMS입니다. 데이터는 컬럼별로 �
 
 블록은 처리되는 각 데이터 청크마다 생성됩니다. 같은 종류의 계산에서는 서로 다른 블록이라도 컬럼 이름과 타입은 동일하게 유지되고 컬럼 데이터만 변경된다는 점에 유의하십시오. 블록 크기가 작으면 `shared_ptr`와 컬럼 이름을 복사할 때 생성되는 임시 문자열로 인한 오버헤드가 크므로, 블록 데이터와 블록 헤더를 분리하는 편이 더 낫습니다.
 
-## 프로세서 {#processors}
+<div id="processors">
+  ## 프로세서
+</div>
 
 설명은 [https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h)를 참조하십시오.
 
-## 포맷 {#formats}
+<div id="formats">
+  ## 포맷
+</div>
 
 데이터 포맷은 프로세서를 통해 구현됩니다.
 
-## I/O {#io}
+<div id="io">
+  ## I/O
+</div>
 
 바이트 지향 입력/출력에는 `ReadBuffer` 및 `WriteBuffer` 추상 클래스가 사용됩니다. 이 클래스들은 C++ `iostream` 대신 사용됩니다. 걱정할 필요는 없습니다. 충분히 성숙한 C++ 프로젝트라면 대개 타당한 이유로 `iostream` 대신 다른 것을 사용합니다.
 
@@ -77,7 +93,9 @@ Read/WriteBuffer는 바이트만 처리합니다. 입력/출력 포매팅을 돕
 이 작업은 `complete` 메서드로 수행할 수 있으며, 이 메서드는 pulling `QueryPipeline`을 완료된 `QueryPipeline`으로 변환합니다.
 내부적으로 `JSONRowOutputFormat`은 다양한 JSON 구분 기호를 쓰고, `IColumn`에 대한 참조와 행 번호를 인수로 `IDataType::serializeTextJSON` 메서드를 호출합니다. 그러면 `IDataType::serializeTextJSON`은 `WriteHelpers.h`의 메서드를 호출합니다. 예를 들어 숫자 타입에는 `writeText`, `DataTypeString`에는 `writeJSONString`를 호출합니다.
 
-## 테이블 {#tables}
+<div id="tables">
+  ## 테이블
+</div>
 
 `IStorage` 인터페이스는 테이블을 나타냅니다. 이 인터페이스의 각 구현은 서로 다른 테이블 엔진에 해당합니다. 예를 들어 `StorageMergeTree`, `StorageMemory` 등이 있습니다. 이러한 클래스의 인스턴스는 곧 테이블입니다.
 
@@ -101,29 +119,35 @@ Read/WriteBuffer는 바이트만 처리합니다. 입력/출력 포매팅을 돕
 
 > `read` 메서드의 결과로 `IStorage`는 `QueryProcessingStage`를 반환합니다. 이는 쿼리의 어떤 부분이 스토리지 내부에서 이미 계산되었는지를 나타내는 정보입니다.
 
-## 파서 {#parsers}
+<div id="parsers">
+  ## 파서
+</div>
 
 수작업으로 작성한 재귀 하강 파서가 쿼리를 파싱합니다. 예를 들어 `ParserSelectQuery`는 쿼리의 여러 파트에 대해 하위 파서를 재귀적으로 호출할 뿐입니다. 파서는 `AST`를 생성합니다. `AST`는 `IAST`의 인스턴스인 노드로 표현됩니다.
 
 > 역사적인 이유로 parser generator는 사용하지 않습니다.
 
-## Interpreters {#interpreters}
+<div id="interpreters">
+  ## Interpreters
+</div>
 
 Interpreters는 AST로부터 쿼리 실행 파이프라인을 생성하는 역할을 합니다. `InterpreterExistsQuery`, `InterpreterDropQuery`와 같은 단순한 인터프리터도 있고, 더 복잡한 `InterpreterSelectQuery`도 있습니다.
 
-쿼리 실행 파이프라인은 청크(특정 타입의 컬럼 집합)를 소비하고 생성할 수 있는 프로세서들의 조합입니다.
-프로세서는 port를 통해 통신하며, 여러 개의 입력 port와 출력 port를 가질 수 있습니다.
+쿼리 실행 파이프라인은 청크(특정 타입의 컬럼 집합)를 소비하고 생성할 수 있는 processor들의 조합입니다.
+processor는 port를 통해 통신하며, 여러 개의 입력 port와 출력 port를 가질 수 있습니다.
 더 자세한 설명은 [src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h)에서 확인할 수 있습니다.
 
 예를 들어, `SELECT` 쿼리를 해석한 결과는 결과 집합을 읽기 위한 특수한 출력 port를 갖는 &quot;pulling&quot; `QueryPipeline`입니다.
 `INSERT` 쿼리를 해석한 결과는 삽입할 데이터를 기록하기 위한 입력 port를 갖는 &quot;pushing&quot; `QueryPipeline`입니다.
 또한 `INSERT SELECT` 쿼리를 해석한 결과는 입력이나 출력은 없지만 `SELECT`에서 `INSERT`로 데이터를 동시에 복사하는 &quot;completed&quot; `QueryPipeline`입니다.
 
-`InterpreterSelectQueryAnalyzer`는 `SELECT` 쿼리를 해석합니다. 이는 `AST`와 `QueryPipeline` 사이에 `QueryTree`라는 추가 추상화 계층을 도입합니다. 버전 `24.3`부터 기본값이 되었고, `enable_analyzer` 설정이 더 이상 사용되지 않고 `1`로 고정된 `26.9`부터는 쿼리가 요청할 수 있는 유일한 분석 방식이 되었으며, 다른 방식이 제거된 `26.10`부터는 유일한 쿼리 분석 방식입니다. 그 전까지는 `InterpreterSelectQuery`가 `ExpressionAnalyzer`와 `ExpressionActions` 메커니즘으로 동일한 역할을 수행했고, `enable_analyzer`가 둘 중 하나를 선택했습니다.
+`InterpreterSelectQuery`는 쿼리 분석과 변환을 위해 `ExpressionAnalyzer`와 `ExpressionActions` 메커니즘을 사용합니다. 대부분의 규칙 기반 쿼리 최적화는 여기에서 수행됩니다. `ExpressionAnalyzer`는 구조가 상당히 복잡하므로 다시 작성할 필요가 있습니다. 다양한 쿼리 변환과 최적화는 별도의 클래스로 분리하여 쿼리를 모듈식으로 변환할 수 있어야 합니다.
 
-`ExpressionAnalyzer`와 `ExpressionActions`는 주변 쿼리 없이 컴파일되는 독립형 표현식, 즉 `TTL` 표현식, 세그먼트 분할 키, 컬럼 기본값, 프로젝션 등에는 여전히 사용됩니다.
+인터프리터에 존재하는 문제를 해결하기 위해 새로운 `InterpreterSelectQueryAnalyzer`가 개발되었습니다. 이는 `ExpressionAnalyzer`를 사용하지 않는 `InterpreterSelectQuery`의 새 버전이며, `AST`와 `QueryPipeline` 사이에 `QueryTree`라는 추가 추상화 계층을 도입합니다. 프로덕션 환경에서 사용하기에 충분히 준비되어 있지만, 만일에 대비해 `enable_analyzer` 설정 값을 `false`로 지정하여 비활성화할 수 있습니다.
 
-## 함수 {#functions}
+<div id="functions">
+  ## 함수
+</div>
 
 일반 함수와 집계 함수가 있습니다. 집계 함수는 다음 섹션을 참조하십시오.
 
@@ -139,7 +163,9 @@ ClickHouse는 강한 타입 체계를 사용하므로 암시적 타입 변환이
 
 벡터화된 쿼리 실행 때문에 함수는 단락 평가되지 않습니다. 예를 들어 `WHERE f(x) AND g(y)`를 작성하면 `f(x)`가 0인 행에 대해서도 양쪽이 모두 계산됩니다(`f(x)`가 0인 상수 표현식인 경우는 제외). 하지만 `f(x)` 조건의 선택도가 높고 `f(x)` 계산 비용이 `g(y)`보다 훨씬 낮다면, 다중 패스 계산을 구현하는 편이 더 낫습니다. 먼저 `f(x)`를 계산하고, 그 결과로 컬럼을 필터링한 다음, 더 작게 필터링된 데이터 청크에 대해서만 `g(y)`를 계산합니다.
 
-## 집계 함수 {#aggregate-functions}
+<div id="aggregate-functions">
+  ## 집계 함수
+</div>
 
 집계 함수는 상태를 유지하는 함수입니다. 입력된 값을 어떤 상태에 누적하고, 그 상태로부터 결과를 얻을 수 있습니다. 이러한 함수는 `IAggregateFunction` 인터페이스로 관리됩니다. 상태는 매우 단순할 수도 있고(`AggregateFunctionCount`의 상태는 단일 `UInt64` 값일 뿐입니다), 상당히 복잡할 수도 있습니다(`AggregateFunctionUniqCombined`의 상태는 선형 배열, 해시 테이블, `HyperLogLog` 확률적 데이터 구조의 조합입니다).
 
@@ -149,7 +175,9 @@ ClickHouse는 강한 타입 체계를 사용하므로 암시적 타입 변환이
 
 > 집계 함수 상태의 직렬화된 데이터 포맷에는 현재 버전 정보가 없습니다. 집계 상태를 일시적으로만 저장한다면 괜찮습니다. 하지만 점진적 집계를 위한 `AggregatingMergeTree` 테이블 엔진이 있고, 이미 이를 프로덕션 환경에서 사용하고 있습니다. 따라서 앞으로 어떤 집계 함수의 직렬화 포맷을 변경하더라도 하위 호환성이 필요합니다.
 
-## 서버 {#server}
+<div id="server">
+  ## 서버
+</div>
 
 서버는 여러 인터페이스를 구현합니다:
 
@@ -167,7 +195,9 @@ ClickHouse는 강한 타입 체계를 사용하므로 암시적 타입 변환이
   대부분의 외부 애플리케이션에는 HTTP 인터페이스 사용을 권장합니다. 단순하고 사용하기 쉽기 때문입니다. TCP 프로토콜은 내부 데이터 구조와 더 밀접하게 연결되어 있습니다. 데이터 블록을 전달할 때 내부 포맷을 사용하고, 압축된 데이터에는 사용자 정의 프레이밍을 사용합니다.
 </Note>
 
-## 구성 {#configuration}
+<div id="configuration">
+  ## 구성
+</div>
 
 ClickHouse 서버는 POCO C++ Libraries를 기반으로 하며, 구성을 표현하기 위해 `Poco::Util::AbstractConfiguration`을 사용합니다. 구성은 `DaemonBase` 클래스가 상속하는 `Poco::Util::ServerApplication` 클래스에서 관리되며, `DaemonBase` 클래스는 다시 clickhouse-server 자체를 구현하는 `DB::Server` 클래스의 기반 클래스입니다. 따라서 `ServerApplication::config()` 메서드로 구성에 접근할 수 있습니다.
 
@@ -175,7 +205,9 @@ ClickHouse 서버는 POCO C++ Libraries를 기반으로 하며, 구성을 표현
 
 `Server` 이외의 쿼리 및 하위 시스템에서는 `Context::getConfigRef()` 메서드로 구성에 접근할 수 있습니다. 서버를 재시작하지 않고 구성을 다시 로드할 수 있는 모든 하위 시스템은 `Server::main()` 메서드의 리로드 콜백에 자신을 등록해야 합니다. 새 구성에 오류가 있으면 대부분의 하위 시스템은 새 구성을 무시하고 경고 메시지를 기록한 뒤, 이전에 로드된 구성으로 계속 동작한다는 점에 유의하십시오. `AbstractConfiguration`의 특성상 특정 섹션에 대한 참조를 전달할 수 없으므로, 일반적으로 대신 `String config_prefix`를 사용합니다.
 
-### Context {#context}
+<div id="context">
+  ### Context
+</div>
 
 ClickHouse는 Context 계층 구조를 통해 설정을 관리합니다.
 
@@ -197,7 +229,9 @@ ClickHouse는 Context 계층 구조를 통해 설정을 관리합니다.
   백그라운드 작업은 전역 설정과 &#39;background&#39; 프로필 설정으로 구성할 수 있으며, 이 경우 세션 설정과 쿼리 설정은 적용되지 않습니다. 명시적인 구성이 없으면 전역 Context의 구성을 상속합니다. 이러한 작업의 기본 프로필 이름은 &#39;background&#39;이며, `background_profile` server setting으로 재정의할 수 있습니다.
 </Note>
 
-## 스레드와 작업 {#threads-and-jobs}
+<div id="threads-and-jobs">
+  ## 스레드와 작업
+</div>
 
 ClickHouse는 쿼리를 실행하고 부가 작업을 수행할 때, 스레드를 자주 생성하고 종료하는 오버헤드를 피하기 위해 여러 스레드 풀 중 하나에서 스레드를 할당합니다. 스레드 풀은 몇 가지가 있으며, 작업의 목적과 구조에 따라 선택됩니다.
 
@@ -227,7 +261,9 @@ IO 스레드 풀은 `IOThreadPool::get()` 메서드로 접근할 수 있는 일�
 
 스레드가 쿼리 실행과 관련되어 있다면, `ThreadStatus`에 연결되는 가장 중요한 것은 쿼리 Context인 `ContextPtr`입니다. 모든 쿼리는 서버 풀에 master 스레드를 가집니다. master 스레드는 `ThreadStatus::QueryScope query_scope(query_context)` 객체를 유지함으로써 이를 연결합니다. master 스레드는 또한 `ThreadGroupStatus` 객체로 표현되는 스레드 그룹을 생성합니다. 이 쿼리 실행 중에 할당되는 모든 추가 스레드는 `CurrentThread::attachTo(thread_group)` 호출로 해당 스레드 그룹에 연결됩니다. 스레드 그룹은 단일 작업에 전담된 모든 스레드의 프로파일 이벤트 카운터를 집계하고 메모리 사용량을 추적하는 데 사용됩니다(자세한 내용은 `MemoryTracker` 및 `ProfileEvents::Counters` 클래스를 참조하십시오).
 
-## 동시성 제어 {#concurrency-control}
+<div id="concurrency-control">
+  ## 동시성 제어
+</div>
 
 병렬화할 수 있는 쿼리는 `max_threads` 설정으로 자체 실행을 제한합니다. 이 설정의 기본값은 단일 쿼리가 모든 CPU 코어를 가장 효율적으로 활용할 수 있도록 선택됩니다. 하지만 동시에 여러 쿼리가 실행되고, 각 쿼리가 기본 `max_threads` 설정값을 사용하면 어떻게 될까요? 이 경우 쿼리들이 CPU 리소스를 서로 공유하게 됩니다. OS는 스레드를 지속적으로 전환해 공정성을 보장하지만, 이 과정에서 일정한 성능 저하가 발생합니다. `ConcurrencyControl`은 이러한 성능 저하를 완화하고 과도하게 많은 스레드가 할당되는 것을 방지하는 데 도움이 됩니다. 구성 설정 `concurrent_threads_soft_limit_num`은 일종의 CPU 부하가 적용되기 전에 할당할 수 있는 동시 스레드 수를 제한하는 데 사용됩니다.
 
@@ -263,7 +299,9 @@ stateDiagram-v2
 
 이 API를 사용하면 쿼리가 최소 하나의 스레드로 시작한 뒤(CPU 압박이 있는 경우에도), 이후 `max_threads`까지 확장할 수 있습니다.
 
-## 분산 쿼리 실행 {#distributed-query-execution}
+<div id="distributed-query-execution">
+  ## 분산 쿼리 실행
+</div>
 
 클러스터를 구성하는 서버는 대부분 서로 독립적으로 동작합니다. 클러스터의 한 서버 또는 모든 서버에 `Distributed` 테이블을 생성할 수 있습니다. `Distributed` 테이블 자체는 데이터를 저장하지 않으며, 클러스터의 여러 노드에 있는 모든 로컬 테이블에 대한 &quot;뷰&quot;만 제공합니다. `Distributed` 테이블에서 SELECT를 수행하면 쿼리를 재작성하고, 로드 밸런싱 설정에 따라 원격 노드를 선택한 다음 해당 노드로 쿼리를 전송합니다. `Distributed` 테이블은 서로 다른 서버의 중간 결과를 머지할 수 있는 단계까지만 쿼리를 처리하도록 원격 서버에 요청합니다. 그런 다음 중간 결과를 받아 머지합니다. 분산 테이블은 가능한 한 많은 작업을 원격 서버로 분산하고, 네트워크를 통해 전송되는 중간 데이터의 양을 최소화하려고 합니다.
 
@@ -271,7 +309,9 @@ IN 또는 JOIN 절에 서브쿼리가 있고 각 서브쿼리에서 `Distributed
 
 분산 쿼리 실행에는 전역 쿼리 계획이 없습니다. 각 노드는 자신이 맡은 작업 부분에 대한 로컬 쿼리 계획을 가집니다. 현재는 단순한 단일 패스 분산 쿼리 실행만 지원합니다. 즉, 원격 노드에 쿼리를 보내고 결과를 머지하는 방식입니다. 하지만 이는 cardinality가 높은 `GROUP BY`가 있거나 JOIN을 위해 많은 양의 임시 데이터가 필요한 복잡한 쿼리에는 적합하지 않습니다. 이런 경우에는 서버 간에 데이터를 &quot;재분배&quot;해야 하며, 이를 위해 추가적인 조정이 필요합니다. ClickHouse는 이러한 종류의 쿼리 실행을 지원하지 않으며, 이에 대해서는 추가 작업이 필요합니다.
 
-## Merge tree {#merge-tree}
+<div id="merge-tree">
+  ## Merge tree
+</div>
 
 `MergeTree`는 프라이머리 키(primary key) 기반 인덱싱을 지원하는 스토리지 엔진 패밀리입니다. 프라이머리 키는 임의의 컬럼이나 표현식의 튜플이 될 수 있습니다. `MergeTree` 테이블의 데이터는 &quot;파트&quot;에 저장됩니다. 각 파트는 프라이머리 키 순서로 데이터를 저장하므로, 데이터는 프라이머리 키 튜플을 기준으로 사전식 순서로 정렬됩니다. 테이블의 모든 컬럼은 각 파트 내에서 별도의 `column.bin` 파일에 저장됩니다. 파일은 압축된 블록으로 구성됩니다. 각 블록은 일반적으로 압축되지 않은 데이터 기준으로 64 KB에서 1 MB 사이이며, 평균 값 크기에 따라 달라집니다. 블록은 컬럼 값이 차례대로 연속 배치된 형태로 구성됩니다. 각 컬럼의 값은 동일한 순서로 저장되며(이 순서는 프라이머리 키가 정의함), 따라서 여러 컬럼을 순회하면 해당 행에 대응하는 값을 얻을 수 있습니다.
 
@@ -285,7 +325,9 @@ IN 또는 JOIN 절에 서브쿼리가 있고 각 서브쿼리에서 `Distributed
 
 일부 MergeTree 엔진은 백그라운드 머지 중에 추가 작업을 수행합니다. 예시로는 `CollapsingMergeTree`와 `AggregatingMergeTree`가 있습니다. 이는 update에 대한 특별한 지원으로 볼 수 있습니다. 다만 이것은 실제 update가 아니라는 점을 유의하십시오. 일반적으로 사용자는 백그라운드 머지가 언제 실행될지 제어할 수 없으며, `MergeTree` 테이블의 데이터는 거의 항상 완전히 머지된 형태가 아니라 둘 이상의 파트에 나뉘어 저장되기 때문입니다.
 
-## 복제 {#replication}
+<div id="replication">
+  ## 복제
+</div>
 
 ClickHouse의 복제는 테이블 단위로 구성할 수 있습니다. 동일한 서버에서 일부 테이블은 복제되고, 일부 테이블은 복제되지 않도록 설정할 수 있습니다. 또한 테이블마다 서로 다른 방식으로 복제되도록 구성할 수도 있습니다. 예를 들어 한 테이블은 2중 복제, 다른 테이블은 3중 복제로 설정할 수 있습니다.
 

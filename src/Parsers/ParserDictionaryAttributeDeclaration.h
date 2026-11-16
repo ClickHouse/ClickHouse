@@ -12,7 +12,7 @@ namespace DB
 class ParserDictionaryAttributeDeclaration : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "attribute declaration"; }
+    const char * getName() const override { return "attribute declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -22,7 +22,7 @@ protected:
 class ParserDictionaryAttributeDeclarationList : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const  override{ return "attribute declaration list"; }
+    const char * getName() const  override{ return "attribute declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

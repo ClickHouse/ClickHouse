@@ -10,8 +10,6 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/HiddenSecret.h>
-#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -52,36 +50,8 @@ namespace KafkaSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace
-{
-
-/// librdkafka prints pointers with `%p`, e.g. `log_cb = 0x55d1c0a3e2f0` with `debug=conf`.
-/// Its messages reach clients through `send_logs_level`, so every hexadecimal number is hidden.
-std::string hideHexNumbers(std::string_view message)
-{
-    std::string res;
-    res.reserve(message.size());
-    for (size_t i = 0; i < message.size();)
-    {
-        if (message[i] == '0' && i + 2 < message.size() && message[i + 1] == 'x' && isHexDigit(message[i + 2]))
-        {
-            res += "0x";
-            res += HIDDEN_SECRET;
-            i += 2;
-            while (i < message.size() && isHexDigit(message[i]))
-                ++i;
-        }
-        else
-            res += message[i++];
-    }
-    return res;
-}
-
 }
 
 template <typename TKafkaStorage>
@@ -232,9 +202,6 @@ void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & 
         return;
 
     const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-    /// librdkafka testing properties, e.g. `test.mock.num.brokers` starts a mock cluster that uses memory addresses as member ids.
-    if (setting_name_in_kafka_config.starts_with("test."))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka property {} is not allowed", setting_name_in_kafka_config);
     kafka_config.set(setting_name_in_kafka_config, value);
 }
 
@@ -531,7 +498,6 @@ void updateConfigurationFromConfig(
             cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-            const std::string safe_message = hideHexNumbers(message);
             const auto & kafka_object_config = handle.get_configuration();
             const std::string client_id_key{"client.id"};
             chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
@@ -542,7 +508,7 @@ void updateConfigurationFromConfig(
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,
-                safe_message);
+                message);
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
@@ -551,7 +517,7 @@ void updateConfigurationFromConfig(
                     // librdkafka-originated errors (auth failures, broker disconnects) have no
                     // useful ClickHouse stack trace - the trace only shows poll->log_callback.
                     // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
-                    sink_shared_ptr->setExceptionInfo(safe_message, /* with_stacktrace = */ false);
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ false);
                 }
             }
         });
@@ -595,8 +561,8 @@ namespace
 /// server log, but also clients that set `send_logs_level`.
 bool isSensitiveProperty(std::string_view name)
 {
-    /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
-    /// substring safety net for properties unknown to the vendored librdkafka version.
+    /// The properties librdkafka marks with the _RK_SENSITIVE flag, plus a substring safety net
+    /// for properties unknown to the vendored librdkafka version.
     static const std::unordered_set<std::string_view> sensitive_properties = []
     {
         std::unordered_set<std::string_view> res;
@@ -613,7 +579,7 @@ void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr &
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
 }
 
 }

@@ -8,8 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 # A malformed ORC timezone name used to reach an empty TZif file outside TZDIR and abort
-# inside libc++. The time zones are now resolved only from the embedded time zone database,
-# so such a name must be rejected without touching the file system. Keep each attempt in a child clickhouse-local process and disable core dumps.
+# inside libc++. Such a name must be rejected instead of loading a file outside TZDIR. Keep each attempt in a child clickhouse-local process and disable core dumps.
 ulimit -c 0
 
 WORK_DIR="${CLICKHOUSE_TMP}/orc_timezone_traversal_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -117,7 +116,12 @@ for label, result in (("writer", writer), ("reader", reader), ("reader file", re
     elif result.returncode == 0:
         print(f"{label}: malformed timezone unexpectedly succeeded")
         failed = True
-    elif b"is not supported. Use a name from `system.time_zones`" in result.stdout + result.stderr:
+    elif (
+        b"is not supported. Use a name from `system.time_zones`" in result.stdout + result.stderr
+        or b"Cannot load time zone" in result.stdout + result.stderr
+    ):
+        # On 26.9, `DateLUTImpl` does not restrict names to the embedded time zone database, so
+        # the traversal name is rejected by the `CheckTimeZoneName` guard of `cctz` instead.
         print(f"{label}: time zone is rejected")
     else:
         diagnostic = (result.stderr + result.stdout).decode(errors="replace")

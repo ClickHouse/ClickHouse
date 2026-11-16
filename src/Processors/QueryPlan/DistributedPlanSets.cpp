@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -62,7 +61,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
 
     take_sets_and_splice_out(root);
 
-    VectorWithMemoryTracking<QueryPlan::Node *> stack;
+    std::vector<QueryPlan::Node *> stack;
     stack.push_back(root);
     while (!stack.empty())
     {
@@ -77,7 +76,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
         /// Some steps own whole subplans (e.g. `ReadFromMerge` children). The root node of such
         /// a subplan cannot be removed from here, so only its sets are taken out; an emptied
         /// `DelayedCreatingSetsStep` does nothing and the serializer skips it.
-        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
+        for (auto * child_plan : node->step->getChildPlans())
         {
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)

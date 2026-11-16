@@ -104,7 +104,7 @@ namespace
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
         auto query = make_intrusive<ASTCreateRoleQuery>();
-        query->names = make_intrusive<ASTUserNamesWithHost>(role.getName());
+        query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())
@@ -184,7 +184,6 @@ namespace
                 auto quota_type_i = static_cast<size_t>(quota_type);
                 create_query_limits.max[quota_type_i] = limits.max[quota_type_i];
             }
-            create_query_limits.profile_events_max = limits.profile_events_max;
             query->all_limits.push_back(create_query_limits);
         }
 

@@ -142,7 +142,7 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, ColumnType, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
     {}
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if constexpr (std::is_same_v<HashValueType, UInt64>)
             return "uniqCombined64";
@@ -150,7 +150,7 @@ public:
             return "uniqCombined";
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -165,12 +165,6 @@ public:
         addBatchUniq<&Data::Set::insert>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
             [&](size_t row) { return Traits::hash(Traits::value(*columns[0], row)); },
             [&](AggregateDataPtr place) { return &this->data(place).set; });
-    }
-
-    void addBatchWithNonNullPlaces(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void addBatchSinglePlace( /// NOLINT
@@ -332,7 +326,7 @@ public:
             num_args = arguments.size();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if constexpr (std::is_same_v<HashValueType, UInt64>)
             return "uniqCombined64";
@@ -340,7 +334,7 @@ public:
             return "uniqCombined";
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

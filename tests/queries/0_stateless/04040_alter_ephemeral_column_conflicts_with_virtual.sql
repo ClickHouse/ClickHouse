@@ -2,7 +2,6 @@
 -- This is the ALTER counterpart of the CREATE TABLE validation added in PR #99031.
 -- https://github.com/ClickHouse/ClickHouse/issues/99437
 
-SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (key UInt32) ENGINE = MergeTree ORDER BY key;

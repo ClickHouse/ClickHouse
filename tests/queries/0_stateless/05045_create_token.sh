@@ -96,16 +96,15 @@ echo "-- The generated secrets are stored hashed and are not shown by SHOW CREAT
 admin "SHOW CREATE USER ${user}" | sed "s/${user}/user/g; s/${CLICKHOUSE_DATABASE}/db/g"
 
 echo "-- Without a clause the token lives for create_token_default_ttl_seconds, 30 minutes by default"
-# A deadline compared with now() is read back as a Unix timestamp: a local time is ambiguous in the hour repeated when DST ends.
-default_valid_until=$(create_token "CREATE TOKEN SETTINGS date_time_output_format = 'unix_timestamp'" | cut -f2)
-admin "SELECT dateDiff('second', now(), toDateTime64(${default_valid_until}, 0)) BETWEEN 1700 AND 1800"
+default_valid_until=$(create_token "CREATE TOKEN" | cut -f2)
+admin "SELECT dateDiff('second', now(), toDateTime64('${default_valid_until}', 0)) BETWEEN 1700 AND 1800"
 
 echo "-- The reported deadline is the one stored on the authentication method"
-admin "SELECT countEqual(valid_until, toDateTime64(${default_valid_until}, 0)) FROM system.users WHERE name = '${user}'"
+admin "SELECT countEqual(valid_until, toDateTime64('${default_valid_until}', 0)) FROM system.users WHERE name = '${user}'"
 
 echo "-- The setting is honoured, and an explicit clause wins over it"
-short_valid_until=$(create_token "CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 60, date_time_output_format = 'unix_timestamp'" | cut -f2)
-admin "SELECT dateDiff('second', now(), toDateTime64(${short_valid_until}, 0)) BETWEEN 1 AND 60"
+short_valid_until=$(create_token "CREATE TOKEN SETTINGS create_token_default_ttl_seconds = 60" | cut -f2)
+admin "SELECT dateDiff('second', now(), toDateTime64('${short_valid_until}', 0)) BETWEEN 1 AND 60"
 explicit_valid_until=$(create_token "CREATE TOKEN VALID UNTIL '2077-01-01 00:00:00' SETTINGS create_token_default_ttl_seconds = 60" | cut -f2)
 echo "$explicit_valid_until"
 

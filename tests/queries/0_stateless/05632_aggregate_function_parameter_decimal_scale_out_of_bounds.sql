@@ -11,8 +11,9 @@ SELECT toTypeName(CAST(1 AS AggregateFunction(quantile(CAST('3.46216498963908703
 SELECT toTypeName(CAST(1 AS AggregateFunction(quantile(CAST('1', 'Decimal256(4294967295)')), UInt64))); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- The maximum scale is still accepted, and the parameter is written back in full.
+-- Parameters of `quantile` are printed without their types on this branch, so only the digits are checked.
 DROP TABLE IF EXISTS t_decimal_scale_parameter;
 CREATE TABLE t_decimal_scale_parameter (s AggregateFunction(quantile(CAST('1e-76', 'Decimal256(76)')), UInt64)) ENGINE = Memory;
-SELECT position(type, '::Decimal256(76)') > 0, position(type, concat('0.', repeat('0', 75), '1')) > 0
+SELECT position(type, concat('0.', repeat('0', 75), '1')) > 0
 FROM system.columns WHERE database = currentDatabase() AND table = 't_decimal_scale_parameter';
 DROP TABLE t_decimal_scale_parameter;

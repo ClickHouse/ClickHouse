@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Processors/Chunk.h>
 
@@ -9,7 +8,7 @@ namespace DB
 {
 
 class Block;
-using ColumnsMask = VectorWithMemoryTracking<bool>;
+using ColumnsMask = std::vector<bool>;
 
 ColumnsMask getAggregatesMask(const Block & header, const AggregateDescriptions & aggregates);
 

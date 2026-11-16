@@ -7,6 +7,7 @@ title: 'ربط ClickHouse بـ Holistics'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -53,15 +54,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     يمكنك العثور على هذه التفاصيل بالنقر على زر **Connect** في وحدة تحكم ClickHouse Cloud واختيار **HTTPS**.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![موضع زر Connect في وحدة تحكم ClickHouse Cloud](/images/integrations/data-visualization/holistics_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="موضع زر Connect في وحدة تحكم ClickHouse Cloud" border />
   </Step>
 
   <Step title="اضبط الوصول إلى الشبكة" id="step-2-configure-network-access">
@@ -69,15 +62,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     1. **اتصال مباشر (موصى به):** اسمح بعناوين IP الخاصة بـ Holistics في جدار الحماية لديك أو في IP Access List الخاصة بـ ClickHouse Cloud. يمكنك العثور على قائمة عناوين IP في [دليل IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![مثال على السماح بعناوين IP في ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="مثال على السماح بعناوين IP في ClickHouse Cloud" border />
 
     2. **نفق SSH عكسي:** إذا كانت قاعدة بياناتك موجودة في شبكة خاصة ‏(VPC) ولا يمكن إتاحتها على الإنترنت العام، فاستخدم [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
@@ -85,27 +70,11 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step title="أضف مصدر بيانات في Holistics" id="step-3-add-data-source-in-holistics">
     1. في Holistics، انتقل إلى **Settings → Data Sources**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![الانتقال إلى Data Sources في إعدادات Holistics](/images/integrations/data-visualization/holistics_03.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="الانتقال إلى Data Sources في إعدادات Holistics" border />
 
     2. انقر على **New Data Source** ثم اختر **ClickHouse**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![اختيار ClickHouse من قائمة مصادر البيانات الجديدة](/images/integrations/data-visualization/holistics_04.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="اختيار ClickHouse من قائمة مصادر البيانات الجديدة" border />
 
     3. املأ النموذج بالتفاصيل التي جمعتها في الخطوة 1.
 
@@ -116,27 +85,11 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Require SSL**   | بدّل إلى **ON** إذا كنت تستخدم المنفذ 8443 (مطلوب لـ ClickHouse Cloud). |
        | **Database Name** | `default` (أو اسم DB الخاص بك)                                          |
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![إدخال تفاصيل اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_05.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="إدخال تفاصيل اتصال ClickHouse في Holistics" border />
 
     4. انقر على **Test Connection**.
 
-       <div className="ch-image-md">
-
-       <Frame>
-
-       ![نجاح اختبار اتصال ClickHouse في Holistics](/images/integrations/data-visualization/holistics_06.webp)
-
-       </Frame>
-
-       </div>
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="نجاح اختبار اتصال ClickHouse في Holistics" border />
 
        * **نجاح:** انقر على **Save**.
        * **فشل:** تحقق من اسم المستخدم/كلمة المرور، وتأكد من السماح [بعناوين IP الخاصة بـ Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).

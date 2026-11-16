@@ -10,6 +10,7 @@
 -- because its correct output rows are an unspecified subset of the groups; the assertions
 -- are on deterministic aggregates of it.
 
+SET enable_analyzer = 1;
 SET optimize_trivial_group_by_limit_query = 1;
 SET max_threads = 16;
 SET max_block_size = 100;

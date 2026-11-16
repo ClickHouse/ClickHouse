@@ -41,7 +41,6 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeBinary(T & value, std::string_view & input, const FormatSettings &) const;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const final;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const final;
 

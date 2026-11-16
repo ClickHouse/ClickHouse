@@ -18,6 +18,7 @@ SET join_algorithm = 'hash';
 SELECT '--- Row store planner decision test ---';
 
  -- Pin planner settings
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET collect_hash_table_stats_during_joins = 0;
@@ -43,25 +44,25 @@ SYSTEM FLUSH LOGS text_log, query_log;
 
 SELECT 'rs_always_enabled', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_always_enabled' AND type = 'QueryFinish');
 
 SELECT 'rs_disabled_by_unknown_statistcs', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_unknown_statistcs' AND type = 'QueryFinish');
 
 SELECT 'rs_enabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_enabled_by_planner' AND type = 'QueryFinish');
 
 SELECT 'rs_disabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_planner' AND type = 'QueryFinish');
 
@@ -84,13 +85,13 @@ SYSTEM FLUSH LOGS text_log, query_log;
 
 SELECT 'rs_collect_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_collect_runtime_stats' AND type = 'QueryFinish');
 
 SELECT 'rs_disabed_by_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
 FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
+WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabed_by_runtime_stats' AND type = 'QueryFinish');
 
@@ -129,8 +130,7 @@ CREATE TABLE grace_right (k UInt64, v1 Nullable(Int64), v2 UInt8, s String) ENGI
 INSERT INTO grace_right SELECT number, if(number % 10 = 0, NULL, number), number % 251, toString(number) FROM numbers(20000);
 
 SELECT count(), countIf(r.v1 IS NULL), sum(r.v2), sum(length(r.s)) FROM (SELECT number % 20000 AS k FROM numbers(40000)) l INNER JOIN grace_right r ON l.k = r.k
--- `max_bytes_in_join` is a hard cap, the spill threshold is what makes this join go to disk.
-SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 1000000;
+SETTINGS join_algorithm = 'grace_hash', max_bytes_in_join = 100000;
 
 DROP TABLE grace_right;
 DROP TABLE right_asof;

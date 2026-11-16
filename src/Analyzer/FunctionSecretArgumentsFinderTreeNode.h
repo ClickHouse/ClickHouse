@@ -3,7 +3,7 @@
 #include <functional>
 
 #include <Common/FieldVisitorToString.h>
-#include <Parsers/SecretArguments.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -36,13 +36,13 @@ public:
     {
     public:
         explicit ArgumentTreeNode(const IQueryTreeNode * argument_) : argument(argument_) {}
-        [[nodiscard]] std::unique_ptr<AbstractFunction> getFunction() const override
+        std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (const auto * f = argument->as<FunctionNode>())
                 return std::make_unique<FunctionTreeNodeImpl<FunctionNode>>(*f);
             return nullptr;
         }
-        [[nodiscard]] bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
+        bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ConstantNode>())
@@ -83,8 +83,8 @@ public:
     {
     public:
         explicit ArgumentsTreeNode(const QueryTreeNodes * arguments_) : arguments(arguments_) {}
-        [[nodiscard]] size_t size() const override { return arguments ? arguments->size() : 0; }
-        [[nodiscard]] std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
+        size_t size() const override { return arguments ? arguments->size() : 0; }
+        std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
     private:
         const QueryTreeNodes * arguments = nullptr;
     };
@@ -94,14 +94,32 @@ public:
         if (const auto & nodes = function->getArguments().getNodes(); !nodes.empty())
             arguments = std::make_unique<ArgumentsTreeNode>(&nodes);
     }
-    [[nodiscard]] String name() const override { return getFunctionNameImpl(function); }
+    String name() const override { return getFunctionNameImpl(function); }
 private:
     const FunctionNodeType * function = nullptr;
 };
 
-/// Finds the secret arguments of a function or a table function of the query tree.
-SecretArgumentsResult findSecretArguments(const FunctionNode & function);
-SecretArgumentsResult findSecretArguments(const TableFunctionNode & function);
+/// Finds arguments of a specified function which should not be displayed for most users for security reasons.
+/// That involves passwords and secret keys.
+template <typename FunctionNodeType>
+class FunctionSecretArgumentsFinderTreeNodeImpl : public FunctionSecretArgumentsFinder
+{
+public:
+    explicit FunctionSecretArgumentsFinderTreeNodeImpl(const FunctionNodeType & function_)
+        : FunctionSecretArgumentsFinder(std::make_unique<FunctionTreeNodeImpl<FunctionNodeType>>(function_))
+    {
+        if (!function->hasArguments())
+            return;
+
+        findOrdinaryFunctionSecretArguments();
+    }
+
+    FunctionSecretArgumentsFinder::Result getResult() const { return result; }
+};
+
+
+using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
+using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
 
 /// Visits the secret value slots selected by a finder result in a resolved argument list, for the
 /// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members, the individually
@@ -114,7 +132,7 @@ SecretArgumentsResult findSecretArguments(const TableFunctionNode & function);
 /// and expressions as values, which have no display mask of their own).
 void forEachSecretArgumentNode(
     QueryTreeNodes & arguments,
-    const SecretArgumentsResult & secret_arguments,
+    const FunctionSecretArgumentsFinder::Result & secret_arguments,
     const std::function<void(size_t, QueryTreeNodePtr &)> & on_secret);
 
 }

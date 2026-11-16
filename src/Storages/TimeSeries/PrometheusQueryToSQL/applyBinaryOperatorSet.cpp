@@ -4,8 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
 
 namespace DB::ErrorCodes
@@ -66,23 +64,6 @@ ASTPtr makePresenceMask(ASTPtr values)
     return makeASTFunction(
         "groupBitOrForEach",
         makeASTFunction("arrayMap", std::move(lambda), std::move(values)));
-}
-
-ASTPtr makeJoinKeyColumn(String & side, ASTPtr && join_group, ConverterContext & context)
-{
-    if (!isZeroGroupAST(join_group))
-        return std::move(join_group);
-
-    SelectQueryBuilder builder;
-    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-    join_group->setAlias(ColumnNames::JoinGroup);
-    builder.select_list.push_back(std::move(join_group));
-    builder.from_table = side;
-
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
-    side = context.subqueries.back().name;
-    return make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::JoinGroup});
 }
 
 }

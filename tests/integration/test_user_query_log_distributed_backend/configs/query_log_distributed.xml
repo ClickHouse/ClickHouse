@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- `query_log.engine` can be configured to a delegating storage. `system.user_query_log` reads the
+         configured query log table under a context that has full access only locally, so it must refuse
+         to read via such a backend instead of forwarding that read under the calling user's own identity
+         to another server, where it may lack grants or, if it happens to have them, defeats the intent of
+         requiring none. -->
+    <query_log replace="replace">
+        <database>system</database>
+        <table>query_log</table>
+        <engine>Engine = Distributed(test_cluster, system, query_log_backing)</engine>
+    </query_log>
+</clickhouse>

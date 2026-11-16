@@ -6,7 +6,7 @@ namespace DB
 {
 class ParserJSONPathMemberAccess : public IParserBase
 {
-    [[nodiscard]] const char * getName() const override { return "ParserJSONPathMemberAccess"; }
+    const char * getName() const override { return "ParserJSONPathMemberAccess"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

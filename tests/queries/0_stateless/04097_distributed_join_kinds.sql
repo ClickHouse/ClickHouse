@@ -15,6 +15,7 @@
 --   3. Single-node baseline for correctness comparison
 
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 0;
 SET enable_parallel_replicas = 0;
@@ -67,8 +68,7 @@ EXPLAIN PLAN SELECT count(), sum(amount)
 FROM dist_orders INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count(), sum(amount)
-FROM dist_orders INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count(), sum(amount)
 FROM dist_orders INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -81,8 +81,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -95,8 +94,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders RIGHT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -109,8 +107,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders FULL JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders FULL JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders FULL JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders FULL JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -123,8 +120,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders LEFT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders LEFT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders LEFT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders LEFT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -137,8 +133,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders LEFT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders LEFT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders LEFT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders LEFT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -151,8 +146,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders RIGHT SEMI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -165,8 +159,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -179,8 +172,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -193,8 +185,7 @@ EXPLAIN PLAN SELECT count()
 FROM dist_orders ANY LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
-FROM dist_orders ANY LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM dist_orders ANY LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
 SELECT count()
 FROM dist_orders ANY LEFT JOIN dist_items ON dist_orders.order_id = dist_items.order_id
@@ -231,8 +222,7 @@ GROUP BY symbol ORDER BY symbol;
 
 SELECT symbol, count(), sum(price), sum(bid)
 FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
-GROUP BY symbol ORDER BY symbol
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+GROUP BY symbol ORDER BY symbol;
 
 -- Force shuffle by setting broadcast threshold to 0.
 SELECT '-- ASOF JOIN (shuffle)';
@@ -244,7 +234,7 @@ SETTINGS distributed_plan_max_rows_to_broadcast = 0;
 SELECT symbol, count(), sum(price), sum(bid)
 FROM dist_trades ASOF LEFT JOIN dist_quotes ON dist_trades.symbol = dist_quotes.symbol AND dist_trades.ts >= dist_quotes.ts
 GROUP BY symbol ORDER BY symbol
-SETTINGS distributed_plan_max_rows_to_broadcast = 0, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS distributed_plan_max_rows_to_broadcast = 0;
 
 -- Single-node baseline.
 SELECT symbol, count(), sum(price), sum(bid)

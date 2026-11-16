@@ -5,93 +5,61 @@
 -- This file covers every type dispatch branch (Decimal32/128/256, Bool, Float64,
 -- String, Int64, UInt64, Int128, UInt128, Int256, UInt256, UUID, IPv4, IPv6)
 -- plus the unsupported-type and non-literal error paths.
--- The round-trip type name (shown by system.columns) confirms each path was taken.
+-- The round-trip type name confirms each path was taken. The types are only parsed,
+-- never persisted: the printed form is not guaranteed to be re-parseable, so a table
+-- with such a column could not be reattached after a restart.
 
 -- Decimal32 (line 74): float literal cast to Decimal32; hits the else-branch in
 -- convertFieldTo<Decimal32> (non-String, non-Decimal source converted via text).
-DROP TABLE IF EXISTS t_pfl_05079;
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0.5::Decimal32(1)), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0.5::Decimal32(1)), Float64)'));
 
 -- Decimal128 (line 78)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0.5::Decimal128(1)), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0.5::Decimal128(1)), Float64)'));
 
 -- Decimal256 (line 80)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0.5::Decimal256(1)), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0.5::Decimal256(1)), Float64)'));
 
 -- Bool (line 83): UInt64 literal cast to Bool; hits the else-branch in convertFieldTo<bool>
 -- (not already Bool, not String -> convert via FieldVisitorToString).
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0::Bool), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0::Bool), Float64)'));
 
 -- Float64 (line 85): Float64 literal cast to Float64; hits the same-type branch in
 -- convertFieldTo<Float64> (src is already Float64, returned unchanged).
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0.5::Float64), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0.5::Float64), Float64)'));
 
 -- String (line 87): quantile does not accept a String parameter.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile('0.5'::String), Float64))
-ENGINE = Memory; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(\'0.5\'::String), Float64)')); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- Int64 (line 90): UInt64 literal cast to Int64; hits the else-branch in convertFieldTo<Int64>.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::Int64), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::Int64), Float64)'));
 
 -- UInt64 (line 92): UInt64 literal cast to UInt64; hits the same-type branch.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::UInt64), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::UInt64), Float64)'));
 
 -- Int128 (line 94)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::Int128), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::Int128), Float64)'));
 
 -- UInt128 (line 96)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::UInt128), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::UInt128), Float64)'));
 
 -- Int256 (line 98)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::Int256), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::Int256), Float64)'));
 
 -- UInt256 (line 100)
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(1::UInt256), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(1::UInt256), Float64)'));
 
 -- UUID (line 103): String literal cast to UUID; hits the String-branch in convertFieldTo<UUID>.
-CREATE TABLE t_pfl_05079
-(s AggregateFunction(quantile('00000000-0000-0000-0000-000000000000'::UUID), Float64))
-ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(\'00000000-0000-0000-0000-000000000000\'::UUID), Float64)'));
 
 -- IPv4 (line 105): String literal cast to IPv4.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile('0.0.0.0'::IPv4), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(\'0.0.0.0\'::IPv4), Float64)'));
 
 -- IPv6 (line 107): String literal cast to IPv6.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile('::0'::IPv6), Float64)) ENGINE = Memory;
-SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_pfl_05079';
-DROP TABLE t_pfl_05079;
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(\'::0\'::IPv6), Float64)'));
 
 -- Unsupported type name (line 110): throws BAD_ARGUMENTS.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(0.5::BadType), Float64))
-ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(0.5::BadType), Float64)')); -- { serverError BAD_ARGUMENTS }
 
 -- Non-literal parameter (lines 130-131): an identifier (not a literal or CAST expression)
 -- triggers the "Expected a literal or a CAST of a literal" error.
-CREATE TABLE t_pfl_05079 (s AggregateFunction(quantile(someColumn), Float64))
-ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+SELECT toTypeName(defaultValueOfTypeName('AggregateFunction(quantile(someColumn), Float64)')); -- { serverError BAD_ARGUMENTS }

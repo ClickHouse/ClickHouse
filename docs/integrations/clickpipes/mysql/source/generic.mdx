@@ -28,7 +28,7 @@ log_bin = ON                        -- default value
 binlog_format = ROW                 -- default value
 binlog_row_image = FULL             -- default value
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
+binlog_expire_logs_seconds = 86400  -- 1 day or higher; default is 30 days
 ```
 
 To check these settings, run the following SQL commands:
@@ -46,7 +46,7 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 259200;
+SET PERSIST binlog_expire_logs_seconds = 86400;
 ```
 
 If you have changed the `log_bin` setting, you NEED to RESTART the MySQL instance for the changes to take effect.
@@ -62,7 +62,7 @@ server_id = 1            -- or greater; anything but 0
 log_bin = ON
 binlog_format = ROW      -- default value
 binlog_row_image = FULL  -- default value
-expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
+expire_logs_days = 1     -- or higher; 0 would mean logs are preserved forever
 ```
 
 To check these settings, run the following SQL commands:
@@ -81,7 +81,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 You NEED to RESTART the MySQL instance for the changes to take effect.

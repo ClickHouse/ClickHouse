@@ -27,7 +27,7 @@ public:
 
     void close();
 
-    [[nodiscard]] std::string getFileName() const;
+    std::string getFileName() const;
 
 private:
     std::string file_name;

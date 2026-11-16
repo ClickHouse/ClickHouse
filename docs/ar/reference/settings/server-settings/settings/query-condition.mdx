@@ -12,11 +12,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من شفرة ClickHouse المصدرية.
 
-## query_condition_cache_policy {#query_condition_cache_policy}
+<div id="query_condition_cache_policy">
+  ## query_condition_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لشروط الاستعلام. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة ذاكرة التخزين المؤقت لشروط الاستعلام.
 
-## query_condition_cache_size {#query_condition_cache_size}
+<div id="query_condition_cache_size">
+  ## query_condition_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
@@ -26,7 +30,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد أثناء التشغيل، ويسري مفعوله فورًا.
 </Note>
 
-## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
+<div id="query_condition_cache_size_ratio">
+  ## query_condition_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الجزء المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت لشروط الاستعلام، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

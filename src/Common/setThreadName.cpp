@@ -184,12 +184,6 @@ void setThreadName(ThreadName name)
 #endif
 }
 
-const ThreadName & getThreadNameRef()
-{
-    getThreadName(); /// fills the cache
-    return thread_name;
-}
-
 ThreadName getThreadName()
 {
     if (thread_name != ThreadName::UNKNOWN)

@@ -41,7 +41,7 @@ public:
     }
 
     /// The compressed size of the current block.
-    [[nodiscard]] size_t getSizeCompressed() const
+    size_t getSizeCompressed() const
     {
         return size_compressed;
     }

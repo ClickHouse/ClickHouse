@@ -228,14 +228,14 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
     if (processing_threads_num != from_zk.processing_threads_num)
     {
         auto log = getLogger("ObjectStorageQueueTableMetadata");
-        const auto message = PreformattedMessage::create(
+        const std::string message = fmt::format(
             "Using `processing_threads_num` from keeper: {} (local: {})",
             from_zk.processing_threads_num.load(), processing_threads_num.load());
 
         if (processing_threads_num_changed)
-            LOG_WARNING(log, message);
+            LOG_WARNING(log, "{}", message);
         else
-            LOG_TRACE(log, message);
+            LOG_TRACE(log, "{}", message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
     }

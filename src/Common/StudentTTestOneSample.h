@@ -28,12 +28,12 @@ private:
             squares_sum += value * value;
         }
 
-        [[nodiscard]] double avg() const
+        double avg() const
         {
             return sum / static_cast<double>(size);
         }
 
-        [[nodiscard]] double var() const
+        double var() const
         {
             return (squares_sum - (sum * sum / static_cast<double>(size))) / static_cast<double>(size - 1);
         }
@@ -56,5 +56,5 @@ public:
 
     void add(double value);
 
-    [[nodiscard]] std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
+    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
 };

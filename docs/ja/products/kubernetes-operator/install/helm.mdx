@@ -9,13 +9,17 @@ sidebarTitle: 'Helm'
 
 このガイドでは、Helm チャートを使用して ClickHouse Operator をインストールする方法について説明します。
 
-## 前提条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前提条件
+</div>
 
 * Kubernetes クラスター v1.28.0 以降
 * helm v3.0 以降
 * クラスターと通信できるように kubectl が設定されていること
 
-## Helm をインストール {#install-helm}
+<div id="install-helm">
+  ## Helm をインストール
+</div>
 
 Helm がインストールされていない場合:
 
@@ -29,7 +33,9 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
 
-## Operator をインストールする {#install-the-operator}
+<div id="install-the-operator">
+  ## Operator をインストールする
+</div>
 
 <Note>
   デフォルトでは、Helm チャートは webhook を有効にして ClickHouse Operator をデプロイするため、cert-manager がインストールされている必要があります。
@@ -39,7 +45,9 @@ helm version
 helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
 ```
 
-### OCI Helm リポジトリから {#from-oci-helm-repository}
+<div id="from-oci-helm-repository">
+  ### OCI Helm リポジトリから
+</div>
 
 最新リリースをインストールします
 
@@ -58,7 +66,9 @@ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-man
        --set manager.image.tag=<operator version>
 ```
 
-### ローカルチャートから {#from-local-chart}
+<div id="from-local-chart">
+  ### ローカルチャートから
+</div>
 
 リポジトリをクローンし、ローカルチャートからインストールします:
 
@@ -68,35 +78,8 @@ cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
 
-### 特定のネームスペースを監視する {#watch-namespaces}
-
-デフォルトでは、オペレーターはすべてのネームスペースを監視します。監視対象を限定するには、`controller.watchNamespaces` を設定します。
-各エントリはテンプレートとしてレンダリングされるため、`{{ .Release.Namespace }}` はリリース先のネームスペースに解決されます。
-また、静的なネームスペースと組み合わせて指定することもできます:
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-    - team-a
-```
-
-コマンドラインでは `--set` が波括弧をリスト構文としてパースするため、`--set-json` (Helm v3.10 以降) を使用してください：
-`--set-json 'controller.watchNamespaces=["{{ .Release.Namespace }}"]'`
-
-ネームスペーススコープの RBAC で、リリースのネームスペースのみを監視するには：
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-rbac:
-  namespaced: true
-```
-
-`rbac.namespaced: true` を指定すると、manager のアクセス許可はリリース先のネームスペース内の Role/RoleBinding として作成されます。
-そのため、他のネームスペースを監視するには、クラスタースコープの RBAC (デフォルト) が必要です。
-
-### 設定オプション {#configuration-options}
+<div id="configuration-options">
+  ### 設定オプション
+</div>
 
 詳細な設定オプションについては、Helm チャート内の [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) ファイルを参照してください

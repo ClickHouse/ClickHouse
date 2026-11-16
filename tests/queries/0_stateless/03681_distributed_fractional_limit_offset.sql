@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 SELECT 'Analyzer';
 
@@ -31,6 +32,7 @@ ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), test__fuzz_2_lo
 
 SELECT 'Old Analyzer - Distributed Table';
 
+SET enable_analyzer = 1;
 SET extremes = 1;
 
 SELECT 0 AS `0`, 18 AS `18`, __table1.k AS k

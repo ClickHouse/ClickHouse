@@ -10,7 +10,7 @@ namespace DB
 class ParserOptimizeQueryColumnsSpecification : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "column specification for OPTIMIZE ... DEDUPLICATE BY"; }
+    const char * getName() const override { return "column specification for OPTIMIZE ... DEDUPLICATE BY"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -18,11 +18,8 @@ protected:
   */
 class ParserOptimizeQuery : public IParserBase
 {
-public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "OPTIMIZE query"; }
+    const char * getName() const override { return "OPTIMIZE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

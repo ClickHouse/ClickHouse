@@ -1,6 +1,5 @@
 #include <base/defines.h>
 
-#include <algorithm>
 #include <random>
 #include <unordered_map>
 
@@ -27,10 +26,10 @@ public:
     // get dict entries in insertion order
     void getEntriesInInsertionOrder(std::vector<const DictEntry *> &) const;
 
-    [[nodiscard]] size_t size() const;
+    size_t size() const;
 
     // return total length of strings in the dictionary
-    [[nodiscard]] uint64_t length() const;
+    uint64_t length() const;
 
     void clear();
 

@@ -12,6 +12,7 @@ INSERT INTO pr_rf_build SELECT number FROM numbers(10);
 
 -- Join runtime filters require the analyzer. On the old-analyzer runs the query plans with no join
 -- and no parallel replicas at all, leaving the assertion below nothing to check.
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
@@ -28,6 +29,7 @@ SET parallel_replicas_filter_pushdown = 1;
 SET query_plan_join_swap_table = false;
 -- The plan below asserts that the filter reaches the read step as a `PREWHERE`, so pin the two
 -- optimizations that fold it in.
+SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 -- Pinned for a stable plan shape: the plan-based path sends a plan fragment rather than a query, so
 -- the remote side reads as a single `ReadFromParallelReplicas` instead of `ReadFromRemoteParallelReplicas`.

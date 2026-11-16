@@ -1,5 +1,6 @@
 ---
-description: 'Документация по ALTER TABLE ... MODIFY COMMENT, который позволяет добавлять, изменять или удалять комментарий к таблице'
+description: 'Документация по ALTER TABLE ... MODIFY COMMENT, который позволяет
+добавлять, изменять или удалять комментарий к таблице'
 sidebarTitle: 'ALTER TABLE ... MODIFY COMMENT'
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
@@ -13,13 +14,17 @@ doc_type: 'reference'
 задан ранее. Изменение комментария отражается как в [`system.tables`](/ru/reference/system-tables/tables),
 так и в запросе `SHOW CREATE TABLE`.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
 Чтобы создать таблицу с комментарием:
 
@@ -74,7 +79,9 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 └─────────┘
 ```
 
-## Ограничения {#caveats}
+<div id="caveats">
+  ## Ограничения
+</div>
 
 Для таблиц Replicated комментарий может различаться между репликами.
 Изменение комментария применяется только к одной реплике.
@@ -82,7 +89,9 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 Эта возможность доступна начиная с версии 23.9. В предыдущих версиях
 ClickHouse она не работает.
 
-## Связанные материалы {#related-content}
+<div id="related-content">
+  ## Связанные материалы
+</div>
 
 * предложение [`COMMENT`](/ru/reference/statements/create/table#comment-clause)
 * [`ALTER DATABASE ... MODIFY COMMENT`](/ru/reference/statements/alter/database-comment)

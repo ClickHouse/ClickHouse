@@ -10,6 +10,5 @@ al	Alias
 mv	MaterializedView
 src	TableProxy
 dict
-t3_renamed
 t3_renamed	MergeTree
 value	String

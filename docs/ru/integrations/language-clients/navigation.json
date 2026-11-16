@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Главная",
+      "group": "Home",
       "icon": "house",
       "pages": [
         "ru/integrations/language-clients/index"
@@ -32,12 +32,13 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "Сторонние клиенты",
+      "group": "Third-party clients",
       "icon": "users",
       "pages": [
         "ru/integrations/language-clients/third-party/client-libraries"
       ]
     }
   ],
-  "item": "Клиентские библиотеки для языков программирования"
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "Language clients"
 }

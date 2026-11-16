@@ -86,11 +86,11 @@ public:
     {
     }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
     using Base::getReturnTypeImpl;
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (hasLowCardinalityTypes(arguments))
             return FunctionToOverloadResolverAdaptor(delegate).getReturnType(arguments);
@@ -98,7 +98,7 @@ public:
         return Base::getReturnTypeImpl(arguments);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (auto result = Base::tryExecuteLowCardinality(arguments, result_type, input_rows_count))
             return result;

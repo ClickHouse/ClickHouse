@@ -23,7 +23,9 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 * `CREATE TABLE`
 * `ALTER`
 
-## Создание базы данных {#creating-a-database}
+<div id="creating-a-database">
+  ## Создание базы данных
+</div>
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -40,7 +42,9 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Настройки**
 
-### `enable_compression` {#enable-compression}
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
 
 Включает сжатие zlib для подключения по протоколу MySQL. Если установлено значение `1`, ClickHouse запрашивает у сервера MySQL сжатие на уровне протокола.
 
@@ -54,13 +58,9 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-### `connection_auto_close` {#connection-auto-close}
-
-Позволяет автоматически закрывать соединение после выполнения запроса, то есть отключает повторное использование соединений. При значении `0` каждая таблица базы данных хранит свои соединения в собственном пуле для следующего запроса.
-
-Значение по умолчанию: `1`.
-
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 Учётные данные для зашифрованного подключения к MySQL передаются как ключи [именованной коллекции](/ru/concepts/features/configuration/server-config/named-collections) (или как аргументы «ключ-значение»):
 
@@ -76,7 +76,9 @@ SETTINGS enable_compression = 1;
 
 <a id="data_types-support" />
 
-## Поддерживаемые типы данных {#data-types-support}
+<div id="data-types-support">
+  ## Поддерживаемые типы данных
+</div>
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -105,7 +107,9 @@ SETTINGS enable_compression = 1;
 
 Тип [Nullable](/ru/reference/data-types/nullable) поддерживается. Пространственный столбец сопоставляется с `String` (`Nullable(String)`, если он допускает NULL) вместо геометрического типа в трёх случаях: он объявлен как `GEOMETRYCOLLECTION`; флаг `geometry` отключён и тип не `POINT`; или столбец допускает NULL и тип не `POINT`, поскольку `Point` — единственный геометрический тип, который можно вложить в `Nullable`. Во всех трёх случаях строка содержит значение в точности в том виде, в котором его возвращает MySQL: 4-байтовый префикс SRID, за которым следует полезная нагрузка WKB, поэтому перед передачей в декодер WKB удалите эти 4 начальных байта.
 
-## Поддержка глобальных переменных {#global-variables-support}
+<div id="global-variables-support">
+  ## Поддержка глобальных переменных
+</div>
 
 Для лучшей совместимости к глобальным переменным можно обращаться в стиле MySQL — как `@@identifier`.
 
@@ -124,7 +128,9 @@ SETTINGS enable_compression = 1;
 SELECT @@version;
 ```
 
-## Примеры использования {#examples-of-use}
+<div id="examples-of-use">
+  ## Примеры использования
+</div>
 
 Таблица в MySQL:
 

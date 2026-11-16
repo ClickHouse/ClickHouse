@@ -1,9 +1,7 @@
 import http.server
 
-# In the log directory, which is mounted from the host: the test reads these files after the crash has
-# stopped the container.
-RESULT_PATH = "/var/log/clickhouse-server/fake_sentry_result.txt"
-PAYLOAD_PATH = "/var/log/clickhouse-server/fake_sentry_payload.json"
+RESULT_PATH = "/result.txt"
+PAYLOAD_PATH = "/payload.json"
 
 
 class SentryHandler(http.server.BaseHTTPRequestHandler):

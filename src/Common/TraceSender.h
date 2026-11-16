@@ -1,14 +1,10 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
-#include <string_view>
 
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
-#include <Common/setThreadName.h>
 #include <base/types.h>
 
 class StackTrace;
@@ -28,8 +24,7 @@ enum class TraceType : uint8_t
     ProfileEvent,
     JemallocSample,
     MemoryAllocatedWithoutCheck,
-    Instrumentation,
-    MemoryLargeAllocation
+    Instrumentation
 };
 
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.
@@ -38,24 +33,6 @@ class TraceSender
 {
 public:
     static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = -1;
-
-    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    ///
-    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
-    /// The performance test query ids can be surprisingly long like
-    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
-    /// so make some allowance for them as well.
-    static constexpr size_t QUERY_ID_MAX_LEN = 95;
-
-    /// The thread a trace is attributed to. `send` fills it from the calling thread; a sampler that
-    /// captures another thread's stack (the macOS query profiler) passes the sampled thread's instead.
-    struct Origin
-    {
-        std::string_view query_id;
-        UInt64 thread_id = 0;
-        ThreadName thread_name = ThreadName::UNKNOWN;
-    };
 
     struct Extras
     {
@@ -72,22 +49,10 @@ public:
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
-    static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras, Origin origin) noexcept;
-
-    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
-    /// `shutdown` is checked first, so inside an `in_flight` section the fd is not read while the destructor resets it.
-    static bool isCollecting() { return !shutdown.load() && pipe.fds_rw[1] >= 0; }
 
 private:
     friend class TraceCollector;
     static LazyPipeFDs pipe;
-
-    /// `TraceCollector::flush` numbers the markers it writes to the pipe, the collector counts the ones it has read.
-    /// Static like `pipe`, because `SYSTEM FLUSH LOGS` can run while `Context::shutdown` destroys the collector.
-    static std::mutex flush_mutex;
-    static std::condition_variable flush_cv;
-    static UInt64 flush_requested;
-    static UInt64 flush_completed;
 
     /// Coordinate shutdown with concurrent `send()` callers (which may run from
     /// profiler signal handlers on any thread). `TraceCollector::~TraceCollector`

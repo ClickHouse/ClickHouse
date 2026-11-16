@@ -26,7 +26,7 @@ public:
 
     LimitRangeStep(const LimitRangeStep & other);
 
-    [[nodiscard]] String getName() const override { return "LimitRange"; }
+    String getName() const override { return "LimitRange"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
@@ -34,14 +34,13 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
-    [[nodiscard]] const ActionsDAG & getConditions() const { return conditions; }
+    bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
 
 private:
     void updateOutputHeader() override

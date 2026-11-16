@@ -1,74 +1,67 @@
 ---
 title: '连接器概述'
 sidebarTitle: '概述'
-description: '在您自行运营的集群中由 ClickHouse Cloud 托管的 ClickHouse 服务，提供可观测性和支持，且仅通过出站连接进行'
-keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', '托管模式', 'executor']
+description: '为您自行运营的环境中的 ClickHouse 集群提供可观测性和支持，无需授予长期访问权限'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+<Note>
+  ClickHouse 连接器目前处于私有预览阶段。如需申请访问权限，请联系您的 ClickHouse 客户团队。
+</Note>
 
-<PrivatePreviewBadge />
+<div id="what-the-connector-does">
+  ## 连接器的作用
+</div>
 
-如需申请私有预览的访问权限，请联系您的 ClickHouse 客户团队。
+ClickHouse 连接器是部署在您自身环境中的组件，与您运行的 ClickHouse 集群一同部署。它让 ClickHouse 能够获得监控这些集群所需的可见性，并在您需要帮助时提供支持，同时不会让 ClickHouse 获得对您环境的长期访问权限。该连接器以名为 `clicklink` 的单个二进制文件形式提供，其中包含连接器守护进程，以及用于安装和运行这些守护进程的 `clicklink clctl` 命令行工具。
 
-## 连接器的作用 {#what-the-connector-does}
+连接器包含两个组件：
 
-ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse Cloud 能够管理、监控并支持运行在你所运维的 Kubernetes 集群中的 ClickHouse 服务。连接器只发起出站连接，并以限定在这些服务范围内的身份执行操作。它以单个二进制文件 `clicklink` 的形式发布，其中包含各个守护进程，以及用于安装和运维它们的 `clicklink clctl` 工具。
+* **抓取器**从允许列表中的 ClickHouse 系统表收集指标，以及基础设施元数据和运行状况，并将其发送至 ClickHouse Cloud。
+* **故障排查器**允许 ClickHouse 支持团队工程师执行只读诊断，但仅限于您启用且可随时结束的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间。
 
-连接器包含三个组件：
+连接器建立的所有连接均为出站连接。ClickHouse Cloud 绝不会主动连接到您的环境；[架构](/zh/products/bring-your-own-cloud/connector/architecture)页面列出了每个连接、所用协议及其身份验证方式。
 
-* **executor** 负责管理你交由 ClickHouse 托管的服务的生命周期。它根据你提交的定义创建每个服务，然后执行来自 ClickHouse Cloud 的扩缩容、停止、启动、重启、备份和删除命令。运行 executor 即所谓的托管模式 (managed mode) 。
-* **抓取器 (scraper)** 从 ClickHouse 系统表的允许列表中采集指标，同时采集基础设施元数据和健康状况，并将其发送到 ClickHouse Cloud。
-* **故障排查工具 (troubleshooter)** 允许 ClickHouse 支持团队工程师在你启用的[support session](/zh/products/bring-your-own-cloud/connector/support-sessions)期间运行只读诊断，你可以随时结束该会话。
+<div id="when-to-use-it">
+  ## 适用场景
+</div>
 
-在终端中，`init` 会询问是否启用托管模式，并默认为“是”；以脚本方式运行时则必须传入 `--managed`。即使不启用托管模式，连接器仍可为你自行运维的集群提供观测和支持能力；参见[不使用托管模式运行](#run-without-managed-mode)。
+当 ClickHouse 需要监控或支持在您的环境中运行的 ClickHouse 集群，且您的安全要求如下时，请部署该连接器：
 
-连接器发起的每一个连接都是出站连接；ClickHouse Cloud 绝不会主动向你的环境发起连接。[架构](/zh/products/bring-your-own-cloud/connector/architecture)页面列出了每一个连接、所用的协议及其认证方式。
+* 所有访问路径均从您的边界内部发起，不允许入站连接。
+* 支持访问有时间限制，由您启用，并可随时由您撤销。
+* ClickHouse 读取的所有内容均为只读：始终只访问 ClickHouse 表；仅在您启用的会话期间访问命名空间范围内的工作负载元数据和日志。每条支持会话命令都会记录在您拥有的审计日志中。
 
-## 何时使用 {#when-to-use-it}
+<div id="how-it-works">
+  ## 工作原理
+</div>
 
-如果你希望 ClickHouse Cloud 在你自己的云账户中运行 ClickHouse 服务，并满足以下约束，则可部署该连接器：
+在引导设置期间，ClickHouse 会提供连接器端点和一次性注册标记。对于 Kubernetes 安装，请在具有 kubeconfig 访问权限的工作站上执行一次 `clicklink clctl init --enroll`；对于 Linux VM 安装，请直接在主机上执行。该命令会兑换标记，为各组件创建专用的只读 ClickHouse 用户，获取 mTLS 客户端证书，部署并启动守护进程，并验证其运行状况。
 
-* 所有访问路径都源自你的边界内部，不存在任何入站连接。
-* 对集群的写入仅限于 ClickHouse 所管理服务的命名空间，以及 executor 在其自身命名空间中的 token、registry 和续期后的证书。这些服务所依赖的平台组件只有在你逐次批准更新后才会变更。
-* 你的数据存放在由你自行创建和删除的桶中，并受你自行管理的 IAM role 保护。executor 不持有访问这些桶或 IAM role 的任何凭据。
-* 支持人员的访问有时间限制，由你开启，也可随时撤销。support session 中的每一条命令都会记录到你所拥有的审计日志中。
+此后，抓取器会定期读取允许列表中的系统表，并通过双向身份验证 TLS 将指标、元数据和运行状况发送到您的连接器端点。故障排查器会保持空闲状态：它会维持一个出站命令通道，但在您启用支持会话之前，该通道不会传输任何内容。mTLS 证书会自动续期，您无需执行任何操作。
 
-## 工作原理 {#how-it-works}
+<div id="requirements-at-a-glance">
+  ## 要求概览
+</div>
 
-在 onboarding 期间，ClickHouse 会注册你的环境，并提供连接器端点和一个一次性的注册标记。你只需运行一次 `clicklink clctl init --enroll`：Kubernetes 安装方式下，从具备 kubeconfig 访问权限的 workstation 运行；Linux VM 安装方式下，则在该主机上运行。这条命令会完成标记兑换、获取 mTLS 客户端证书、部署并启动守护进程，并验证其健康状况。
+* **部署目标。** 任意符合要求的 Kubernetes 集群 (使用 Helm 图表安装) ，或任何采用 systemd 的 Linux 主机 (amd64 或 arm64) 。
+* **通过端口 443 的出站网络访问。** 安装时需能够访问连接器端点及其注册端点，以及 `releases.clicklink.clickhouse.com` 和 ECR Public。这是标准方式；每个步骤均提供隔离网络和镜像替代方案，参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+* **可访问的 ClickHouse 原生监听端点。** 连接器通过原生协议与各个集群通信；在 Kubernetes 上，会自动检测安全端口 (9440) 或明文端口 (9000) 。
+* **注册标记。** ClickHouse 会在引导设置期间提供连接器端点和一次性注册标记。
+* **设置期间的 ClickHouse 管理员访问权限。** 初始预配会创建连接器的只读用户。若设置了管理员密码，系统只会提示输入一次，且绝不会存储。
+* **预配期间对 Kubernetes API server 的管理员访问权限**，两种安装目标均需具备：访问包与 Kubernetes ServiceAccount 绑定。参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
 
-启用托管模式后会部署 executor 并应用其 Kubernetes 访问权限授权，该授权为一个 `pcm-executor` ServiceAccount。admission 策略会将其写入操作限制在服务命名空间内 (默认前缀为 `ns-`) 。例外情况包括其自身的 token 续订、一个 registry ConfigMap，以及在 Kubernetes 上位于其所属命名空间中已续订的客户端证书。
+有关两种安装目标的完整操作指南，请参见[引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)。
 
-创建一个服务需要两条命令。`clicklink clctl executor prepare` 使用你的 AWS 凭证创建该服务的桶和 IAM role，并一次性显示 default 用户的密码。`clicklink clctl instances create` 通过你的连接器端点将服务定义提交给 ClickHouse Cloud。此后，ClickHouse Cloud 会通过 executor 的 出站 命令通道来驱动该服务：扩缩容、停止与启动、重启、备份、版本升级以及配置变更。操作流程参见 [managed service](/zh/products/bring-your-own-cloud/connector/managed-services)。
+<div id="next-steps">
+  ## 后续步骤
+</div>
 
-有两项操作仍由你负责。集群中平台组件的更新需经你批准才会执行；参见 [platform updates](/zh/products/bring-your-own-cloud/connector/platform-updates)。删除服务仅会移除其 Kubernetes 资源；其桶和 IAM role 会一直保留，直到你运行 `clicklink clctl executor teardown`。
-
-抓取器会按固定时间间隔读取允许列表中的系统表，并通过 mTLS 将指标、元数据和健康状况发送到你的连接器端点。故障排查工具会保持一个 出站 命令通道处于打开状态，但在你启用 support session 之前，该通道不会传输任何内容。mTLS 证书会自行续订。
-
-## 在非托管模式下运行 {#run-without-managed-mode}
-
-向 `clicklink clctl init` 传入 `--no-managed`，或在提示时回答 no，即可仅安装抓取器和故障排查工具。此时连接器只会观测并支持由你自行运维的 ClickHouse 集群；ClickHouse 无法创建、变更或删除服务。连接器仍会自行部署，并预配只读的 ClickHouse 用户和 ServiceAccount；参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。托管模式未覆盖的目标同样采用这种形态。托管模式仅运行在采用 S3 存储的 Amazon EKS 上；而可观测性与支持能力可运行在任何符合规范的 Kubernetes 集群或 Linux 主机上。
-
-## 需求一览 {#requirements-at-a-glance}
-
-* **部署目标。** 托管模式需要一个配备 S3 存储的 Amazon EKS 集群。若仅使用可观测性与支持功能，则可运行在任意符合规范的 Kubernetes 集群 (通过 Helm 图表安装) 或任意 systemd Linux 主机上，支持 amd64 或 arm64。
-* **由 ClickHouse 完成注册。** ClickHouse 会为托管模式注册你的环境，并在 onboarding 过程中提供连接器端点和一次性使用的注册标记。
-* **端口 443 的出站网络访问**，用于访问你的连接器端点及其注册端点，并在安装时访问 `releases.clicklink.clickhouse.com` 和 ECR Public。每个步骤均提供隔离网络和镜像源方案作为替代；参见 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。在托管模式下，你的集群节点还会从环境所注册的 registry 拉取 ClickHouse 镜像。当 executor 从 ECR 拉取平台图表时，会访问 Amazon ECR 和 STS。
-* **安装期间的集群管理员权限。** 启用托管模式时会一次性应用 executor 的访问授权：一个 ServiceAccount、绑定到它的集群角色，以及将其写操作限制在服务命名空间内的 admission 策略。批准 platform updates 同样需要集群管理员权限。在两种安装目标上，故障排查工具的访问包都锚定到 Kubernetes ServiceAccount。参见 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。
-* **`prepare` 和 `teardown` 所需的 AWS 凭证，以及 `platform approve` 所需的 registry 访问权限。** 创建服务的桶和 IAM role 会以你的凭证运行，在服务删除后将其移除同样如此。两者都在你的 workstation 或连接器主机上运行。若要直接访问 ClickHouse 的 registry，平台批准与同步会通过连接器 EC2 虚拟机的实例 profile 来担任只读拉取 role。workstation 上的 AWS profile 或 SSO 凭证无法替代该身份。其他 ECR 图表 registry 则使用环境中的 AWS 凭证。参见 [registry 凭证](/zh/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)。executor 从不持有访问你的桶或 IAM 的凭证。它唯一的云端调用是为拉取图表和检查平台镜像而访问 Amazon ECR 和 STS。
-* **可访问的 ClickHouse 原生监听器**，适用于你自行运维的集群，由不运行 executor 的独立连接器部署进行观测。抓取器和故障排查工具通过原生协议与各个集群通信；在 Kubernetes 上会自动检测安全端口 (9440) 或明文端口 (9000) 。
-* **安装期间的 ClickHouse 管理员访问权限**，适用于你自行运维的集群。初始预配会创建连接器的只读用户。如果设置了管理员密码，系统只会提示输入一次，且绝不存储。
-
-## 后续步骤 {#next-steps}
-
-* [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)：在 Kubernetes 或 Linux VM 上安装并注册连接器。
-* [managed service](/zh/products/bring-your-own-cloud/connector/managed-services)：启用托管模式、创建服务，并了解其生命周期、状态和删除操作。
-* [Platform updates](/zh/products/bring-your-own-cloud/connector/platform-updates)：批准对集群中平台组件的变更。
+* [引导设置](/zh/products/bring-your-own-cloud/connector/onboarding)：在 Kubernetes 或 Linux VM 上安装并注册连接器。
 * [Architecture](/zh/products/bring-your-own-cloud/connector/architecture)：组件、各项连接、证书生命周期，以及哪些数据会离开您的环境。
 * [Support sessions](/zh/products/bring-your-own-cloud/connector/support-sessions)：如何启用、限定范围、审计和撤销支持访问权限。
 * [Configuration](/zh/products/bring-your-own-cloud/connector/configuration) 和 [操作](/zh/products/bring-your-own-cloud/connector/operations)：调优、升级和日常运维任务。
-* [FAQ](/zh/products/bring-your-own-cloud/connector/reference/faq)：常见问题，包括谁可以更改您的服务、数据出站和访问权限撤销。
+* [FAQ](/zh/products/bring-your-own-cloud/connector/reference/faq)：常见问题，包括数据出站和访问权限撤销。
 
-连接器运行在由您提供并控制的集群中；ClickHouse Cloud 通过 executor 管理其中的服务。如果您希望由 ClickHouse 在您的云账户中自行预配并运营集群，请选择 [BYOC](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 部署模式。[BYOC architecture](/zh/products/bring-your-own-cloud/overview/architecture) 页面说明了两者的差异。
+该连接器适用于由您自行运营的环境。如果您希望由 ClickHouse 在您的云账户中运营集群，请选择 [BYOC](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 部署模式；有关两者的差异，请参阅 [BYOC architecture](/zh/products/bring-your-own-cloud/overview/architecture) 页面。

@@ -220,21 +220,13 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
     return SerializationVariant::create(variants, serializations, variant_names, getName());
 }
 
-DataTypePtr DataTypeVariant::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const
 {
-    /// A rewritten alternative can print a different name, and two alternatives that differed only in
-    /// that name then collapse into one. Announcing fewer alternatives than the payload was written
-    /// with is a wrong result rather than something to paper over, so refuse instead.
-    std::unordered_set<String> names;
-    for (const auto & variant : new_children)
-        if (!names.insert(variant->getName()).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot rewrite the nested types of {}: two of its alternatives would become the same type {}",
-                getName(), variant->getName());
-
-    /// The default constructor re-sorts the alternatives by name, which after a rename would silently
-    /// permute the discriminators of an existing column. Keep the order this type already has.
-    return std::make_shared<DataTypeVariant>(new_children, FixedDiscriminatorOrder{});
+    for (const auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachChild(callback);
+    }
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -552,8 +544,6 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-An alternative that cannot be converted to the destination type causes an error only if the column contains values of this alternative.
-
 ### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
 
 It is possible to convert a `Variant` column to another `Variant` column, but only if the destination `Variant` column contains all nested types from the original `Variant`:
@@ -864,31 +854,6 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
-```
-
-## Aggregate functions with Variant arguments {#aggregate-functions-with-variant-arguments}
-
-Some aggregate functions, such as `count`, `any`, `groupArray` and the `uniq` family, handle `Variant` arguments natively.
-Aggregate functions that work only with values of specific types, such as `sum`, `avg`, `min`, `max`, `quantile`, the statistical functions, and the `val` argument of `argMin` and `argMax`, are applied to the least common supertype of the alternatives, wrapped in `Nullable`:
-
-```text
-f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
-```
-
-The `NULL` values of the `Variant` are skipped as usual. If the alternatives have no common supertype, or it cannot be inside `Nullable`, an exception `ILLEGAL_TYPE_OF_ARGUMENT` is thrown.
-
-**Example:**
-
-```sql
-SET allow_suspicious_variant_types = 1;
-SELECT sum(v), max(v), toTypeName(sum(v))
-FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
-```
-
-```text
-┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
-│    3.5 │    2.5 │ Nullable(Float64)  │
-└────────┴────────┴────────────────────┘
 ```
 )DOCS_MD",
             .syntax = "Variant(T1, T2, ...)",

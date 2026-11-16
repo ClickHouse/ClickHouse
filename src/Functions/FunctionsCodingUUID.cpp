@@ -106,6 +106,27 @@ private:
     Representation first_half_binary_representation;
 };
 
+void checkArgumentCount(const DB::DataTypes & arguments, const std::string_view function_name)
+{
+    if (const auto argument_count = std::ssize(arguments); argument_count < 1 || argument_count > 2)
+        throw DB::Exception(
+            DB::ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+            function_name,
+            argument_count);
+}
+
+void checkFormatArgument(const DB::DataTypes & arguments, const std::string_view function_name)
+{
+    if (const auto argument_count = std::ssize(arguments);
+        argument_count > 1 && !DB::WhichDataType(arguments[1]).isInt8() && !DB::WhichDataType(arguments[1]).isUInt8())
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of second argument of function {}, expected Int8 or UInt8 type",
+            arguments[1]->getName(),
+            function_name);
+}
+
 UUIDSerializer::Variant parseVariant(const DB::ColumnsWithTypeAndName & arguments)
 {
     if (arguments.size() < 2)
@@ -132,33 +153,36 @@ public:
     static constexpr auto name = "UUIDNumToString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDNumToString>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `FixedString(16)` (uuid_bytes_length) is the exact width `executeImpl` reads, so a
-        /// wrong-width FixedString is rejected at analysis time. The optional second argument
-        /// selects the UUID variant — `parseVariant` reads it via `getInt` and casts to the
-        /// enum's underlying type, which silently wraps for wider integers (e.g. UInt16(258)
-        /// becomes 2). Narrow to `Int8 | UInt8` to preserve the original validation contract.
-        /// The selector must be `const`: `parseVariant` reads only row 0, so a row-varying
-        /// column would silently serialize every row with the first row's variant.
-        return "(FixedString(16), [const Int8 | UInt8]) -> String";
+        checkArgumentCount(arguments, name);
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        if (!ptr || ptr->getN() != uuid_bytes_length)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}, expected FixedString({})",
+                            arguments[0]->getName(), getName(), uuid_bytes_length);
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -205,25 +229,36 @@ public:
     static constexpr auto name = "UUIDStringToNum";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDStringToNum>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
     /// Not injective: parsing is case-insensitive, so '61F0C404-...' and '61f0c404-...' give the same result.
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
-        /// wrong-width FixedString is rejected at analysis time.
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
-        return "(String | FixedString(36), [const Int8 | UInt8]) -> FixedString(16)";
+        checkArgumentCount(arguments, name);
+
+        /// String or FixedString(36)
+        if (!isString(arguments[0]))
+        {
+            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+            if (!ptr || ptr->getN() != uuid_text_length)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of first argument of function {}, expected FixedString({})",
+                                arguments[0]->getName(), getName(), uuid_text_length);
+        }
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -301,21 +336,33 @@ public:
     static constexpr auto name = "UUIDToNum";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDToNum>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
-        return "(UUID, [const Int8 | UInt8]) -> FixedString(16)";
+        checkArgumentCount(arguments, name);
+
+        if (!isUUID(arguments[0]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected UUID",
+                arguments[0]->getName(),
+                getName());
+        }
+
+        checkFormatArgument(arguments, name);
+
+        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
@@ -365,23 +412,14 @@ public:
 
     static constexpr UInt32 datetime_scale = 3;
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; }
 
-    /// Declarative signature — extracts the timestamp embedded in a UUIDv7
-    /// as a `DateTime64(3)`, optionally tagged with the const-string timezone
-    /// from the second argument.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(UUID) -> DateTime64(3)"
-               " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(
@@ -411,7 +449,7 @@ public:
         return std::make_shared<DataTypeDateTime64>(datetime_scale, timezone);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;

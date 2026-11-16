@@ -1,10 +1,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-#include <Functions/geometryFormatting.h>
 #include <Columns/ColumnString.h>
 
-#include <locale>
 #include <string>
 #include <memory>
 
@@ -26,32 +24,31 @@ public:
         return std::make_shared<FunctionWKT>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any) -> String";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
-        const std::locale locale(std::locale::classic(), new ShortestFloatNumPut);
 
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
@@ -64,7 +61,6 @@ public:
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 str.exceptions(std::ios::failbit);
-                str.imbue(locale);
                 str << boost::geometry::wkt(figures[i]);
                 std::string serialized = str.str();
                 res_column->insertData(serialized.data(), serialized.size());
@@ -75,7 +71,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }

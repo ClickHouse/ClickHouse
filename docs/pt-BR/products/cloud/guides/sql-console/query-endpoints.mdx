@@ -7,6 +7,8 @@ title: Configurando endpoints da Query API
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 O recurso **endpoint da Query API** permite criar um endpoint de API diretamente de qualquer consulta SQL salva no console do ClickHouse Cloud. Você poderá acessar esses endpoints via HTTP para executar suas consultas salvas sem precisar se conectar ao seu serviço do ClickHouse Cloud por meio de um driver nativo.
 
 <div id="quick-start-guide">
@@ -66,27 +68,11 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
 
     Vamos executar essa consulta rapidamente para garantir que ela funcione, informando o ano `2010` no campo de variáveis da consulta, no lado direito do editor SQL:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Testar a consulta de exemplo](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Testar a consulta de exemplo" />
 
     Em seguida, salve a consulta:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Salvar consulta de exemplo](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Salvar consulta de exemplo" />
 
     Mais informações sobre consultas salvas podem ser encontradas na seção [&quot;Saving a query&quot;](/pt-BR/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -95,15 +81,7 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
     Os endpoints da Query API podem ser configurados diretamente na tela da consulta clicando no botão **Share** e selecionando `API Endpoint`.
     Será solicitado que você especifique quais chaves de API poderão acessar o endpoint:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configurar endpoint de consulta](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configurar endpoint de consulta" />
 
     Após selecionar uma chave de API, será solicitado que você:
 
@@ -114,15 +92,7 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
 
     Um comando `curl` de exemplo será exibido para que você possa enviar uma solicitação de teste:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Comando curl do endpoint](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Comando curl do endpoint" />
 
     O comando `curl` exibido na interface é fornecido abaixo para sua conveniência:
 
@@ -138,27 +108,11 @@ Você pode seguir este guia para [criar uma chave de API](/pt-BR/products/cloud/
   <Step title="Testes e monitoramento" id="testing-and-monitoring">
     Depois que um endpoint da Query API for criado, você poderá testá-lo usando `curl` ou qualquer outro cliente HTTP:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![teste curl do endpoint](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="teste curl do endpoint" />
 
     Depois de enviar sua primeira solicitação, um novo botão deverá aparecer imediatamente à direita do botão **Share**. Ao clicar nele, será aberto um flyout contendo dados de monitoramento sobre a consulta:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Monitoramento do endpoint](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Monitoramento do endpoint" />
   </Step>
 </Steps>
 

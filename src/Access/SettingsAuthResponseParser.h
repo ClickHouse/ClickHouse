@@ -1,6 +1,8 @@
 #pragma once
 #include <Common/SettingsChanges.h>
 
+#include <istream>
+
 namespace Poco::Net
 {
 class HTTPResponse;
@@ -8,9 +10,6 @@ class HTTPResponse;
 
 namespace DB
 {
-
-class ReadBuffer;
-
 /// Class for parsing authentication response containing session settings
 class SettingsAuthResponseParser
 {
@@ -23,7 +22,7 @@ public:
         SettingsChanges settings;
     };
 
-    Result parse(const Poco::Net::HTTPResponse & response, ReadBuffer * body) const;
+    Result parse(const Poco::Net::HTTPResponse & response, std::istream * body_stream) const;
 };
 
 }

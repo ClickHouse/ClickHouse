@@ -12,113 +12,62 @@ namespace DB
 struct IImplementationStrategy
 {
     virtual ~IImplementationStrategy() = default;
-    [[nodiscard]] virtual String getName() const = 0;
+    virtual String getName() const = 0;
 };
 
 /// Per-operator-family bases. Each physical strategy owns its local cost function
 /// (defined in Cost.cpp, so all cost formulas stay in one file).
 struct IJoinStrategy : IImplementationStrategy
 {
-    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
 struct IAggregationStrategy : IImplementationStrategy
 {
-    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
 struct IReadStrategy : IImplementationStrategy
 {
-    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
-};
-struct IWindowStrategy : IImplementationStrategy
-{
-    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
-};
-struct IDistinctStrategy : IImplementationStrategy
-{
-    [[nodiscard]] virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
 
 /// --- Join strategies ---
 
 struct LocalJoinStrategy final : IJoinStrategy
 {
-    [[nodiscard]] String getName() const override { return "Local HashJoin"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "Local HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct BroadcastJoinStrategy final : IJoinStrategy
 {
-    [[nodiscard]] String getName() const override { return "Broadcast HashJoin"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "Broadcast HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct ShuffleJoinStrategy final : IJoinStrategy
 {
-    [[nodiscard]] String getName() const override { return "Shuffle HashJoin"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "Shuffle HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Aggregation strategies ---
 
 struct LocalAggregationStrategy final : IAggregationStrategy
 {
-    [[nodiscard]] String getName() const override { return "LocalAggregation"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "LocalAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct ShuffleAggregationStrategy final : IAggregationStrategy
 {
-    [[nodiscard]] String getName() const override { return "ShuffleAggregation"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "ShuffleAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct PartialAggregationStrategy final : IAggregationStrategy
 {
-    [[nodiscard]] String getName() const override { return "PartialAggregation"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
-};
-
-/// --- Window strategy ---
-
-/// One strategy for both the single-node and the per-node window; the cost formula
-/// divides the work by the node count, which is what tells them apart.
-struct WindowStrategy final : IWindowStrategy
-{
-    [[nodiscard]] String getName() const override { return "Window"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
-};
-
-/// --- Final DISTINCT strategies ---
-
-/// The whole input on one node.
-struct LocalDistinctStrategy final : IDistinctStrategy
-{
-    [[nodiscard]] String getName() const override { return "LocalDistinct"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
-};
-
-/// The input split among the nodes by the `DISTINCT` columns (or some of them), so equal rows are
-/// on the same node and each node deduplicates its own share.
-struct ShuffleDistinctStrategy final : IDistinctStrategy
-{
-    [[nodiscard]] String getName() const override { return "ShuffleDistinct"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
-};
-
-/// --- Merge of partial aggregation states ---
-/// No cost functions: `MergingAggregatedStep` is priced by its own formula, divided by the
-/// parallelism of its distribution.
-
-/// All partial states are gathered to one node and merged there.
-struct LocalMergeStrategy final : IImplementationStrategy
-{
-    [[nodiscard]] String getName() const override { return "LocalMerge"; }
-};
-
-/// The partial states arrive shuffled by the group keys, and each node merges the states of its own keys.
-struct ShuffleMergeStrategy final : IImplementationStrategy
-{
-    [[nodiscard]] String getName() const override { return "ShuffleMerge"; }
+    String getName() const override { return "PartialAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Replicated subplan ---
@@ -129,15 +78,15 @@ struct ShuffleMergeStrategy final : IImplementationStrategy
 /// charge the full work each node does.
 struct ReplicatedSubplanStrategy final : IImplementationStrategy
 {
-    [[nodiscard]] String getName() const override { return "Replicated"; }
+    String getName() const override { return "Replicated"; }
 };
 
 /// --- Read strategies ---
 
 struct ParallelReadStrategy final : IReadStrategy
 {
-    [[nodiscard]] String getName() const override { return "ParallelRead"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "ParallelRead"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// Replicated read on shared storage: every node reads the full table from object storage.
@@ -145,8 +94,8 @@ struct ParallelReadStrategy final : IReadStrategy
 /// Used to satisfy `{node_count=N, is_replicated=true}` without a BroadcastExchange.
 struct ReplicatedReadStrategy final : IReadStrategy
 {
-    [[nodiscard]] String getName() const override { return "ReplicatedRead"; }
-    [[nodiscard]] Cost estimateOperatorCost(const CostInputs & inputs) const override;
+    String getName() const override { return "ReplicatedRead"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 using ImplementationStrategyPtr = std::shared_ptr<const IImplementationStrategy>;

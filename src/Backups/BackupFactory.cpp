@@ -1,8 +1,9 @@
+#include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
-#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/ITableFunction.h>
 #include <Common/Exception.h>
+
+#include <Poco/URI.h>
 
 #include <fmt/format.h>
 
@@ -23,6 +24,24 @@ namespace
     void appendIdentityComponent(String & identity, std::string_view component)
     {
         fmt::format_to(std::back_inserter(identity), ":{}:{}", component.size(), component);
+    }
+
+    /// Must normalize identically to `ITableFunction::getFunctionURINormalized`, or the same regex
+    /// grant matches a table function and not a backup. An empty result requires a whole-source grant.
+    String normalizeAccessURI(const String & uri)
+    {
+        if (uri.empty())
+            return uri;
+        try
+        {
+            Poco::URI parsed(uri);
+            parsed.normalize();
+            return parsed.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return "";
+        }
     }
 }
 
@@ -62,7 +81,8 @@ void BackupFactory::checkSourceAccess(const BackupInfo & backup_info, ContextPtr
         return;
 
     if (auto target = it->second.source_access(backup_info, context, open_mode))
-        ITableFunction::checkSourceAccessForURI(context, target->flags, target->source, target->uri);
+        context->getAccess()->checkAccessWithFilter(
+            target->flags, AccessTypeObjects::toStringSource(target->source), normalizeAccessURI(target->uri));
 }
 
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
@@ -104,35 +124,11 @@ void BackupFactory::registerBackupEngine(
     const String & engine_name,
     const CreatorFn & creator_fn,
     const DestinationIdentityFn & destination_identity_fn,
-    const SourceAccessFn & source_access_fn,
-    SecretArgumentsSpec secret_arguments)
+    const SourceAccessFn & source_access_fn)
 {
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn, std::move(secret_arguments)});
-}
-
-const SecretArgumentsSpec * BackupFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
-{
-    auto it = engines.find(engine_name);
-    return it == engines.end() ? nullptr : &it->second.secret_arguments;
-}
-
-SecretArgumentsSpec credentialFreeBackupSecretArguments(size_t arity)
-{
-    return {.custom = [arity](FunctionSecretArgumentsFinder & finder)
-    {
-        /// An engine that takes fewer arguments rejects the rest only after the statement has been formatted
-        /// for logging, so the count has to be checked here too. Each of these reads every argument of its own
-        /// as a string, so another shape - an array among them - is read by none of them and can carry a string
-        /// of its own. Anything else (an override, a nested map, a surplus slot) can carry a credential.
-        const auto & arguments = *finder.function->arguments;
-        bool credential_free = arguments.size() == arity;
-        for (size_t i = 0; credential_free && i < arity; ++i)
-            credential_free = arguments.at(i)->tryGetString(nullptr, /* allow_identifier= */ false);
-        if (!credential_free)
-            finder.maskEveryArgument();
-    }};
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn});
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

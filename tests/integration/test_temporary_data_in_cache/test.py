@@ -97,19 +97,6 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             },
         },
         {
-            # The keys of the set are unique and incompressible on disk (the hashes of random strings), so its
-            # runs occupy real disk space.
-            "query": "SELECT count() FROM numbers(10) WHERE toString(number) IN (SELECT randomPrintableASCII(96) FROM numbers(1024 * 1024))",
-            "settings": {
-                "max_bytes_before_external_set": "6M",
-                "max_bytes_ratio_before_external_set": 0,
-                # The spill triggers on the tracked query memory, so the thread-local untracked buffers must
-                # be flushed; a single thread keeps the runs a predictable few MB.
-                "max_untracked_memory": 0,
-                "max_threads": 1,
-            },
-        },
-        {
             "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
             "settings": {
                 "max_bytes_in_join": "4M",
@@ -119,14 +106,13 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         {
             "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
             "settings": {
-                # Spilling is driven by the byte threshold; `max_bytes_in_join` is a hard cap.
-                "max_bytes_before_external_join": "8M",
+                "max_bytes_in_join": "4M",
                 "join_algorithm": "grace_hash",
             },
         },
     ]:
         # Read some data to fill the cache
-        q("SELECT sum(x) FROM t1 SETTINGS use_statistics_for_sum_avg_aggregation = 0")
+        q("SELECT sum(x) FROM t1")
 
         cache_size_with_t1 = get_cache_size()
         assert cache_size_with_t1 > 8 * MB, dump_debug_info()
@@ -156,7 +142,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
 
     # Read some data to fill the cache again
-    q("SELECT avg(x) FROM t1 SETTINGS use_statistics_for_sum_avg_aggregation = 0")
+    q("SELECT avg(x) FROM t1")
 
     cache_size_with_t1 = get_cache_size()
     assert cache_size_with_t1 > 8 * MB, dump_debug_info()

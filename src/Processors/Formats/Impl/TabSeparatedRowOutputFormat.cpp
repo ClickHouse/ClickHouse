@@ -21,7 +21,7 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
 {
 }
 
-void TabSeparatedRowOutputFormat::writeLine(std::span<const String> values)
+void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {

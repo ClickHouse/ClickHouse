@@ -80,7 +80,7 @@ struct EquivalenceClasses
         }
     }
 
-    [[nodiscard]] ConstClassPtr getClass(const T & name) const
+    ConstClassPtr getClass(const T & name) const
     {
         auto it = member_to_class.find(name);
         if (it == member_to_class.end())
@@ -102,7 +102,7 @@ struct EquivalenceClasses
         }
     }
 
-    [[nodiscard]] const std::unordered_map<T, ClassPtr, Hash> & getMemberToClassMap() const
+    const std::unordered_map<T, ClassPtr, Hash> & getMemberToClassMap() const
     {
         return member_to_class;
     }

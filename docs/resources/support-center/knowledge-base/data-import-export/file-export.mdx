@@ -15,7 +15,7 @@ For example:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-By default, ClickHouse uses the file extension of the filename to determine the output format and compression. For example, all of the rows in `nyc_taxi` will be exported to the `nyc_taxi.parquet` using the Parquet format:
+By default, ClickHouse uses the file extension of the filename to deteremine the output format and compression. For example, all of the rows in `nyc_taxi` will be exported to the `nyc_taxi.parquet` using the Parquet format:
 
 ``` sql
 SELECT *

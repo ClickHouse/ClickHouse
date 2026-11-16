@@ -720,7 +720,6 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    /// The dump keeps runtime addresses: it stays on the local disk, and only its path is returned.
     return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 

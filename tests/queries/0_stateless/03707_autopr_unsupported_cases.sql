@@ -3,8 +3,7 @@
 -- only for the statistics, and an unsupported shape leaves both byte counters at zero. Once a shape
 -- becomes supported its counters stop being zero and this test fails, which is the signal to drop
 -- the case from here and cover the new behaviour elsewhere. The reason a shape is rejected is
--- printed by the `AutoParallelReplicas` and `RuntimeDataflowStatisticsCacheUpdater` loggers, mostly
--- at the trace level.
+-- printed by `optimizeTree` and `RuntimeDataflowStatisticsCacheUpdater` at the debug level.
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -12,6 +11,7 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 -- The optimization works on the query plan, which only the analyzer builds. `InterpreterSelectQuery`
 -- turns `enable_parallel_replicas` off when it sees this settings combination, so with the old
 -- analyzer every shape below - supported or not - would collect no statistics.
+SET enable_analyzer=1;
 
 CREATE TABLE t(number UInt64) ENGINE=MergeTree ORDER BY () AS SELECT * FROM numbers_mt(1e6);
 
@@ -26,6 +26,11 @@ AS SELECT
     number,
     number * 2
 FROM numbers_mt(1e5);
+
+-- The plan of the outer aggregation has no counterpart in the single-node plan:
+-- "Cannot find step with matching hash in single-node plan".
+SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
+SETTINGS log_comment='unsupported_aggregation_over_aggregation';
 
 -- "Unsupported steps: Union".
 SELECT * FROM t UNION ALL SELECT * FROM t FORMAT Null
@@ -51,18 +56,6 @@ SETTINGS optimize_aggregation_in_order=0, optimize_use_projections=1, optimize_u
 -- used to be listed as unsupported, while what the case actually hit was the `LIMIT` above.
 SELECT count() FROM t WHERE number > 5 FORMAT Null
 SETTINGS log_comment='supported_aggregation';
-
--- The inner aggregation is what runs on the replicas, and matching it used to fail because the two
--- plan builds name their columns differently (`__table3.number` in one, `__table4.number` in the
--- other) and those names reached the cache key. They no longer do, so the shape is supported.
---
--- `max_bytes_before_external_group_by` is pinned off because the test runner randomizes it together
--- with `max_threads`: with a single thread the whole 1e6-key table lands in one aggregation state and
--- exceeds the randomized threshold, the aggregation spills, and a spilling aggregation calls
--- `markUnsupportedCase` and collects nothing (see `AggregatingTransform`). That is about statistics
--- collection, not about the matching this case is here to cover.
-SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
-SETTINGS max_bytes_before_external_group_by=0, log_comment='supported_aggregation_over_aggregation';
 
 -- `query_plan_optimize_join_order_randomize` is pinned off: the single-node plan and the plan with
 -- parallel replicas are built independently, so a randomized join order makes them diverge and the

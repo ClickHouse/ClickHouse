@@ -310,11 +310,8 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
     {
         /// Whether disabled at runtime by jemalloc itself or overridden by the operator, per-CPU
         /// arenas are worth recommending on platforms with a working current-CPU query.
-        /// Not when the binary chose the arenas itself through `je_malloc_conf` (clickhouse-local).
         const char * effective_mode = nullptr;
-        const char * binary_conf = nullptr;
-        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled")
-            && !Jemalloc::tryGetValue("opt.malloc_conf.global_var", binary_conf))
+        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled"))
         {
             context->addOrUpdateWarningMessage(
                 Context::WarningType::JEMALLOC_PERCPU_ARENA_DISABLED,

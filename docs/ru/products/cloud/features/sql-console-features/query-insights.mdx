@@ -7,6 +7,8 @@ title: 'Query Insights'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Функция **Query Insights** упрощает работу со встроенным журналом запросов ClickHouse с помощью визуализаций и таблиц. Таблица `system.query_log` в ClickHouse — ключевой источник информации для оптимизации запросов, отладки, а также мониторинга общего состояния и производительности кластера.
 
 <div id="query-overview">
@@ -15,15 +17,7 @@ doc_type: 'guide'
 
 После выбора сервиса пункт **Monitoring** в левой боковой панели должен развернуться, и в нем появится новый подпункт **Query Insights**. При нажатии на него открывается новая страница Query Insights:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Обзор интерфейса Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Обзор интерфейса Query Insights" border />
 
 <div id="top-level-metrics">
   ## Метрики верхнего уровня
@@ -31,15 +25,7 @@ doc_type: 'guide'
 
 Блоки статистики в верхней части показывают несколько основных метрик запросов за выбранный период времени. Ниже представлены три графика временных рядов, отражающие объём запросов, задержку и долю ошибок в разбивке по типу запроса (select, insert, other) в выбранном временном временном окне. График задержки можно дополнительно настроить для отображения значений p50, p90 и p99:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![График задержки в интерфейсе Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="График задержки в интерфейсе Query Insights" border />
 
 <div id="recent-queries">
   ## Недавние запросы
@@ -47,15 +33,7 @@ doc_type: 'guide'
 
 Под сводными метриками верхнего уровня в таблице отображаются записи журнала запросов (сгруппированные по хешу нормализованного запроса и пользователю) за выбранный временной интервал:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс Query Insights: таблица недавних запросов](/images/cloud/sqlconsole/insights_recent.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Интерфейс Query Insights: таблица недавних запросов" border />
 
 Недавние запросы можно фильтровать и сортировать по любому доступному полю. Таблицу также можно настроить так, чтобы отображать или скрывать дополнительные поля, например таблицы, задержки p90 и p99.
 
@@ -65,27 +43,11 @@ doc_type: 'guide'
 
 При выборе запроса в таблице недавних запросов откроется выдвижная панель с метриками и информацией по выбранному запросу:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс Query Insights: детализация запроса](/images/cloud/sqlconsole/insights_drilldown.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Интерфейс Query Insights: детализация запроса" border />
 
 Как видно из выдвижной панели, этот запрос выполнялся более 3000 раз за последние 24 часа. Все метрики на вкладке **Информация о запросе** являются агрегированными, но метрики отдельных запусков также можно просмотреть, выбрав вкладку **История запросов**:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![Интерфейс Query Insights: информация о запросе](/images/cloud/sqlconsole/insights_query_info.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Интерфейс Query Insights: информация о запросе" border />
 
 <br />
 

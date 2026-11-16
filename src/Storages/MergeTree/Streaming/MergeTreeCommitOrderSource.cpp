@@ -2,15 +2,16 @@
 
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/Streaming/Utils.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/printPipeline.h>
@@ -24,6 +25,7 @@
 #include <Core/UUID.h>
 #include <Core/Block.h>
 #include <Core/Streaming/Settings.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -35,7 +37,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <utility>
 
 namespace DB
 {
@@ -48,6 +49,94 @@ std::string explainPipeline(const Pipe & pipe)
     WriteBufferFromOwnString buffer;
     printPipeline(pipe.getProcessors(), buffer);
     return buffer.str();
+}
+
+ContextPtr makeStreamingContext(ContextPtr context_)
+{
+    auto copy = Context::createCopy(context_);
+    copy->makeQueryContext();
+    copy->setQueryMetadataCache(nullptr);
+    return copy;
+}
+
+SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
+{
+    info.table_expression_modifiers = std::nullopt;
+
+    info.query_tree.reset();
+    info.table_expression.reset();
+    info.planner_context.reset();
+
+    info.prewhere_info.reset();
+    info.filter_actions_dag.reset();
+    info.row_level_filter.reset();
+
+    info.order_optimizer.reset();
+    info.input_order_info.reset();
+
+    info.trivial_limit = 0;
+    info.optimize_trivial_count = false;
+
+    info.has_window = false;
+    info.has_order_by = false;
+    info.need_aggregate = false;
+    info.has_aggregates = false;
+
+    return info;
+}
+
+void restoreStreamingAuxiliaryColumns(ActionsDAG & actions, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    /// These columns are needed for cursor calculation.
+    actions.tryRestoreColumn(PartitionIdColumn::name);
+    actions.tryRestoreColumn(BlockNumberColumn::name);
+    actions.tryRestoreColumn(BlockOffsetColumn::name);
+
+    /// These columns are needed for watermark calculation.
+    if (stream_settings.watermark)
+    {
+        actions.tryRestoreColumn(stream_settings.watermark->column);
+
+        const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            actions.tryRestoreColumn(source_column);
+    }
+}
+
+PrewhereInfoPtr makeReadRoundPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    if (!info)
+        return nullptr;
+
+    auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
+    restoreStreamingAuxiliaryColumns(patched_info->prewhere_actions, stream_settings, storage, context);
+
+    return patched_info;
+}
+
+FilterDAGInfoPtr makeReadRoundRowLevelFilter(FilterDAGInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    if (!info)
+        return nullptr;
+
+    auto patched_info = std::make_shared<FilterDAGInfo>(info->actions.clone(), info->column_name, info->do_remove_column);
+    restoreStreamingAuxiliaryColumns(patched_info->actions, stream_settings, storage, context);
+    for (const auto & required_column : patched_info->actions.getRequiredColumnsNames())
+        patched_info->actions.tryRestoreColumn(required_column);
+
+    return patched_info;
+}
+
+Names filterStreamingVirtualColumns(Names columns)
+{
+    if (auto it = std::find(columns.begin(), columns.end(), TimeAttributeColumn::name); it != columns.end())
+        columns.erase(it);
+
+    if (auto it = std::find(columns.begin(), columns.end(), WatermarkColumn::name); it != columns.end())
+        columns.erase(it);
+
+    return columns;
 }
 
 }
@@ -65,7 +154,17 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , header(std::move(header_))
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
-    , reading_context(makeReadRoundContext(storage_, query_info_, std::move(context_), std::move(user_requested_columns_), requested_num_streams_, max_block_size_, header))
+    , reading_context{
+          .storage = storage_,
+          .query_info = makeStreamingSelectQueryInfo(query_info_),
+          .prewhere_info = makeReadRoundPrewhereInfo(query_info_.prewhere_info, stream_settings, storage_, context_),
+          .row_level_filter = makeReadRoundRowLevelFilter(query_info_.row_level_filter, stream_settings, storage_, context_),
+          .stream_settings = stream_settings,
+          .context = makeStreamingContext(std::move(context_)),
+          .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns_)),
+          .requested_num_streams = requested_num_streams_,
+          .max_block_size = max_block_size_,
+          .output_header = header}
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
@@ -75,9 +174,6 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
 {
     auto & output = outputs.front();
     auto & input = inputs.front();
-
-    if (input.isFinished())
-        return Status::Finished;
 
     if (!output.canPush())
         return Status::PortFull;
@@ -97,7 +193,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
         read_state.updateGlobalWatermark(global_watermark->watermark);
 
     if (auto partition_cursor = chunk.getChunkInfos().extract<PartitionCursorInfo>())
-        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->last);
+        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->cursor);
 
     if (auto partition_marker = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
         read_state.updatePartitionWatermark(partition_marker->partition_id, std::move(partition_marker->watermark));
@@ -148,7 +244,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const Class
     if (subscription_updated && read_state.hasWork(partitions))
         return Status::Ready;
 
-    if (finished_round.has_value())
+    if (current_round.has_value())
         return Status::UpdatePipeline;
 
     return Status::Async;
@@ -167,25 +263,6 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     }
 
     return result;
-}
-
-void MergeTreeCommitOrderSource::startRound()
-{
-    current_round = std::exchange(pending_round, std::nullopt);
-    read_state.startReadRound(current_round->partitions);
-}
-
-void MergeTreeCommitOrderSource::finishRound()
-{
-    read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
-    finished_rounds += 1;
-
-    LOG_TEST(log, "Finished read round #{}", finished_rounds);
-
-    if (current_round->pipeline.has_value())
-        finished_round = std::exchange(current_round, std::nullopt);
-    else
-        current_round.reset();
 }
 
 void MergeTreeCommitOrderSource::surfaceFinalCursor()
@@ -237,13 +314,17 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
     if (is_upstream_finished)
         return handleShutdown();
 
-    const bool is_round_running = current_round.has_value();
-    if (is_round_running)
-    {
+    const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
+    if (has_running_sub_pipeline)
         if (auto sub_pipeline_status = handleRunningPipeline(); sub_pipeline_status != Status::Finished)
             return sub_pipeline_status;
 
-        finishRound();
+    const bool has_unfinalized_pipeline = !pending_round.has_value() && read_state.readRoundInProgress();
+    if (has_unfinalized_pipeline)
+    {
+        read_state.finalizeReadRound();
+        finished_rounds += 1;
+        LOG_TEST(log, "Finished read round #{}", finished_rounds);
     }
 
     const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
@@ -267,26 +348,20 @@ void MergeTreeCommitOrderSource::work()
     auto component_guard = Coordination::setCurrentComponent("MergeTreeCommitOrderSource::work");
 
     chassert(!pending_round.has_value());
-    chassert(!current_round.has_value());
 
     if (subscription->isDisabled())
         return;
 
-    auto [safe_block_numbers, was_updated] = subscription->snapshot();
-    auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    const auto [safe_block_numbers, was_updated] = subscription->snapshot();
+    const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    chassert(was_updated);
 
     read_state.updatePartitionSet(classification);
-    pending_round = {
-        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers),
-        .safe_block_numbers = std::move(safe_block_numbers),
-        .partitions = std::move(classification),
-    };
+    read_state.startReadRound(classification, safe_block_numbers);
 
-    if (!pending_round->pipeline.has_value())
-    {
-        startRound();
-        finishRound();
-    }
+    pending_round = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
+    if (pending_round.has_value())
+        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(pending_round->pipe));
 }
 
 std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()
@@ -296,47 +371,44 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSource::updatePipeline()
 {
-    chassert(finished_round.has_value() || pending_round.has_value());
-    chassert(!current_round.has_value());
+    chassert(pending_round.has_value() || current_round.has_value());
 
     PipelineUpdate update;
 
-    /// Tear down the finished read round sub-pipeline.
-    if (finished_round.has_value())
+    /// Tear down the previous read round sub-pipeline.
+    if (current_round.has_value())
     {
         chassert(!inputs.empty());
         chassert(inputs.front().isConnected());
         chassert(inputs.front().isFinished());
-        LOG_TEST(log, "Tear down finished read round sub-pipeline");
+        LOG_TEST(log, "Tear down previous read round sub-pipeline");
 
         auto & input = inputs.front();
         disconnect(input.getOutputPort(), input);
 
-        update.to_remove = finished_round->pipeline->pipe.getProcessors();
-        finished_round.reset();
+        update.to_remove = current_round->pipe.getProcessors();
+        current_round.reset();
     }
 
-    /// Attach the pending read round sub-pipeline.
+    /// Attach the next read round sub-pipeline if one is ready.
     if (pending_round.has_value())
     {
-        startRound();
-
-        auto & pipe = current_round->pipeline->pipe;
-        chassert(pipe.numOutputPorts() == 1);
-        LOG_TEST(log, "Connecting next read round sub-pipeline:\n{}", explainPipeline(pipe));
+        current_round = std::exchange(pending_round, std::nullopt);
+        chassert(current_round->pipe.numOutputPorts() == 1);
+        LOG_TEST(log, "Connecting next read round sub-pipeline");
 
         if (inputs.empty())
             inputs.emplace_back(*header, this);
 
-        for (const auto & processor : pipe.getProcessors())
+        for (const auto & processor : current_round->pipe.getProcessors())
             processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
-        connect(*pipe.getOutputPort(0), input);
+        connect(*current_round->pipe.getOutputPort(0), input);
         input.reopen();
         input.setNeeded();
 
-        update.to_add = pipe.getProcessors();
+        update.to_add = current_round->pipe.getProcessors();
     }
 
     return update;

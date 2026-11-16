@@ -45,7 +45,7 @@ class ParserCreateDefines : public IParserBase
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
-    [[nodiscard]] const char * getName() const override { return "table property list (column, index, constraint)"; }
+    const char * getName() const override { return "table property list (column, index, constraint)"; }
 };
 
 }

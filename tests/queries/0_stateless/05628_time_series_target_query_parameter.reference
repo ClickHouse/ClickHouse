@@ -1,1 +1,0 @@
-CREATE TABLE {t:Identifier} ENGINE = TimeSeries TAGS db.tags

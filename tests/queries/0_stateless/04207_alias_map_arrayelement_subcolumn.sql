@@ -9,6 +9,7 @@
 -- The key subcolumn rewrite applies only to bucketed Maps, so the tables with Maps use `with_buckets`.
 
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_alias_map;

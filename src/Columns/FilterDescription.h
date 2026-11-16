@@ -14,9 +14,6 @@ bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res);
 
 /// Support methods for implementation of WHERE, PREWHERE and HAVING.
 
-/// Whether `column` may be filtered in place: neither it nor any of its subcolumns is shared.
-/// The caller must hold its own reference to the filter column, which makes the filter column shared.
-bool canInplaceFilter(const ColumnPtr & column);
 
 /// Analyze if the column for filter is constant thus filter is always false or always true.
 struct ConstantFilterDescription
@@ -30,8 +27,8 @@ struct ConstantFilterDescription
 
 struct IFilterDescription
 {
-    [[nodiscard]] virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
-    [[nodiscard]] virtual size_t countBytesInFilter() const = 0;
+    virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
+    virtual size_t countBytesInFilter() const = 0;
     virtual ~IFilterDescription() = default;
 };
 
@@ -42,8 +39,8 @@ struct FilterDescription final : public IFilterDescription
 
     explicit FilterDescription(const IColumn & column);
 
-    [[nodiscard]] ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
-    [[nodiscard]] size_t countBytesInFilter() const override;
+    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
+    size_t countBytesInFilter() const override;
 
     /// Takes a filter column that may be sparse or const or low-cardinality or nullable or wider
     /// than 8 bits, etc. Returns a ColumnUInt8.
@@ -58,8 +55,8 @@ struct SparseFilterDescription final : public IFilterDescription
     ColumnPtr valid_offsets;
     explicit SparseFilterDescription(const IColumn & column);
 
-    [[nodiscard]] ColumnPtr filter(const IColumn & column, ssize_t) const override;
-    [[nodiscard]] size_t countBytesInFilter() const override;
+    ColumnPtr filter(const IColumn & column, ssize_t) const override;
+    size_t countBytesInFilter() const override;
 };
 
 struct ColumnWithTypeAndName;

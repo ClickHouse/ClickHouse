@@ -137,9 +137,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -253,9 +254,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=1000000, index_granularity=1;
@@ -397,9 +399,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -513,9 +516,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 create table test (id UInt64, json JSON(a UInt32), data String) engine=MergeTree order by (json.a, json.b::String) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity=1;
@@ -657,9 +661,10 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/2
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1
 1
@@ -773,8 +778,9 @@ Indexes:
 PrimaryKey
 Keys:
 json.a
-Condition: (json.a in [0, 0])
+CAST(json.b, \'String\')
+Condition: and((CAST(json.b, \'String\') in [\'str_0\', \'str_0\']), (json.a in [0, 0]))
 Parts: 1/1
-Granules: 2/8
+Granules: 1/8
 Search Algorithm: binary search
 Ranges: 1

@@ -42,19 +42,19 @@ public:
     ColumnNode(NameAndTypePair column_, TableExpressionNodeWeakPtr column_source_);
 
     /// Get column
-    [[nodiscard]] const NameAndTypePair & getColumn() const
+    const NameAndTypePair & getColumn() const
     {
         return column;
     }
 
     /// Get column name
-    [[nodiscard]] const String & getColumnName() const
+    const String & getColumnName() const
     {
         return column.name;
     }
 
     /// Get column type
-    [[nodiscard]] const DataTypePtr & getColumnType() const
+    const DataTypePtr & getColumnType() const
     {
         return column.type;
     }
@@ -66,13 +66,13 @@ public:
     }
 
     /// Returns true if column node has expression, false otherwise
-    [[nodiscard]] bool hasExpression() const
+    bool hasExpression() const
     {
         return children[expression_child_index] != nullptr;
     }
 
     /// Get column node expression node
-    [[nodiscard]] const QueryTreeNodePtr & getExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
@@ -101,14 +101,14 @@ public:
     /** Get column source.
       * If column source is not valid logical exception is thrown.
       */
-    [[nodiscard]] TableExpressionNodePtr getColumnSource() const;
+    TableExpressionNodePtr getColumnSource() const;
 
     /** Get column source.
       * If column source is not valid null is returned.
       * Only columns for which `mayHaveNoSource` holds are allowed to return null here,
       * every other null source means a broken query tree.
       */
-    [[nodiscard]] TableExpressionNodePtr getColumnSourceOrNull() const;
+    TableExpressionNodePtr getColumnSourceOrNull() const;
 
     /** Name of the virtual column that `GroupingFunctionsResolvePass` prepends to the arguments of the
       * specialized `GROUPING` functions (`groupingForRollup`, `groupingForCube`, `groupingForGroupingSets`).
@@ -124,7 +124,7 @@ public:
       * every pass by `ValidationChecker` in `QueryTreePassManager`, and asserted by the code that
       * tolerates a null source.
       */
-    [[nodiscard]] bool mayHaveNoSource() const
+    bool mayHaveNoSource() const
     {
         return column.name == GROUPING_SET_COLUMN_NAME;
     }
@@ -134,12 +134,12 @@ public:
         source = source_;
     }
 
-    [[nodiscard]] QueryTreeNodeType getNodeType() const override
+    QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
     }
 
-    [[nodiscard]] DataTypePtr getResultType() const override
+    DataTypePtr getResultType() const override
     {
         return column.type;
     }
@@ -152,13 +152,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
 protected:
-    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
+    QueryTreeNodePtr cloneImpl() const override;
 
-    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
 

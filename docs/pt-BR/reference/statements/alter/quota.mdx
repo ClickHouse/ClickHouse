@@ -19,7 +19,8 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -27,7 +28,7 @@ As chaves `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `clie
 
 As opções `IPV4_PREFIX_BITS` e `IPV6_PREFIX_BITS` só podem ser usadas quando `KEYED BY` é `ip_address` ou `forwarded_ip_address`. Elas correspondem ao campo da tabela [system.quotas](/pt-BR/reference/system-tables/quotas).
 
-Os parâmetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `written_bytes`, `written_rows`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspondem aos campos da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage).
+Os parâmetros `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` correspondem aos campos da tabela [system.quotas&#95;usage](/pt-BR/reference/system-tables/quotas_usage).
 
 A cláusula `ON CLUSTER` permite criar quotas em um cluster; consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
 

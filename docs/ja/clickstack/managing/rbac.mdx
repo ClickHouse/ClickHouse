@@ -8,6 +8,8 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'RBAC', 'ロール', '権限', 'アクセス制御', 'セキュリティ']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 ClickStack にはロールベースのアクセス制御 (RBAC) が用意されており、[ダッシュボード](/ja/clickstack/features/dashboards/overview)、[保存済み検索](/ja/clickstack/features/search)、ログソース、[アラート](/ja/clickstack/features/alerts)、webhook、ノートブックに対して、きめ細かな権限を持つカスタムロールを定義できます。権限は 2 つのレベルで適用されます。1 つはリソースレベルのアクセス (リソースタイプごとにアクセスなし、読み取り、管理) で、もう 1 つは名前、タグ、または ID によって個々のリソースへのアクセスを制限する、任意の詳細なルールです。ClickStack には 3 つの組み込みロールが用意されており、チームのニーズに合わせてカスタムロールを作成できます。
 
 <Info>
@@ -35,27 +37,11 @@ ClickStack は ClickHouse Cloud を通じて認証されます。ClickStack の�
 
 <Tabs>
   <Tab title="Cloud Users and roles">
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouse Cloud Users and roles ページ](/images/clickstack/rbac/team-page-cloud.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud Users and roles ページ" size="lg" />
   </Tab>
 
   <Tab title="ClickStack Team Settings">
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![チームメンバーとそのロールが表示された ClickStack Team Settings ページ](/images/clickstack/rbac/team-page-clickstack.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="チームメンバーとそのロールが表示された ClickStack Team Settings ページ" size="lg" />
   </Tab>
 </Tabs>
 
@@ -98,15 +84,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
   <Step title="Team Settings に移動する" id="step-navigate">
     **Team Settings** を開き、**RBAC Roles** までスクロールします。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
   </Step>
 
   <Step title="新しいロールを追加する" id="step-add-role">
@@ -116,15 +94,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
   <Step title="権限を設定して保存する" id="step-configure">
     ロールの権限を設定して、**Create Role** をクリックします。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Add Role モーダル](/images/clickstack/rbac/add-role-modal.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Add Role モーダル" size="md" />
   </Step>
 </Steps>
 
@@ -181,15 +151,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 モードを切り替えるには、ロールエディタでリソースタイプを展開するシェブロンをクリックし、**アクセス制御モード**を切り替えます。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ロールエディタでのデフォルトアクセスと詳細な制御のモード](/images/clickstack/rbac/default-vs-fine-grained.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="ロールエディタでのデフォルトアクセスと詳細な制御のモード" size="md" />
 
 <div id="configuring-access-rules">
   #### アクセスルールの設定
@@ -197,15 +159,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 各アクセスルールは、**条件** と **アクセスレベル** で構成されます。条件は、リソースのプロパティに基づいて一致を判定します。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![条件のツールチップ: Name または Tag（タイトルで確認）や ID（URL で確認）でリソースを照合](/images/clickstack/rbac/condition-tip.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件のツールチップ: Name または Tag（タイトルで確認）や ID（URL で確認）でリソースを照合" size="md" />
 
 | 条件フィールド  | 演算子              | 一致対象                                                                           | 例                                                                  |
 | -------- | ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
@@ -215,27 +169,11 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 次のスクリーンショットでは、URL バーでダッシュボード ID が強調表示され、タグパネル (右上) に「TESTING」タグが表示されています。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![URL バーにリソース ID が表示され、右上にタグがあるダッシュボード](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="URL バーにリソース ID が表示され、右上にタグがあるダッシュボード" size="lg" />
 
 リソースタイプごとに複数のルールを追加できます。各ルールは OR ロジックで個別に評価されるため、**いずれか** のルールに一致すれば、そのリソースにアクセスできます。どのルールにも一致しないリソースにはアクセスできません。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![OR ロジックを使用したアクセスルールのツールチップ](/images/clickstack/rbac/access-rules-tip.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="OR ロジックを使用したアクセスルールのツールチップ" size="md" />
 
 **例**: ロールに testing ダッシュボードへの読み取り専用アクセスを付与するには、Dashboards を展開し、Fine-Grained Controls に切り替えて、2 つのルールを追加します。
 
@@ -244,15 +182,7 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 いずれかのルールに一致するダッシュボードにアクセスできます。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![OR で結合された 2 つのきめ細かなアクセスルール: Name contains testing で Read アクセス、Tag is testing で Read アクセス](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="OR で結合された 2 つのきめ細かなアクセスルール: Name contains testing で Read アクセス、Tag is testing で Read アクセス" size="md" />
 
 <div id="security-policies">
   ## セキュリティポリシー
@@ -264,12 +194,4 @@ ClickStack には、3 つのシステムロールが用意されています。�
 
 **Generative AI** では、Anthropic または Amazon Bedrock を利用する LLM ベースの機能 (自然言語クエリ生成など) を有効または無効にできます。無効にすると、データは AI プロバイダーに送信されません。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![セキュリティポリシー](/images/clickstack/rbac/security-policies.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/rbac/security-policies.webp" alt="セキュリティポリシー" size="lg" />

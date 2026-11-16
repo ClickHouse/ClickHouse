@@ -1,8 +1,0 @@
-t_ttl_const_where	4	['2000-01-01 00:00:00']
-t_ttl_const_where_nullable	4	['2000-01-01 00:00:00']
-t_ttl_const_where	1
-t_ttl_const_where	5
-t_ttl_const_where	7
-t_ttl_const_where_nullable	5
-t_ttl_const_where_nullable	\N
-t_ttl_const_where_nullable	\N

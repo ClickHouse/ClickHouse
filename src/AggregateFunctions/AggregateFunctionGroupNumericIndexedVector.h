@@ -32,11 +32,11 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
+    String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -22,9 +22,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    String getName() const override { return name; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     std::shared_ptr<const ITokenizer> tokenizer;
@@ -80,12 +80,7 @@ public:
     bool isVariadic() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    String getSignatureString() const override
-    {
-        return "(StringOrFixedString | Array(MaybeNullable(StringOrFixedString) | IsNothing), "
-               "const String | Array(String | IsNothing), [const String]) -> UInt8";
-    }
-
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override;
 };
 

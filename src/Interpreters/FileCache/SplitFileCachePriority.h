@@ -72,18 +72,15 @@ public:
         bool is_space_reservation_complete,
         CacheStateGuard & state_guard) override;
 
-    /// Sub-priority selection here is by segment type, so `reservee_queue_type` is only
-    /// forwarded to the chosen sub-priority (which may itself be SLRU).
-    EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        const CacheStateGuard::Lock &) override;
 
-    bool collectCandidatesForEviction( /// NOLINT
+    bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -92,8 +89,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        CacheStateGuard &) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 
@@ -177,7 +173,7 @@ public:
         IteratorPtr iterator_,
         FileSegmentKeyType type);
 
-    [[nodiscard]] EntryPtr getEntry() const override;
+    EntryPtr getEntry() const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
     void remove() override;
@@ -190,17 +186,17 @@ public:
 
     void decrementSize(size_t size) override;
 
-    [[nodiscard]] QueueEntryType getType() const override
+    QueueEntryType getType() const override
     {
         return type == FileSegmentKeyType::Data
             ? QueueEntryType::SplitCache_Data
             : QueueEntryType::SplitCache_System;
     }
 
-    [[nodiscard]] const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
+    const Iterator * getNestedOrThis() const override { return iterator->getNestedOrThis(); }
     Iterator * getNestedOrThis() override { return iterator->getNestedOrThis(); }
 
-    [[nodiscard]] CachePriorityGuard & getPriorityGuard() const override { return iterator->getPriorityGuard(); }
+    CachePriorityGuard & getPriorityGuard() const override { return iterator->getPriorityGuard(); }
 
     const FileSegmentKeyType type;
 

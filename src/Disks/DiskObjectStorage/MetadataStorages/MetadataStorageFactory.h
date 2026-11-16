@@ -17,21 +17,19 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages,
-        bool run_local_paths_check)>;
+        const ObjectStorageRouterPtr & object_storages)>;
 
     static MetadataStorageFactory & instance();
 
     void registerMetadataStorageType(const std::string & metadata_type, Creator creator);
 
-    [[nodiscard]] MetadataStoragePtr create(
+    MetadataStoragePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
         const ObjectStorageRouterPtr & object_storages,
-        const std::string & compatibility_type_hint,
-        bool run_local_paths_check) const;
+        const std::string & compatibility_type_hint) const;
 
     static std::string getMetadataType(
         const Poco::Util::AbstractConfiguration & config,

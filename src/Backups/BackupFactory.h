@@ -13,7 +13,6 @@
 #include <Backups/BackupResumeParams.h>
 #endif
 #include <Backups/IBackup.h>
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -51,7 +50,6 @@ public:
         std::optional<UUID> backup_uuid;
         String backup_id;
         bool deduplicate_files = true;
-        bool fsync_backup_files = true;
         bool allow_s3_native_copy = true;
         bool allow_azure_native_copy = true;
         bool use_same_s3_credentials_for_base_backup = false;
@@ -68,18 +66,18 @@ public:
         std::optional<BackupResumeParams> resume;
 #endif
 
-        [[nodiscard]] CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
+        CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
 
     static BackupFactory & instance();
 
     /// Creates a new backup or opens it.
-    [[nodiscard]] BackupMutablePtr createBackup(const CreateParams & params) const;
+    BackupMutablePtr createBackup(const CreateParams & params) const;
 
     /// Returns a versioned, credential-free identity of the effective backup location.
     /// Named collections must be frozen first so identity generation and backup creation
     /// observe the same collection state.
-    [[nodiscard]] String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
+    String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
 
     /// The SOURCES grant required to open `backup_info` in `open_mode`, as declared by its engine.
     struct SourceAccessTarget
@@ -104,10 +102,7 @@ public:
         const String & engine_name,
         const CreatorFn & creator_fn,
         const DestinationIdentityFn & destination_identity_fn,
-        const SourceAccessFn & source_access_fn,
-        SecretArgumentsSpec secret_arguments);
-
-    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
+        const SourceAccessFn & source_access_fn);
 
 private:
     struct RegisteredEngine
@@ -115,15 +110,11 @@ private:
         CreatorFn creator;
         DestinationIdentityFn destination_identity;
         SourceAccessFn source_access;
-        SecretArgumentsSpec secret_arguments;
     };
 
     BackupFactory();
 
     std::unordered_map<String, RegisteredEngine> engines;
 };
-
-/// A backup engine whose locator names a destination with no credential in it, taking `arity` arguments.
-SecretArgumentsSpec credentialFreeBackupSecretArguments(size_t arity);
 
 }

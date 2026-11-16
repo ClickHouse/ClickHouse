@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-parallel-replicas
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS test_json_arr;
 
 CREATE TABLE test_json_arr (json JSON) ENGINE = MergeTree ORDER BY tuple();

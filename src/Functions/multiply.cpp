@@ -13,9 +13,6 @@ struct MultiplyImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
-    /// Documentation-only — see `PlusImpl::signature_documentation`.
-    static constexpr auto signature_documentation = "(Any, Any) -> Any";
-
     template <typename Result = ResultType>
     static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
@@ -71,35 +68,35 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] bool isNameInsensitive() const override { return true; }
+    bool isNameInsensitive() const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnWithTypeAndName argument;
         argument.type = arguments.front();
         return buildMultiply(argument)->getResultType();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return buildMultiply(arguments.front())->getResultType();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & argument = arguments.front();
         return buildMultiply(argument)->execute({argument, argument}, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
     {
         ColumnWithTypeAndName argument;
         argument.type = arguments.front();
@@ -121,7 +118,7 @@ public:
 #endif
 
 private:
-    [[nodiscard]] FunctionBasePtr buildMultiply(const ColumnWithTypeAndName & argument) const { return multiply->build({argument, argument}); }
+    FunctionBasePtr buildMultiply(const ColumnWithTypeAndName & argument) const { return multiply->build({argument, argument}); }
 
     FunctionOverloadResolverPtr multiply;
 };

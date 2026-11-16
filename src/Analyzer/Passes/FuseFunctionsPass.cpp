@@ -7,13 +7,14 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
@@ -145,6 +146,16 @@ private:
     std::unordered_set<String> names_to_collect;
 };
 
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(name);
+
+    auto function = FunctionFactory::instance().get(name, context);
+    function_node->getArguments().getNodes() = std::move(arguments);
+    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    return function_node;
+}
+
 FunctionNodePtr createResolvedAggregateFunction(
     const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
@@ -164,6 +175,11 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
+}
+
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+{
+    return createResolvedFunction(context, "tupleElement", {argument, std::make_shared<ConstantNode>(index)});
 }
 
 QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
@@ -213,25 +229,6 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     node->setAlias(original_column_name);
 }
 
-/// Copies a replacement built by `replaceWithSumCount`, keeping `sum_count_node` shared.
-QueryTreeNodePtr copySumCountReplacement(const QueryTreeNodePtr & node, const QueryTreeNodePtr & sum_count_node)
-{
-    if (node == sum_count_node)
-        return sum_count_node;
-
-    const auto * function_node = node->as<FunctionNode>();
-    if (!function_node)
-        return node->clone();
-
-    auto copy = std::make_shared<FunctionNode>(function_node->getFunctionName());
-    auto & copy_arguments = copy->getArguments().getNodes();
-    for (const auto & argument : function_node->getArguments().getNodes())
-        copy_arguments.push_back(copySumCountReplacement(argument, sum_count_node));
-    copy->resolveAsFunction(function_node->getFunctionOrThrow());
-    copy->setAlias(node->getAlias());
-    return copy;
-}
-
 void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     FuseFunctionsVisitor visitor({"sum", "count", "avg"}, context);
@@ -266,29 +263,10 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
             continue;
 
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
-
-        /// Alias-less, unparenthesized nodes of one function over a column format the same, so their replacements are equal.
-        const bool argument_is_column = argument.first.node->getNodeType() == QueryTreeNodeType::COLUMN;
-        std::unordered_map<String, QueryTreeNodePtr> replacement_by_function;
         for (auto * node : nodes)
         {
             chassert(node);
-            if (!argument_is_column || (*node)->hasAlias() || (*node)->isParenthesized())
-            {
-                replaceWithSumCount(*node, sum_count_node, context);
-                continue;
-            }
-
-            auto & replacement = replacement_by_function[(*node)->as<const FunctionNode &>().getFunctionName()];
-            if (replacement)
-            {
-                *node = copySumCountReplacement(replacement, sum_count_node);
-            }
-            else
-            {
-                replaceWithSumCount(*node, sum_count_node, context);
-                replacement = *node;
-            }
+            replaceWithSumCount(*node, sum_count_node, context);
         }
     }
 }

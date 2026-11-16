@@ -9,7 +9,7 @@ namespace DB
 class ParserPublicSSHKey : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "PublicSSHKey"; }
+    const char * getName() const override { return "PublicSSHKey"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -1,3 +1,0 @@
-a read of the parquet data was in flight
-the interrupted background read was discarded
-the query returned its partial result

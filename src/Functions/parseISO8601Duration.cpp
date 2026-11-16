@@ -42,13 +42,13 @@ namespace
         static constexpr auto name = "parseISO8601Duration";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseISO8601Duration>(); }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+        size_t getNumberOfArguments() const override { return 1; }
 
-        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             /// A literal `NULL` carries no argument type to validate, and the result is `NULL` anyway.
             if (!arguments.empty() && arguments[0].type->onlyNull())
@@ -70,31 +70,31 @@ namespace
             return result_type;
         }
 
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        bool useDefaultImplementationForConstants() const override { return true; }
 
         /// The default implementation applies the function to the whole dictionary, which always holds
         /// the default empty string whether or not any row references it, and an empty string is not a
         /// duration.
-        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
 
         /// The default implementation would apply the function to the values sitting under the null
         /// map. Those are the nested column's defaults, and parsing them would throw on rows whose
         /// result is discarded anyway.
-        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+        bool useDefaultImplementationForNulls() const override { return false; }
 
         /// The `Dynamic` and `Variant` adaptors default to `useDefaultImplementationForNulls`, so
         /// turning that off above would disable them as a side effect and leave
         /// `getReturnTypeForDefaultImplementationForDynamic` unreachable. They dispatch on the concrete
         /// type held in the column and deal with null rows themselves, so keep them enabled.
-        [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
-        [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
+        bool useDefaultImplementationForDynamic() const override { return true; }
+        bool useDefaultImplementationForVariant() const override { return true; }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();
@@ -132,7 +132,7 @@ namespace
                 ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}: {}, str: \"{}\".", getName(), reason, String(str));
         }
 
-        [[nodiscard]] Float64 parseDuration(std::string_view str) const
+        Float64 parseDuration(std::string_view str) const
         {
             if (str.empty())
                 invalid(str, "the duration is empty");

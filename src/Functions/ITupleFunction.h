@@ -22,7 +22,7 @@ protected:
 public:
     explicit ITupleFunction(ContextPtr context_) : context(context_) {}
 
-    [[nodiscard]] Columns getTupleElements(const IColumn & column) const
+    Columns getTupleElements(const IColumn & column) const
     {
         if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
             return convertConstTupleToConstantElements(*const_column);
@@ -39,8 +39,8 @@ public:
                         getName(), column.getName());
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 };
 }

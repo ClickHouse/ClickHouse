@@ -310,7 +310,6 @@ static void pullNotOut(CNFQueryAtomicFormula & atom)
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
-        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 
@@ -328,14 +327,12 @@ void pushNotIn(CNFQueryAtomicFormula & atom)
         {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
-        {"similarTo", "notSimilarTo"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
         {"greaterOrEquals", "less"},
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
-        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 

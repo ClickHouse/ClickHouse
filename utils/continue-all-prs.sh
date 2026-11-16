@@ -28,14 +28,9 @@ set -euo pipefail
 # Before a priority tier is handed to the workers, every PR in it is inspected
 # through the GitHub GraphQL API: aggregate CI status, mergeability, the number
 # of unresolved review threads, whether a reviewer requested changes, the age
-# of the last commit, comments from other people since that commit, and whether
-# the merge queue removed the PR after its last commit (the merge-queue run tests
-# the PR merged with the latest base branch, so it catches semantic conflicts -
-# a new test or an API change on the base branch - that the PR's own green CI
-# cannot see; a removal stops counting once the PR gets a new commit or a comment
-# from the current user). A green CI is therefore never a reason to leave a PR
-# alone: a green PR that still has conflicts, unresolved review threads, a stale
-# branch, unanswered comments or a failed merge-queue run is
+# of the last commit, and comments from other people since that commit. A green
+# CI is therefore never a reason to leave a PR alone: a green PR that still has
+# conflicts, unresolved review threads, a stale branch or unanswered comments is
 # handed to a worker together with that list, so the worker addresses exactly
 # those items instead of declaring the PR done. Only a PR whose inspection finds
 # nothing pending at all is reported as GREEN and not dispatched; if the
@@ -49,7 +44,7 @@ set -euo pipefail
 #   NO-CHANGE       - clean run, nothing pushed (the worker found nothing to do)
 #   GREEN           - not dispatched: the inspection found nothing pending (CI
 #                     green, mergeable, no unresolved threads, fresh, no new
-#                     comments from others, not removed from the merge queue)
+#                     comments from others)
 #   NEEDS-ATTENTION - clean run, nothing pushed, but still CONFLICTING: needs a
 #                     human decision (resolve a huge conflict, or close as obsolete)
 #   FAILED / TIMEOUT - the worker errored or hit the per-PR timeout
@@ -669,30 +664,8 @@ ensure_worktree()
     canonical_wt=$(realpath -m "$wt")
 
     if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
-        if [[ -d "$canonical_wt" ]]; then
-            banner "Reusing existing worktree: $canonical_wt"
-            return 0
-        fi
-        # The directory was deleted externally (e.g. to free disk space), but
-        # its registration, and possibly the registrations of worktrees nested
-        # below it, remain. Nested ones created by agents are often locked, so
-        # plain `git worktree prune` would keep them. Drop only registrations
-        # at or below this path whose directories no longer exist.
-        banner "Registered worktree is missing on disk, pruning: $canonical_wt"
-        local candidate
-        while IFS= read -r candidate; do
-            [[ -e "$candidate" ]] && continue
-            git -C "$MAIN_REPO" worktree unlock "$candidate" 2>/dev/null || true
-        done < <(
-            git -C "$MAIN_REPO" worktree list --porcelain \
-                | sed -n 's/^worktree //p' \
-                | awk -v wt="$canonical_wt" '$0 == wt || index($0, wt "/") == 1'
-        )
-        git -C "$MAIN_REPO" worktree prune
-        if is_registered_worktree "$canonical_wt"; then
-            echo "${S}ERROR: could not prune stale worktree registration: $canonical_wt${R}" >&2
-            return 1
-        fi
+        banner "Reusing existing worktree: $canonical_wt"
+        return 0
     fi
     if [[ -e "$canonical_wt" ]]; then
         echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
@@ -1117,7 +1090,7 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
-TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}. This phase runs without any GitHub or Git credentials: \`gh\` is unauthenticated and will fail, and no push or authenticated API call can succeed here. Base your triage on the orchestrator pre-check facts above, on the local repository state, and on unauthenticated sources, and hand off to the coding model whenever the PR needs anything the pre-check already reports as pending. A removal from the merge queue reported by the pre-check is not resolved by a clean merge alone: the merge-queue run already tested the PR merged with the base branch, so fetch its report (the public S3 \`REFs/gh-readonly-queue/...\` report of the reported commit), diagnose the failure, and hand off unless you have shown that it is unrelated to the PR."
+TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}. This phase runs without any GitHub or Git credentials: \`gh\` is unauthenticated and will fail, and no push or authenticated API call can succeed here. Base your triage on the orchestrator pre-check facts above, on the local repository state, and on unauthenticated sources, and hand off to the coding model whenever the PR needs anything the pre-check already reports as pending."
 
 TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-branch merge yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
 
@@ -2103,10 +2076,6 @@ inspect_batch()
         reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } }
         commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
         comments(last: 20) { nodes { author { __typename login } createdAt } }
-        mergeQueueEntry { state }
-        mergeQueueEvents: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
-            nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } }
-        }
     }'
 
     if ! result=$(gh api graphql -f query="$query" 2>&1); then
@@ -2124,8 +2093,6 @@ inspect_batch()
         | ($head.committedDate // "") as $committed
         | (.author.login // "") as $author
         | ([.reviewThreads.nodes[] | select(.isResolved | not)] | length) as $unresolved
-        | (.mergeQueueEvents.nodes[0] // {}) as $mq
-        | (.comments.nodes | map(select(.author.login == $me) | .createdAt) | max // "") as $my_last_comment
         | [ (if (.approvals.totalCount // 0) > 0 then "approved" else empty end),
             "ci=\($head.statusCheckRollup.state // "NONE")",
             "mergeable=\(.mergeable // "UNKNOWN")",
@@ -2138,14 +2105,7 @@ inspect_batch()
                           | select(.author.__typename != "Bot"
                                    and .author.login != $me
                                    and .author.login != $author
-                                   and .createdAt > $committed)] | length)",
-            (if .mergeQueueEntry == null
-                and $mq.__typename == "RemovedFromMergeQueueEvent"
-                and ($mq.reason // "") != "merged"
-                and $mq.createdAt > $committed
-                and $mq.createdAt > $my_last_comment
-             then "mergequeue=removed:\(($mq.reason // "unknown") | gsub("[^A-Za-z0-9_]"; "_")):\(($mq.beforeCommit.oid // "unknown")[0:12])"
-             else empty end)
+                                   and .createdAt > $committed)] | length)"
           ] as $facts
         | "\(.number)\t\($facts | join(","))"')
 }
@@ -2182,7 +2142,7 @@ apply_approval_priority()
 # an uninspected PR is always dispatched. pr_pending_items <facts>
 pr_pending_items()
 {
-    local facts="$1" tok ci="" mergeable="" unresolved="" review="" age="" comments="" mergequeue=""
+    local facts="$1" tok ci="" mergeable="" unresolved="" review="" age="" comments=""
     local -a toks=() items=()
     if [[ -z "$facts" ]]; then
         printf 'not inspected'
@@ -2197,7 +2157,6 @@ pr_pending_items()
             review=*)     review="${tok#*=}" ;;
             age=*)        age="${tok#*=}" ;;
             comments=*)   comments="${tok#*=}" ;;
-            mergequeue=*) mergequeue="${tok#*=}" ;;
         esac
     done
     case "$ci" in
@@ -2225,12 +2184,6 @@ pr_pending_items()
         items+=("recent comments unknown - check for unanswered ones")
     elif (( comments > 0 )); then
         items+=("$comments new comment(s) from others since the last commit")
-    fi
-    if [[ "$mergequeue" == removed:* ]]; then
-        local mq_reason="${mergequeue#removed:}"
-        local mq_commit="${mq_reason#*:}"
-        mq_reason="${mq_reason%%:*}"
-        items+=("removed from the merge queue ($mq_reason) after the last commit - inspect the merge-queue CI run of commit $mq_commit and fix it (often a semantic conflict with the latest base branch)")
     fi
     local out="" item
     for item in "${items[@]}"; do

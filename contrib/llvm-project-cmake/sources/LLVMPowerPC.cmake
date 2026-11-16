@@ -2,7 +2,6 @@
 
 # PowerPC Info sources
 set(LLVMPOWERPCINFO_SOURCES
-    ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/PPCPrepareIFuncsOnAIX.cpp
     ${LLVM_SOURCE_DIR}/lib/Target/PowerPC/TargetInfo/PowerPCTargetInfo.cpp
 )
 

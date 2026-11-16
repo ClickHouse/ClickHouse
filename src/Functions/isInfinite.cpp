@@ -54,7 +54,6 @@ REGISTER_FUNCTION(IsInfinite)
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsInfinite>(documentation);
-    factory.registerAlias("is_infinite", "isInfinite", FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -33,22 +33,22 @@ class TableFunctionObjectStorageCluster : public ITableFunctionCluster<TableFunc
 public:
     static constexpr auto name = Definition::name;
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
 protected:
     using Base = TableFunctionObjectStorage<Definition, Configuration, is_data_lake>;
 
-    [[nodiscard]] StoragePtr executeImpl(
+    StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    [[nodiscard]] const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
-    [[nodiscard]] const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
-    [[nodiscard]] bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
-    [[nodiscard]] bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
+    const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
+    const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
+    bool hasStaticStructure() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure != "auto"; }
+    bool needStructureHint() const override { return Base::getConfiguration(getQueryOrGlobalContext())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 

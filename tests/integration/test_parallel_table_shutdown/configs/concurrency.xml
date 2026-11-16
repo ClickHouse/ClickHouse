@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Force a small but >1 concurrency so the parallel path is exercised
+         under test without stressing the host. -->
+    <database_catalog_shutdown_table_concurrency>4</database_catalog_shutdown_table_concurrency>
+</clickhouse>

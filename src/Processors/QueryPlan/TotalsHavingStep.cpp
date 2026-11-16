@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -186,12 +185,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeAggregateDescriptions(aggregates, ctx.out);
 
     if (actions_dag)
     {
-        ctx.writeColumnName(filter_column_name);
-        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
+        writeStringBinary(filter_column_name, ctx.out);
+        actions_dag->serialize(ctx.out, ctx.registry);
     }
 }
 

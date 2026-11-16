@@ -43,9 +43,9 @@ static bool isReplicationSafe(const IQueryPlanStep & step)
 class ReplicatedSubplanImplementation : public IOptimizationRule
 {
 public:
-    [[nodiscard]] String getName() const override { return "ReplicatedSubplan"; }
+    String getName() const override { return "ReplicatedSubplan"; }
 
-    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const override
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const override
     {
         return required_properties.distribution.is_replicated
             && required_properties.distribution.node_count > 1
@@ -54,8 +54,8 @@ public:
             && isReplicationSafe(*expression->getQueryPlanStep());
     }
 
-    [[nodiscard]] Promise getPromise() const override { return 5000; }
-    [[nodiscard]] bool isTransformation() const override { return false; }
+    Promise getPromise() const override { return 5000; }
+    bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override

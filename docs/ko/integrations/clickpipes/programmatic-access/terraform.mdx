@@ -9,7 +9,9 @@ keywords: ['clickpipes', 'terraform', '코드형 인프라', 'iac', '프로그�
 
 모든 ClickPipes 타입은 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe)의 `clickhouse_clickpipe` 리소스를 사용해 생성하고 관리할 수 있습니다. 이 페이지에서는 프로바이더 설정 방법과 지원되는 각 ClickPipe 타입의 구성 예시를 설명합니다.
 
-## Provider 설정 {#provider-setup}
+<div id="provider-setup">
+  ## Provider 설정
+</div>
 
 <Note>
   ClickPipes 지원은 provider 버전 **v3.14.0**부터 일반 제공됩니다.
@@ -39,7 +41,9 @@ provider "clickhouse" {
 
 provider에서 사용할 API Key를 생성하는 방법은 [API Key 관리](/ko/products/cloud/features/admin-features/api/openapi)를 참조하십시오.
 
-## 리소스 개요 {#resource-overview}
+<div id="resource-overview">
+  ## 리소스 개요
+</div>
 
 `clickhouse_clickpipe` 리소스에는 다음과 같은 최상위 인수가 있습니다.
 
@@ -56,11 +60,9 @@ provider에서 사용할 API Key를 생성하는 방법은 [API Key 관리](/ko/
 
 `id` 및 `state` 속성은 읽기 전용이며, 생성 후 ClickHouse Cloud에서 자동으로 채워집니다.
 
-## GCP Workload Identity (베타) {#gcp-workload-identity}
-
-아래 Workload Identity 예시를 사용하기 전에 [GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity#terraform)에 따라 ClickPipes에서 관리하는 서비스 계정을 확인한 후, 해당 서비스 계정에 소스 액세스 권한을 부여하십시오.
-
-## 대상 {#destination}
+<div id="destination">
+  ## 대상
+</div>
 
 `destination` 블록은 모든 소스 타입에 공통으로 적용됩니다:
 
@@ -92,11 +94,15 @@ destination {
 
 CDC 소스(Postgres, MySQL, MongoDB, BigQuery)의 대상 테이블은 소스 스키마를 기반으로 자동 생성되므로, 일반적으로 `database`만 지정하면 됩니다.
 
-## ClickPipe 타입별 예시 {#examples}
+<div id="examples">
+  ## ClickPipe 타입별 예시
+</div>
 
-### Kafka {#kafka}
+<div id="kafka">
+  ### Kafka
+</div>
 
-지원되는 `type` 값은 `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream` 및 비공개 프리뷰 단계인 `gcmk`입니다.
+지원되는 `type` 값은 `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`입니다.
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -157,59 +163,9 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-#### GCP Workload Identity를 사용하는 Google Managed Kafka {#gcmk-workload-identity}
-
-ClickPipe를 생성하기 전에 ClickPipes 서비스 계정에 `roles/managedkafka.client` 역할을 부여하십시오. Google Managed Kafka에서는 TLS가 필수입니다. Kafka 접근 제어 목록(ACLs)에서 서비스 계정(`User:<service-account-email>`)이 선택한 토픽과 컨슈머 그룹에 대해 `READ` 및 `DESCRIBE` 액세스 권한을 갖도록 허용해야 합니다.
-
-```hcl
-resource "google_project_iam_member" "gcmk_client" {
-  project = var.gcp_project_id
-  role    = "roles/managedkafka.client"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "gcmk_clickpipe" {
-  name       = "My Google Managed Kafka ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    kafka = {
-      type           = "gcmk"
-      format         = "JSONEachRow"
-      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
-      topics         = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.gcmk_client]
-}
-```
-
-#### 스키마 레지스트리를 사용하는 Kafka {#kafka-schema-registry}
+<div id="kafka-schema-registry">
+  #### 스키마 레지스트리를 사용하는 Kafka
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -263,7 +219,9 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-### Amazon Kinesis {#kinesis}
+<div id="kinesis">
+  ### Amazon Kinesis
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -272,17 +230,11 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "AvroConfluent"
+      format         = "JSONEachRow"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
-
-      schema_registry {
-        type               = "glue"
-        glue_region        = "us-east-1"
-        glue_registry_name = "my-registry"
-      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -314,50 +266,9 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-#### 업로드한 Protobuf 스키마를 사용하는 Kinesis {#kinesis-protobuf-schema}
-
-`format`을 `Protobuf`로 설정하고, base64로 인코딩된 `.proto` 파일 또는 직렬화된 `FileDescriptorSet`을 `protobuf_schema`에 지정하십시오. 스키마를 업로드할 때는 `schema_registry`를 구성하지 마십시오.
-
-```hcl
-resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
-  name       = "My Kinesis Protobuf ClickPipe"
-  service_id = var.service_id
-
-  source {
-    kinesis {
-      format          = "Protobuf"
-      stream_name     = "my-stream"
-      region          = "us-east-1"
-      iterator_type   = "TRIM_HORIZON"
-      authentication  = "IAM_USER"
-      protobuf_schema = filebase64("${path.module}/event.proto")
-
-      access_key {
-        access_key_id = var.aws_access_key_id
-        secret_key    = var.aws_secret_key
-      }
-    }
-  }
-
-  destination {
-    table         = "my_table"
-    managed_table = true
-
-    table_definition {
-      engine {
-        type = "MergeTree"
-      }
-    }
-
-    columns {
-      name = "id"
-      type = "UInt64"
-    }
-  }
-}
-```
-
-#### IAM role 기반 Kinesis {#kinesis-iam-role}
+<div id="kinesis-iam-role">
+  #### IAM role 기반 Kinesis
+</div>
 
 IAM role 인증을 사용하려면 AWS에서 실행 중인 ClickHouse 서비스가 필요합니다.
 
@@ -400,7 +311,9 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-### Amazon S3 {#s3}
+<div id="s3">
+  ### Amazon S3
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -444,7 +357,9 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-#### SQS를 사용한 S3 지속적인 수집 {#s3-continuous}
+<div id="s3-continuous">
+  #### SQS를 사용한 S3 지속적인 수집
+</div>
 
 SQS 큐를 사용해 지속적으로 수집하는 경우(비순차 모드)입니다. 설정 방법은 [비순차 모드 구성](/ko/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)을 참조하십시오.
 
@@ -492,7 +407,9 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-### Google Cloud Storage {#gcs}
+<div id="gcs">
+  ### Google Cloud Storage
+</div>
 
 `service_account_key`는 GCP 서비스 계정 JSON 키 파일의 내용을 base64로 인코딩한 값이어야 합니다.
 
@@ -534,76 +451,9 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-#### GCP Workload Identity를 사용하는 GCS {#gcs-workload-identity}
-
-ClickPipes 서비스 계정에 [필요한 GCS 권한](/ko/integrations/clickpipes/object-storage/gcs/overview#permissions)을 부여한 후, 위의 `source` 블록을 다음과 같이 교체하십시오:
-
-```hcl
-source = {
-  object_storage = {
-    type           = "gcs"
-    url            = "gs://my-bucket/data/*.json"
-    format         = "JSONEachRow"
-    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-  }
-}
-```
-
-unordered 방식으로 수집하려면 `is_continuous = true`도 함께 설정하고, `projects/<project-id>/subscriptions/<subscription-id>` 형식의 전체 경로(fully-qualified) `queue_url`을 사용하십시오.
-
-### Google Cloud Pub/Sub {#pubsub}
-
-다음 예시에서는 Workload Identity를 사용합니다. ClickPipe를 생성하기 전에 ClickPipes 서비스 계정에 [필요한 Pub/Sub 권한](/ko/integrations/clickpipes/pubsub/auth#required-permissions)을 부여하십시오.
-
-```hcl
-resource "google_project_iam_member" "pubsub_access" {
-  project = var.gcp_project_id
-  role    = "roles/pubsub.editor"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "pubsub_clickpipe" {
-  name       = "My Pub/Sub ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    pubsub = {
-      format         = "JSONEachRow"
-      project_id     = var.gcp_project_id
-      topic          = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-      seek_type      = "latest"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.pubsub_access]
-}
-```
-
-### Azure Blob Storage {#abs}
+<div id="abs">
+  ### Azure Blob Storage
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -644,7 +494,9 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-### Postgres CDC {#postgres}
+<div id="postgres">
+  ### Postgres CDC
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -700,7 +552,9 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-#### IAM role을 사용하는 Postgres {#postgres-iam-role}
+<div id="postgres-iam-role">
+  #### IAM role을 사용하는 Postgres
+</div>
 
 IAM role 기반 인증을 사용하려면 AWS에서 실행되는 ClickHouse 서비스가 필요합니다.
 
@@ -740,7 +594,9 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-### MySQL CDC {#mysql}
+<div id="mysql">
+  ### MySQL CDC
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -796,7 +652,9 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-### MongoDB CDC {#mongodb}
+<div id="mongodb">
+  ### MongoDB CDC
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -844,7 +702,9 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-### BigQuery {#bigquery}
+<div id="bigquery">
+  ### BigQuery
+</div>
 
 `service_account_file`은 GCP 서비스 계정 JSON 키 파일의 base64 인코딩된 내용이어야 합니다.
 
@@ -895,31 +755,9 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-#### GCP Workload Identity를 사용하는 BigQuery {#bigquery-workload-identity}
-
-ClickPipes 서비스 계정에 [필요한 BigQuery 및 GCS 권한](/ko/integrations/clickpipes/bigquery/overview#permissions)을 부여한 후, 위의 `source` 블록을 다음과 같이 대체하십시오.
-
-```hcl
-source = {
-  bigquery = {
-    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    project_id            = var.gcp_project_id
-    snapshot_staging_path = "gs://my-staging-bucket/staging/"
-
-    settings = {
-      replication_mode = "snapshot"
-    }
-
-    table_mappings = [{
-      source_dataset_name = "my_dataset"
-      source_table        = "my_table"
-      target_table        = "my_bigquery_table"
-    }]
-  }
-}
-```
-
-## 스케일링 {#scaling}
+<div id="scaling">
+  ## 스케일링
+</div>
 
 모든 ClickPipe 타입은 레플리카 수와 각 레플리카의 리소스 할당을 구성할 수 있도록 `scaling` 블록을 지원합니다.
 
@@ -931,7 +769,9 @@ scaling {
 }
 ```
 
-## 기존 ClickPipes 가져오기 {#import}
+<div id="import">
+  ## 기존 ClickPipes 가져오기
+</div>
 
 기존 ClickPipes는 서비스 ID와 ClickPipe ID를 모두 사용해 Terraform state로 가져올 수 있습니다:
 

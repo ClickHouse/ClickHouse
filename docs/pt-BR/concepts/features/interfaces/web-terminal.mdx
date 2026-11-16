@@ -26,7 +26,9 @@ O endpoint `/webterminal` vem habilitado por padrão e é controlado pela config
   `enable_webterminal` substitui a antiga configuração `allow_experimental_webterminal`. O nome antigo ainda é aceito por questão de compatibilidade retroativa quando `enable_webterminal` não está definido.
 </Note>
 
-## Autenticação {#authentication}
+<div id="authentication">
+  ## Autenticação
+</div>
 
 O terminal web autentica o usuário com as mesmas verificações de `Session` e de controle de acesso do protocolo HTTP, mas as credenciais são transmitidas pelo próprio canal da conexão WebSocket já estabelecida, em vez de pela solicitação de upgrade HTTP. Após a conclusão do handshake do WebSocket, o navegador envia a primeira mensagem em JSON:
 
@@ -80,19 +82,7 @@ O terminal web expõe uma sessão interativa semelhante a um shell para qualquer
 * O endpoint valida o cabeçalho `Origin` em relação ao `Host` para mitigar o sequestro de WebSocket entre origens; configure os proxies reversos adequadamente se você encerrar o TLS externamente.
 * Por trás de um proxy reverso que encerra TLS, a conexão upstream com o ClickHouse usa `http` simples, embora o navegador use `https`; por isso, a verificação estrita de mesma origem rejeitaria conexões legítimas. Para essas implantações, defina `webterminal_allowed_origins` como uma lista, separada por vírgulas, de origens completas autorizadas a abrir sessões WebSocket; quando essa configuração não está vazia, ela substitui a verificação padrão de mesma origem. Exemplo: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
 
-## Limites de sessão {#session-limits}
-
-Cada sessão do terminal web executa um `clickhouse-client` embutido com sua própria thread e seu próprio pseudoterminal, de modo que o servidor aplica a ela os mesmos limites aplicados às sessões de outras interfaces, com base nas configurações do usuário autenticado:
-
-* [`max_sessions_for_user`](/pt-BR/reference/settings/session-settings/max#max_sessions_for_user) limita o número de sessões simultâneas do usuário. Uma sessão que exceda o limite é rejeitada antes que o cliente embutido seja iniciado, e o servidor fecha o WebSocket com o código `1008`.
-* [`idle_connection_timeout`](/pt-BR/reference/settings/session-settings/other#idle_connection_timeout) encerra uma sessão após o número especificado de segundos sem tráfego em nenhuma das direções enquanto o cliente embutido aguarda a próxima consulta, assim como no protocolo nativo. Uma consulta em execução não é interrompida por esse tempo limite, mesmo que não produza nenhuma saída.
-* [`receive_timeout`](/pt-BR/reference/settings/session-settings/receive#receive_timeout) e [`send_timeout`](/pt-BR/reference/settings/session-settings/send#send_timeout) limitam o tempo de leitura de um quadro WebSocket recebido do cliente e de envio de dados ao cliente. O valor `0` desativa o tempo limite.
-
-Alterações nessas configurações feitas com uma consulta `SET` no terminal entram em vigor quando a consulta termina e o cliente embutido volta ao prompt.
-
-As sessões também contam para o limite global do servidor [`max_connections`](/pt-BR/reference/settings/server-settings/settings/max#max_connections), juntamente com as conexões de outras interfaces.
-
-O handler também garante a conformidade com o protocolo WebSocket, conforme a RFC 6455: quadros do cliente sem máscara, opcodes reservados, quadros de controle grandes demais ou fragmentados e bits RSV reservados são rejeitados com códigos de fechamento de erro de protocolo.
+O handler também impõe conformidade com o protocolo WebSocket de acordo com a RFC 6455: frames de cliente sem máscara, opcodes reservados, frames de controle grandes demais ou fragmentados e bits RSV reservados são rejeitados com códigos de fechamento por erro de protocolo.
 
 <div id="platform">
   ## Disponibilidade da plataforma

@@ -89,10 +89,6 @@ protected:
 
     ResultT impl(uintptr_t addr) const
     {
-        /// 0 is the stored form of frames outside the main executable.
-        if (!addr)
-            return {};
-
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.thisObject())
@@ -101,8 +97,8 @@ protected:
             if (!object->dsym)
                 return {object->name};
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->dsym).first;
-            /// Convert the offset from the image start to the linked (pre-ASLR) address for DWARF lookup.
-            uintptr_t dwarf_addr = addr + uintptr_t(object->address_begin) - object->slide;
+            /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
+            uintptr_t dwarf_addr = addr - object->slide;
 #else
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))

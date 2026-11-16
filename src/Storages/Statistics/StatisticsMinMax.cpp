@@ -4,9 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -57,15 +55,6 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeFieldBinary(max, buf);
 }
 
-std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
-{
-    const String type_name = data_type->getName();
-    return sizeof(row_count)
-        + getLengthOfVarUInt(type_name.size()) + type_name.size()
-        + getFieldBinarySize(min)
-        + getFieldBinarySize(max);
-}
-
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     readIntBinary(row_count, buf);
@@ -99,11 +88,6 @@ std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const
         return std::nullopt;
 
     return StatisticsUtils::interpolateLessLinear(val, min, max, row_count, data_type);
-}
-
-size_t StatisticsMinMax::allocatedBytes() const
-{
-    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max);
 }
 
 String StatisticsMinMax::getNameForLogs() const

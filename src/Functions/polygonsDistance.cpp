@@ -38,34 +38,34 @@ public:
         return std::make_shared<FunctionPolygonsDistance>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return false;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Any, Any) -> Float64";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnFloat64::create();
         auto & res_data = res_column->getData();
@@ -83,12 +83,15 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be Point", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    res_data.emplace_back(boost::geometry::distance(first.get(i), second.get(i)));
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
+                    res_data.emplace_back(boost::geometry::distance(first[i], second[i]));
                 }
             }
         });
@@ -96,7 +99,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }

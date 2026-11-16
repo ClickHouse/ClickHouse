@@ -23,19 +23,17 @@ INSERT INTO t_corr_small SELECT number * 2, number FROM numbers(50);
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_default_shuffle_join_bucket_count = 3, max_rows_to_group_by = 0,
-    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1,
+    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1,
     correlated_subqueries_substitute_equivalent_expressions = 0,
     query_plan_merge_filter_into_join_condition = 1;
 
 SELECT 'correlated scalar aggregate subquery works under make_distributed_plan';
-SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp)
-    SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp);
 SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp)
     SETTINGS make_distributed_plan = 0;
 
 SELECT 'correlated EXISTS works under make_distributed_plan';
-SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp)
-    SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp);
 SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp)
     SETTINGS make_distributed_plan = 0;
 

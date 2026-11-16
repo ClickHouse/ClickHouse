@@ -50,7 +50,7 @@ template <typename T,
 class ReservoirSamplerDeterministic
 {
 private:
-    [[nodiscard]] bool good(UInt32 hash) const
+    bool good(UInt32 hash) const
     {
         return (hash & skip_mask) == 0;
     }
@@ -79,12 +79,12 @@ public:
         ++total_values;
     }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return total_values;
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         return samples.empty();
     }
@@ -288,7 +288,7 @@ private:
     }
 
     template <typename ResultType>
-    [[nodiscard]] ResultType onEmpty() const
+    ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");

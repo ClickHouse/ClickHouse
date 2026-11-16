@@ -21,7 +21,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "ParallelReplicasSplit"; }
+    String getName() const override { return "ParallelReplicasSplit"; }
 
     /// Pass-through when executed directly (no split was applied). Out-of-line to anchor the vtable.
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

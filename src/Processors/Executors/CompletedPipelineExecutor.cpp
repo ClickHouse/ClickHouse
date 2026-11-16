@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/Runtime/createExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 struct CompletedPipelineExecutor::Data
 {
-    ExecutorPtr executor;
+    PipelineExecutorPtr executor;
     std::exception_ptr exception;
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
@@ -70,9 +70,8 @@ void CompletedPipelineExecutor::initialize()
         return;
 
     data = std::make_unique<Data>();
-    data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-    data->executor->setStepProfiler(pipeline.getStepProfiler());
 }
 
 void CompletedPipelineExecutor::execute()
@@ -100,7 +99,7 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
-                data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
+                data->executor->cancel();
         }
 
         if (data->has_exception)
@@ -117,7 +116,7 @@ void CompletedPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
     if (data && !data->is_finished && data->executor)
-        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
+        data->executor->cancel();
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()

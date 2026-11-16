@@ -4,6 +4,7 @@
 
 -- The old analyzer reads an ALIAS column through `TreeRewriter`, which never consults the set
 -- registry, so every case below produces its expected value on an unfixed server unless this is set.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t04812_phys;
 DROP TABLE IF EXISTS t04812_alias;

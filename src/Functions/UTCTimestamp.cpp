@@ -23,9 +23,9 @@ class ExecutableFunctionUTCTimestamp final : public IExecutableFunction
 public:
     explicit ExecutableFunctionUTCTimestamp(time_t time_) : time_value(time_) {}
 
-    [[nodiscard]] String getName() const override { return "UTCTimestamp"; }
+    String getName() const override { return "UTCTimestamp"; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDateTime().createColumnConst(
                 input_rows_count,
@@ -82,9 +82,14 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<UTCTimestampOverloadResolver>(); }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "() -> DateTime";
+        if (!arguments.empty())
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0", getName());
+        }
+
+        return std::make_shared<DataTypeDateTime>();
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override

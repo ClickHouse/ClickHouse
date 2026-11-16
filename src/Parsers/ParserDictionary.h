@@ -11,7 +11,7 @@ namespace DB
 class ParserDictionaryLifetime : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "lifetime definition"; }
+    const char * getName() const override { return "lifetime definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -21,7 +21,7 @@ protected:
 class ParserDictionaryRange : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "range definition"; }
+    const char * getName() const override { return "range definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -32,14 +32,14 @@ protected:
 class ParserDictionaryLayout : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "layout definition"; }
+    const char * getName() const override { return "layout definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserDictionarySettings: public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "settings definition"; }
+    const char * getName() const override { return "settings definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -57,7 +57,7 @@ protected:
 class ParserDictionary : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "dictionary definition"; }
+    const char * getName() const override { return "dictionary definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

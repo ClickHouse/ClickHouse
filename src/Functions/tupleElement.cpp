@@ -43,50 +43,21 @@ public:
     static constexpr auto name = "tupleElement";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTupleElement>(); }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     /// Keep nested LowCardinality element types intact: the default implementation would strip them via
     /// `recursiveRemoveLowCardinality` before extraction, making `tupleElement(t, 'a')` disagree with the
     /// subcolumn path `t.a` (which preserves `LowCardinality(...)`). tupleElement only extracts a column, so
     /// it is naturally correct for any element type without the framework's LowCardinality unwrapping.
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForDynamic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Documentation-only. The result type is the requested element, looked up from the const
-    /// second argument (an integer index — negative indices count from the end — or a string
-    /// element/sub-column name) against the first argument's type structure. This is a value- and
-    /// structure-dependent lookup rather than a settings-dependent one (so, unlike CAST or
-    /// `dateTrunc`, it could in principle be expressed with a bespoke type function), but the logic
-    /// is substantial and specialised — Array nesting is peeled and re-applied, `Nullable(Tuple)`
-    /// wraps the element when it can hold NULL, `QBit` resolves a bit-plane element, `JSON` resolves
-    /// a combined `@` sub-column, and the optional third argument is the type used when the element
-    /// is missing — so it stays in the dedicated `getReturnTypeImpl` below. The signature string is
-    /// purely descriptive; it is only rendered, never applied.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Tuple | Nullable(Tuple) | Array | QBit | JSON | Nullable(JSON), const index_or_name, [Any default]) -> Any";
-    }
-
-    /// The declarative signature above is documentation-only: the exact result type is not
-    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
-    /// Route the types-only path to it as well, so the base
-    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
-    /// would reject valid calls or evaluate an uncaptured return-type name).
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -175,7 +146,7 @@ public:
             arguments[0].type->getName());
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
         const IDataType * input_type = input_arg.type.get();
@@ -281,7 +252,7 @@ public:
     }
 
 private:
-    [[nodiscard]] std::optional<size_t> getTupleElementIndex(const ColumnPtr & index_column, const DataTypeTuple & tuple, size_t argument_size) const
+    std::optional<size_t> getTupleElementIndex(const ColumnPtr & index_column, const DataTypeTuple & tuple, size_t argument_size) const
     {
         if (checkAndGetColumnConst<ColumnUInt8>(index_column.get()) || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
             || checkAndGetColumnConst<ColumnUInt32>(index_column.get()) || checkAndGetColumnConst<ColumnUInt64>(index_column.get()))
@@ -328,7 +299,7 @@ private:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
     }
 
-    [[nodiscard]] std::optional<size_t> getQBitElementIndex(const ColumnPtr & index_column, const DataTypeQBit & qbit, size_t argument_size) const
+    std::optional<size_t> getQBitElementIndex(const ColumnPtr & index_column, const DataTypeQBit & qbit, size_t argument_size) const
     {
         if (checkAndGetColumnConst<ColumnUInt8>(index_column.get()) || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
             || checkAndGetColumnConst<ColumnUInt32>(index_column.get()) || checkAndGetColumnConst<ColumnUInt64>(index_column.get()))
@@ -348,7 +319,7 @@ private:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt", getName());
     }
 
-    [[nodiscard]] DataTypePtr wrapInArrays(DataTypePtr nested_type, size_t count_arrays) const
+    DataTypePtr wrapInArrays(DataTypePtr nested_type, size_t count_arrays) const
     {
         for (; count_arrays; --count_arrays)
             nested_type = std::make_shared<DataTypeArray>(nested_type);
@@ -364,19 +335,19 @@ private:
         return DataTypeObject::getCombinedSubcolumnName(element_name);
     }
 
-    [[nodiscard]] ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
+    ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
     {
         return object_type.getSubcolumn(getObjectCombinedSubcolumnName(element_name), object_column);
     }
 
-    [[nodiscard]] DataTypePtr getObjectElementType(const DataTypeObject & object_type, const String & element_name) const
+    DataTypePtr getObjectElementType(const DataTypeObject & object_type, const String & element_name) const
     {
         return object_type.getSubcolumnType(getObjectCombinedSubcolumnName(element_name));
     }
 
     /// Fold the null map of a `Nullable(Tuple(...))` / `Nullable(JSON)` first argument into the element
     /// extracted from its nested column, so that outer NULLs are visible in the result.
-    [[nodiscard]] ColumnPtr applyOuterNullMap(const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column) const
+    ColumnPtr applyOuterNullMap(const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column) const
     {
         if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
         {

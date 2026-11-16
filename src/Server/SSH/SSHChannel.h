@@ -28,7 +28,7 @@ public:
     SSHChannel & operator=(SSHChannel &&) noexcept;
 
     // Exposes ssh_channel c pointer, which could be used to be passed into other objects
-    [[nodiscard]] ChannelPtr getCChannelPtr() const;
+    ChannelPtr getCChannelPtr() const;
 
     int read(void * dest, uint32_t count, int is_stderr);
     int readTimeout(void * dest, uint32_t count, int is_stderr, int timeout);

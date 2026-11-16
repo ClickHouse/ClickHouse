@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
@@ -23,7 +24,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <optional>
 
 
@@ -37,6 +37,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -72,25 +73,15 @@ namespace
             res_matchers.emplace_back(std::move(res_matcher));
         }
 
-        /// RemoteRead matchers are not PromQL text, and the protocol permits matcher sets
-        /// such as job=~".*" that match an empty label value. TimeSeries rows always have
-        /// a non-empty metric name, so preserve that invariant when the matchers are later
-        /// serialized to PromQL and reparsed by timeSeriesSelector.
-        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
-            .label_name = "__name__",
-            .label_value = "",
-            .matcher_type = PrometheusQueryTree::MatcherType::NE});
-
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
-    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
+    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
-        bool table_has_bucketed_samples,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
         Int64 max_time_ms)
@@ -98,7 +89,7 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -106,17 +97,10 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            if (table_has_bucketed_samples)
-            {
-                select_list_exp->children.push_back(makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
-            }
-            else
-            {
-                select_list_exp->children.push_back(makeASTFunction(
-                    "timeSeriesGroupArray",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-            }
+            select_list_exp->children.push_back(makeASTFunction(
+                "timeSeriesGroupArray",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
@@ -124,7 +108,7 @@ namespace
         }
 
         {
-            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, return_columns)
+            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
             auto table_exp = make_intrusive<ASTTableExpression>();
             table_exp->table_function = makeASTFunction(
                 "timeSeriesSelector",
@@ -132,8 +116,7 @@ namespace
                 make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
                 make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
-                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
-                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}));
 
             table_exp->children.emplace_back(table_exp->table_function);
 
@@ -182,7 +165,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, value_data_type)).
+        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
@@ -247,14 +230,24 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, time_series_storage->getStorageSettings()->hasBucketedSamples(), label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
     auto context = getContext();
-    InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
-    BlockIO io = interpreter.execute();
+    BlockIO io;
+    std::optional<InterpreterSelectQuery> interpreter_holder;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+        io = interpreter.execute();
+    }
+    else
+    {
+        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
+        io = interpreter_holder->execute();
+    }
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;

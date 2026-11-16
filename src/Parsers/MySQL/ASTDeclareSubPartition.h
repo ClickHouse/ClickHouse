@@ -34,7 +34,7 @@ protected:
 class ParserDeclareSubPartition : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "subpartition declaration"; }
+    const char * getName() const override { return "subpartition declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

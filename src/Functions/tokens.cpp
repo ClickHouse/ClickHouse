@@ -107,10 +107,10 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    String getName() const override { return name; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_input = arguments[arg_value].column;
         auto col_result = ColumnString::create();
@@ -236,17 +236,6 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr)
     {
         return std::make_unique<FunctionTokensOverloadResolver>();
-    }
-
-    /// `tokens(value [, tokenizer [, ...]])` — splits `value` into a list of
-    /// tokens using the named tokenizer. The optional arguments depend on the
-    /// chosen tokenizer (n-gram length, separator array, sparse-gram bounds).
-    /// The DSL doesn't model the per-tokenizer arity, so the signature is
-    /// permissive — the runtime enforces the exact requirements via
-    /// `validateFunctionArguments` and `createTokenizer`.
-    String getSignatureString() const override
-    {
-        return "(StringOrFixedString, ...) -> Array(String)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

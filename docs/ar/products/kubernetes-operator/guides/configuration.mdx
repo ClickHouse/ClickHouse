@@ -48,12 +48,11 @@ spec:
 
 سيُنشئ عنقود يحتوي على `replicas: 3` و`shards: 2` ما مجموعه 6 كبسولات لـ ClickHouse.
 
-### تكامل Keeper {#keeper-integration}
+<div id="keeper-integration">
+  ### تكامل Keeper
+</div>
 
-يحتاج كل عنقود ClickHouse إلى مجموعة عُقد Keeper من أجل التنسيق. عيّن حقلًا واحدًا فقط من الحقلين
-`keeperClusterRef` و`externalKeeper`؛ إذ يُرفض العنقود الذي يعيّن كليهما أو لا يعيّن أيًّا منهما.
-
-اجعل `keeperClusterRef` يشير إلى KeeperCluster يديره هذا المشغِّل:
+يجب أن يشير كل عنقود ClickHouse إلى KeeperCluster من أجل التنسيق:
 
 ```yaml
 spec:
@@ -62,64 +61,7 @@ spec:
     # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
-عند تعيين `keeperClusterRef.namespace`، يجب على المشغِّل مراقبة مساحتي الاسم كلتيهما. وإذا كان `WATCH_NAMESPACE` مُعدًّا، فأدرِج مساحتي الاسم الخاصتين بـ ClickHouse وKeeper في تلك القائمة.
-
-### Keeper المُدار خارجيًا {#external-keeper}
-
-استخدم `externalKeeper` لتشغيل ClickHouse مع مجموعة Keeper لا يديرها المشغّل —
-سواء كانت تابعة لمشغّل آخر، أو تعمل في عنقود Kubernetes مختلف، أو على أجهزة افتراضية أو
-خوادم فعلية (bare metal)، أو مشتركة بين عدة أنظمة:
-
-```yaml
-spec:
-  externalKeeper:
-    nodes:
-      - host: keeper-1.example.internal
-        port: 9181
-      - host: keeper-2.example.internal
-        port: 9181
-      - host: keeper-3.example.internal
-        port: 9181
-```
-
-القيمة الافتراضية لـ `port` هي `9181`. أما `host` فهو اسم DNS أو عنوان IP، مع وضع عناوين IPv6 بين أقواس
-مربعة. اضبط `tls: Enabled` للاتصال عبر TLS، واجعل قيمة `port` هي المنفذ الذي تستمع عليه مجموعة Keeper
-للاتصالات الآمنة:
-
-```yaml
-spec:
-  externalKeeper:
-    tls: Enabled
-    nodes:
-      - host: keeper-1.example.internal
-        port: 9281
-```
-
-يتحقق ClickHouse من شهادات Keeper بالاستناد إلى مخزن الثقة الخاص بالنظام، إضافةً إلى أي `caBundle`
-تقوم بتهيئته. راجع [الاتصال بين ClickHouse وKeeper عبر TLS](#clickhouse-keeper-communication-over-tls).
-
-عندما تتشارك عدة عناقيد ClickHouse مجموعة Keeper واحدة، خصّص لكلٍّ منها znode جذرية مستقلة عبر
-`settings.extraConfig`، كي لا تتداخل البيانات الوصفية الخاصة بالـ replication والمستخدمون المعرّفون بلغة SQL والمجموعات المسمّاة (named collections)
-فيما بينها. أنشئ الـ znode قبل بدء تشغيل ClickHouse، ولا تغيّرها بعد ذلك:
-
-```yaml
-spec:
-  settings:
-    extraConfig:
-      zookeeper:
-        root: /clickhouse/production
-```
-
-لا تضع `zookeeper.root` في `settings.extraReloadableConfig`، إذ إن إعادة التحميل ستُبدّل جذر عنقود قيد التشغيل
-وتترك جداوله المتماثلة في وضع القراءة فقط. وإذا كانت لعقدة znode الجذرية قوائم تحكم في الوصول (ACLs)، فيجب أن تسمح
-لـ `keeper-identity` الخاصة بالعنقود بإنشاء عقد znode فرعية.
-
-لا يُجري المشغّل أي تغييرات على هذه الخوادم، ولا ينتظر جاهزيتها قبل إجراء التسوية لـ ClickHouse.
-وتقع مسؤولية الحفاظ على إتاحة مجموعة Keeper على عاتق المستخدم.
-
-تعمل المصادقة بالطريقة نفسها المتّبعة مع Keeper الذي يديره المشغّل؛ إذ يقرأ المشغّل
-المفتاح `keeper-identity` من Secret الخاص بالعنقود ويمرّره إلى ClickHouse. راجع
-[External Secret](#external-secret) للاطلاع على بنية Secret.
+عند تعيين `keeperClusterRef.namespace`، يجب على المشغِّل مراقبة مساحتي الاسم كلتيهما. وإذا كان `WATCH_NAMESPACE` مُعدًّا، فأدرِج مساحتي الاسم الخاصتين بـ ClickHouse وKeeper في تلك القائمة.
 
 <div id="keepercluster-configuration">
   ## إعداد KeeperCluster
@@ -137,31 +79,6 @@ spec:
       requests:
         storage: 5Gi
 ```
-
-### تسليم القيادة عند الإنهاء {#keeper-leadership-handover}
-
-تتضمن حاوية Keeper خطاف `preStop` افتراضيًا يطلب من النسخة المتماثلة التخلي عن قيادة Raft
-قبل توقفها، وينتظر اكتمال التسليم قبل السماح
-بإنهاء الحاوية. يُنفَّذ هذا الخطاف عند كل إيقاف سلس للحاوية، لا عند
-عمليات الطرح التي يبدؤها المشغّل فحسب: فإخلاء الحاوية بواسطة descheduler، أو تفريغ العقدة، أو أي إجراء
-يتخذه مُوسّع تلقائي، كلها تُطلق الخطاف نفسه، لأنه معالج `preStop` على مستوى kubelet وليس
-منطقًا ضمن حلقة التسوية (reconcile loop).
-
-ومن دون هذا الخطاف، تؤدي إعادة تشغيل القائد الحالي إلى بقاء مجموعة Keeper بلا قائد إلى أن
-يكتمل انتخاب قائد جديد، وقد يستغرق ذلك عدة ثوانٍ تحت الحمل، فيظهر لـ
-ClickHouse في صورة فقدان للاتصال بـ Keeper وارتفاع في زمن استجابة الاستعلامات. يطلب الخطاف من
-النسخة المتماثلة التنازل عن القيادة (عبر أمر Keeper رباعي الأحرف `ydld`، المُرسَل من خلال
-منفذ `http_control`)، ثم يستطلع حالة النسخة المتماثلة إلى أن تكفّ عن كونها
-القائد، بدلًا من إرسال الطلب والسماح للحاوية بالتوقف فورًا؛ ذلك أن
-الطلب المُرسَل دون انتظار تأكيد (fire-and-forget) قد يخسر السباق مع `SIGTERM` تحت حمل الكتابة، ومن ثَمّ فإن
-الانتظار هو ما يضمن بقاء الفترة الخالية من القائد محدودة.
-
-لا يحتاج الخطاف إلى أي تهيئة، ولا يتسبب في أي خلل عند عدم دعمه: ففي إصدارات Keeper الأقدم من
-26.3، التي لا تدعم بعدُ أوامر القيادة المستخدمة هنا، لا يكون للطلب أي أثر،
-وتتوقف الحاوية كما لو لم يكن الخطاف موجودًا. ولأن الخطاف يُشغّل برنامجًا نصيًا لـ shell، فإنه يتطلب وجود
-`bash` في الصورة؛ فإذا كنت تستخدم صورة Keeper من نوع distroless أو scratch، فتجاوزه أو أزِله
-عبر `containerTemplate.lifecycle` — راجع
-[مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec).
 
 <div id="storage-configuration">
   ## تهيئة التخزين
@@ -222,9 +139,11 @@ spec:
   ## إعدادات الكبسولة
 </div>
 
-### التوزيع الطوبولوجي والتقارب التلقائيان {#automatic-topology-spread-and-affinity}
+<div id="automatic-topology-spread-and-affinity">
+  ### التوزيع الطوبولوجي والتقارب التلقائيان
+</div>
 
-وزّع pod عبر مناطق التوافر:
+وزّع الكبسولات عبر مناطق التوافر:
 
 ```yaml
 spec:
@@ -235,21 +154,6 @@ spec:
 
 <Note>
   تأكد من أن عنقود Kubernetes لديك يضم عددًا كافيًا من العقد عبر مناطق مختلفة لاستيفاء قيود التوزيع.
-</Note>
-
-عند استخدام مُوسّع تلقائي للعقد (Karpenter أو Cluster Autoscaler)، لا يمكن لقيد التوزيع وحده
-تجهيز منطقة لا تحتوي على أي عقد بعد — إذ يكتفي المُجدول بالمناطق المرئية له.
-اضبط `topologyMinDomains` على عدد مناطق التوافر لفرض التوزيع:
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-  يتطلب `topologyMinDomains` وجود `topologyZoneKey`. تبقى pod في حالة `Pending` ما دام عدد المناطق المتاحة أقل من المطلوب، لذا أبقِ القيمة ضمن المناطق التي يستطيع عنقودك توفيرها.
 </Note>
 
 <div id="manual-configuration">
@@ -445,70 +349,6 @@ spec:
   سينشئ المشغّل وحدة تخزين من نوع `projected` تضم جميع عمليات الربط المحددة.
 </Note>
 
-### مجسّات الصحة {#health-probes}
-
-يهيّئ المشغّل مجسّات الحيوية (liveness) والجاهزية (readiness) على كل حاوية من حاويات ClickHouse وKeeper.
-لا يُضبط أي مجسّ بدء تشغيل (startup) افتراضيًا.
-
-| المورد              | المجسّ    | الفحص الافتراضي                                                                                                             |
-| ------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `ClickHouseCluster` | liveness  | طلب HTTP `GET /ping` على منفذ الاتصال بين الخوادم `9009`                                                                    |
-| `ClickHouseCluster` | readiness | طلب HTTP `GET /ping` على منفذ HTTP الخاص بالإدارة `9002`                                                                    |
-| `KeeperCluster`     | liveness  | اتصال TCP بمنفذ العميل `2181` (أو `2281` عندما تكون قيمة كلٍّ من `settings.tls.enabled` و`settings.tls.required` هي `true`) |
-| `KeeperCluster`     | readiness | طلب HTTP `GET /ready` على المنفذ `http_control` رقم `9123`                                                                  |
-
-يستخدم ClickHouse وKeeper إعدادات التوقيت الافتراضية نفسها:
-
-| المجسّ    | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
-| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
-| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
-| readiness | 5                     | 1               | 10               | 5                  | 10                 |
-
-يفتح ClickHouse مستمع الاتصال بين الخوادم قبل تحميل الجداول، ثم يفتح مستمعات العملاء بعد ذلك؛ ولهذا يتحمّل مجسّ الحيوية بطء تحميل الجداول، في حين يدلّ نجاح مجسّ الجاهزية على أن النسخة المتماثلة أصبحت جاهزة لخدمة الاستعلامات.
-
-يمكنك تجاوز إعدادات أي مجسّ عبر `spec.containerTemplate` في أيٍّ من الموردين. على سبيل المثال، لتخصيص مجسّ الحيوية في ClickHouse:
-
-```yaml
-spec:
-  containerTemplate:
-    livenessProbe:
-      httpGet:
-        path: /ping
-        port: 9009
-      initialDelaySeconds: 120
-      periodSeconds: 10
-      timeoutSeconds: 10
-      failureThreshold: 10
-```
-
-<Warning>
-  أي مجسّ تضبطه يحلّ محلّ الإعداد الافتراضي للمشغّل بالكامل، ولا يُدمج معه حقلاً بحقل.
-  حدّد المعالج (`httpGet` أو `tcpSocket` أو `exec`) وكل حقل توقيت يهمّك؛ فالحقول المُغفلة تأخذ القيم الافتراضية لـ Kubernetes (مثل `timeoutSeconds: 1` و`failureThreshold: 3`)، لا قيم المشغّل المذكورة أعلاه.
-</Warning>
-
-#### مجسّ بدء التشغيل {#startup-probe}
-
-استخدم `startupProbe` عندما تحتاج الحاوية إلى وقت للبدء أطول مما يسمح به مجسّ الحيوية، وهو بالإعدادات الافتراضية نحو 60 ثانية من التأخير الأولي، تليها 10 فحوصات فاشلة يفصل بين كل منها 5 ثوانٍ.
-يؤجّل Kubernetes تشغيل مجسّي الحيوية والجاهزية إلى أن ينجح مجسّ بدء التشغيل، فلا يؤدي البدء البطيء إلى الدخول في حلقة متكررة من إعادة التشغيل.
-على سبيل المثال، امنح نسخة متماثلة من Keeper تعيد تطبيق لقطة كبيرة مهلةً تصل إلى 10 دقائق لتبدأ في قبول الاتصالات:
-
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: KeeperCluster
-metadata:
-  name: sample
-spec:
-  replicas: 3
-  containerTemplate:
-    startupProbe:
-      tcpSocket:
-        port: 2181
-      periodSeconds: 10
-      failureThreshold: 60
-```
-
-بعد نجاح مجسّ بدء التشغيل (مجسّ startup)، تتولى مجسّات الحيوية (الحيوية) والجاهزية (الجاهزية) المعتادة المهمة من بعده.
-
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec) للاطلاع على جميع خيارات قوالب الحاويات المدعومة.
 </div>
@@ -546,10 +386,11 @@ spec:
   يتوافق هذا التنسيق مع الشهادات التي يُنشئها cert-manager.
 </Note>
 
-### اتصال ClickHouse-Keeper عبر TLS {#clickhouse-keeper-communication-over-tls}
+<div id="clickhouse-keeper-communication-over-tls">
+  ### اتصال ClickHouse-Keeper عبر TLS
+</div>
 
-إذا كان TLS مفعّلًا في KeeperCluster المُشار إليه عبر `keeperClusterRef`، فسيستخدم ClickHouseCluster اتصالًا آمنًا بعُقد Keeper تلقائيًا.
-أما عند استخدام `externalKeeper`، فاضبط `tls: Enabled` بدلًا من ذلك، واضبط `port` لكل عقدة على منفذ العميل الآمن لمجموعة Keeper (على سبيل المثال `9281`).
+إذا كان TLS مفعّلًا في KeeperCluster، فسيستخدم ClickHouseCluster اتصالًا آمنًا بعُقد Keeper تلقائيًا.
 
 يتحقق ClickHouseCluster من شهادات عُقد Keeper باستخدام مخزن الثقة في النظام، بالإضافة إلى أي `caBundle` تقوم بتهيئته.
 
@@ -879,10 +720,10 @@ spec:
 
 يتحكم خياران في مدير المشغّل بحلقة التحقق من الترقية على مستوى عام:
 
-| Flag                              | Default | Effect                                                                                                                                   |
-| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | عدد المرات التي يعيد فيها المشغّل جلب قائمة الإصدارات من المصدر الأصلي. يجب أن تكون أكبر من صفر عند تفعيل عمليات التحقق من تحديث الإصدار |
-| `--disable-version-update-checks` | `false` | يعطّل أداة التحقق من الترقية بالكامل. ولا يتم تعيين الحالة `VersionUpgraded`، كما لا يُنشأ أي مرور HTTP صادر إلى `clickhouse.com`        |
+| Flag                              | Default | Effect                                                                                                                            |
+| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`   | عدد المرات التي يعيد فيها المشغّل جلب قائمة الإصدارات من المصدر الأصلي                                                            |
+| `--disable-version-update-checks` | `false` | يعطّل أداة التحقق من الترقية بالكامل. ولا يتم تعيين الحالة `VersionUpgraded`، كما لا يُنشأ أي مرور HTTP صادر إلى `clickhouse.com` |
 
 اضبط `--disable-version-update-checks=true` في البيئات المعزولة عن الشبكة أو عندما لا يكون مسموحًا بخروج الحركة إلى `clickhouse.com`.
 
@@ -994,7 +835,9 @@ spec:
   (`passwordType: password`).
 </Note>
 
-### مستخدمون مخصّصون في التهيئة {#custom-users-in-configuration}
+<div id="custom-users-in-configuration">
+  ### مستخدمون مخصّصون في التهيئة
+</div>
 
 قم بتهيئة مستخدمين إضافيين في ملفات التهيئة.
 
@@ -1067,9 +910,11 @@ spec:
 
 قبل إزالة نسخة متماثلة عند التخفيض التدريجي، يُفرِّغ المُشغِّل أولًا حركة مرور العملاء منها، وينتظر حتى تتوقف عن النشر، ويُكرِّر بياناتها المتبقية إلى النسخ المتماثلة الباقية، ثم يحذفها فقط بعد ذلك.
 
-### تسجيل الخادم {#server-logging}
+<div id="server-logging">
+  ### تسجيل الخادم
+</div>
 
-اضبط سجل خادم ClickHouse عبر `spec.settings.logger`. كل حقل اختياري وله قيمة افتراضية آمنة، لذا فإن أي عنقود لا تُجري عليه أي تعديل يسجّل بالفعل عند مستوى `information` في كلٍّ من وحدة تحكم الحاوية وملف سجل خاضع للتدوير على القرص.
+اضبط سجل خادم ClickHouse عبر `spec.settings.logger`. كل حقل اختياري وله قيمة افتراضية آمنة، لذا فإن أي عنقود لا تُجري عليه أي تعديل يسجّل بالفعل عند مستوى `trace` في كلٍّ من وحدة تحكم الحاوية وملف سجل خاضع للتدوير على القرص.
 
 ```yaml
 spec:
@@ -1077,71 +922,35 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: information # Default: information
-      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
-      count: 10         # Default: 10. Number of rotated files to keep
+      level: trace      # Default: trace
+      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
+      count: 50         # Default: 50. Number of rotated files to keep
 ```
 
-| الحقل       | الافتراضي     | الوصف                                                                                                                                |
-| ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `logToFile` | `true`        | عندما تكون القيمة `false`، يزيل المشغّل أهداف الملفات، ولا يرسل الخادم السجلات إلا إلى وحدة تحكم الحاوية.                            |
-| `jsonLogs`  | `false`       | عندما تكون القيمة `true`، يضيف المشغّل `formatting.type: json` بحيث يكون كل سطر كائن JSON.                                           |
-| `level`     | `information` | مستوى تفصيل السجلات. إحدى القيم التالية: `test`، `trace`، `debug`، `information`، `notice`، `warning`، `error`، `critical`، `fatal`. |
-| `size`      | `100M`        | الحجم الأقصى لملف سجل واحد قبل التدوير.                                                                                              |
-| `count`     | `10`          | عدد ملفات السجل المُدوَّرة التي يحتفظ بها الخادم.                                                                                    |
+| الحقل       | الافتراضي | الوصف                                                                                                                                |
+| ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `logToFile` | `true`    | عندما تكون القيمة `false`، يزيل المشغّل أهداف الملفات، ولا يرسل الخادم السجلات إلا إلى وحدة تحكم الحاوية.                            |
+| `jsonLogs`  | `false`   | عندما تكون القيمة `true`، يضيف المشغّل `formatting.type: json` بحيث يكون كل سطر كائن JSON.                                           |
+| `level`     | `trace`   | مستوى تفصيل السجلات. إحدى القيم التالية: `test`، `trace`، `debug`، `information`، `notice`، `warning`، `error`، `critical`، `fatal`. |
+| `size`      | `1000M`   | الحجم الأقصى لملف سجل واحد قبل التدوير.                                                                                              |
+| `count`     | `50`      | عدد ملفات السجل المُدوَّرة التي يحتفظ بها الخادم.                                                                                    |
 
 يُبقي المشغّل التسجيل إلى وحدة التحكم مفعّلًا دائمًا لكي يعمل `kubectl logs`، ويضيف التسجيل إلى الملف فوق ذلك عندما تكون `logToFile` بقيمة `true`. وينتج عن عنقود بالإعدادات الافتراضية كتلة `logger` التالية:
 
 ```yaml
 logger:
   console: true
-  level: information
+  level: trace
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 100M
-  count: 10
+  size: 1000M
+  count: 50
 ```
 
-ينطبق مقطع `spec.settings.logger` نفسه على `KeeperCluster`؛ لكن المشغّل يكتب ملفاته في هذه الحالة ضمن `/var/log/clickhouse-keeper/`، ويضبط مستوى مسجّل Raft ‏(`raft_logs_level`) على قيمة `level` نفسها.
+ينطبق مقطع `spec.settings.logger` نفسه على `KeeperCluster`؛ لكن المشغّل يكتب ملفاته في هذه الحالة ضمن `/var/log/clickhouse-keeper/`.
 
 <Note>
   يظل التسجيل إلى الطرفية مفعّلًا بغضّ النظر عن `logToFile`، لذا يواصل `kubectl logs` العمل حتى عند تعطيل التسجيل إلى ملف. اضبط `jsonLogs: true` عند إرسال السجلات إلى مخزن سجلات منظَّم يحلّل JSON.
-</Note>
-
-### جداول سجلات النظام {#system-log-tables}
-
-يُفعّل المشغّل جداول النظام `query_log` و`part_log` و`text_log` و`metric_log` و`asynchronous_metric_log`. وبما أنها تشترك مع بياناتك في وحدة التخزين نفسها، يفرض عليها `spec.settings.systemLogsTTLDays` مدة احتفاظ باستخدام TTL على مستوى الجدول. يضبط خطاف الويب المخصّص لتعيين القيم الافتراضية هذا الإعداد على `30` إذا أنشأت عنقودًا دون تحديد الحقل. اضبطه على `0` لتعطيل TTL صراحةً.
-
-```yaml
-spec:
-  settings:
-    systemLogsTTLDays: 14
-```
-
-<Note>
-  ينطبق الإعداد الافتراضي على العناقيد الجديدة فقط. أما العنقود الذي أُنشئ قبل استحداث `systemLogsTTLDays`، فتبقى جداول سجلات النظام فيه بلا حدّ زمني للاحتفاظ بها حتى تضبط الحقل بنفسك.
-</Note>
-
-يبدأ سريان TTL عند إعادة تشغيل الخادم في المرة التالية. يمكنك تغيير قيمته لكل جدول على حدة، أو ضبط أي إعداد آخر لسجلات النظام، أو تعطيل أحد الجداول تمامًا باستخدام السمة `@remove` — وكل ذلك من خلال `extraConfig`:
-
-```yaml
-spec:
-  settings:
-    extraConfig:
-      text_log:
-        ttl: event_date + INTERVAL 90 DAY DELETE
-      metric_log:
-        collect_interval_milliseconds: 60000
-      part_log:
-        "@remove": "1"
-```
-
-<Note>
-  لا يعني تعطيل الجدول حذفه: تبقى البيانات الموجودة على القرص حتى تحذف الجدول بنفسك.
-</Note>
-
-<Note>
-  يعيد ClickHouse إنشاء جدول النظام إذا تغيّرت قيمة TTL الخاصة به، ويحتفظ بالبيانات القديمة في جدول أُعيدت تسميته، مثل `system.text_log_0`. احذف هذه الجداول عندما لا تعود بحاجة إلى سجلّها.
 </Note>
 
 <div id="custom-configuration">
@@ -1169,26 +978,6 @@ spec:
 
 * [أمثلة لتهيئة YAML](/ar/concepts/features/configuration/server-config/configuration-files#example-1)
 * [جميع إعدادات الخادم](/ar/reference/settings/server-settings/settings)
-
-### تهيئة إضافية قابلة لإعادة التحميل {#reloadable-extra-configuration}
-
-يؤدي أي تغيير في `extraConfig` إلى إعادة تشغيل وحدات pod الخاصة بـ ClickHouse، لأن المشغّل لا يستطيع تحديد الإعدادات التي تُطبَّق وقت التشغيل. وللإعدادات التي يستطيع ClickHouse إعادة تحميلها دون إيقاف التشغيل — وأشيعها `named_collections` — استخدم `extraReloadableConfig` بدلًا من ذلك. يطبّق المشغّل التغييرات بإعادة تحميل التهيئة، دون إعادة تشغيل وحدات pod:
-
-```yaml
-spec:
-  settings:
-    extraReloadableConfig:
-      named_collections:
-        customers:
-          url: "http://my-service.my-ns.svc:5400/Customers"
-          format: "JSONEachRow"
-```
-
-ضع كل قسم من المستوى الأعلى في أحد الحقلين `extraConfig` أو `extraReloadableConfig` فقط؛ ويُصدر المشغّل تحذيرًا إذا تضمّن الحقلان القسم نفسه.
-
-<Note>
-  عند استخدام `extraReloadableConfig`، فإنك تؤكد أن إعداداته قابلة لإعادة التحميل بأمان. أما الإعداد الذي يتطلب إعادة التشغيل، فلن يسري مفعوله إذا وُضع هنا إلا عند إعادة التشغيل التالية، دون ظهور أي خطأ.
-</Note>
 
 <div id="embedded-extra-users-configuration">
   ### إعدادات المستخدمين الإضافيين المضمّنة
@@ -1297,29 +1086,4 @@ spec:
       configMap:
         key: password
         name: default-password
-```
-
-## المزامنة الدورية {#periodic-resync}
-
-إلى جانب الاستجابة لأحداث Kubernetes، يعيد الـ مشغّل مطابقة (reconcile) كل عنقود على فترات زمنية ثابتة. ويبقي ذلك شروط الحالة محدَّثة بالنسبة للحالات التي لا يمكن لأي watch رصدها — مثل صحة الـ نسخة متماثلة في ClickHouse، و quorum الخاص بـ Keeper — كما يعيد محاولة إجراءات المعالجة مثل تنظيف الـ pod العالق.
-
-ويُتحكَّم في هذه الفترة عبر متغير البيئة `RESYNC_PERIOD` الخاص بالـ مشغّل (القيمة الافتراضية `30s`). وهو ينطبق على موارد `KeeperCluster`، حيث تُعطِّل القيمة `0` المزامنة الدورية. أما موارد `ClickHouseCluster` فتستطلع `system.warnings` في ClickHouse كل 30 ثانية، وهو ما يعيد تشغيل عملية التسوية أصلاً، لذا لا تأثير لـ `RESYNC_PERIOD` عليها حالياً.
-
-```yaml
-# in the operator Deployment spec
-env:
-- name: RESYNC_PERIOD
-  value: "1m"
-```
-
-يطابق الـ مشغّل العناقيد بالتزامن؛ ويُحدَّد عدد عمليات المطابقة المتوازية لكل وحدة تحكم بواسطة `MAX_CONCURRENT_RECONCILES` (القيمة الافتراضية `4`).
-
-## إيقاف التسوية مؤقتًا {#pausing-reconciliation}
-
-أضف التعليق التوضيحي `clickhouse.com/pause-reconciliation: "true"` إلى `ClickHouseCluster` أو `KeeperCluster` لإيقاف تسويته بواسطة المشغّل. عندئذٍ، يُبلّغ المشغّل عن `ReconcileSucceeded=False` مع السبب `ReconciliationPaused` للمورد، ويتركه دون تغيير — وهو ما يفيد عند الحاجة إلى التدخل اليدوي إذا كان المشغّل سيُلغي تغييراتك. خلال فترة الإيقاف، يُبلّغ المشغّل عن جميع شروط الحالة (بما فيها `Ready` و`Healthy`) بالقيمة `Unknown` مع السبب `ReconciliationPaused`، لأنه لا يراقب العنقود. أزل التعليق التوضيحي لاستئناف التسوية؛ وستُطبَّق التغييرات المعلّقة في المواصفة عند إجراء التسوية التالية.
-
-```bash
-kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
-# ... manual surgery ...
-kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

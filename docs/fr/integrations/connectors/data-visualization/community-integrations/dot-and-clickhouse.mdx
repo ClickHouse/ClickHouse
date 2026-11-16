@@ -10,6 +10,8 @@ integration:
    - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -28,15 +30,7 @@ Il se connecte directement à ClickHouse pour vous permettre de poser des questi
   ## Connecter Dot à ClickHouse
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Configuration de la connexion ClickHouse dans Dot (mode clair)](/images/integrations/data-visualization/dot_01.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Configuration de la connexion ClickHouse dans Dot (mode clair)" border />
 
 <br />
 
@@ -49,15 +43,7 @@ Il se connecte directement à ClickHouse pour vous permettre de poser des questi
    * **Database** : définissez éventuellement un schéma par défaut
 4. Cliquez sur **Connect**.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![Connexion à ClickHouse](/images/integrations/data-visualization/dot_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-visualization/dot_02.webp" alt="Connexion à ClickHouse" size="sm" />
 
 Dot utilise le **query-pushdown** : ClickHouse effectue les calculs intensifs à grande échelle, tandis que Dot garantit des résultats exacts et fiables.
 

@@ -9,7 +9,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -162,7 +161,7 @@ struct ColumnToMultiLineStringsConverter
         size_t prev_offset = 0;
         VectorWithMemoryTracking<MultiLineString<Point>> answer(offsets.size());
         auto all_linestrings = ColumnToLineStringsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
-        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size() && iter < all_linestrings.size(); ++iter)
         {
             for (size_t linestring_iter = prev_offset; linestring_iter < offsets[iter]; ++linestring_iter)
                 answer[iter].emplace_back(std::move(all_linestrings[linestring_iter]));
@@ -211,7 +210,10 @@ struct ColumnToPolygonsConverter
         {
             const auto current_array_size = offsets[iter] - prev_offset;
             if (current_array_size == 0)
+            {
+                answer.emplace_back();
                 continue;
+            }
 
             answer[iter].outer() = std::move(all_rings[prev_offset]);
             answer[iter].inners().reserve(current_array_size);
@@ -238,7 +240,7 @@ struct ColumnToMultiPolygonsConverter
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size() && iter < all_polygons.size(); ++iter)
         {
             for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
                 answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
@@ -247,41 +249,6 @@ struct ColumnToMultiPolygonsConverter
 
         return answer;
     }
-};
-
-/// The geometries of one argument of a function of two geometries, corrected with `boost::geometry::correct` (oriented
-/// and closed) before they are used. A constant argument is converted and corrected once instead of once per row:
-/// a large constant polygon compared with many rows would otherwise be copied, converted and corrected for every row.
-template <typename Converter>
-class CorrectedGeometries
-{
-public:
-    explicit CorrectedGeometries(const ColumnPtr & column)
-    {
-        const auto * column_const = typeid_cast<const ColumnConst *>(column.get());
-        /// Without rows, the constant is not converted, as before, so an invalid value (such as a NaN coordinate) does not throw.
-        is_const = column_const && !column_const->empty();
-        if (is_const)
-        {
-            geometries = Converter::convert(column_const->getDataColumnPtr());
-            boost::geometry::correct(geometries[0]);
-        }
-        else
-            geometries = Converter::convert(column->convertToFullColumnIfConst());
-    }
-
-    /// The corrected geometry of `row`.
-    auto & get(size_t row)
-    {
-        if (is_const)
-            return geometries[0];
-        boost::geometry::correct(geometries[row]);
-        return geometries[row];
-    }
-
-private:
-    decltype(Converter::convert(std::declval<ColumnPtr>())) geometries;
-    bool is_const = false;
 };
 
 
