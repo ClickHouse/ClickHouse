@@ -59,7 +59,7 @@ private:
         const Context & context) const;
 
     /// Writes the first metadata file and registers the table. Removes the file if the table is not registered.
-    IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
+    [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
         const String & table,
