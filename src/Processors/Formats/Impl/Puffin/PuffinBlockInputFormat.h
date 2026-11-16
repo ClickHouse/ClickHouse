@@ -19,6 +19,11 @@ struct PuffinFooter
     VectorWithMemoryTracking<UInt8> data;
 };
 
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read);
+
+String readPuffinBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read);
+
 class PuffinMetadataInputFormat : public IInputFormat
 {
 public:

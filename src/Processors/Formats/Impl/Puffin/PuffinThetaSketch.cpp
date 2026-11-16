@@ -1,42 +1,41 @@
 #include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include "config.h"
 
-#include <Common/Exception.h>
-
-#if USE_DATASKETCHES
-
-#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
-#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
-
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/Exception.h>
-#include <Common/assert_cast.h>
-#include <Core/UUID.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
-#include <base/unaligned.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <unordered_set>
+
+#if USE_DATASKETCHES
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/castColumn.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
+
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
-
-#include <unordered_set>
+#include <theta_update_sketch_base.hpp>
+#endif
 
 namespace DB
 {
@@ -44,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -51,19 +51,51 @@ namespace
 
 constexpr UInt32 ICEBERG_TIMESTAMP_SCALE = 6;
 
-template <typename ColumnType, typename F>
-void forEachValue(const IColumn & column, const NullMap * null_map, F && f)
-{
-    const auto & data = assert_cast<const ColumnType &>(column).getData();
-    for (size_t i = 0; i < data.size(); ++i)
-        if (!null_map || !(*null_map)[i])
-            f(data[i]);
-}
+#if USE_DATASKETCHES
 
-template <typename T>
-void storeLittleEndian(char * buf, T value)
+std::optional<DataTypePtr> getCastType(const DataTypePtr & type)
 {
-    unalignedStoreLittleEndian<T>(buf, value);
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::Date32:
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+        case TypeIndex::UUID:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return DataTypePtr{};
+        case TypeIndex::UInt8:
+            if (isBool(type))
+                return DataTypePtr{};
+            return std::make_shared<DataTypeInt32>();
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt16:
+        case TypeIndex::Date:
+            return std::make_shared<DataTypeInt32>();
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+            return std::make_shared<DataTypeInt64>();
+        case TypeIndex::DateTime:
+            return std::make_shared<DataTypeDateTime64>(ICEBERG_TIMESTAMP_SCALE);
+        case TypeIndex::DateTime64:
+        {
+            const auto scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
+            if (scale > ICEBERG_TIMESTAMP_SCALE)
+                return {};
+            if (scale == ICEBERG_TIMESTAMP_SCALE)
+                return DataTypePtr{};
+            return std::make_shared<DataTypeDateTime64>(ICEBERG_TIMESTAMP_SCALE);
+        }
+        default:
+            return {};
+    }
 }
 
 template <typename NativeType>
@@ -83,11 +115,222 @@ size_t storeMinimalBigEndian(char * buf, NativeType value)
     return size;
 }
 
+template <typename Decimal>
+ColumnPtr encodeDecimals(const IColumn & column)
+{
+    const auto & data = assert_cast<const ColumnDecimal<Decimal> &>(column).getData();
+    auto result = ColumnString::create();
+    result->reserve(data.size());
+    char buf[sizeof(typename Decimal::NativeType)];
+    for (const auto & value : data)
+        result->insertData(buf, storeMinimalBigEndian(buf, value.value));
+    return result;
+}
+
+ColumnPtr encodeUUIDs(const IColumn & column)
+{
+    const auto & data = assert_cast<const ColumnUUID &>(column).getData();
+    auto result = ColumnFixedString::create(sizeof(UUID));
+    auto & chars = result->getChars();
+    chars.resize(data.size() * sizeof(UUID));
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        unalignedStoreBigEndian<UInt64>(&chars[i * sizeof(UUID)], UUIDHelpers::getHighBytes(data[i]));
+        unalignedStoreBigEndian<UInt64>(&chars[i * sizeof(UUID) + sizeof(UInt64)], UUIDHelpers::getLowBytes(data[i]));
+    }
+    return result;
+}
+
+#endif
+
+}
+
+#if USE_DATASKETCHES
+
+struct PuffinColumnThetaSketch::Impl
+{
+    using Table = datasketches::theta_update_sketch_base<UInt64, datasketches::trivial_extract_key, std::allocator<UInt64>>;
+
+    struct TableBuilder : datasketches::update_theta_sketch::builder
+    {
+        Table build() const { return Table(starting_lg_size(), lg_k_, rf_, p_, starting_theta(), seed_, allocator_); }
+    };
+
+    // NOLINTBEGIN(modernize-use-nodiscard)
+    struct Retained
+    {
+        bool empty;
+        UInt64 theta;
+        std::vector<UInt64> entries;
+
+        bool is_empty() const { return empty; }
+        bool is_ordered() const { return true; }
+        UInt16 get_seed_hash() const { return compute_seed_hash(datasketches::DEFAULT_SEED); }
+        UInt64 get_theta64() const { return empty ? datasketches::theta_constants::MAX_THETA : theta; }
+        std::allocator<UInt64> get_allocator() const { return {}; }
+        size_t get_num_retained() const { return entries.size(); }
+        auto begin() const { return entries.begin(); }
+        auto end() const { return entries.end(); }
+    };
+    // NOLINTEND(modernize-use-nodiscard)
+
+    Impl(DataTypePtr type_, DataTypePtr cast_to_)
+        : type(std::move(type_))
+        , cast_to(std::move(cast_to_))
+        , table(TableBuilder().build())
+    {
+    }
+
+    ColumnPtr encode(const ColumnPtr & column) const
+    {
+        if (cast_to)
+            return castColumn({column, type, ""}, cast_to);
+        switch (type->getTypeId())
+        {
+            case TypeIndex::Decimal32: return encodeDecimals<Decimal32>(*column);
+            case TypeIndex::Decimal64: return encodeDecimals<Decimal64>(*column);
+            case TypeIndex::Decimal128: return encodeDecimals<Decimal128>(*column);
+            case TypeIndex::Decimal256: return encodeDecimals<Decimal256>(*column);
+            case TypeIndex::UUID: return encodeUUIDs(*column);
+            default: return column;
+        }
+    }
+
+    void update(const ColumnPtr & column, const NullMap * null_map)
+    {
+        const auto encoded = encode(column);
+        PaddedPODArray<UInt64> hashes(encoded->size());
+        encoded->computeMurmurHash3Into(0, encoded->size(), static_cast<UInt32>(datasketches::DEFAULT_SEED), hashes.data());
+        const auto * strings = typeid_cast<const ColumnString *>(encoded.get());
+        for (size_t i = 0; i < hashes.size(); ++i)
+        {
+            if ((null_map && (*null_map)[i]) || (strings && strings->getDataAt(i).empty()))
+                continue;
+            table.is_empty_ = false;
+            const UInt64 hash = hashes[i] >> 1;
+            if (hash >= table.theta_ || hash == 0)
+                continue;
+            const auto [slot, found] = table.find(hash);
+            if (!found)
+                table.insert(slot, hash);
+        }
+    }
+
+    datasketches::compact_theta_sketch compact() const
+    {
+        Retained retained{.empty = table.is_empty_, .theta = table.theta_, .entries = {}};
+        if (!retained.empty)
+        {
+            retained.entries.reserve(table.num_entries_);
+            for (size_t i = 0; i < (1ULL << table.lg_cur_size_); ++i)
+                if (table.entries_[i] != 0)
+                    retained.entries.push_back(table.entries_[i]);
+            ::sort(retained.entries.begin(), retained.entries.end());
+        }
+        auto sketch_union = datasketches::theta_union::builder().build();
+        sketch_union.update(datasketches::compact_theta_sketch(retained, /*ordered=*/ true));
+        return sketch_union.get_result();
+    }
+
+    DataTypePtr type;
+    DataTypePtr cast_to;
+    Table table;
+};
+
+bool PuffinColumnThetaSketch::isSupportedType(const DataTypePtr & type)
+{
+    return getCastType(removeNullable(removeLowCardinality(type))).has_value();
+}
+
+PuffinColumnThetaSketch::PuffinColumnThetaSketch(const DataTypePtr & type_)
+{
+    auto type = removeNullable(removeLowCardinality(type_));
+    auto cast_to = getCastType(type);
+    if (!cast_to)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot build a Theta sketch for type {}: it has no Iceberg single-value serialization", type_->getName());
+    impl = std::make_unique<Impl>(std::move(type), std::move(*cast_to));
+}
+
+void PuffinColumnThetaSketch::update(const IColumn & column)
+{
+    const ColumnPtr full_column = column.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    ColumnPtr nested = full_column;
+    const NullMap * null_map = nullptr;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(full_column.get()))
+    {
+        null_map = &nullable->getNullMapData();
+        nested = nullable->getNestedColumnPtr();
+    }
+    impl->update(nested, null_map);
+}
+
+PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
+{
+    const auto compact = impl->compact();
+    const auto bytes = compact.serialize();
+    Serialized result{.bytes = String(reinterpret_cast<const char *>(bytes.data()), bytes.size()), .ndv = static_cast<UInt64>(compact.get_estimate())};
+    if (static_cast<UInt8>(result.bytes[0]) >= 2)
+        unalignedStoreLittleEndian<Float32>(result.bytes.data() + 12, 1.0f);
+    return result;
+}
+
+void PuffinColumnThetaSketch::reset()
+{
+    impl->table.reset();
+}
+
+#else
+
+struct PuffinColumnThetaSketch::Impl
+{
+};
+
+bool PuffinColumnThetaSketch::isSupportedType(const DataTypePtr &)
+{
+    return false;
+}
+
+PuffinColumnThetaSketch::PuffinColumnThetaSketch(const DataTypePtr &)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Theta sketches are disabled, ClickHouse was built without DataSketches");
+}
+
+void PuffinColumnThetaSketch::update(const IColumn &)
+{
+}
+
+PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
+{
+    return {};
+}
+
+void PuffinColumnThetaSketch::reset()
+{
+}
+
+#endif
+
+PuffinColumnThetaSketch::PuffinColumnThetaSketch(PuffinColumnThetaSketch && other) noexcept = default;
+PuffinColumnThetaSketch & PuffinColumnThetaSketch::operator=(PuffinColumnThetaSketch && other) noexcept = default;
+PuffinColumnThetaSketch::~PuffinColumnThetaSketch() = default;
+
+PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv)
+{
+    PuffinBlob blob;
+    blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
+    blob.fields = {field_id};
+    blob.snapshot_id = snapshot_id;
+    blob.sequence_number = sequence_number;
+    blob.properties.emplace("ndv", toString(ndv));
+    return blob;
+}
+
+namespace
+{
+
 VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Block & header)
 {
-    if (header.columns() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin output format requires at least one column to write Theta sketches");
-
     VectorWithMemoryTracking<Int32> field_ids;
     if (setting.empty())
     {
@@ -123,60 +366,68 @@ VectorWithMemoryTracking<Int32> parseFieldIds(const String & setting, const Bloc
     return field_ids;
 }
 
-datasketches::compact_theta_sketch compactThetaSketch(const datasketches::update_theta_sketch & sketch)
+void checkThetaSketchColumnType(const String & column_name, const DataTypePtr & type)
 {
-    auto sketch_union = datasketches::theta_union::builder().build();
-    sketch_union.update(sketch);
-    return sketch_union.get_result();
-}
+    if (PuffinColumnThetaSketch::isSupportedType(type))
+        return;
 
-String serializeThetaSketchBlob(const datasketches::compact_theta_sketch & compact)
-{
-    const auto bytes = compact.serialize();
-    String result(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-    if (static_cast<UInt8>(result[0]) >= 2)
-        unalignedStoreLittleEndian<Float32>(result.data() + 12, 1.0f);
-    return result;
-}
+    const auto nested_type = removeNullable(removeLowCardinality(type));
+    if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(nested_type.get());
+        datetime64 && datetime64->getScale() > ICEBERG_TIMESTAMP_SCALE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write a Theta sketch for column {} of type {}: Iceberg timestamps have microsecond precision, "
+            "cast the column to DateTime64(6)",
+            column_name,
+            type->getName());
 
-PuffinBlob makeThetaSketchBlobMetadata(Int32 field_id, Int64 snapshot_id, Int64 sequence_number, UInt64 ndv)
-{
-    PuffinBlob blob;
-    blob.type = PUFFIN_DATASKETCHES_THETA_BLOB_TYPE;
-    blob.fields = {field_id};
-    blob.snapshot_id = snapshot_id;
-    blob.sequence_number = sequence_number;
-    blob.properties.emplace("ndv", toString(ndv));
-    return blob;
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot write a Theta sketch for column {} of type {}: the type has no Iceberg single-value serialization",
+        column_name,
+        type->getName());
 }
 
 class PuffinThetaSketchBuilder final : public IPuffinBlobBuilder
 {
 public:
-    PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings);
+    PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
+        : field_ids(parseFieldIds(format_settings.puffin.output_field_ids, header))
+        , snapshot_id(format_settings.puffin.output_snapshot_id)
+        , sequence_number(format_settings.puffin.output_sequence_number)
+    {
+        sketches.reserve(header.columns());
+        for (const auto & column : header)
+        {
+            checkThetaSketchColumnType(column.name, column.type);
+            sketches.emplace_back(column.type);
+        }
+    }
 
-    void consume(const Chunk & chunk) override;
-    void write(PuffinWriter & writer) override;
-    void reset() override;
+    void consume(const Chunk & chunk) override
+    {
+        const auto & columns = chunk.getColumns();
+        for (size_t i = 0; i < columns.size(); ++i)
+            sketches[i].update(*columns[i]);
+    }
+
+    void write(PuffinWriter & writer) override
+    {
+        for (size_t i = 0; i < sketches.size(); ++i)
+        {
+            const auto serialized = sketches[i].serialize();
+            writer.addBlob(makeThetaSketchBlobMetadata(field_ids[i], snapshot_id, sequence_number, serialized.ndv), serialized.bytes);
+        }
+    }
+
+    void reset() override
+    {
+        for (auto & sketch : sketches)
+            sketch.reset();
+    }
 
 private:
-    class ColumnSketch
-    {
-    public:
-        ColumnSketch(const String & column_name, const DataTypePtr & type);
-
-        void add(const IColumn & column);
-        const datasketches::update_theta_sketch & get() const { return sketch; }
-        void reset() { sketch.reset(); }
-
-    private:
-        void update(const void * data, size_t size);
-
-        DataTypePtr type;
-        datasketches::update_theta_sketch sketch;
-    };
-
-    VectorWithMemoryTracking<ColumnSketch> sketches;
+    VectorWithMemoryTracking<PuffinColumnThetaSketch> sketches;
     VectorWithMemoryTracking<Int32> field_ids;
     Int64 snapshot_id = -1;
     Int64 sequence_number = -1;
@@ -184,226 +435,14 @@ private:
 
 }
 
-PuffinThetaSketchBuilder::ColumnSketch::ColumnSketch(const String & column_name, const DataTypePtr & type_)
-    : type(removeNullable(removeLowCardinality(type_)))
-    , sketch(datasketches::update_theta_sketch::builder().build())
-{
-    switch (type->getTypeId())
-    {
-        case TypeIndex::UInt8:
-        case TypeIndex::Int8:
-        case TypeIndex::UInt16:
-        case TypeIndex::Int16:
-        case TypeIndex::Int32:
-        case TypeIndex::UInt32:
-        case TypeIndex::Int64:
-        case TypeIndex::UInt64:
-        case TypeIndex::Float32:
-        case TypeIndex::Float64:
-        case TypeIndex::Date:
-        case TypeIndex::Date32:
-        case TypeIndex::DateTime:
-        case TypeIndex::String:
-        case TypeIndex::FixedString:
-        case TypeIndex::UUID:
-        case TypeIndex::Decimal32:
-        case TypeIndex::Decimal64:
-        case TypeIndex::Decimal128:
-        case TypeIndex::Decimal256:
-            return;
-        case TypeIndex::DateTime64:
-            if (assert_cast<const DataTypeDateTime64 &>(*type).getScale() > ICEBERG_TIMESTAMP_SCALE)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot write a Theta sketch for column {} of type {}: Iceberg timestamps have microsecond precision, "
-                    "cast the column to DateTime64(6)",
-                    column_name,
-                    type_->getName());
-            return;
-        default:
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write a Theta sketch for column {} of type {}: the type has no Iceberg single-value serialization",
-                column_name,
-                type_->getName());
-    }
-}
-
-void PuffinThetaSketchBuilder::ColumnSketch::update(const void * data, size_t size)
-{
-    if (size != 0)
-        sketch.update(data, size);
-}
-
-void PuffinThetaSketchBuilder::ColumnSketch::add(const IColumn & column_)
-{
-    ColumnPtr column = column_.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-    const NullMap * null_map = nullptr;
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
-    {
-        null_map = &nullable->getNullMapData();
-        column = nullable->getNestedColumnPtr();
-    }
-
-    char buf[sizeof(Int256)];
-    auto add_int32 = [&](auto value)
-    {
-        storeLittleEndian<Int32>(buf, static_cast<Int32>(value));
-        update(buf, sizeof(Int32));
-    };
-    auto add_int64 = [&](auto value)
-    {
-        storeLittleEndian<Int64>(buf, static_cast<Int64>(value));
-        update(buf, sizeof(Int64));
-    };
-    auto add_decimal = [&](auto value) { update(buf, storeMinimalBigEndian(buf, value.value)); };
-
-    switch (type->getTypeId())
-    {
-        case TypeIndex::UInt8:
-            if (isBool(type))
-                forEachValue<ColumnUInt8>(*column, null_map, [&](UInt8 value)
-                {
-                    buf[0] = value != 0;
-                    update(buf, 1);
-                });
-            else
-                forEachValue<ColumnUInt8>(*column, null_map, add_int32);
-            break;
-        case TypeIndex::Int8:
-            forEachValue<ColumnInt8>(*column, null_map, add_int32);
-            break;
-        case TypeIndex::UInt16:
-        case TypeIndex::Date:
-            forEachValue<ColumnUInt16>(*column, null_map, add_int32);
-            break;
-        case TypeIndex::Int16:
-            forEachValue<ColumnInt16>(*column, null_map, add_int32);
-            break;
-        case TypeIndex::Int32:
-        case TypeIndex::Date32:
-            forEachValue<ColumnInt32>(*column, null_map, add_int32);
-            break;
-        case TypeIndex::UInt32:
-            forEachValue<ColumnUInt32>(*column, null_map, add_int64);
-            break;
-        case TypeIndex::Int64:
-            forEachValue<ColumnInt64>(*column, null_map, add_int64);
-            break;
-        case TypeIndex::UInt64:
-            forEachValue<ColumnUInt64>(*column, null_map, add_int64);
-            break;
-        case TypeIndex::DateTime:
-            forEachValue<ColumnUInt32>(*column, null_map, [&](UInt32 seconds) { add_int64(static_cast<Int64>(seconds) * 1'000'000); });
-            break;
-        case TypeIndex::DateTime64:
-        {
-            const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(
-                ICEBERG_TIMESTAMP_SCALE - assert_cast<const DataTypeDateTime64 &>(*type).getScale());
-            forEachValue<ColumnDateTime64>(*column, null_map, [&](DateTime64 value) { add_int64(value.value * multiplier); });
-            break;
-        }
-        case TypeIndex::Float32:
-            forEachValue<ColumnFloat32>(*column, null_map, [&](Float32 value)
-            {
-                storeLittleEndian<Float32>(buf, value);
-                update(buf, sizeof(Float32));
-            });
-            break;
-        case TypeIndex::Float64:
-            forEachValue<ColumnFloat64>(*column, null_map, [&](Float64 value)
-            {
-                storeLittleEndian<Float64>(buf, value);
-                update(buf, sizeof(Float64));
-            });
-            break;
-        case TypeIndex::UUID:
-            forEachValue<ColumnUUID>(*column, null_map, [&](const UUID & value)
-            {
-                unalignedStoreBigEndian<UInt64>(buf, UUIDHelpers::getHighBytes(value));
-                unalignedStoreBigEndian<UInt64>(buf + sizeof(UInt64), UUIDHelpers::getLowBytes(value));
-                update(buf, sizeof(UUID));
-            });
-            break;
-        case TypeIndex::Decimal32:
-            forEachValue<ColumnDecimal<Decimal32>>(*column, null_map, add_decimal);
-            break;
-        case TypeIndex::Decimal64:
-            forEachValue<ColumnDecimal<Decimal64>>(*column, null_map, add_decimal);
-            break;
-        case TypeIndex::Decimal128:
-            forEachValue<ColumnDecimal<Decimal128>>(*column, null_map, add_decimal);
-            break;
-        case TypeIndex::Decimal256:
-            forEachValue<ColumnDecimal<Decimal256>>(*column, null_map, add_decimal);
-            break;
-        case TypeIndex::String:
-        case TypeIndex::FixedString:
-            for (size_t i = 0; i < column->size(); ++i)
-            {
-                if (null_map && (*null_map)[i])
-                    continue;
-                const std::string_view value = column->getDataAt(i);
-                update(value.data(), value.size());
-            }
-            break;
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot write a Theta sketch for type {}", type->getName());
-    }
-}
-
-PuffinThetaSketchBuilder::PuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
-    : field_ids(parseFieldIds(format_settings.puffin.output_field_ids, header))
-    , snapshot_id(format_settings.puffin.output_snapshot_id)
-    , sequence_number(format_settings.puffin.output_sequence_number)
-{
-    sketches.reserve(header.columns());
-    for (const auto & column : header)
-        sketches.emplace_back(column.name, column.type);
-}
-
-void PuffinThetaSketchBuilder::consume(const Chunk & chunk)
-{
-    const auto & columns = chunk.getColumns();
-    for (size_t i = 0; i < columns.size(); ++i)
-        sketches[i].add(*columns[i]);
-}
-
-void PuffinThetaSketchBuilder::write(PuffinWriter & writer)
-{
-    for (size_t i = 0; i < sketches.size(); ++i)
-    {
-        const auto compact = compactThetaSketch(sketches[i].get());
-        writer.addBlob(
-            makeThetaSketchBlobMetadata(field_ids[i], snapshot_id, sequence_number, static_cast<UInt64>(compact.get_estimate())),
-            serializeThetaSketchBlob(compact));
-    }
-}
-
-void PuffinThetaSketchBuilder::reset()
-{
-    for (auto & sketch : sketches)
-        sketch.reset();
-}
-
-}
-
-#endif
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 PuffinBlobBuilderPtr createPuffinThetaSketchBuilder(const Block & header, const FormatSettings & format_settings)
 {
+    if (header.columns() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin output format requires at least one column to write Theta sketches");
 #if USE_DATASKETCHES
     return std::make_unique<PuffinThetaSketchBuilder>(header, format_settings);
 #else
-    UNUSED(header, format_settings);
+    UNUSED(format_settings);
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED, "Writing Theta sketches to Puffin files is disabled, ClickHouse was built without DataSketches");
 #endif

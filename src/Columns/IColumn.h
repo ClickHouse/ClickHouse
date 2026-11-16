@@ -491,6 +491,10 @@ public:
     /// buffer for their nested columns.
     virtual void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const = 0;
 
+    /// For each row in [row_begin, row_end), writes the first 64-bit half of `MurmurHash3_x64_128(getDataAt(row), seed)`
+    /// into `hash_out[row - row_begin]`.
+    virtual void computeMurmurHash3Into(size_t row_begin, size_t row_end, UInt32 seed, UInt64 * hash_out) const;
+
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
 

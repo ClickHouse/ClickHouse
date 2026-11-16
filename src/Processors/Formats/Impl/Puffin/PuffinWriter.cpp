@@ -56,29 +56,7 @@ size_t PuffinWriter::finalize()
 
     Poco::JSON::Array::Ptr blobs_json = new Poco::JSON::Array;
     for (const auto & blob : blobs)
-    {
-        Poco::JSON::Array::Ptr fields_json = new Poco::JSON::Array;
-        for (Int32 field_id : blob.fields)
-            fields_json->add(field_id);
-
-        Poco::JSON::Object::Ptr blob_json = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
-        blob_json->set("type", blob.type);
-        blob_json->set("fields", fields_json);
-        blob_json->set("snapshot-id", blob.snapshot_id);
-        blob_json->set("sequence-number", blob.sequence_number);
-        blob_json->set("offset", blob.offset);
-        blob_json->set("length", blob.length);
-        if (!blob.compression_codec.empty())
-            blob_json->set("compression-codec", blob.compression_codec);
-        if (!blob.properties.empty())
-        {
-            Poco::JSON::Object::Ptr properties_json = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
-            for (const auto & [key, value] : blob.properties)
-                properties_json->set(key, value);
-            blob_json->set("properties", properties_json);
-        }
-        blobs_json->add(blob_json);
-    }
+        blobs_json->add(blob.toJSON(/*in_footer=*/ true));
 
     Poco::JSON::Object::Ptr file_properties_json = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
     file_properties_json->set("created-by", fmt::format("ClickHouse {}", VERSION_STRING));

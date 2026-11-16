@@ -4,6 +4,8 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <Poco/JSON/Object.h>
+
 #include <limits>
 
 namespace DB
@@ -26,6 +28,8 @@ struct PuffinBlob
     Int64 length = 0;
     String compression_codec;
     MapWithMemoryTracking<String, String> properties;
+
+    Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
 };
 
 }
