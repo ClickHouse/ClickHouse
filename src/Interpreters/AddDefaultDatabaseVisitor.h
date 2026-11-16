@@ -386,8 +386,10 @@ private:
             else if (arguments.size() == 2)
             {
                 /// An empty database name means the current database too, see `evaluateConstantExpressionForDatabaseName`.
+                /// An aliased one is kept, because the other references to the alias need its value.
                 const auto * literal = arguments[0]->as<ASTLiteral>();
-                if (literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty())
+                if (literal && literal->alias.empty() && literal->value.getType() == Field::Types::String
+                    && literal->value.safeGet<String>().empty())
                     arguments[0] = make_intrusive<ASTLiteral>(database_name);
                 else
                     substituteCurrentDatabase(arguments[0], *function->arguments);
