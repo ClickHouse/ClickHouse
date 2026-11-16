@@ -8,7 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 
-#include <Core/ParallelReplicasProtocolDefines.h>
+#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -86,7 +86,7 @@ struct ParallelReadRequest
     UInt64 replica_protocol_version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
-    [[nodiscard]] String describe() const;
+    String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
@@ -101,7 +101,7 @@ struct ParallelReadResponse
     String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
-    [[nodiscard]] String describe() const;
+    String describe() const;
     void deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
@@ -120,15 +120,13 @@ struct InitialAllRangesAnnouncement
         size_t replica_num_,
         size_t mark_segment_size_,
         size_t min_marks_per_request_,
-        String stream_id_,
-        bool wants_analyzed_ranges_)
+        String stream_id_)
         : mode(mode_)
         , description(std::move(description_))
         , replica_num(replica_num_)
         , mark_segment_size(mark_segment_size_)
         , min_marks_per_request(min_marks_per_request_)
         , stream_id(std::move(stream_id_))
-        , wants_analyzed_ranges(wants_analyzed_ranges_)
     {
     }
 
@@ -144,11 +142,6 @@ struct InitialAllRangesAnnouncement
 
     /// Identifies the data stream for coordinator dispatch (e.g. table name, projection name).
     String stream_id;
-
-    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST. Asks for an
-    /// `InitialAllRangesAnnouncementResponse` in `Default` mode as well: a replica that skipped its own index
-    /// analysis takes the analyzed ranges from it to evaluate skip indexes at read time.
-    bool wants_analyzed_ranges;
 
     /// See the matching field on `ParallelReadRequest`. Populated at deserialization time on the
     /// initiator side, NOT serialized. Defaults to the latest version for in-process construction.
@@ -176,7 +169,7 @@ struct InitialAllRangesAnnouncementResponse
     String stream_id;
 
     void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
-    [[nodiscard]] String describe() const;
+    String describe() const;
     static InitialAllRangesAnnouncementResponse deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 

@@ -10,12 +10,6 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 
-#include "config.h"
-
-#if USE_SIMDUTF
-#    include <simdutf.h>
-#endif
-
 namespace DB
 {
 
@@ -29,20 +23,11 @@ namespace
 
 UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 {
-#if USE_SIMDUTF
-    /// The dispatched call is not free, so do not pay for it on empty strings.
-    if (len == 0)
-        return 1;
-    /// Hand-written SIMD kernels with runtime dispatch. The plain OR-reduction below is vectorized with
-    /// 32-bit lanes by clang 23 (the accumulator is promoted to int), which quarters its throughput.
-    return simdutf::validate_ascii(reinterpret_cast<const char *>(data), len);
-#else
     /// https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
     UInt8 res = 0;
     for (UInt64 i = 0; i < len; ++i)
         res |= data[i];
     return res <= 0x7F;
-#endif
 }
 
 }
@@ -57,27 +42,27 @@ public:
         return std::make_shared<DB::FunctionIsValidASCII>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(StringOrFixedString) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & column = arguments[0];
 
@@ -97,7 +82,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
     }
@@ -147,14 +132,7 @@ REGISTER_FUNCTION(IsValidASCII)
     factory.registerFunction<DB::FunctionIsValidASCII>(DB::FunctionDocumentation{
         .description = R"(Returns 1 if the input String or FixedString contains only ASCII bytes (0x00–0x7F), otherwise 0. Optimized for the positive case (the input _is_ valid ASCII).)",
         .syntax = "isValidASCII(str)",
-        .examples = {
-            {"isValidASCII",
-             "SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii",
-             R"(
-┌─is_ascii─┬─is_not_ascii─┐
-│        1 │            0 │
-└──────────┴──────────────┘
-)"}},
+        .examples = {{"isValidASCII", "SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii", ""}},
         .introduced_in = {25, 9},
         .category = DB::FunctionDocumentation::Category::String,
     });

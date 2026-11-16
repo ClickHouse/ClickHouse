@@ -7,7 +7,6 @@
 
 #include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,7 +20,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -182,11 +180,11 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     ParserCreateQuery parser;
 
     std::string creation_args;
-    creation_args += quoteString(config.url_prefix);
+    creation_args += fmt::format("'{}'", config.url_prefix);
     if (config.no_sign_request)
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
-        creation_args += fmt::format(", {}, {}", quoteString(config.access_key_id.value()), quoteString(config.secret_access_key.value()));
+        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
     else if (config.use_environment_credentials)
         creation_args += ", use_environment_credentials = 1";
 
@@ -344,53 +342,12 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, s3DatabaseSecretArguments(), {
+    factory.registerDatabase("S3", create_fn, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,
     }, Documentation{
-        .description = R"DOCS_MD(
-The `S3` database engine exposes objects in Amazon S3 and S3-compatible object storage as read-only tables. A table name is resolved as an object URL through the [`s3`](/reference/functions/table-functions/s3) table function.
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE s3_data
-ENGINE = S3([url[, NOSIGN | access_key_id, secret_access_key]]);
-```
-
-The engine can also take a named collection. Supported configuration keys are `url`, `access_key_id`, `secret_access_key`, `no_sign_request`, and `use_environment_credentials`.
-
-## Usage {#usage}
-
-With a base URL, table names are object paths relative to that URL:
-
-```sql
-CREATE DATABASE s3_data
-ENGINE = S3('https://bucket.s3.amazonaws.com/data/', 'NOSIGN');
-
-SELECT * FROM s3_data.`events.parquet`;
-```
-
-Without a base URL, use the full object URL as the table name. The schema and format are inferred in the same way as for the `s3` table function. The database owns no table definitions and does not support table DDL or writes.
-
-## Access control {#access-control}
-
-S3 URLs are checked against the server's remote-host filter. Creating this database requires `READ` and `WRITE` source grants on `S3`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant), for example:
-
-```sql
-GRANT READ, WRITE ON S3 TO user_name;
-```
-
-See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
-
-## See also {#see-also}
-
-- [`s3` table function](/reference/functions/table-functions/s3)
-- [Using S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
-- [Filesystem database engine](/reference/engines/database-engines/filesystem)
-- [HDFS database engine](/reference/engines/database-engines/hdfs)
-)DOCS_MD",
+        .description = "A read-only database that exposes objects in Amazon S3 (or S3-compatible storage) as tables.",
         .syntax = "ENGINE = S3([config_or_url[, access_key_id, secret_access_key]])",
         .related = {"Filesystem", "HDFS"}});
 }

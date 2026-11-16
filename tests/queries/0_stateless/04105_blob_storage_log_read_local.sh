@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "
 
     CREATE TABLE test_local_blob_log_read (a Int32, b String)
     ENGINE = MergeTree() ORDER BY a
-    SETTINGS disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/04105_test_local_blob_log_read/');
+    SETTINGS disk = disk(type = 'local_blob_storage', path = '04105_test_local_blob_log_read/');
 
     INSERT INTO test_local_blob_log_read VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
 

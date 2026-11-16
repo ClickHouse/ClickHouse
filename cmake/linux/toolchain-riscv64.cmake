@@ -9,10 +9,9 @@ set (CMAKE_C_COMPILER_TARGET "riscv64-linux-gnu")
 set (CMAKE_CXX_COMPILER_TARGET "riscv64-linux-gnu")
 set (CMAKE_ASM_COMPILER_TARGET "riscv64-linux-gnu")
 
-set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-riscv64")
+set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-riscv64")
 
-# The sysroot has the Debian layout: GCC startup objects and libgcc.a live under usr/lib/gcc.
-set (TOOLCHAIN_PATH "${CMAKE_SYSROOT}/usr")
+set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}")
 
 # Make sure to ignore global clang configuration files which could influence the
 # build environment using --no-default-config

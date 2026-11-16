@@ -22,9 +22,10 @@ DESC format(CSV, '00.0');
 DESC format(CSV, '0000000.1');
 DESC format(CSV, '0.0000000000000000000000001');
 
--- 3. Zero-padded integers deliberately stay `String`. Do not "simplify" this group away: a leading zero
--- carries information in these formats (zip codes, phone numbers), so the field must keep its exact
--- bytes even though the `TSV` value parser can read it as a number.
+-- 3. Zero-padded integers deliberately stay String. Do not "simplify" this group away: with integer
+-- inference enabled these values infer an integer type, and the TSV value parser (readIntTextUnsafe)
+-- reads the leading '0' as the whole value, so inferring a number would turn a wrong type into a hard
+-- parse error on data that reads today. This is the parser-side limitation of issue #5999.
 SELECT 'group 3: zero-padded integers stay String';
 DESC format(TSV, '00');
 DESC format(TSV, '007');
