@@ -159,6 +159,82 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE t_replace_zero;
 "
 
+echo "-- a DELETE WHERE rule that removes the only row whose TTL is 0 recalculates the bound of the rest"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_where_zero (id UInt64, delete_at DateTime, erase_at DateTime) ENGINE = MergeTree ORDER BY id
+    TTL delete_at DELETE, erase_at DELETE WHERE id = 0
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_where_zero VALUES (0, 0, 1), (1, '2100-01-01 00:00:00', 0);
+    OPTIMIZE TABLE t_where_zero FINAL;
+    SELECT rows, delete_ttl_info_max = toDateTime('2100-01-01 00:00:00') FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_where_zero' AND active;
+    DROP TABLE t_where_zero;
+"
+
+echo "-- the same for a part whose TTL was not calculated before the merge"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_where_zero_not_calculated (id UInt64, delete_at DateTime, erase_at DateTime) ENGINE = MergeTree ORDER BY id
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_where_zero_not_calculated VALUES (0, 0, 1), (1, '2100-01-01 00:00:00', 0);
+    ALTER TABLE t_where_zero_not_calculated MODIFY TTL delete_at DELETE, erase_at DELETE WHERE id = 0
+    SETTINGS materialize_ttl_after_modify = 0;
+    OPTIMIZE TABLE t_where_zero_not_calculated FINAL;
+    SELECT rows, delete_ttl_info_max = toDateTime('2100-01-01 00:00:00') FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_where_zero_not_calculated' AND active;
+    DROP TABLE t_where_zero_not_calculated;
+"
+
+echo "-- a GROUP BY rule that folds the only row whose TTL is 0 recalculates the bound of the rest"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_group_by_zero (k UInt64, id UInt64, delete_at DateTime, group_at DateTime) ENGINE = MergeTree ORDER BY (k, id)
+    TTL delete_at DELETE, group_at GROUP BY k SET delete_at = max(delete_at)
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_group_by_zero VALUES (1, 0, 0, 1), (1, 1, '2100-01-01 00:00:00', 1);
+    OPTIMIZE TABLE t_group_by_zero FINAL;
+    SELECT rows, delete_ttl_info_max = toDateTime('2100-01-01 00:00:00') FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_group_by_zero' AND active;
+    DROP TABLE t_group_by_zero;
+"
+
+echo "-- a GROUP BY rule that sets the TTL of the folded row to 0 makes the bound never expire"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_group_by_set_zero (k UInt64, id UInt64, delete_at DateTime, zero_at DateTime, group_at DateTime)
+    ENGINE = MergeTree ORDER BY (k, id) TTL delete_at DELETE, group_at GROUP BY k SET delete_at = min(zero_at)
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_group_by_set_zero SELECT 1, number, '2100-01-01 00:00:00', 0, 1 FROM numbers(2);
+    OPTIMIZE TABLE t_group_by_set_zero FINAL;
+    SELECT count(), countIf(delete_at = 0) FROM t_group_by_set_zero;
+    SELECT toUInt32(delete_ttl_info_max) = 4294967295 FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_group_by_set_zero' AND active;
+    DROP TABLE t_group_by_set_zero;
+"
+
+echo "-- a row whose TTL a column TTL resets to 0 never expires"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_column_reset (id UInt64, delete_at DateTime DEFAULT 0 TTL reset_at, reset_at DateTime) ENGINE = MergeTree ORDER BY id
+    TTL delete_at DELETE
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_column_reset VALUES (1, '2100-01-01 00:00:00', 1);
+    OPTIMIZE TABLE t_column_reset FINAL;
+    SELECT count(), countIf(delete_at = 0) FROM t_column_reset;
+    -- NEVER, which system.parts shows as the largest DateTime.
+    SELECT toUInt32(delete_ttl_info_max) = 4294967295 FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_column_reset' AND active;
+    DROP TABLE t_column_reset;
+"
+
+echo "-- the same when the rows TTL reads a subcolumn of the reset column"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_column_reset_subcolumn (id UInt64, t Tuple(d DateTime) TTL reset_at, reset_at DateTime) ENGINE = MergeTree ORDER BY id
+    TTL t.d DELETE
+    SETTINGS merge_with_ttl_timeout = 0, max_number_of_merges_with_ttl_in_pool = 0;
+    INSERT INTO t_column_reset_subcolumn SELECT 1, tuple(toDateTime('2100-01-01 00:00:00')), toDateTime(1);
+    OPTIMIZE TABLE t_column_reset_subcolumn FINAL;
+    SELECT toUInt32(delete_ttl_info_max) = 4294967295 FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_column_reset_subcolumn' AND active;
+    DROP TABLE t_column_reset_subcolumn;
+"
+
 # max_number_of_merges_with_ttl_in_pool is compared with the number of TTL merges of the whole server, so the tables
 # below that wait for a background TTL merge raise it to 100. Where the part must be prepared first, it stays 0 until then.
 

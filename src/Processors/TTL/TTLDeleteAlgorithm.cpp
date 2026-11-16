@@ -44,7 +44,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
         {
             ++removed;
         }
-        else if (where_filter_passed)
+        else if (where_filter_passed && !bound_from_output)
         {
             /// Update ttl info only if row passes the filter.
             /// Rows that don't pass the filter should not affect TTL.
@@ -62,6 +62,25 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
     for (auto & column : block)
         column.column = column.column->filter(filter, rows - removed);
+}
+
+void TTLDeleteAlgorithm::setBoundFromOutput()
+{
+    bound_from_output = true;
+    new_ttl_info = {.ttl_finished = new_ttl_info.ttl_finished};
+}
+
+void TTLDeleteAlgorithm::updateBound(const Block & block)
+{
+    if (!bound_from_output || block.empty())
+        return;
+
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    PaddedPODArray<Int64> timestamps;
+    extractTimestamps(ttl_column.get(), timestamps);
+
+    for (Int64 timestamp : timestamps)
+        new_ttl_info.updateZeroAsNever(timestamp);
 }
 
 void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const

@@ -45,7 +45,7 @@ protected:
 
 private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
-    const TTLDeleteAlgorithm * delete_algorithm = nullptr;
+    TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
