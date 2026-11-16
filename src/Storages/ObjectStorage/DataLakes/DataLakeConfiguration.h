@@ -494,6 +494,10 @@ public:
         /// stay in effect for the table, while per-table setting updates (see `update`) cannot
         /// corrupt the disk's own storage.
         ready_object_storage = disk->getObjectStorage()->clone();
+#if USE_AWS_S3
+        if (this->supportsFullyQualifiedPaths())
+            allowFullyQualifiedPaths(ready_object_storage);
+#endif
     }
 
     bool supportsPrewhere() const override

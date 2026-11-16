@@ -232,8 +232,11 @@ private:
 
 std::pair<std::string, std::string> S3ObjectStorage::splitBucketAndKey(const std::string & remote_path) const
 {
-    if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
-        return {std::string(qualified->object_namespace), std::string(qualified->key)};
+    if (allow_fully_qualified_paths)
+    {
+        if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
+            return {std::string(qualified->object_namespace), std::string(qualified->key)};
+    }
 
     return {uri.bucket, remote_path};
 }
@@ -868,7 +871,7 @@ ObjectStoragePtr S3ObjectStorage::cloneImpl() const
 {
     /// `S3::Client::clone` builds an equivalent client sharing no mutable state with the
     /// original, so the copy can later rebuild its client without affecting this storage.
-    return std::make_shared<S3ObjectStorage>(
+    auto copy = std::make_shared<S3ObjectStorage>(
         client.get()->clone(),
         std::make_unique<S3Settings>(*s3_settings.get()),
         uri,
@@ -878,6 +881,16 @@ ObjectStoragePtr S3ObjectStorage::cloneImpl() const
         for_disk_s3,
         credentials_refresh_callback,
         client_restricts_server_credentials.load());
+    copy->allow_fully_qualified_paths = allow_fully_qualified_paths;
+    return copy;
+}
+
+void allowFullyQualifiedPaths(ObjectStoragePtr object_storage)
+{
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
+    if (auto * s3_object_storage = dynamic_cast<S3ObjectStorage *>(object_storage.get()))
+        s3_object_storage->allowFullyQualifiedPaths();
 }
 
 ObjectStorageKeyGeneratorPtr S3ObjectStorage::createKeyGenerator() const

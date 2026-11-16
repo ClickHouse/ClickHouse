@@ -173,6 +173,10 @@ public:
 
     ObjectStoragePtr cloneImpl() const override;
 
+    /// A path `<scheme>://<bucket>/<key>` addresses `<key>` in `<bucket>` only when this is enabled;
+    /// otherwise every path is a key in `uri.bucket`.
+    void allowFullyQualifiedPaths() { allow_fully_qualified_paths = true; }
+
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
@@ -201,7 +205,12 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    bool allow_fully_qualified_paths = false;
 };
+
+/// Enables `allowFullyQualifiedPaths` on the `S3ObjectStorage` wrapped by the decorators of `object_storage`, if there is one.
+void allowFullyQualifiedPaths(ObjectStoragePtr object_storage);
 
 }
 

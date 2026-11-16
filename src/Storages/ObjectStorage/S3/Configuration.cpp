@@ -200,7 +200,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
                 is_loading_from_existing_metadata, force_anonymous_load_fallback);
         };
     }
-    return std::make_shared<S3ObjectStorage>(
+    auto object_storage = std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
         url,
@@ -210,6 +210,9 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         false,
         client_refresher,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
+    if (supportsFullyQualifiedPaths())
+        object_storage->allowFullyQualifiedPaths();
+    return object_storage;
 }
 
 /// Request settings which the storage definition (arguments or named collection) takes over the `<s3>` config,
