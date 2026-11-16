@@ -11,6 +11,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Core/AccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -35,7 +36,7 @@
 
 #include "config.h"
 
-#if USE_MULTITARGET_CODE || defined(__SSSE3__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__SSSE3__)
 #    include <immintrin.h>
 #endif
 
@@ -45,7 +46,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-#include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -230,31 +230,20 @@ bool ColumnVector<T>::isComparatorCompilable() const
 template <typename T>
 llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
 {
-    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
     if constexpr (std::is_integral_v<T>)
-    {
-        // a > b ? 1 : (a < b ? -1 : 0);
-
-        bool is_signed = std::is_signed_v<T>;
-
-        auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
-        auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
-        auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
-
-        auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
-        auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
-        auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
-
-        return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
-    }
+        return compileIntegerComparator(builder, lhs, rhs, std::is_signed_v<T>);
     else
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
-    }
 }
 
 #endif
+
+/// clang 23 folds the `Int8` truncation of the three-way compare into a `ucmp`/`scmp` intrinsic with an `Int8` result
+/// (llvm/llvm-project#196847), and the x86 backend scalarizes that form for 32- and 64-bit operands because integer
+/// promotion of `ucmp`/`scmp` was reverted (llvm/llvm-project#204978): the loop below turned into a `cmp`/`sbb` per row
+/// instead of a `vpcmp` per vector. Combining the `int` compare result with a value the compiler cannot see through
+/// keeps the truncation separate from the compare and restores the vectorized lowering on every x86 level.
+static volatile int compare_results_opaque_zero = 0;
 
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
@@ -268,16 +257,17 @@ void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
 {
     auto * result_data = compare_results.data();
     size_t num_rows = data.size();
+    const int opaque_zero = compare_results_opaque_zero;
     /// 2 independent loops, otherwise the compiler does not vectorize it
     if (direction < 0)
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint) | opaque_zero);
     }
     else
     {
         for (size_t row = 0; row < num_rows; row++)
-            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint) | opaque_zero);
     }
 })
 )
@@ -339,7 +329,7 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
@@ -406,7 +396,7 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     size_t window_end = std::min(begin + window, end);
 
     size_t hit = 0;
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
     else
@@ -743,6 +733,21 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         }
         return false;
     }
+
+    if constexpr (is_integer<T>)
+    {
+        /// NearestFieldType<T> is wider than T for narrow integers (e.g. Int64 for Int8),
+        /// so a plain static_cast<T> silently wraps out-of-range values (1944 -> -104 for Int8).
+        /// This corrupts data for narrow-integer Variant/Dynamic subcolumns: ColumnDynamic::insert
+        /// treats a successful tryInsert as "the value fit an existing variant" and never widens
+        /// it. Reject overflowing values so the caller can extend the Variant to a wider type.
+        T result{};
+        if (!accurate::convertNumeric<NearestFieldType<T>, T, /*strict=*/false>(value, result))
+            return false;
+        data.push_back(result);
+        return true;
+    }
+
     data.push_back(static_cast<T>(value));
     return true;
 }
@@ -1244,7 +1249,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
     bool use_window = window_size > 16;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
@@ -1513,7 +1518,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types

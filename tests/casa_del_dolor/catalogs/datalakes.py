@@ -8,7 +8,7 @@ import time
 import threading
 
 from pathlib import Path
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
 from .kafkatest import KafkaHandler
 from .filetables import FileHandler
@@ -142,8 +142,8 @@ spark_properties = {
 
 
 def wait_for_port(host, port, timeout=90):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         try:
             with socket.create_connection((host, port), 1):
                 return True
