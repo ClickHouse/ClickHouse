@@ -5,6 +5,7 @@
 DROP TABLE IF EXISTS t_horizontal;
 DROP TABLE IF EXISTS t_vertical;
 DROP TABLE IF EXISTS t_insert;
+DROP TABLE IF EXISTS t_block;
 
 CREATE TABLE t_horizontal (id UInt64, sign Int8, version UInt8, payload UInt64)
 ENGINE = VersionedCollapsingMergeTree(sign, version) ORDER BY id
@@ -46,6 +47,18 @@ INSERT INTO t_insert SETTINGS optimize_on_insert = 1 VALUES
 
 SELECT 'insert', * FROM t_insert ORDER BY id, payload;
 
+-- A run of such rows read one row per chunk is still returned in blocks of max_block_size rows.
+CREATE TABLE t_block (id UInt64, sign Int8, version UInt8, payload UInt64)
+ENGINE = VersionedCollapsingMergeTree(sign, version) ORDER BY id;
+
+SYSTEM STOP MERGES t_block;
+
+INSERT INTO t_block SELECT 1, 0, 1, number FROM numbers(10);
+INSERT INTO t_block SELECT 1, 0, 1, number FROM numbers(10, 10);
+
+SELECT 'final_block', max(blockSize()), count() FROM t_block FINAL SETTINGS max_block_size = 1;
+
 DROP TABLE t_horizontal;
 DROP TABLE t_vertical;
 DROP TABLE t_insert;
+DROP TABLE t_block;

@@ -150,13 +150,18 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
                 return Status(merged_data->pull());
         }
 
-        const bool valid_sign = sign == 1 || sign == -1;
-        const bool keep_invalid_sign_row = !valid_sign && !isRowFiltered(current_row);
         bool inserted_rows = false;
 
-        /// Emplaced first: the drain below may already write this row's source.
-        if (out_row_sources_buf)
-            current_row_sources.emplace(current->order, /*skip_flag=*/ !keep_invalid_sign_row);
+        /// No row read before the buffered ones can still be emitted.
+        if (current_keys.empty() && !invalid_sign_block_sizes.empty())
+        {
+            insertGap(current_keys.frontGap());
+            current_keys.frontGap() = 0;
+            inserted_rows = true;
+        }
+
+        const bool valid_sign = sign == 1 || sign == -1;
+        const bool keep_invalid_sign_row = !valid_sign && !isRowFiltered(current_row);
 
         if (!valid_sign)
         {
@@ -186,13 +191,8 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
             }
         }
 
-        /// No row read before the buffered ones can still be emitted.
-        if (current_keys.empty() && !invalid_sign_block_sizes.empty())
-        {
-            insertGap(current_keys.frontGap());
-            current_keys.frontGap() = 0;
-            inserted_rows = true;
-        }
+        if (out_row_sources_buf)
+            current_row_sources.emplace(current->order, /*skip_flag=*/ !keep_invalid_sign_row);
 
         if (!current->isLast())
         {
@@ -204,7 +204,10 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
         {
             /// We take next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+            Status status(current.impl->order);
+            if (inserted_rows && merged_data->hasEnoughRows())
+                status.chunk = merged_data->pull();
+            return status;
         }
     }
 
