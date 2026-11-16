@@ -137,30 +137,13 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             },
             .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
             .examples = {
-                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", R"(
-┌─number─┐
-│      0 │
-│      1 │
-│      2 │
-│      3 │
-│      4 │
-│      5 │
-│      6 │
-│      7 │
-│      8 │
-│      9 │
-└────────┘
-)"},
-                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", R"(
-┌────count()─┐
-│ 1000000000 │
-└────────────┘
-)"},
+                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", ""},
+                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", ""},
                 {"Limit an infinite stream", "SELECT * FROM numbers_mt() LIMIT 10;", ""},
             },
             .introduced_in = {1, 1},
             .category = FunctionDocumentation::Category::TableFunction,
-        }, SecretArgumentsSpec{},
+        },
         {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionNumbers<false>>(
@@ -249,7 +232,7 @@ LIMIT 1;
 ### Notes {#notes}
 - For performance reasons, if you know how many rows you need, prefer bounded forms (`numbers(N)`, `numbers(N, M[, S])`) over unbounded `numbers()` / `system.numbers`.
 - For parallel generation, use `numbers_mt(...)` or the [`system.numbers_mt`](/reference/system-tables/numbers_mt) table. Note that results may be returned in any order.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true});
 }
 

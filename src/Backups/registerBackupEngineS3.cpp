@@ -3,7 +3,6 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
-#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -34,7 +33,6 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
 }
 
 #endif
@@ -143,8 +141,8 @@ namespace
 
         if (backup_info.args.size() == 3)
         {
-            (void)backup_info.args[1].safeGet<String>();
-            (void)backup_info.args[2].safeGet<String>();
+            backup_info.args[1].safeGet<String>();
+            backup_info.args[2].safeGet<String>();
         }
 
         if (backup_info.function_arg)
@@ -173,7 +171,7 @@ namespace
         /// `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            (void)backup_info.getNamedCollection(context);
+            backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -288,7 +286,6 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
-            auth[S3AuthSetting::google_service_account_key] = collection->getOrDefault<String>("google_service_account_key", "");
 
         }
         else
@@ -455,7 +452,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn, s3BackupSecretArguments());
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }

@@ -343,7 +343,7 @@ TEST(SSLErrorQueue, BlockingConnectDoesNotAcceptTimedOutHandshake)
     auto client_context = cert.makeContext(Poco::Net::Context::CLIENT_USE);
 
     Poco::AutoPtr<Poco::Net::SecureStreamSocketImpl> client_impl
-        = new Poco::Net::SecureStreamSocketImpl(Poco::AutoPtr<Poco::Net::StreamSocketImpl>(new ExhaustTimeoutStreamSocketImpl), client_context);
+        = new Poco::Net::SecureStreamSocketImpl(new ExhaustTimeoutStreamSocketImpl, client_context);
     client_impl->setBioMethod(retryBioMethod());
 
     /// The custom `BIO` keeps returning `WANT_READ` or `WANT_WRITE`. The first poll reports

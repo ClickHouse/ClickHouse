@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Splits data type `Array(Tuple(<timestamp_type>, <value_type>))` into <timestamp_type> and <value_type>.
+/// Splits data type `Array(Tuple(<timestamp_type>, <scalar_type>))` into <timestamp_type> and <scalar_type>.
 std::pair<DataTypePtr, DataTypePtr> splitTimeSeriesType(const DataTypePtr & time_series_type);
 
 }
