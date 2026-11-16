@@ -730,13 +730,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
     }
 
-    checkAddedIndexPermissions(alter, table, getContext());
+    /// A statement that could not be checked here runs as the submitting user, so `AlterCommands::apply` checks it.
+    const bool run_as_submitting_user = !checkAddedIndexPermissions(alter, table, getContext()) || is_mutation;
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = run_as_submitting_user}, std::move(guard));
     }
 
 #if CLICKHOUSE_CLOUD

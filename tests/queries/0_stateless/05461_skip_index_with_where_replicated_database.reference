@@ -1,0 +1,8 @@
+a condition the user may not run
+ACCESS_DENIED
+QUERY_IS_PROHIBITED
+a condition the user may run
+no error
+QUERY_IS_PROHIBITED
+allowed
+p
