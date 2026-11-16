@@ -1,8 +1,8 @@
 -- the setting is experimental
 SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
--- a map that does not exist needs the number of buckets
-Set `bucket_map_buckets` to create it
+-- a table with a bucket map needs the number of buckets
+requires `bucket_map_buckets`
 -- a new map splits the buckets evenly between the shards
 format version: 1
 buckets: 4
@@ -39,3 +39,8 @@ shard_0	[0,1,4,5,8,12,101]
 6	4	[(0,0,1,[]),(1,3,2,[])]	
 -- the table is attached without the experimental setting
 shard_1	[2,3,6,7,9,10,11,13,14,15,102]
+-- a map with a different number of buckets is rejected after the table is attached again
+1	4
+-- INSERT SELECT from a Distributed table of the same cluster goes through the bucket map
+shard_0	[0,1,4,5,8,12,101,201]
+1

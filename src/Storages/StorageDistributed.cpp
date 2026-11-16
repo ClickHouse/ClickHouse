@@ -674,6 +674,11 @@ StorageDistributed::StorageDistributed(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `bucket_map_zookeeper_path` requires a sharding key");
 
         const UInt64 bucket_map_buckets = (*distributed_settings)[DistributedSetting::bucket_map_buckets];
+        /// The number is kept in the definition of the table, so a table that is loaded again rejects a map with another number.
+        if (is_fresh_definition && !bucket_map_buckets)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `bucket_map_zookeeper_path` requires `bucket_map_buckets`, the number of buckets of the map");
+
         bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path, bucket_map_buckets);
 
         /// The map is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
@@ -1763,6 +1768,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         return {};
     /// It is not easy to match this table only, analyzer also do not do it
     if (!settings[Setting::additional_table_filters].value.empty())
+        return {};
+
+    /// The shards would insert into their local tables without the bucket map.
+    if (bucket_map_watcher && settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
@@ -2882,7 +2891,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 | `bucket_map_zookeeper_path`                | Experimental. Path in ZooKeeper of the bucket map that assigns the buckets of the table to shards instead of the shard weights. See [Bucket map](#distributed-bucket-map).                                                            | `''`          |
-| `bucket_map_buckets`                       | Number of buckets of a bucket map created together with the table. `0` - use the existing map. See [Bucket map](#distributed-bucket-map).                                                                                            | `0`           |
+| `bucket_map_buckets`                       | Number of buckets of the bucket map, required with `bucket_map_zookeeper_path`. See [Bucket map](#distributed-bucket-map).                                                                                                       | `0`           |
 
 <Note>
 **Durability settings** (`fsync_...`):
@@ -3039,7 +3048,7 @@ This is an experimental feature. Enable it with the [`allow_experimental_distrib
 
 With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. A negative sharding key is taken as an unsigned 64-bit number, `reinterpretAsUInt64(toInt64(sharding_key))`. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
 
-When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. The map is a text node:
+When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. A map that exists must have `bucket_map_buckets` buckets. The map is a text node:
 
 ```text
 format version: 1
@@ -3050,7 +3059,7 @@ buckets: 4
 
 Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version with a different number of buckets is rejected: the table keeps the map it has loaded and shows the error in `last_exception` of `system.distributed_bucket_maps`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
-`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. An `INSERT ... SELECT` into the table goes through the bucket map on the initiator with `parallel_distributed_insert_select = 2` too. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 
 To keep these settings correct when buckets are assigned to another shard, list the shards that keep their rows after `previous`. For example, to assign bucket 3 of the map above to a new shard 3:
 
