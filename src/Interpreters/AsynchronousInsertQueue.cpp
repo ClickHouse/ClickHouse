@@ -1352,6 +1352,9 @@ try
     catch (...)
     {
         identity_exception = std::current_exception();
+        /// A partially restored identity must not be used to log the failure.
+        insert_context = Context::createCopy(global_context);
+        insert_context->makeQueryContext();
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user
