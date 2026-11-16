@@ -44,3 +44,6 @@ shard_1	[2,3,6,7,9,10,11,13,14,15,102]
 -- INSERT SELECT from a Distributed table of the same cluster goes through the bucket map
 shard_0	[0,1,4,5,8,12,101,201]
 1
+-- INSERT SELECT from a table with a bucket map into an ordinary Distributed table goes through the shard weights
+shard_1	[201]
+1

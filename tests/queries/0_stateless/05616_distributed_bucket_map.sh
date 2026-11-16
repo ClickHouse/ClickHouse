@@ -137,7 +137,18 @@ $CLICKHOUSE_CLIENT --distributed_foreground_insert 1 -q "INSERT INTO dist SELECT
 shard_keys shard_0
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist WHERE key = 201 SETTINGS optimize_skip_unused_shards = 1, force_optimize_skip_unused_shards = 1"
 
+echo '-- INSERT SELECT from a table with a bucket map into an ordinary Distributed table goes through the shard weights'
 $CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE shard_0.plain_data (key UInt64) ENGINE = MergeTree ORDER BY key;
+    CREATE TABLE shard_1.plain_data (key UInt64) ENGINE = MergeTree ORDER BY key;
+    CREATE TABLE plain_dist (key UInt64) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', plain_data, key);
+"
+$CLICKHOUSE_CLIENT --distributed_foreground_insert 1 --parallel_distributed_insert_select 2 -q "INSERT INTO plain_dist SELECT key FROM dist WHERE key = 201"
+$CLICKHOUSE_CLIENT -q "SELECT 'shard_1', arraySort(groupArray(key)) FROM shard_1.plain_data"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM plain_dist WHERE key = 201 SETTINGS optimize_skip_unused_shards = 1, force_optimize_skip_unused_shards = 1"
+
+$CLICKHOUSE_CLIENT -m -q "
+    DROP TABLE plain_dist;
     DROP TABLE source_dist;
     DROP TABLE dist;
     DROP DATABASE shard_0;
