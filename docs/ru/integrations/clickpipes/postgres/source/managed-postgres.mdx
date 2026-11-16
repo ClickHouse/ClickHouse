@@ -12,13 +12,13 @@ integration:
 
 [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview) — это полностью управляемый сервис Postgres в ClickHouse Cloud. Это самый быстрый в подключении к ClickPipes источник Postgres: логическая репликация включена на каждом инстансе, IP-адреса ClickPipes разрешены по умолчанию, а сведения о подключении находятся в той же консоли, что и ваш сервис ClickHouse.
 
-Начать репликацию из инстанса ClickHouse Managed Postgres можно двумя способами. В обоих случаях создаётся обычный ClickPipe для Postgres, поэтому после запуска пайпа применимо всё, что описано в [документации по ClickPipe для Postgres](/ru/integrations/clickpipes/postgres/index).
+Начать репликацию из инстанса ClickHouse Managed Postgres можно тремя способами. Во всех случаях создаётся обычный ClickPipe для Postgres, поэтому после запуска пайпа применимо всё, что описано в [документации по ClickPipe для Postgres](/ru/integrations/clickpipes/postgres/index).
 
 ## Вариант 1: синхронизация в ClickHouse из сервиса Postgres {#sync-to-clickhouse}
 
 Откройте свой сервис ClickHouse Managed Postgres в консоли ClickHouse Cloud и нажмите **Sync to ClickHouse** на боковой панели. Мастер автоматически заполнит соединение с источником и предложит выбрать целевой сервис ClickHouse, метод репликации и таблицы для репликации. Настраивать пользователя, публикацию или сеть не требуется.
 
-Пошаговые инструкции см. в руководстве [Sync to ClickHouse](/ru/products/managed-postgres/sync-to-clickhouse/clickpipes). Для репликации с низкой задержкой вы также можете выбрать [WalShadow](/ru/products/managed-postgres/sync-to-clickhouse/walshadow) — нативный движок репликации, который выполняет чтение на уровне файловой системы; в настоящее время доступен в режиме закрытой предварительной версии.
+Пошаговые инструкции см. в руководстве [Sync to ClickHouse](/ru/products/managed-postgres/clickpipes). Для репликации с низкой задержкой вы также можете выбрать [WalShadow](/ru/products/managed-postgres/walshadow) — нативный движок репликации, который выполняет чтение на уровне файловой системы; в настоящее время доступен в режиме закрытой предварительной версии.
 
 ## Вариант 2: выбор ClickHouse Managed Postgres в качестве источника в ClickPipes {#clickpipes-source}
 
@@ -27,6 +27,8 @@ integration:
 ### Сведения о подключении {#connection-details}
 
 Откройте свой сервис ClickHouse Managed Postgres и нажмите **Connect**, чтобы посмотреть хост, порт, базу данных, пользователя и пароль. Используйте прямое подключение к Postgres, а не переключатель **via PgBouncer**: ClickPipes не поддерживает репликацию через PgBouncer или любой другой пул соединений. Подробнее см. в разделе [Connection](/ru/products/managed-postgres/connection).
+
+В [clickhousectl](/ru/concepts/features/interfaces/cli) команда `clickhousectl cloud postgres get <postgres-id>` выводит имя хоста и имя пользователя. Пароль она не возвращает: он показывается лишь один раз — при выполнении `cloud postgres create`, а задать новый пароль можно командой `clickhousectl cloud postgres reset-password <postgres-id> --generate`.
 
 ### Создание пользователя с разрешениями {#creating-a-user-with-permissions}
 
@@ -52,10 +54,10 @@ integration:
    ALTER USER clickpipes_user WITH REPLICATION;
    ```
 
-4. Создайте [публикацию](https://www.postgresql.org/docs/current/logical-replication-publication.html) с таблицами, которые нужно реплицировать. Мы настоятельно рекомендуем включать в публикацию только необходимые таблицы, чтобы не создавать лишнюю нагрузку и не терять в performance.
+4. Создайте [публикацию](https://www.postgresql.org/docs/current/logical-replication-publication.html) с таблицами, которые нужно реплицировать. Мы настоятельно рекомендуем включать в публикацию только необходимые таблицы, чтобы избежать накладных расходов, снижающих производительность.
 
 <Warning>
-  Для любой таблицы, включённой в публикацию, должен быть определён **primary key**, *либо* её **replica identity** должна быть설 настроена в значение `FULL`. Рекомендации по определению состава публикации см. в [Postgres FAQ](/ru/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication).
+  Для любой таблицы, включённой в публикацию, должен быть определён **первичный ключ**, *либо* её **идентификатор реплики** должен быть настроен в значение `FULL`. Рекомендации по определению состава публикации см. в [Postgres FAQ](/ru/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication).
 </Warning>
 
 * Чтобы создать публикацию для определённых таблиц:
@@ -64,11 +66,11 @@ integration:
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Чтобы создать публикацию для всех таблиц в определённой схеме:
+* Чтобы создать публикацию для всех таблиц в определённой схеме:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 ### логическая репликация {#logical-replication}
 
@@ -80,7 +82,12 @@ SHOW wal_level; -- should be logical
 
 ### Сетевой доступ {#network-access}
 
-ClickHouse Managed Postgres по умолчанию принимает подключения от ClickPipes. Если для вашего сервиса Postgres настроены [IP-фильтры](/ru/products/managed-postgres/security#ip-whitelisting), добавьте в список разрешённых [статические IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона вашего **сервиса ClickHouse**.
+ClickHouse Managed Postgres по умолчанию принимает подключения от ClickPipes. Если для вашего сервиса Postgres настроены [IP-фильтры](/ru/products/managed-postgres/security#ip-whitelisting), добавьте в список разрешённых [статические IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона вашего **сервиса ClickHouse**. В clickhousectl добавьте для каждого адреса отдельное правило на прямом порту Postgres, а затем выполните `clickhousectl cloud postgres get <postgres-id>`, чтобы проверить результат:
+
+```bash
+clickhousectl cloud postgres update <postgres-id> \
+  --add-ip-allow '<clickpipes-ip>:5432=clickpipes'
+```
 
 ### TLS {#tls}
 
@@ -89,11 +96,34 @@ ClickHouse Managed Postgres по умолчанию принимает подк�
 * Скачайте набор CA‑сертификатов на вкладке **Settings** вашего сервиса Postgres и загрузите его с помощью **Upload CA** в настройках подключения ClickPipe. Это рекомендуемый вариант. О том, где найти этот набор, см. [Verified TLS connection](/ru/products/managed-postgres/connection#verified-tls).
 * Включите **Skip certificate verification** в настройках подключения ClickPipe. Соединение останется зашифрованным, но подлинность сервера проверяться не будет.
 
-Если вы создаёте пайп с помощью `clickhousectl`, получите набор сертификатов и передайте его через `--ca-certificate`:
+Если вы создаёте пайп с помощью clickhousectl, получите набор сертификатов и передайте его через `--ca-certificate`, как показано в [варианте 3](#clickhousectl).
+
+## Вариант 3: создание пайпа с помощью clickhousectl {#clickhousectl}
+
+[clickhousectl](/ru/concepts/features/interfaces/cli) позволяет создать такой же пайп из командной строки. Сначала настройте пользователя и публикацию `clickpipes`, как описано в [варианте 2](#clickpipes-source). Если вместо этого вы используете стандартного пользователя `postgres`, не указывайте `--publication-name` — CLI сам создаст публикацию для сопоставленных таблиц. Для создания пайпа требуется [ключ API](/ru/products/cloud/features/admin-features/api/openapi): вход через OAuth даёт доступ только для чтения.
+
+Узнайте имя хоста, затем сохраните набор CA инстанса:
 
 ```bash
-clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output pg-ca.pem
 ```
+
+Создайте пайп в целевом сервисе ClickHouse, передав набор CA через параметр `--ca-certificate`:
+
+```bash
+clickhousectl cloud clickpipe create postgres <clickhouse-service-id> \
+  --name events-sync \
+  --host <postgres-hostname> \
+  --pg-database postgres \
+  --username clickpipes_user \
+  --password '<password>' \
+  --ca-certificate pg-ca.pem \
+  --publication-name clickpipes \
+  --table-mapping public.events:events
+```
+
+Пайп создаёт таблицы `ReplacingMergeTree`. Чтобы получить текущее состояние, выполните `SELECT ... FROM events FINAL WHERE _peerdb_is_deleted = 0`. Подробное пошаговое описание, включая ожидание перехода пайпа в состояние `Running` и проверку данных, см. в варианте для CLI в [руководстве по ClickPipe для Postgres](/ru/integrations/clickpipes/postgres/index).
 
 ## Что дальше? {#whats-next}
 

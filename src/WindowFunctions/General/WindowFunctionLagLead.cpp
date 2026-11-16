@@ -64,18 +64,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
-    }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        if (in_frame)
-            return {};
-
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
+        return WindowFunctionRequirements{.frame_start = in_frame, .frame_end = in_frame, .partition_end = !in_frame};
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
@@ -85,7 +74,9 @@ public:
             const Int64 row = bounds.row[i];
             const Int64 offset = arguments.size() > 1 ? checkedOffset(getName(), arguments.at(1, row).getInt()) : 1;
             const Int64 distance = is_lead ? offset : -offset;
-            if (bounds.frame_start[i] - row <= distance && distance < bounds.frame_end[i] - row)
+            const Int64 rows_start = in_frame ? bounds.frame_start[i] : 0;
+            const Int64 rows_end = in_frame ? bounds.frame_end[i] : bounds.partition_end[i];
+            if (rows_start - row <= distance && distance < rows_end - row)
                 arguments.at(0, row + distance).appendTo(result);
             else if (arguments.size() > 2)
                 arguments.at(2, row).appendTo(result);
@@ -93,7 +84,10 @@ public:
                 result.insertDefault();
         }
 
-        return is_lead ? bounds.row.back() + 1 : bounds.frame_start.back();
+        if (is_lead)
+            return bounds.row.back() + 1;
+
+        return in_frame ? bounds.frame_start.back() : 0;
     }
 
 private:
@@ -194,7 +188,7 @@ ORDER BY date DESC
             return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
-This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always reads the whole partition; a window frame, if specified, is ignored.
 
 **Syntax**
 
@@ -342,7 +336,7 @@ LIMIT 9
             return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
-This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always reads the whole partition; a window frame, if specified, is ignored.
 
 **Syntax**
 

@@ -4,7 +4,6 @@ if (NOT ENABLE_SKIM)
     return()
 endif()
 
-clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" CRATES _ch_rust_skim_rust)
-clickhouse_config_crate_flags(_ch_rust_skim_rust)
+clickhouse_add_rust_member(_ch_rust_skim_rust FEATURE skim)
 target_include_directories(_ch_rust_skim_rust INTERFACE include)
 add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)

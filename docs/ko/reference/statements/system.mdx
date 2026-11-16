@@ -99,6 +99,11 @@ ClickHouse의 내부 DNS 캐시를 비웁니다. 경우에 따라(이전 ClickHo
 메모리에 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 프라이머리 키를 보관하는 프라이머리 인덱스 캐시를 비웁니다.
 크기는 서버 수준 설정인 [`primary_index_cache_size`](/ko/reference/settings/server-settings/settings/primary-index#primary_index_cache_size)로 지정합니다.
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+통계 캐시를 지웁니다. 통계 캐시는 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 데이터 파트(data part)별 컬럼 통계(Column Statistics)를 메모리에 보관하며, 데이터 파트와 컬럼 조합마다 하나의 엔트리를 저장합니다.
+캐시 크기는 서버 수준 설정인 `statistics_cache_size`로 구성합니다.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Iceberg 메타데이터 캐시를 삭제합니다.
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-`TimeSeries` 테이블의 캐시를 지웁니다. 이 캐시는 삽입 시 대상 테이블에 이미 존재하는 행을 건너뛰는 데 사용됩니다. 해당 캐시는 두 가지로, 메트릭 패밀리 테이블의 중복 제거 캐시와 Tags 테이블의 중복 제거 캐시(`store_min_time_and_max_time`이 비활성화된 경우에만 사용됨)입니다. 자세한 내용은 테이블의 `metric_families_deduplication_cache_expiration_seconds` 및 `tags_deduplication_cache_expiration_seconds` 설정을 참고하십시오. 캐시는 각 서버에 로컬로 존재하며, 대상 테이블을 직접 변경한 내용은 반영하지 못합니다. 이러한 불일치는 엔트리가 만료되면 저절로 해소되지만, 만료를 기다리지 않고 다음 삽입에서 모든 행이 기록되도록 하려면(예: 메트릭 패밀리 테이블을 비운 후) 이 SQL 문을 사용하십시오. `TimeSeries` 테이블에 `TRUNCATE TABLE`을 실행하면 해당 명령을 실행한 서버의 캐시만 지워집니다. 따라서 대상 테이블이 복제된 테이블(Replicated Table)이라면 이후에 이 SQL 문을 `ON CLUSTER`로 실행하여 다른 레플리카의 캐시도 지우십시오.
+`TimeSeries` 테이블의 캐시를 지웁니다. 이 캐시는 삽입 시 대상 테이블에 이미 존재하는 행을 건너뛰는 데 사용됩니다. 해당 캐시는 두 가지로, 메트릭 패밀리 테이블의 중복 제거 캐시와 Tags 테이블의 중복 제거 캐시입니다. 자세한 내용은 테이블의 `metric_families_deduplication_cache_expiration_seconds` 및 `tags_deduplication_cache_expiration_seconds` 설정을 참고하십시오. 캐시는 각 서버에 로컬로 존재하며, 대상 테이블을 직접 변경한 내용은 반영하지 못합니다. 이러한 불일치는 엔트리가 만료되면 저절로 해소되지만, 만료를 기다리지 않고 다음 삽입에서 모든 행이 기록되도록 하려면(예: 메트릭 패밀리 테이블을 비운 후) 이 SQL 문을 사용하십시오. `TimeSeries` 테이블에 `TRUNCATE TABLE`을 실행하면 해당 명령을 실행한 서버의 캐시만 지워집니다. 따라서 대상 테이블이 복제된 테이블(Replicated Table)이라면 이후에 이 SQL 문을 `ON CLUSTER`로 실행하여 다른 레플리카의 캐시도 지우십시오.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table

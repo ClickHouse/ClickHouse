@@ -72,6 +72,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -780,6 +781,16 @@ bool IMergeTreeDataPart::isIndexLoaded() const
     return index != nullptr;
 }
 
+bool IMergeTreeDataPart::isIndexInMemory() const
+{
+    if (isIndexLoaded())
+        return true;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    return index_cache
+        && index_cache->contains(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
+}
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -1183,6 +1194,9 @@ void IMergeTreeDataPart::removeIfNeeded()
 
     if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
+
+    /// Keep the retries of this cleanup when the query or merge is cancelled (`plain_rewritable` removes synchronously).
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     try
     {

@@ -66,6 +66,7 @@ namespace Setting
 {
     extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
+    extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_subcolumn_codecs;
@@ -221,7 +222,8 @@ DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
     if (!type_ast || !type_ast->as<ASTExpressionList>())
          return {};
 
-    return createEnumAdd(type_ast, is_enum16);
+    /// A copy, because `createEnumAdd` numbers the implicit elements in place and `prepare` can run again on this command.
+    return createEnumAdd(type_ast->clone(), is_enum16);
 }
 
 /// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
@@ -2285,12 +2287,17 @@ void validateSubcolumnCodecCommand(
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
+    /// Load the table before taking its metadata: a table that is not loaded yet has no virtual columns.
+    const auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+    const bool reject_reserved_names = (table_merge_tree || table->isMergeTree())
+        && !context->getSettingsRef()[Setting::allow_reserved_column_names] && !isSecondaryDDLReplay(context);
+
     const auto metadata = table->getInMemoryMetadataPtr(context, false);
     const auto virtuals = metadata->virtuals;
 
     bool share_nested = true;
-    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
-        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+    if (table_merge_tree)
+        share_nested = (*table_merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
@@ -2365,6 +2372,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 && virtuals.tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
+                    backQuote(column_name));
+
+            if (reject_reserved_names && virtuals.has(column_name))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot add column {}: this column name is reserved for a virtual column. "
+                    "Use another name or enable the setting `allow_reserved_column_names`",
                     backQuote(column_name));
 
             if (command.codec)
@@ -2623,6 +2636,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 && virtuals.tryGet(command.rename_to, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename ephemeral column to {}: it conflicts with a virtual column of the same name",
+                    backQuote(command.rename_to));
+
+            if (reject_reserved_names && virtuals.has(command.rename_to))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot rename to {}: this column name is reserved for a virtual column. "
+                    "Use another name or enable the setting `allow_reserved_column_names`",
                     backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))

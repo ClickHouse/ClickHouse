@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont générés automatiquement à partir du [fichier source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="format_regexp">
-  ## format_regexp
-</div>
+## format_regexp {#format_regexp}
 
 Expression régulière (pour le format Regexp)
 
-<div id="format_regexp_escaping_rule">
-  ## format_regexp_escaping_rule
-</div>
+## format_regexp_escaping_rule {#format_regexp_escaping_rule}
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "Utiliser Raw comme règle d’échappement par défaut pour le format Regexp afin que le comportement corresponde davantage à ce que les utilisateurs attendent"}]}]} />
 
-Règle d’échappement des champs (pour le format Regexp)
+Indique comment chaque groupe de capture produit par `format_regexp` est analysé et converti vers le type de la colonne cible. Utilisez `Raw` (par défaut) pour du texte non échappé, `Escaped` pour un échappement de style TSV, `Quoted` pour des champs entre guillemets de style Values, `CSV` pour des champs CSV ou `JSON` pour des valeurs JSON. Ce paramètre s’applique une fois que l’expression régulière a trouvé une correspondance dans une ligne ; il ne modifie pas l’expression régulière elle-même.
 
-<div id="format_regexp_skip_unmatched">
-  ## format_regexp_skip_unmatched
-</div>
+## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

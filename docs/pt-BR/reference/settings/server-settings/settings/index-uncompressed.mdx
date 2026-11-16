@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="index_uncompressed_cache_policy">
-  ## index_uncompressed_cache_policy
-</div>
+## index_uncompressed_cache_policy {#index_uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política do cache não comprimido do índice secundário.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache não comprimido do índice secundário. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="index_uncompressed_cache_size">
-  ## index_uncompressed_cache_size
-</div>
+## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -32,9 +28,7 @@ Tamanho máximo do cache para blocos não comprimidos dos índices do `MergeTree
   Essa configuração pode ser modificada em tempo de execução e terá efeito imediatamente.
 </Note>
 
-<div id="index_uncompressed_cache_size_ratio">
-  ## index_uncompressed_cache_size_ratio
-</div>
+## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache não comprimido do índice secundário em relação ao tamanho total do cache.
 

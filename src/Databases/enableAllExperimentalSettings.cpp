@@ -50,6 +50,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_simdjson", 1);
     context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
     context->setSetting("allow_suspicious_primary_key", 1);
+    context->setSetting("allow_reserved_column_names", 1);
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
     context->setSetting("allow_create_index_without_type", 1);
