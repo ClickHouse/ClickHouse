@@ -26,7 +26,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     temp_data_on_disk = from->getTempDataOnDisk();
     progress_callback = from->getProgressCallback();
 
-    max_threads = getEffectiveMaxThreads(settings);
+    max_threads = getEffectiveMaxThreads(*from);
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];

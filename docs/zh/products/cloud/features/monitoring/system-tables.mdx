@@ -7,8 +7,6 @@ sidebarTitle: '系统表'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 所有 ClickHouse 实例都自带一组位于 `system` 数据库中的[系统表](/zh/reference/system-tables/overview)，其中包含以下信息：
 
 * 服务器状态、进程和环境。
@@ -58,7 +56,15 @@ ORDER BY
 
 ClickHouse 内置了高级可观测性仪表板功能，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示 `system.dashboards` 中包含的 Cloud 概览指标。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="原生高级可观测性仪表板" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![原生高级可观测性仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   此仪表板需要直接对 ClickHouse 实例进行身份验证，并且独立于 [Cloud Console 高级仪表板](/zh/products/cloud/features/monitoring/cloud-console#advanced-dashboard)；后者可通过 Cloud Console UI 访问，无需额外身份验证。

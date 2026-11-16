@@ -9,7 +9,7 @@ namespace DB
 /// the element of the stream's path where the path inside the slice starts: the elements before it followed by
 /// data_stream name the shared file, followed by marks_stream the marks file. Both byte ranges are block-aligned, so
 /// each is read through a file view over its own bounds.
-struct ISerialization::Substream::StreamView
+struct SerializationSubstream::StreamView
 {
     /// Tells apart the views of one file in the reader's stream map, never part of a file name.
     String key;

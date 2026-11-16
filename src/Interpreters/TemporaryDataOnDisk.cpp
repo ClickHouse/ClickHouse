@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
@@ -77,12 +78,42 @@ CompressionCodecPtr TemporaryDataOnDiskScope::createCodec(const TemporaryDataOnD
     return CompressionCodecFactory::instance().get(scope_settings.compression_codec);
 }
 
+namespace
+{
+
+[[noreturn]] void throwNotEnoughSpace(size_t reserve_size, const Disks & disks)
+{
+    Strings disks_info;
+    for (const auto & d : disks)
+    {
+        auto to_double = [](auto x) { return static_cast<double>(x); };
+        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+            d->getName(),
+            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getKeepingFreeSpace())));
+    }
+
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+        reserve_size, fmt::join(disks_info, ", "));
+}
+
+}
+
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     : metric_increment(metrics.current_metric)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     if (metrics.num_files)
         ProfileEvents::increment(metrics.num_files.value());
+}
+
+const DiskPtr & TemporaryFileHolder::getDisk() const
+{
+    static const DiskPtr no_disk;
+    return no_disk;
 }
 
 
@@ -111,7 +142,7 @@ public:
         return std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), /* buffer_size = */ buffer_size);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    [[nodiscard]] std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
     }
@@ -137,7 +168,7 @@ public:
         return reserve_stat.not_enough_space ? TemporaryDataReserveResult::NotEnoughSpace : TemporaryDataReserveResult::Transient;
     }
 
-    String describeFilePath() const override
+    [[nodiscard]] String describeFilePath() const override
     {
         return fmt::format("fscache://{}", segment_holder->front().getPath());
     }
@@ -277,24 +308,7 @@ public:
         {
             auto reservation = volume->reserve(reserve_size);
             if (!reservation)
-            {
-                auto disks = volume->getDisks();
-                Strings disks_info;
-                for (const auto & d : disks)
-                {
-                    auto to_double = [](auto x) { return static_cast<double>(x); };
-                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
-                        d->getName(),
-                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getKeepingFreeSpace())));
-                }
-
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-                    reserve_size, fmt::join(disks_info, ", "));
-            }
+                throwNotEnoughSpace(reserve_size, volume->getDisks());
             disk = reservation->getDisk();
         }
         else
@@ -309,7 +323,7 @@ public:
         return disk->writeFile(path_to_file, buffer_size);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    [[nodiscard]] std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
         settings.local_fs_settings.buffer_size = buffer_size_;
@@ -336,9 +350,14 @@ public:
     /// The written bytes already count in the disk's free space, so the reservations go whole.
     void releaseUnusedReservation() override { reservations.clear(); }
 
-    String describeFilePath() const override
+    [[nodiscard]] String describeFilePath() const override
     {
         return fmt::format("disk({})://{}/{}", disk->getName(), disk->getPath(), path_to_file);
+    }
+
+    [[nodiscard]] const DiskPtr & getDisk() const override
+    {
+        return disk;
     }
 
     ~TemporaryFileOnLocalDisk() override
@@ -465,7 +484,7 @@ TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_
     : ReadBuffer(nullptr, 0)
     , compressed_buf(std::move(in_))
 {
-    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
 }
 
 TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<SeekableReadBuffer> in_)
@@ -496,7 +515,7 @@ bool TemporaryDataReadBuffer::nextImpl()
         set(compressed_buf->position(), 0);
         return false;
     }
-    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
     return true;
 }
 
@@ -612,6 +631,11 @@ void TemporaryDataBuffer::nextImpl()
 String TemporaryDataBuffer::describeFilePath() const
 {
     return file_holder->describeFilePath();
+}
+
+const DiskPtr & TemporaryDataBuffer::getDisk() const
+{
+    return file_holder->getDisk();
 }
 
 void TemporaryDataBuffer::cancelImpl() noexcept
@@ -827,6 +851,17 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         if (written_compressed)
             scope->spilled_bytes.fetch_add(written_compressed, std::memory_order_relaxed);
     }
+}
+
+void TemporaryAppendSpaceCheck::beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size)
+{
+    const auto & disk = buffer.getDisk();
+    if (!disk || std::ranges::find(checked_disks, disk) != checked_disks.end())
+        return;
+
+    if (!disk->reserve(reserve_size))
+        throwNotEnoughSpace(reserve_size, {disk});
+    checked_disks.push_back(disk);
 }
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)

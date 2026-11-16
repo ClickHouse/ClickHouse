@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
@@ -38,7 +39,7 @@ private:
     void writeBeforeExtremes() override;
 
     void writePrefix() override;
-    void writeLine(const std::vector<String> & values);
+    void writeLine(std::span<const String> values);
 
     bool with_names;
     bool with_types;
