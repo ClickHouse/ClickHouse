@@ -70,6 +70,8 @@ run_query "SELECT sum(id), sum(cityHash64(missing)) FROM file('${FILE}', Parquet
 
 echo "--- arrays of tuples of which all the requested elements are missing in the file: not cached"
 # The arrays are empty, but their offsets take 8 bytes per row: 16 MiB in 32 columns.
+# The read in blocks takes about 12 MiB, as the sizes of the arrays are read from the column in the file, and a
+# whole chunk about 17 MiB.
 ARRAYS=$(seq -s ', ' -f 'a%g' 0 31)
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO FUNCTION file('${FILE}', Parquet, 'id UInt64, $(seq -s ', ' -f 'a%g Array(Tuple(old UInt8))' 0 31)')
@@ -79,6 +81,6 @@ touch -d "1 minute ago" "${FILE_PATH}"
 run_query "SELECT sum(id), sum(cityHash64(tuple(${ARRAYS})))
     FROM file('${FILE}', Parquet, 'id UInt64, $(seq -s ', ' -f 'a%g Array(Tuple(missing UInt8))' 0 31)')
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
-    input_format_parquet_memory_high_watermark = '4Mi', max_memory_usage = '12Mi'"
+    input_format_parquet_memory_high_watermark = '4Mi', max_memory_usage = '15Mi'"
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
