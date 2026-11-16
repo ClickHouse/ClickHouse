@@ -13,6 +13,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/filesystemHelpers.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -481,24 +482,53 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        /// Another storage with the same path may still be reading the old file, so it is replaced, not truncated.
+        /// rename(2) overwrites a symlink, not the file it points to, so the link is resolved first.
+        std::filesystem::path target_path = file_path;
+        for (size_t hops = 0; target_path.has_filename() && FS::isSymlinkNoThrow(target_path); ++hops)
+        {
+            if (hops == 40)
+                ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, file_path, ELOOP, "Cannot open file {}", file_path);
+            target_path = target_path.parent_path() / FS::readSymlink(target_path);
+        }
+        const std::string target_file_path = target_path.string();
+
+        /// rename(2) ignores the replaced file's permissions: a file the server cannot read and write must not be replaced.
+        if (::access(target_file_path.c_str(), R_OK | W_OK) != 0 && errno != ENOENT)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot open file {}", target_file_path);
+
+        const std::string new_file_path = (target_path.parent_path() / fmt::format("ssd_cache_{}.tmp", randomSeed())).string();
+
         #if defined(OS_DARWIN)
         /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666);
         #else
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_DIRECT, 0666);
         #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
+            ErrnoException::throwFromPath(error_code, file_path, "Cannot create file {} to replace {}", new_file_path, target_file_path);
         }
 
-        #if defined(OS_DARWIN)
-        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
-        #endif
+        try
+        {
+            #if defined(OS_DARWIN)
+            if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+            #endif
 
-        allocateSizeForNextPartition();
+            allocateSizeForNextPartition();
+
+            if (::rename(new_file_path.c_str(), target_file_path.c_str()) != 0)
+                ErrnoException::throwFromPath(
+                    ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot rename {} to {}", new_file_path, target_file_path);
+        }
+        catch (...)
+        {
+            ::unlink(new_file_path.c_str());
+            throw;
+        }
     }
 
     void allocateSizeForNextPartition()

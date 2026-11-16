@@ -1280,7 +1280,17 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                const auto & to_element_type = to_element_types[i];
+                if (to_element_type->isDefaultInsertTrivial())
+                {
+                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
+                }
+                else
+                {
+                    auto column = to_element_type->createColumn();
+                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
+                    converted_columns[i] = std::move(column);
+                }
             }
         }
 
@@ -2793,6 +2803,17 @@ bool newLeafTypedPathsNeedFormatParse(
     return false;
 }
 
+/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
+/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
+/// being written as null.
+FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
+{
+    FormatSettings result = format_settings;
+    result.json.quote_64bit_integers = false;
+    result.json.quote_denormals = true;
+    return result;
+}
+
 /// Convert a single typed path column to ColumnDynamic.
 /// Uses the JSON parser + DynamicNode path (via buildJSONExtractTree) to ensure
 /// type inference matches the standard Object deserialization pipeline.
@@ -2813,8 +2834,7 @@ ColumnPtr convertTypedColumnToDynamic(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = format_settings;
-    json_format_settings.json.quote_64bit_integers = false;
+    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
 
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
@@ -2856,8 +2876,7 @@ ColumnPtr convertDynamicColumnToTyped(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = format_settings;
-    json_format_settings.json.quote_64bit_integers = false;
+    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
 
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
@@ -2920,8 +2939,7 @@ ColumnPtr convertTypedColumnToTyped(
     JSONParserForConversion parser;
     JSONExtractInsertSettings insert_settings;
 
-    FormatSettings json_format_settings = format_settings;
-    json_format_settings.json.quote_64bit_integers = false;
+    FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
 
     /// A null under type_json_skip_null_typed_paths is not written at all, so the value never reaches
     /// the parser and the destination keeps its default. Serializing it as `null` instead would make
@@ -3338,8 +3356,7 @@ ColumnPtr convertObjectColumns(
         UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
         JSONParserForConversion shared_data_parser;
         JSONExtractInsertSettings shared_data_insert_settings;
-        FormatSettings json_format_settings = format_settings;
-        json_format_settings.json.quote_64bit_integers = false;
+        FormatSettings json_format_settings = getJSONRoundTripFormatSettings(format_settings);
 
         for (const auto & [path, _] : new_typed_path_mutable_columns)
             new_typed_path_nodes[path] = buildJSONExtractTree<JSONParserForConversion>(plan.new_typed_paths.at(path), "JSON type conversion");
@@ -3504,9 +3521,8 @@ ColumnPtr convertObjectViaFormatParse(
     auto json_string = ColumnString::create();
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
     auto & write_buffer = write_helper.getWriteBuffer();
-    FormatSettings format_settings = cast_settings.format_settings;
+    FormatSettings format_settings = getJSONRoundTripFormatSettings(cast_settings.format_settings);
     auto serialization = arguments[0].type->getDefaultSerialization();
-    format_settings.json.quote_64bit_integers = false;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);

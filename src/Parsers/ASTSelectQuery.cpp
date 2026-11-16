@@ -74,6 +74,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
     hash_state.update(limit_after_all);
+    hash_state.update(shuffle);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -254,6 +255,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << " NULLS " << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST");
         }
     }
+
+    if (shuffle)
+        ostr << s.nl_or_ws << indent_str << "SHUFFLE";
 
     if (limitByLength())
     {
@@ -700,6 +704,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("group_by_with_grouping_sets", true);
     if (order_by_all)
         w.writeBool("order_by_all", true);
+    if (shuffle)
+        w.writeBool("shuffle", true);
     if (limit_with_ties)
         w.writeBool("limit_with_ties", true);
     if (limit_by_all)
@@ -852,6 +858,13 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         if (!has_with_fill)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "INTERPOLATE requires an ORDER BY ... WITH FILL element during AST JSON deserialization");
+    }
+
+    if (r.getBool("shuffle"))
+    {
+        if (orderBy() || order_by_all)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use SHUFFLE together with ORDER BY during AST JSON deserialization");
+        shuffle = true;
     }
 
     /// `order_by_all` is only meaningful together with an ORDER BY clause, because

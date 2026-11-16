@@ -34,7 +34,7 @@ public:
     virtual void createState(char * place) const;
     virtual void destroyState(char * place) const noexcept;
     virtual void resetPartition(char * place) const;
-    virtual void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const = 0;
+    virtual Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const = 0;
 
 protected:
     const String name;

@@ -25,7 +25,6 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
 
@@ -84,7 +83,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool type_is_object_storage = false;
     bool has_explicit_non_s3_object_storage_type = false;
     bool has_include = false;
-    bool has_substituted_value = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
     bool has_secret_access_key = false;
@@ -93,6 +91,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_google_adc_client_id = false;
     bool has_google_adc_client_secret = false;
     bool has_google_adc_refresh_token = false;
+    bool has_google_service_account_key = false;
     bool use_environment_credentials_off = false;
     bool has_role_arn = false;
     /// A marker persisted in the stored definition when the disk was created with the credential opt-in (see
@@ -109,6 +108,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "role_session_name" || k == "external_id" || k == "use_environment_credentials" || k == "http_client"
             || k == "service_account" || k == "metadata_service" || k == "request_token_path"
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
+            || k == "google_service_account_key"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
     };
@@ -142,7 +142,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
         const bool indirect = is_indirect_value(value_str);
-        has_substituted_value |= indirect;
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
 
@@ -178,11 +177,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_google_adc_client_secret = !value_str.empty() && !indirect;
         else if (key == "google_adc_refresh_token")
             has_google_adc_refresh_token = !value_str.empty() && !indirect;
+        else if (key == "google_service_account_key")
+            has_google_service_account_key = !value_str.empty() && !indirect;
         else if (key == "use_environment_credentials")
             use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
-        else if (key == "_server_credentials_allowed")
+        else if (key == S3_SERVER_CREDENTIALS_MARKER)
             has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
         if (key == "include")
@@ -230,7 +231,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
     const bool has_explicit_gcp_adc
-        = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
+        = (has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token) || has_google_service_account_key;
     /// `use_environment_credentials = 0` without a `role_arn` goes unsigned, so it is a safe anonymous form.
     const bool allowed_anonymous = use_environment_credentials_off && !has_role_arn;
     /// A safe credential form supplied by the AST itself (literal values); a substitution/`include` value does not count.
@@ -258,7 +259,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (info)
     {
         info->has_include = has_include;
-        info->has_substituted_value = has_substituted_value;
         info->ast_has_explicit_key_pair = has_explicit_credentials;
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
@@ -268,6 +268,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         /// (the session opted in), so the disk is not re-restricted on reload.
         info->persist_server_credentials_allowance = !is_loading_from_existing_metadata && relies_on_server_credentials
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
+        info->uses_server_credentials = relies_on_server_credentials;
     }
 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
@@ -285,14 +286,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             /// Force the disk anonymous once `include` is resolved (see forceAnonymousS3DiskConfig); we
             /// cannot rewrite the DOM here because DiskFromAST processes `include` after this returns.
             if (info)
+            {
                 info->load_anonymously = true;
+                info->uses_server_credentials = false;
+            }
         }
         else
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic S3 disk created from user SQL must provide a complete explicit "
                 "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
-                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
+                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple or `google_service_account_key`), with literal values "
                 "and no `include`. It may not fall back to the server's own credentials."
 #if !CLICKHOUSE_CLOUD
                 " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
@@ -356,6 +360,20 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 
 namespace
 {
+
+/// The disk root and every `locations.<name>` child of a resolved dynamic disk configuration.
+std::vector<String> getS3BackendPrefixes(const Poco::Util::AbstractConfiguration & config)
+{
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
+    return prefixes;
+}
 
 /// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
 /// `prefix`) is an S3 backend that resolved to credentials the AST did not prove explicit, and so must be
@@ -427,17 +445,8 @@ void validateResolvedS3DiskCredentials(
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
     /// object storage per child, each with its own `object_storage_type`, so an `include` can hide an S3 child
     /// (built with `for_disk_s3 = true`) behind a root that proves non-S3.
-    std::vector<String> prefixes{""};
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            prefixes.push_back("locations." + location + ".");
-    }
-
     std::vector<String> restricted_prefixes;
-    for (const auto & prefix : prefixes)
+    for (const auto & prefix : getS3BackendPrefixes(config))
         if (resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info))
             restricted_prefixes.push_back(prefix);
 
@@ -462,7 +471,7 @@ void validateResolvedS3DiskCredentials(
             "A dynamic S3 disk created from user SQL that uses `include` must provide its credentials explicitly "
             "in the SQL definition (a complete `access_key_id`/`secret_access_key` pair, `no_sign_request`, or "
             "`use_environment_credentials = 0`; or, for `http_client = gcp_oauth`, a complete explicit Google ADC "
-            "triple). It may not take the S3 type or credentials from the included configuration, which could "
+            "triple or `google_service_account_key`). It may not take the S3 type or credentials from the included configuration, which could "
             "resolve the server's own credentials."
 #if !CLICKHOUSE_CLOUD
             " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
@@ -507,6 +516,9 @@ AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
         .forbid_implicit_credentials = true,
         .anonymous_fallback_for_server_credentials = anonymous_fallback,
         .follows_session_restriction = false,
+        /// A disk takes the workload identity from the environment (`use_workload_identity`).
+        .workload_identity_client_id = {},
+        .workload_identity_tenant_id = {},
     };
 }
 
@@ -528,28 +540,6 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
     return config.getBool("." + String(AZURE_SERVER_CREDENTIALS_MARKER), false);
 }
 
-#if USE_AZURE_BLOB_STORAGE
-/// The connection of a disk created from user SQL, possibly behind wrappers, that authenticates with the server's own
-/// identity. A disk from the server configuration may use it, so the walk stops there.
-static std::shared_ptr<const AzureBlobStorage::ConnectionParams> getCustomDiskServerIdentity(DiskPtr disk)
-{
-    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
-    {
-        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
-        if (!object_storage_disk)
-            continue;
-
-        const auto object_storage = object_storage_disk->getObjectStorage();
-        if (object_storage->getType() != ObjectStorageType::Azure)
-            return nullptr;
-
-        auto params = object_storage->getAzureBlobStorageConnectionParams();
-        return params->usesServerManagedCredentials() && !params->forbid_implicit_credentials ? params : nullptr;
-    }
-    return nullptr;
-}
-#endif
-
 void validateResolvedAzureDiskCredentials(
     [[maybe_unused]] Poco::Util::AbstractConfiguration & config,
     [[maybe_unused]] ContextPtr context,
@@ -560,23 +550,6 @@ void validateResolvedAzureDiskCredentials(
     /// A `system` table disk is server-internal infrastructure, exempt like an S3 one.
     const bool system_table_disk_allowed = for_system_database
         && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
-
-    /// A wrapper such as `encrypted` or `cache` may name a disk another session created, which is reused as it is.
-    if (!is_loading_from_existing_metadata && !system_table_disk_allowed && context->shouldRestrictUserQueryS3Credentials())
-    {
-        const String wrapped_disk = config.getString(".disk", "");
-        const auto disks = context->getDisksMap();
-        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
-        {
-            if (const auto params = getCustomDiskServerIdentity(it->second))
-            {
-                auto restricted = *params;
-                restricted.forbid_implicit_credentials = true;
-                restricted.anonymous_fallback_for_server_credentials = false;
-                restricted.checkOrDropServerManagedCredentials();
-            }
-        }
-    }
 
     /// Only an Azure disk: the other disk types reject keys they do not know, e.g. a `cache` disk.
     const auto prefixes = getAzureDiskPrefixes(config);
@@ -598,6 +571,15 @@ void validateResolvedAzureDiskCredentials(
     for (const auto & prefix : prefixes)
         getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif
+}
+
+bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    if (info.uses_server_credentials || azureDiskUsesServerIdentity(config))
+        return true;
+    /// Every backend counts, because a multi-location disk writes to all of them.
+    return std::ranges::any_of(getS3BackendPrefixes(config),
+        [&](const String & prefix) { return resolvedS3BackendIsRestricted(config, prefix, /* is_root */ prefix.empty(), info); });
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

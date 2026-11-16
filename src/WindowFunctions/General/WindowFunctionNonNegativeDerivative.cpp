@@ -87,7 +87,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
     size_t sizeOfState() const override { return sizeof(NonNegativeDerivativeState); }
@@ -95,7 +95,7 @@ public:
     void createState(char * place) const override { new (place) NonNegativeDerivativeState(); }
     void resetPartition(char * place) const override { new (place) NonNegativeDerivativeState(); }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         NonNegativeDerivativeState & state = *reinterpret_cast<NonNegativeDerivativeState *>(place);
         const Float64 timestamp_scale = params.ts_scale_multiplier ? static_cast<Float64>(params.ts_scale_multiplier) : 1;
@@ -117,6 +117,7 @@ public:
             state.previous_timestamp = timestamp;
             data.push_back(derivative >= 0 ? derivative : 0);
         }
+        return bounds.row.back() + 1;
     }
 
 private:

@@ -5,9 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
-#include <vector>
 
 /// Batches of column values filled by the reader. The values of the primitive types are decoded
 /// directly into ClickHouse columns, which the conversion to the requested types takes without
@@ -104,10 +104,10 @@ struct StructVectorBatch : public ColumnVectorBatch
         owned_fields.push_back(std::move(field));
     }
 
-    std::vector<ColumnVectorBatch *> fields;
+    VectorWithMemoryTracking<ColumnVectorBatch *> fields;
 
 private:
-    std::vector<std::unique_ptr<ColumnVectorBatch>> owned_fields;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnVectorBatch>> owned_fields;
 };
 
 /// LIST and MAP: the end offsets of the values in the children, as in `ColumnArray`.
@@ -138,10 +138,10 @@ struct UnionVectorBatch : public ColumnVectorBatch
     PaddedPODArray<UInt8> tags;
     /// The position of each value in its branch.
     PaddedPODArray<UInt64> offsets;
-    std::vector<ColumnVectorBatch *> children;
+    VectorWithMemoryTracking<ColumnVectorBatch *> children;
 
 private:
-    std::vector<std::unique_ptr<ColumnVectorBatch>> owned_children;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnVectorBatch>> owned_children;
 };
 
 /// For DECIMAL with the precision at most 18.

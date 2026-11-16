@@ -189,9 +189,9 @@ Active la fonctionnalité d&#39;écriture via delta-kernel.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant l'évaluation indépendante de `DISTINCT` pour chaque partition lorsque l'expression de partition est une fonction déterministe des colonnes `DISTINCT`."}]}]} />
 
-Active l&#39;évaluation indépendante de `DISTINCT` pour chaque partition dans des threads séparés lorsque l&#39;expression de partition est une fonction déterministe des colonnes `DISTINCT`, en évitant la fusion inter-flux. Utile lorsque le nombre de partitions est proche du nombre de cœurs et que les partitions sont de taille approximativement égale ; dans le cas contraire, une heuristique de coût l&#39;évite. Consultez [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/fr/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) et [force&#95;distinct&#95;partitions&#95;independently](/fr/reference/settings/session-settings/force#force_distinct_partitions_independently). Ne s&#39;applique pas avec `FINAL` ni avec les répliques parallèles.
+Active l&#39;évaluation indépendante de `DISTINCT` pour chaque partition dans des threads séparés lorsque l&#39;expression de partition est une fonction déterministe des colonnes `DISTINCT`, en évitant la fusion inter-flux. Utile lorsque le nombre de partitions est proche du nombre de cœurs et que les partitions sont de taille approximativement égale ; dans le cas contraire, une heuristique de coût l&#39;évite. Consultez [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/fr/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) et [force&#95;distinct&#95;partitions&#95;independently](/fr/reference/settings/session-settings/force#force_distinct_partitions_independently). Ne s&#39;applique pas avec `FINAL` ni avec les répliques parallèles.
 
-Ne s&#39;applique pas lorsque [max&#95;rows&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-rows#max_rows_in_distinct) ou [max&#95;bytes&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) est défini : ces limites sont appliquées par l&#39;unique transformation `DISTINCT`, qui traite l&#39;ensemble du résultat fusionné. La fusion inter-flux est donc conservée afin de préserver leur portée globale.
+[max&#95;rows&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-rows#max_rows_in_distinct) et [max&#95;bytes&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) s&#39;appliquent à la taille combinée de l&#39;ensemble des sets de partition tant que les flux restent séparés.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -449,6 +449,20 @@ Il ne détermine pas si des colonnes `Nullable(Tuple(...))` peuvent être créé
 ClickHouse utilise la valeur de ce paramètre chargée au démarrage du serveur.
 Les modifications effectuées avec `SET` ou la clause `SETTINGS` au niveau de la requête ne changent pas le comportement des sous-colonnes extraites.
 Pour modifier le comportement des sous-colonnes extraites, mettez à jour `allow_nullable_tuple_in_extracted_subcolumns` dans la configuration du profil de démarrage (par exemple, users.xml) et redémarrez le serveur.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’évaluer le `DISTINCT` final en parallèle à l’aide d’un partitionnement par hachage."}]}]} />
+
+Évalue le `DISTINCT` final sur plusieurs fils d’exécution en partitionnant les flux d’entrée selon le hachage des colonnes `DISTINCT`. Les clés identiques aboutissent dans le même flux, ce qui permet de dédupliquer chaque partition indépendamment.
+
+Contrairement à [allow&#95;distinct&#95;partitions&#95;independently](/fr/reference/settings/session-settings/allow#allow_distinct_partitions_independently), ce paramètre n’exige aucune relation entre la clé de partition de la table et les colonnes `DISTINCT`. Le nombre de flux d’entrée et de partitions de hachage est plafonné indépendamment de `max_threads`, afin de borner le coût de la division des blocs et de la connexion des flux.
+
+Le partitionnement par hachage ne s’applique pas aux entrées triées globalement, car `DISTINCT` préserve cet ordre. [max&#95;rows&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-rows#max_rows_in_distinct) et [max&#95;bytes&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) s’appliquent à la taille combinée de l’ensemble des partitions de hachage.
+
+Sans `ORDER BY`, `DISTINCT` ne garantit aucun ordre de lignes ; cette optimisation peut donc renvoyer les mêmes valeurs distinctes dans un ordre différent. Par conséquent, l’application de `LIMIT`, `OFFSET` ou `LIMIT BY` à des résultats `DISTINCT` non ordonnés peut sélectionner un sous-ensemble de lignes différent.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

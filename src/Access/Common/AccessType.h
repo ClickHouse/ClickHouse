@@ -151,7 +151,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType : uint8_t
+enum class AccessType : uint16_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
@@ -228,7 +228,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
-    M(ALTER_HANDLER, "", GLOBAL, ALTER) /* allows to execute ALTER HANDLER */\
+    M(ALTER_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute ALTER HANDLER */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -253,10 +253,10 @@ enum class AccessType : uint8_t
     M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
                                                      implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
-    M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
-    M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
+    M(CREATE_WORKLOAD, "", GLOBAL, ALL) /* allows to execute CREATE WORKLOAD */ \
+    M(CREATE_RESOURCE, "", GLOBAL, ALL) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
-    M(CREATE_HANDLER, "", GLOBAL, CREATE) /* allows to execute CREATE HANDLER */ \
+    M(CREATE_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute CREATE HANDLER */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -265,10 +265,10 @@ enum class AccessType : uint8_t
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
-    M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
-    M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
+    M(DROP_WORKLOAD, "", GLOBAL, ALL) /* allows to execute DROP WORKLOAD */\
+    M(DROP_RESOURCE, "", GLOBAL, ALL) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
-    M(DROP_HANDLER, "", GLOBAL, DROP) /* allows to execute DROP HANDLER */\
+    M(DROP_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute DROP HANDLER */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -319,7 +319,8 @@ enum class AccessType : uint8_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
-    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, HANDLER_ADMIN) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(HANDLER_ADMIN, "", GROUP, ALL) /* allows to create, alter, drop and see SQL-defined HTTP handlers */\
     M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
@@ -387,6 +388,10 @@ enum class AccessType : uint8_t
     M(SYSTEM_VIRTUAL_PARTS_UPDATE, "SYSTEM STOP VIRTUAL PARTS UPDATE, SYSTEM START VIRTUAL PARTS UPDATE, STOP VIRTUAL PARTS UPDATE, START VIRTUAL PARTS UPDATE", TABLE, SYSTEM) \
     M(SYSTEM_REDUCE_BLOCKING_PARTS, "SYSTEM STOP REDUCE BLOCKING PARTS, SYSTEM START REDUCE BLOCKING PARTS, STOP REDUCE BLOCKING PARTS, START REDUCE BLOCKING PARTS", TABLE, SYSTEM) \
     M(SYSTEM_DROP_REPLICA, "DROP REPLICA", TABLE, SYSTEM) \
+    M(SYSTEM_DROP_AMBER_NODE, "DROP AMBER NODE", GLOBAL, SYSTEM) \
+    M(SYSTEM_ALLOCATE_AMBER_VOLUME, "ALLOCATE AMBER VOLUME", GLOBAL, SYSTEM) \
+    M(SYSTEM_CREATE_AMBER_VOLUME, "CREATE AMBER VOLUME", GLOBAL, SYSTEM) \
+    M(SYSTEM_DROP_AMBER_VOLUME, "DROP AMBER VOLUME", GLOBAL, SYSTEM) \
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_REPLICA_READINESS, "SYSTEM REPLICA READY, SYSTEM REPLICA UNREADY", GLOBAL, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
@@ -455,6 +460,17 @@ enum class AccessType : uint8_t
     M(ELASTICSEARCH, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* AI functions */ \
+    M(aiClassify, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiClassify() */\
+    M(aiEmbed, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiEmbed() */\
+    M(aiExtract, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiExtract() */\
+    M(aiFilter, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiFilter() */\
+    M(aiGenerate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiGenerate() */\
+    M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
+    M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
+    M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
+    M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \

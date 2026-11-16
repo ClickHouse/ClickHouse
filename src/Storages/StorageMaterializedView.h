@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class IDatabase;
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
@@ -52,6 +53,7 @@ public:
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getTargetTable()->supportsOptimizationToTupleElementSubcolumns(); }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
@@ -103,6 +105,15 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
+
+    /// Throws if `table_id` is the source of an incremental refreshable view: the view's cursor would be applied to another table.
+    /// With `is_drop_database`, views from the same database are ignored, because they are dropped first.
+    static void checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context, bool is_drop_database);
+
+    /// Runs `checkTableIsNotIncrementalRefreshSource` for every attached and detached table of `database`.
+    /// Detached tables are included, because `DROP DATABASE` and `RENAME DATABASE` free their names too.
+    static void checkDatabaseHasNoIncrementalRefreshSources(
+        const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database);
 
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;

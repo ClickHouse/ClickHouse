@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool s3_allow_multipart_copy;
     extern const SettingsBool s3_check_objects_after_upload;
     extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 s3_max_single_part_upload_size;
@@ -260,6 +261,7 @@ struct InjectionModel
     DeclareInjectCall(CompleteMultipartUpload)
     DeclareInjectCall(AbortMultipartUpload)
     DeclareInjectCall(UploadPart)
+    DeclareInjectCall(CopyObject)
 #undef DeclareInjectCall
 };
 
@@ -308,7 +310,7 @@ struct Client : DB::S3::Client
             /* s3_slow_all_threads_after_network_error = */ true,
             /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,
-            /* for_disk_s3 = */ false,
+            /* group = */ DB::HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {});
         /// createClientConfiguration leaves retryStrategy unset; ClientFactory::create() normally
@@ -500,6 +502,14 @@ struct Client : DB::S3::Client
     {
         ++counters.copyObject;
 
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+            {
+                return *opt_val;
+            }
+        }
+
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
         const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
         store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
@@ -582,6 +592,28 @@ struct UploadPartFailIngection: InjectionModel
     }
 };
 
+/// Rejects every CopyObject with `copy_error` and, if `put_error` is set, every PutObject with it.
+struct RejectCopyAndPutInjection : InjectionModel
+{
+    explicit RejectCopyAndPutInjection(String copy_error_, std::optional<String> put_error_ = std::nullopt)
+        : copy_error(std::move(copy_error_)), put_error(std::move(put_error_)) {}
+
+    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & /*request*/) override
+    {
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, copy_error, "RejectCopyInjection", false);
+    }
+
+    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & /*request*/) override
+    {
+        if (!put_error)
+            return std::nullopt;
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, *put_error, "RejectPutInjection", false);
+    }
+
+    String copy_error;
+    std::optional<String> put_error;
+};
+
 struct ChecksumRecordingInjection : InjectionModel
 {
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
@@ -625,6 +657,17 @@ struct ChecksumRecordingInjection : InjectionModel
     std::vector<String> upload_part_sha256_checksums;
     std::vector<String> complete_part_crc32_checksums;
     std::vector<String> complete_part_sha256_checksums;
+};
+
+struct CompleteMPURecordingInjection : InjectionModel
+{
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
+    {
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        return std::nullopt;
+    }
+
+    std::vector<std::string> seen_if_none_match;
 };
 
 /// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
@@ -1398,7 +1441,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
             catch (const DB::Exception & e)
             {
                 ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
+                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 because the MD5 digest is not available"));
                 throw;
             }
         }, DB::Exception);
@@ -1444,6 +1487,59 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
     ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+}
+
+TEST_F(WBS3Test, GCSMultipartConditionalCreateIsRefused)
+{
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try
+        {
+            auto buffer = getWriteBuffer("gcs_mpu_conditional_create", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_THAT(e.what(), testing::HasSubstr("must be a single PUT"));
+            throw;
+        }
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+}
+
+TEST_F(WBS3Test, GCSMultipartBestEffortCreateIsUnconditional)
+{
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    auto injection = std::make_shared<MockS3::CompleteMPURecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto write_settings = conditionalCreateWriteSettings();
+    write_settings.object_storage_write_if_none_match_best_effort = true;
+
+    auto buffer = getWriteBuffer("gcs_mpu_best_effort_create", write_settings);
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["gcs_mpu_best_effort_create"], "A");
+    ASSERT_EQ(injection->seen_if_none_match.size(), 1u);
+    EXPECT_TRUE(injection->seen_if_none_match[0].empty());
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
@@ -2360,6 +2456,119 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
     EXPECT_EQ(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
+}
+
+/// Some endpoints reject a CopyObject of an empty object. A multipart upload cannot write an empty object,
+/// so the copy must fall back to a regular upload.
+TEST_F(CopyS3FileRoutingTest, RejectedCopyOfEmptyObjectUsesRegularUpload)
+{
+    for (const char * error : {"InvalidArgument", "InvalidRequest", "EntityTooLarge"})
+    {
+        SCOPED_TRACE(error);
+        const String src_key = String("src_") + error;
+        const String dst_key = String("dst_") + error;
+        putSource(src_key, /* size= */ 0);
+        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>(error));
+
+        const auto & objects = client->store->GetBucketStore(bucket).objects;
+        ASSERT_FALSE(objects.contains(dst_key));
+
+        EXPECT_NO_THROW(runWholeCopy(src_key, /* size= */ 0, dst_key));
+
+        EXPECT_EQ(client->counters.copyObject, 1u);
+        EXPECT_EQ(client->counters.putObject, 1u);
+        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+        ASSERT_TRUE(objects.contains(dst_key));
+        EXPECT_TRUE(objects.at(dst_key).empty());
+    }
+}
+
+/// If the regular upload of an empty object is rejected too, the endpoint's error is reported.
+TEST_F(CopyS3FileRoutingTest, RejectedUploadOfEmptyObjectThrowsS3Error)
+{
+    for (const char * error : {"InvalidRequest", "EntityTooLarge"})
+    {
+        SCOPED_TRACE(error);
+        const String src_key = String("src_") + error;
+        const String dst_key = String("dst_") + error;
+        putSource(src_key, /* size= */ 0);
+        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("InvalidArgument", error));
+
+        EXPECT_THROW({
+            try
+            {
+                runWholeCopy(src_key, /* size= */ 0, dst_key);
+            }
+            catch (const DB::Exception & e)
+            {
+                ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+                EXPECT_THAT(e.what(), testing::HasSubstr("RejectPutInjection"));
+                throw;
+            }
+        }, DB::S3Exception);
+
+        EXPECT_EQ(client->counters.copyObject, 1u);
+        EXPECT_EQ(client->counters.putObject, 1u);
+        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+        EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains(dst_key));
+    }
+}
+
+/// The multipart retry of a rejected CopyObject sends byte ranges, which S3 rejects for a source of 5 MB or
+/// less, so such a copy must fall back to a regular upload.
+TEST_F(CopyS3FileRoutingTest, RejectedCopyOfSmallObjectUsesRegularUpload)
+{
+    for (size_t size : {size_t{100}, min_source_size_for_range_copy})
+    {
+        SCOPED_TRACE(size);
+        const String src_key = "src_" + std::to_string(size);
+        const String dst_key = "dst_" + std::to_string(size);
+        const String source = putSource(src_key, size);
+        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("InvalidRequest"));
+
+        const auto & objects = client->store->GetBucketStore(bucket).objects;
+        ASSERT_FALSE(objects.contains(dst_key));
+
+        EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
+
+        EXPECT_EQ(client->counters.copyObject, 1u);
+        EXPECT_EQ(client->counters.uploadPartCopy, 0u);
+        EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+        EXPECT_EQ(client->counters.putObject, 1u);
+        ASSERT_TRUE(objects.contains(dst_key));
+        EXPECT_EQ(objects.at(dst_key), source);
+    }
+}
+
+/// The multipart retry of a rejected CopyObject is used only if multipart copy is allowed.
+TEST_F(CopyS3FileRoutingTest, RejectedCopyRetriesAsMultipartCopyOnlyIfAllowed)
+{
+    const size_t size = min_source_size_for_range_copy + 1024;
+    for (bool allow : {true, false})
+    {
+        SCOPED_TRACE(allow);
+        const String src_key = allow ? "src_allowed" : "src_disallowed";
+        const String dst_key = allow ? "dst_allowed" : "dst_disallowed";
+        const String source = putSource(src_key, size);
+        getSettings()[Setting::s3_allow_multipart_copy] = allow;
+        setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("EntityTooLarge"));
+
+        EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
+
+        EXPECT_EQ(client->counters.copyObject, 1u);
+        if (allow)
+        {
+            EXPECT_GT(client->counters.uploadPartCopy, 0u);
+            EXPECT_EQ(client->counters.putObject, 0u);
+        }
+        else
+        {
+            EXPECT_EQ(client->counters.uploadPartCopy, 0u);
+            EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+            EXPECT_EQ(client->counters.putObject, 1u);
+        }
+        EXPECT_EQ(client->store->GetBucketStore(bucket).objects.at(dst_key), source);
+    }
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {

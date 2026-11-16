@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
-#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -31,8 +30,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
@@ -56,6 +55,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
+#include <boost/functional/hash.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
 #include <Common/assert_cast.h>
@@ -85,12 +85,12 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 
 
-namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStorageGlobFilteredObjects;
+    extern const Event ObjectStorageHiddenFilteredObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
     extern const Event ObjectStorageReadObjects;
     extern const Event QueryConditionCacheHits;
@@ -141,7 +141,8 @@ namespace
     {
         Names result;
 #if USE_AVRO
-        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+        const auto format = Poco::toLower(format_name);
+        if ((format != "parquet" && format != "orc" && format != "avro") || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
             return result;
 
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
@@ -187,10 +188,69 @@ namespace
         return path.substr(0, position);
     }
 
+    /// Whether the path contains a hidden segment that starts at or past the given offset.
+    /// This is the Hive ecosystem convention for staging and marker paths (Hive's
+    /// HIDDEN_FILES_PATH_FILTER, Spark, Trino): e.g. `_temporary/`, `.spark-staging-<id>/`,
+    /// `_SUCCESS`. Like Spark's `InMemoryFileIndex`, a segment containing '=' is a partition
+    /// directory (e.g. `_p=1/` written for a partition column `_p`) and is not hidden.
+    /// The offset exempts the segments the user wrote explicitly (see `getHiddenCheckOffset`).
+    bool pathHasHiddenSegment(std::string_view path, size_t offset)
+    {
+        if (offset >= path.size())
+            return false;
+
+        /// Segments starting before the offset are exempt, even if the offset is in the middle of one.
+        size_t pos = offset;
+        if (pos != 0 && path[pos - 1] != '/')
+        {
+            pos = path.find('/', pos);
+            if (pos == std::string_view::npos)
+                return false;
+            ++pos;
+        }
+
+        while (pos < path.size())
+        {
+            size_t end = path.find('/', pos);
+            if (end == std::string_view::npos)
+                end = path.size();
+            std::string_view segment = path.substr(pos, end - pos);
+            if (!segment.empty() && (segment[0] == '_' || segment[0] == '.') && !segment.contains('='))
+                return true;
+            pos = end + 1;
+        }
+        return false;
+    }
+
+    /// The size of the literal (glob-free) prefix of the glob path. Segments starting within it are
+    /// written by the user (or are the table root of the hive partition strategy) and are never treated
+    /// as hidden; only segments discovered by the listing past it are checked. This does not depend on
+    /// how the listing prefix is cut (a complete directory for HDFS, a partial key prefix for S3), and
+    /// works for a table root without a trailing slash (`_root**.parquet`).
+    size_t getHiddenCheckOffset(const String & glob_path)
+    {
+        auto pos = glob_path.find_first_of("*?{");
+        return pos == String::npos ? glob_path.size() : pos;
+    }
+
+    /// Hidden paths are skipped under the per-engine `*_skip_hidden_files` setting, and unconditionally
+    /// for the hive partition strategy, which reads its table root by a recursive glob.
+    bool shouldSkipHiddenFiles(const StorageObjectStorageQuerySettings & query_settings, const StorageObjectStorageConfiguration & configuration)
+    {
+        return query_settings.skip_hidden_files
+            || configuration.partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE;
+    }
+
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
+            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();
@@ -347,7 +407,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_,
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry_,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
+    std::shared_ptr<ThreadPool> shared_create_reader_pool_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -363,11 +424,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , read_from_format_info(info)
     , create_reader_pool(
-          std::make_shared<ThreadPool>(
-              CurrentMetrics::StorageObjectStorageThreads,
-              CurrentMetrics::StorageObjectStorageThreadsActive,
-              CurrentMetrics::StorageObjectStorageThreadsScheduled,
-              1 /* max_threads */))
+          shared_create_reader_pool_
+              ? shared_create_reader_pool_
+              : std::make_shared<ThreadPool>(
+                  CurrentMetrics::StorageObjectStorageThreads,
+                  CurrentMetrics::StorageObjectStorageThreadsActive,
+                  CurrentMetrics::StorageObjectStorageThreadsScheduled,
+                  1 /* max_threads */))
+    , owns_create_reader_pool(shared_create_reader_pool_ == nullptr)
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
@@ -386,7 +450,12 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     LOG_DEBUG(log, "Source finished: files_read={}", total_files_read);
-    create_reader_pool->wait();
+    /// An in-flight reader task captures `this`, so it must not outlive the source. A shared pool
+    /// also serves other sources, so wait on this source's own task instead.
+    if (owns_create_reader_pool)
+        create_reader_pool->wait();
+    else if (reader_future.valid())
+        reader_future.wait();
 
     try
     {
@@ -437,12 +506,98 @@ void StorageObjectStorageSource::writePendingTopKQueryConditionCacheEntries()
         query_condition_cache->write(
             storage_id.uuid,
             entry.cache_file_key,
-            top_k_query_condition_cache_key->condition_hash,
+            *top_k_query_condition_cache_key->condition_hash,
             top_k_query_condition_cache_key->condition,
             unmatched_ranges,
             entry.total_row_groups,
             /*has_final_mark=*/false);
     }
+}
+
+ObjectIteratorListingAllForTopKQueryConditionCache::ObjectIteratorListingAllForTopKQueryConditionCache(
+    ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_, std::shared_ptr<QueryStatus> query_status_)
+    : iterator(std::move(iterator_))
+    , key(std::move(key_))
+    , query_status(std::move(query_status_))
+{
+}
+
+ObjectInfoPtr ObjectIteratorListingAllForTopKQueryConditionCache::next(size_t processor)
+{
+    /// The inner iterator has advanced past the objects listed before a failure, so listing cannot
+    /// be retried: every caller gets the exception.
+    std::call_once(listed, [&]
+    {
+        try
+        {
+            listObjects(processor);
+        }
+        catch (...)
+        {
+            listing_exception = std::current_exception();
+        }
+    });
+    if (listing_exception)
+        std::rethrow_exception(listing_exception);
+
+    size_t current_index = index.fetch_add(1);
+    if (current_index < objects.size())
+        return objects[current_index];
+    if (listed_all)
+        return nullptr;
+    return iterator->next(processor);
+}
+
+void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t processor)
+{
+    /// One object more than the limit is listed to tell exactly `MAX_OBJECTS` objects from more.
+    while (objects.size() <= MAX_OBJECTS)
+    {
+        /// Listing an object may take a request (e.g. a `HEAD` for each explicit key), so a cancelled
+        /// query must not go on listing until all objects are collected. When the time limit is
+        /// exceeded with `timeout_overflow_mode = 'break'`, the rest comes from `iterator` without a key.
+        if (query_status && !query_status->checkTimeLimit())
+            return;
+
+        auto object = iterator->next(processor);
+        if (!object || object->getPath().empty())
+        {
+            listed_all = true;
+            break;
+        }
+        objects.push_back(std::move(object));
+    }
+
+    if (!listed_all)
+        return;
+
+    /// The cache entries of a file are keyed by its path and ETag (`makeQueryConditionCacheKey`), and the
+    /// TopK key covers these keys of all files, in any order. An object without a usable ETag (or one
+    /// inside an archive, or a part of an object) makes no key.
+    std::vector<String> file_keys;
+    file_keys.reserve(objects.size());
+    for (const auto & object : objects)
+    {
+        if (object->isArchive() || object->file_bucket_info)
+            return;
+        auto file_key = StorageObjectStorageSource::makeQueryConditionCacheKey(*object, /*is_data_lake=*/ false);
+        if (!file_key)
+            return;
+        file_keys.push_back(std::move(*file_key));
+    }
+    std::sort(file_keys.begin(), file_keys.end());
+
+    SipHash files_hash;
+    for (const auto & file_key : file_keys)
+    {
+        files_hash.update(file_key.size());
+        files_hash.update(file_key);
+    }
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where they differ (e.g. Apple).
+    size_t condition_hash = key->condition_hash_without_files;
+    boost::hash_combine(condition_hash, files_hash.get64());
+    key->condition_hash = condition_hash;
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -466,6 +621,24 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result = getArchiveEntryKey(result, object_info.archive_entry_index);
 
     return result;
+}
+
+std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id)
+{
+    /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
+    const auto size_from_table = object_info.getFileSizeHint();
+    const auto file_format = object_info.getFileFormat().value_or(configuration.format);
+    if (!configuration.dataFilesAreImmutable()
+        || storage_id.uuid == UUIDHelpers::Nil
+        || !size_from_table
+        || !(boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC")))
+        return std::nullopt;
+
+    return ObjectMetadata::fromTableRecords(
+        size_from_table,
+        fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
+                    configuration.getDataSourceDescription(), *size_from_table));
 }
 
 /// The object identifier already uses the full path, so files that share a base name in
@@ -516,6 +689,28 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
     return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+}
+
+StorageMetadataPtr StorageObjectStorageSource::ensureDataLakeTableState(
+    const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context)
+{
+    /// The state is normally set by `updateExternalDynamicMetadataIfExists` during query analysis,
+    /// but it can be missing due to race conditions between concurrent queries (TOCTOU between
+    /// `setInMemoryMetadata` and `getInMemoryMetadataPtr`), or when called from code paths that bypass
+    /// the analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+    if (!configuration.isDataLakeConfiguration()
+        || (storage_metadata && storage_metadata->datalake_table_state.has_value()))
+        return storage_metadata;
+
+    auto state = configuration.getTableStateSnapshot(local_context);
+    if (!state)
+        return storage_metadata;
+
+    auto fixed_metadata = storage_metadata
+        ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+        : std::make_shared<StorageInMemoryMetadata>();
+    fixed_metadata->setDataLakeTableState(*state);
+    return fixed_metadata;
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -604,10 +799,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    paths,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        filter_paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -673,6 +870,17 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 if (matched_key)
                     validated_paths->push_back(std::move(*matched_key));
             }
+
+            /// The validated keys stand in for the glob listing, so they must obey the same visibility rule:
+            /// otherwise a `WHERE _path = ...` predicate would read hidden objects that the table scan skips,
+            /// and the result would depend on `s3_path_filter_limit`.
+            if (validated_paths && shouldSkipHiddenFiles(query_settings, *configuration))
+            {
+                const size_t hidden_check_offset = getHiddenCheckOffset(reading_path.path);
+                std::erase_if(
+                    *validated_paths,
+                    [&](const String & key) { return pathHasHiddenSegment(key, hidden_check_offset); });
+            }
         }
 
         // If there are no validated paths, use the glob iterator to scan all matching files.
@@ -689,6 +897,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 is_archive ? nullptr : read_keys,
                 query_settings.list_object_keys_size,
                 query_settings.throw_on_zero_files_match,
+                shouldSkipHiddenFiles(query_settings, *configuration),
                 with_tags,
                 file_progress_callback);
         else
@@ -713,24 +922,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        /// For datalake configurations, ensure datalake_table_state is present in the metadata
-        /// before calling iterate(). The state is normally set by
-        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
-        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
-        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
-        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
-        if (configuration->isDataLakeConfiguration()
-            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
-        {
-            if (auto state = configuration->getTableStateSnapshot(local_context))
-            {
-                auto fixed_metadata = storage_metadata
-                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
-                    : std::make_shared<StorageInMemoryMetadata>();
-                fixed_metadata->setDataLakeTableState(*state);
-                storage_metadata = std::move(fixed_metadata);
-            }
-        }
+        storage_metadata = ensureDataLakeTableState(*configuration, std::move(storage_metadata), local_context);
 
         auto iter = configuration->iterate(
             filter_actions_dag,
@@ -797,10 +989,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
-                VirtualColumnUtils::filterByPathOrFile(
-                    keys, paths, actions, virtual_columns, hive_columns, local_context,
-                    /*format_settings=*/std::nullopt,
-                    is_explicit_archive_member ? &archive_member_names : nullptr);
+                VirtualColumnUtils::filterSourcesByIndexes(
+                    keys,
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, actions, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        is_explicit_archive_member ? &archive_member_names : nullptr));
             }
             else
             {
@@ -880,12 +1074,6 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
-            std::string full_path = object_info->getPath();
-
-            const auto reading_path = configuration->getPathForRead().path;
-
-            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
-                full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
 
@@ -1035,68 +1223,6 @@ Chunk StorageObjectStorageSource::generate()
                 chunk.addColumn(std::move(row_index_column));
             }
 
-#if USE_PARQUET
-            if (chunk_size && chunk.hasColumns())
-            {
-                /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
-                {
-                    /// This is an awful temporary crutch,
-                    /// which will be removed once DeltaKernel is used by default for DeltaLake.
-                    /// (Because it does not make sense to support it in a nice way
-                    /// because the code will be removed ASAP anyway)
-                    if (configuration->isDataLakeConfiguration())
-                    {
-                        /// A terrible crutch, but it this code will be removed next month.
-                        DeltaLakePartitionColumns partition_columns;
-#if USE_AWS_S3
-                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
-                        }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
-                        }
-#endif
-                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
-                        {
-                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
-                        }
-                        if (!partition_columns.empty())
-                        {
-                            auto partition_values = partition_columns.find(full_path);
-                            if (partition_values != partition_columns.end())
-                            {
-                                for (const auto & [name_and_type, value] : partition_values->second)
-                                {
-                                    if (!read_from_format_info.source_header.has(name_and_type.name))
-                                        continue;
-
-                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                    /// The `_delta_log` type differs from the declared one when the columns were
-                                    /// specified rather than inferred, and the block follows the declared schema.
-                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
-                                    if (!name_and_type.type->equals(*declared_type))
-                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
-                                    /// This column is filled with default value now, remove it.
-                                    chunk.erase(column_pos);
-                                    /// Add correct values.
-                                    if (column_pos < chunk.getNumColumns())
-                                        chunk.addColumn(column_pos, std::move(partition_column));
-                                    else
-                                        chunk.addColumn(std::move(partition_column));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-#endif
-
             /// Convert any Const columns to full columns before returning.
             /// This is necessary because when chunks with different Const values (e.g., partition columns
             /// from different files in DeltaLake) are squashed together during INSERT, the squashing code
@@ -1124,10 +1250,12 @@ Chunk StorageObjectStorageSource::generate()
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
         /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
+        /// The same holds for the row groups or pages a JOIN runtime filter skipped.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
             && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
                 && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
-            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
+            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied())
+            && !(reader.getInputFormat() && reader.getInputFormat()->isJoinRuntimeFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
@@ -1192,7 +1320,7 @@ Chunk StorageObjectStorageSource::generate()
 
         /// TopN dynamic filtering: such an entry must never land under the plain predicate key (see
         /// above), but it is sound under the TopK key (`ObjectStorageTopKQueryConditionCacheKey`), which
-        /// only the same TopN over the same data lake snapshot consults: the threshold only ever tightens
+        /// only the same TopN over the same set of files consults: the threshold only ever tightens
         /// towards the final one and `__topKFilter` keeps ties, so a row group that returned no row, or
         /// whose best returned value sorts strictly beyond the threshold, holds no row of the result - a
         /// rerun reading only the other row groups finds the same top-K. The rows of this file may still
@@ -1200,7 +1328,8 @@ Chunk StorageObjectStorageSource::generate()
         /// against the final threshold (see `writePendingTopKQueryConditionCacheEntries`). A cancelled
         /// read may stop before it has seen every row group, and the ones it has not read report no
         /// matching rows either, so it writes nothing.
-        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled())
+        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied())
         {
             const auto * input_format = reader.getInputFormat();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*reader.getObjectInfo(), configuration->isDataLakeConfiguration());
@@ -1215,8 +1344,10 @@ Chunk StorageObjectStorageSource::generate()
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied()
             && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !reader.getObjectInfo()->rows_to_read)
+            && !reader.getObjectInfo()->rows_to_read
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1236,7 +1367,9 @@ Chunk StorageObjectStorageSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        create_reader_pool->wait();
+        /// Skipped for a shared pool: that would serialize the other sources using it.
+        if (owns_create_reader_pool)
+            create_reader_pool->wait();
         reader_future = createReaderAsync();
     }
 
@@ -1319,6 +1452,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
+    /// Replaced by `format_filter_info_tracking_best_values` of the TopK key for a file that uses the key.
+    const FormatFilterInfoPtr query_format_filter_info = format_filter_info;
     bool use_top_k_query_condition_cache_key = false;
     bool skipped_row_groups_by_top_k_entry = false;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1362,13 +1497,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// consult nor populate the cache - also for the files that do not apply the filter.
     /// With the TopK key of this query (`ObjectStorageTopKQueryConditionCacheKey`, made only while the
     /// setting is on), a file also consults the entries a previous run of the same TopN over the same
-    /// snapshot has written. They tell which row groups hold no row of the result, which holds whether
+    /// set of files has written. They tell which row groups hold no row of the result, which holds whether
     /// or not this file applies the filter. A row group may be skipped iff either verdict excludes it.
     /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
     const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+
+    std::shared_ptr<NamesAndTypesList> initial_schema;
+    bool reads_file_under_own_names = false;
 
     while (true)
     {
@@ -1383,24 +1521,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
-            const auto size_from_table = object_info->getFileSizeHint();
-            const auto file_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool use_size_from_table = configuration->dataFilesAreImmutable()
-                && storage_id.uuid != UUIDHelpers::Nil
-                && size_from_table
-                && (boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC"))
-                && !with_tags
+            std::optional<ObjectMetadata> metadata_from_table;
+            if (!with_tags
                 && !read_from_format_info.requested_virtual_columns.contains("_etag")
                 && !read_from_format_info.requested_virtual_columns.contains("_time")
-                && !query_settings.ignore_non_existent_file;
+                && !query_settings.ignore_non_existent_file)
+                metadata_from_table = tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, storage_id);
 
-            if (use_size_from_table)
+            if (metadata_from_table)
             {
-                object_info->setObjectMetadata(ObjectMetadata::fromTableRecords(
-                    size_from_table,
-                    fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
-                                configuration->getDataSourceDescription(), *size_from_table)));
+                object_info->setObjectMetadata(*metadata_from_table);
             }
             else if (query_settings.ignore_non_existent_file)
             {
@@ -1421,10 +1551,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             continue;
 
         /// A file the iterator has split into buckets is read in parts, and an entry describes a whole file.
-        use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && !object_info->file_bucket_info;
+        /// The key is final once the iterator has returned an object (see `ObjectStorageTopKQueryConditionCacheKey`).
+        use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && top_k_query_condition_cache_key->condition_hash
+            && !object_info->file_bucket_info;
         skipped_row_groups_by_top_k_entry = false;
+        format_filter_info = use_top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values
+            ? top_k_query_condition_cache_key->format_filter_info_tracking_best_values
+            : query_format_filter_info;
 
-        const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
+        /// A file with a schema transform is read under the column names it was written with, and the cache entries of the
+        /// plain predicate are not scoped by schema.
+        initial_schema = configuration->getInitialSchemaByPath(context_, object_info);
+        reads_file_under_own_names
+            = initial_schema && object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform;
+
+        const bool consult_plain_condition = !reads_file_under_own_names && format_filter_info && format_filter_info->condition_hash
             && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter
                 || !format_filter_info->top_k_filter->filter_rows);
 
@@ -1456,7 +1597,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (use_top_k_query_condition_cache_key)
                 {
                     auto marks = query_condition_cache->read(
-                        storage_id.uuid, *query_condition_cache_key, top_k_query_condition_cache_key->condition_hash, /*increment_profile_events=*/false);
+                        storage_id.uuid, *query_condition_cache_key, *top_k_query_condition_cache_key->condition_hash, /*increment_profile_events=*/false);
                     if (marks)
                     {
                         if (!matching_marks)
@@ -1473,7 +1614,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 const auto & marks = *matching_marks;
                 size_t total_row_groups = marks.size();
-                std::vector<size_t> matching_row_groups;
+                RowGroupIndices matching_row_groups;
                 for (size_t i = 0; i < total_row_groups; ++i)
                     if (marks[i])
                         matching_row_groups.push_back(i);
@@ -1570,7 +1711,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = need_only_count && !headers_requested && !object_info->file_bucket_info
+            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
@@ -1625,7 +1767,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
+        if (initial_schema)
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -1658,6 +1800,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             if (!format_filter_info)
                 return nullptr;
+
+            /// The filters use the current column names: apply them after the schema transform, not to the columns of the file.
+            if (reads_file_under_own_names)
+            {
+                stripped_row_level_filter = format_filter_info->row_level_filter;
+                stripped_prewhere_info = format_filter_info->prewhere_info;
+                return std::make_shared<FormatFilterInfo>(nullptr, format_filter_info->context.lock(), nullptr, nullptr, nullptr);
+            }
 
             /// Check if the actual file format supports PREWHERE. For mixed-format data lake
             /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
@@ -1747,6 +1897,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
+                    /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
+                    if (keep_in_reader)
+                        result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                     return result;
                 }
             }
@@ -1779,6 +1932,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
+                result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                 return result;
             }
 
@@ -1829,6 +1983,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
+                filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;
@@ -1877,6 +2032,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        std::optional<FormatSettings> ordered_format_settings;
+#if USE_AVRO
+        if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+            iceberg_object && iceberg_object->usesStreamingPositionDeletes(context_))
+        {
+            ordered_format_settings = format_settings ? *format_settings : getFormatSettings(context_);
+            ordered_format_settings->parquet.preserve_order = true;
+        }
+#endif
+        const auto & object_format_settings = ordered_format_settings ? ordered_format_settings : format_settings;
+
         InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the Parquet metadata cache and
         /// for the columns cache.
@@ -1902,7 +2068,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 context_,
                 max_block_size,
                 object_with_metadata,
-                format_settings,
+                object_format_settings,
                 parser_shared_resources,
                 filter_info,
                 true /* is_remote_fs */,
@@ -1920,7 +2086,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header,
             context_,
             max_block_size,
-            format_settings,
+            object_format_settings,
             parser_shared_resources,
             filter_info,
             true /* is_remote_fs */,
@@ -1951,7 +2117,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(object_info, builder, object_format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
@@ -1988,7 +2154,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
-            schema_transform->removeUnusedActions(needed_names);
+            /// A file read under its own schema has all its columns as inputs, as in the `getSchemaTransformer` case below.
+            if (!schema_changed)
+                schema_transform->removeUnusedActions(needed_names);
         }
         if (!schema_transform)
         {
@@ -2081,7 +2249,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (stripped_prewhere_info)
         {
-            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            /// Like the format reader, the fallback keeps the columns that the format header lists.
+            auto prewhere_dag = stripped_prewhere_info->prewhere_actions.clone();
+            auto & prewhere_outputs = prewhere_dag.getOutputs();
+            for (const auto * input : prewhere_dag.getInputs())
+            {
+                if (read_from_format_info.format_header.has(input->result_name)
+                    && std::ranges::find(prewhere_outputs, input) == prewhere_outputs.end())
+                    prewhere_outputs.push_back(input);
+            }
+
+            auto prewhere_actions = std::make_shared<ExpressionActions>(std::move(prewhere_dag));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
@@ -2100,6 +2278,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
+        }
+
+        /// A file read under its own names yields whole columns, while a tuple element can be requested as a flat
+        /// column (see `filterTupleColumnsToRead`).
+        if (reads_file_under_own_names)
+        {
+            NameSet names_in_storage;
+            for (const auto & column : read_from_format_info.requested_columns)
+                names_in_storage.insert(column.getNameInStorage());
+            auto extract_dag = createSubcolumnsExtractionActions(
+                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
+            if (!extract_dag.getNodes().empty())
+            {
+                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, extract_actions);
+                });
+            }
         }
 
         source = input_format;
@@ -2322,6 +2519,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(*content_token);
 
@@ -2416,6 +2614,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
+    bool skip_hidden_files_,
     bool with_tags,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
@@ -2424,6 +2623,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
+    , skip_hidden_files(skip_hidden_files_)
     , log(getLogger("GlobIterator"))
     , read_keys(read_keys_)
     , local_context(context_)
@@ -2435,6 +2635,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
+
+        hidden_check_prefix_size = getHiddenCheckOffset(key_with_globs.path);
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
 
@@ -2504,8 +2706,8 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
             if (!result.has_value())
             {
                 is_finished = true;
-                LOG_DEBUG(log, "Listing finished: total_listed={}, glob_filtered={}, predicate_filtered={}",
-                    total_listed, total_glob_filtered, total_predicate_filtered);
+                LOG_DEBUG(log, "Listing finished: total_listed={}, glob_filtered={}, hidden_filtered={}, predicate_filtered={}",
+                    total_listed, total_glob_filtered, total_hidden_filtered, total_predicate_filtered);
                 return {};
             }
 
@@ -2517,6 +2719,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             size_t listed_in_batch = 0;
             size_t glob_matched_in_batch = 0;
+            size_t after_hidden = 0;
             size_t after_filter = 0;
 
             listed_in_batch = new_batch.size();
@@ -2533,6 +2736,15 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
             }
 
             glob_matched_in_batch = new_batch.size();
+
+            if (skip_hidden_files)
+            {
+                std::erase_if(
+                    new_batch,
+                    [&](const auto & object_info) { return pathHasHiddenSegment(object_info->getPath(), hidden_check_prefix_size); });
+            }
+
+            after_hidden = new_batch.size();
 
             if (filter_expr)
             {
@@ -2553,33 +2765,33 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                         file_names.push_back(object_info->getFileName());
                 }
 
-                VirtualColumnUtils::filterByPathOrFile(
+                VirtualColumnUtils::filterSourcesByIndexes(
                     new_batch,
-                    paths,
-                    filter_expr,
-                    virtual_columns,
-                    hive_columns,
-                    local_context,
-                    /*format_settings=*/std::nullopt,
-                    match_web_paths_only ? &file_names : nullptr);
+                    VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                        paths, filter_expr, virtual_columns, hive_columns, local_context,
+                        /*format_settings=*/std::nullopt,
+                        match_web_paths_only ? &file_names : nullptr));
             }
 
             after_filter = new_batch.size();
 
             auto glob_filtered_out = listed_in_batch - glob_matched_in_batch;
-            auto predicate_filtered_out = glob_matched_in_batch - after_filter;
+            auto hidden_filtered_out = glob_matched_in_batch - after_hidden;
+            auto predicate_filtered_out = after_hidden - after_filter;
 
-            LOG_TRACE(log, "Listed batch: listed={}, glob filtered={}, predicate filtered={}",
-                listed_in_batch, glob_filtered_out, predicate_filtered_out);
+            LOG_TRACE(log, "Listed batch: listed={}, glob filtered={}, hidden filtered={}, predicate filtered={}",
+                listed_in_batch, glob_filtered_out, hidden_filtered_out, predicate_filtered_out);
 
             total_listed += listed_in_batch;
             total_glob_filtered += glob_filtered_out;
+            total_hidden_filtered += hidden_filtered_out;
             total_predicate_filtered += predicate_filtered_out;
 
             if (emit_profile_events)
             {
                 ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects, listed_in_batch);
                 ProfileEvents::increment(ProfileEvents::ObjectStorageGlobFilteredObjects, glob_filtered_out);
+                ProfileEvents::increment(ProfileEvents::ObjectStorageHiddenFilteredObjects, hidden_filtered_out);
                 ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects, predicate_filtered_out);
             }
         }
@@ -2672,10 +2884,12 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_keys,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_keys.empty())
             {
                 if (emit_profile_events)

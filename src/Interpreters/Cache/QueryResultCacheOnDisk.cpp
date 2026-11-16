@@ -34,7 +34,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheOnDiskWrittenBytes;
 }
 
@@ -60,7 +59,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 7:
+/// On-disk entry layout, version 8:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -79,6 +78,7 @@ namespace
 ///         UInt8    has_user_id, [UInt128 user_id]
 ///         varUInt  number of user roles, [UInt128 role]...
 ///         String   tag (setting `query_cache_tag`), so that `SYSTEM DROP QUERY CACHE TAG` can find the entry
+///         UInt8    ignore_quota, whether the query which wrote the entry was exempt from quotas
 ///
 ///     Result payload (compressed with the codec from setting `query_cache_on_disk_codec`; the compression frames are
 ///     self-describing, so reading does not depend on the setting):
@@ -95,7 +95,7 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 7;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 8;
 constexpr size_t FIXED_HEADER_SIZE
     = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
@@ -237,6 +237,7 @@ struct AccessMetadata
     std::optional<UUID> user_id;
     std::vector<UUID> current_user_roles;
     String tag;
+    bool ignore_quota = false;
 };
 
 AccessMetadata readAccessMetadata(ReadBuffer & in, size_t body_size)
@@ -260,6 +261,9 @@ AccessMetadata readAccessMetadata(ReadBuffer & in, size_t body_size)
     for (size_t i = 0; i < num_roles; ++i)
         metadata.current_user_roles.push_back(readUUID(in));
     readStringBinary(metadata.tag, in, body_size);
+    UInt8 ignore_quota = 0;
+    readBinaryLittleEndian(ignore_quota, in);
+    metadata.ignore_quota = ignore_quota;
     return metadata;
 }
 
@@ -475,6 +479,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         for (const auto & role : key.current_user_roles)
             writeUUID(role, out);
         writeStringBinary(key.tag, out);
+        writeBinaryLittleEndian(static_cast<UInt8>(key.ignore_quota), out);
 
         {
             CompressedWriteBuffer compressed_out(out, CompressionCodecFactory::instance().get(codec_name));
@@ -795,7 +800,6 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         for (const auto & file_segment : *holder)
             file_segment->increasePriority();
 
-        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, fixed_header->total_size);
         LOG_TRACE(logger, "Query result found on disk for query {}", doubleQuoteString(key.query_string));
 
         return QueryResultCacheReader(
@@ -804,7 +808,9 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             std::move(entry),
             std::move(result_column_origins),
             std::chrono::system_clock::from_time_t(fixed_header->created_at),
-            std::chrono::system_clock::from_time_t(fixed_header->expires_at));
+            std::chrono::system_clock::from_time_t(fixed_header->expires_at),
+            access.ignore_quota,
+            /* on_disk_read_bytes_ = */ fixed_header->total_size);
     }
     catch (...)
     {

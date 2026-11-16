@@ -160,9 +160,9 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
         result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
-    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// Injecting `SHUFFLE` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
-    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// `SELECT * FROM (...) SHUFFLE`, and if the query is planned only up to an intermediate stage
     /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
     /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
     /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
@@ -172,6 +172,13 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         result_context->setSetting("inject_random_order_for_select_without_order_by", false);
 
     return result_context;
+}
+
+SelectQueryOptions buildSelectQueryOptions(const SelectQueryOptions & select_query_options, const ContextPtr & context, const StoragePtr & storage)
+{
+    auto result = select_query_options;
+    result.view_source_in_subqueries = (storage && storage == context->getViewSource()) || select_query_options.view_source_in_subqueries;
+    return result;
 }
 
 template <typename... Args>
@@ -386,6 +393,11 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source)
+{
+    return reads_view_source && !context->isViewInnerQuery() ? context->getViewSource() : nullptr;
+}
+
 /// The plan steps captured the query tree node contexts by pointer at build time, so the
 /// distributed-to-local fallback must flip the setting in place on those same objects
 /// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
@@ -414,8 +426,13 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
+    /// Only this analysis swaps the view source in, so only it may analyze the view source table without data.
     addQueryTreePasses(
-        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
+        query_tree_pass_manager,
+        select_query_options.only_analyze,
+        select_query_options.positional_arguments_already_resolved,
+        storage && storage == context->getViewSource() ? storage : nullptr,
+        select_query_options.view_source_in_subqueries);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
@@ -452,7 +469,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ActionsDAG * post_filter_)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, nullptr /*storage*/))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, result_column_origins))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
@@ -475,7 +492,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
-    , select_query_options(select_query_options_)
+    , select_query_options(buildSelectQueryOptions(select_query_options_, context_, storage_))
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, result_column_origins))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(

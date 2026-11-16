@@ -39,6 +39,11 @@ struct CompressionCodecFamilyProperties
     /// given as a string (a table-level, network or temporary files setting, a server config), because there is
     /// no column there, and cannot be applied directly to bytes, e.g. by `estimateCompressionRatio`.
     bool is_declarative = false;
+
+    /// Whether the codec can be applied to a column of the given data type. Empty for a codec that does not
+    /// interpret the values and so applies to any type (e.g. `ZSTD`). Used by `FirstApplicable` to choose among
+    /// alternatives: the choice must not depend on catching the exception the creator throws for a wrong type.
+    std::function<bool(const IDataType & type)> is_applicable_to_type = {};
 };
 
 struct CodecValidationSettings
@@ -83,6 +88,12 @@ public:
     /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
     /// A compound such as CODEC(Delta, Default) would return false.
     static bool isDefaultCodec(const ASTPtr & codec);
+
+    /// The family name and the arguments of an element of a codec chain. Throws if it is malformed.
+    static std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element);
+
+    /// The properties of the codec family `family_name`, matched case-insensitively. Throws if it is unknown.
+    const CompressionCodecFamilyProperties & getFamilyProperties(const String & family_name) const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(
@@ -182,6 +193,19 @@ private:
 
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// Validates `FirstApplicable` in the codec chain `ast`: every alternative must be a valid codec by itself, and
+    /// the chain resolved for every substream of `column_type` (or for no type) must pass the usual validation.
+    void validateCodecWithFirstApplicable(
+        const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
+
+    /// Validates an alternative of `FirstApplicable` by itself, without a data type. With `reject_lossy`, throws if it
+    /// has a lossy codec: where the data type is unknown, the combinator is selected again for the type of every column,
+    /// so a lossy alternative would bypass the checks that keep lossy codecs away from a sorting key, a Map or a LowCardinality.
+    void validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings, bool reject_lossy) const;
+
+    /// Throws if the codec family is gated by a setting that is disabled in `settings` (nullptr: accepts every codec).
+    static void checkCodecIsEnabled(const String & family_name, const Settings * settings);
 
     /// Name of the gate setting: `enable_<lowercase family>_codec`.
     static String getGateSettingName(const String & family_name);

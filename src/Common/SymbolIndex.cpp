@@ -675,7 +675,7 @@ void searchAndCollectSymbolsFromGNUDebugData(SymbolIndex::Object & object, Symbo
 }
 
 
-void collectSymbolsFromELF(
+bool collectSymbolsFromELF(
     DynamicLinkingProgramHeaderInfo * info,
     SymbolIndex::Data & data)
 {
@@ -718,7 +718,7 @@ void collectSymbolsFromELF(
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
 
     if (ec)
-        return;
+        return is_main_executable;
 
     /// Debug info and symbol table sections may be split to separate binary.
     std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
@@ -784,10 +784,10 @@ void collectSymbolsFromELF(
             /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
             file_build_id = object.elf->getBuildID();
             if (build_id != file_build_id)
-                return;
+                return is_main_executable;
         }
         else
-            return;
+            return is_main_executable;
     }
 
     object.address_begin = reinterpret_cast<const void *>(info->addr);
@@ -810,19 +810,47 @@ void collectSymbolsFromELF(
 #if defined USE_MUSL
     searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
 #endif
+
+    return is_main_executable;
 }
 
+
+struct CollectSymbolsContext
+{
+    SymbolIndex::Data & data;
+    std::exception_ptr exception;
+};
 
 /* Callback for dl_iterate_phdr.
  * Is called by dl_iterate_phdr for every loaded shared lib until something
  * else than 0 is returned by one call of this function.
  */
-int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_ptr)
+int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * context_ptr)
 {
-    SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
+    CollectSymbolsContext & context = *reinterpret_cast<CollectSymbolsContext *>(context_ptr);
+    SymbolIndex::Data & data = context.data;
 
-    collectSymbolsFromProgramHeaders(info, data);
-    collectSymbolsFromELF(info, data);
+    const size_t initial_symbol_count = data.symbols.size();
+    const size_t initial_object_count = data.objects.size();
+
+    /// An exception must not unwind through the frames of `dl_iterate_phdr`: it is C code, and it holds
+    /// the loader lock while it calls us. Stop the iteration, and rethrow after `dl_iterate_phdr` returns.
+    try
+    {
+        collectSymbolsFromProgramHeaders(info, data);
+        if (!collectSymbolsFromELF(info, data))
+        {
+            /// Offsets of different objects overlap, and only offsets inside the main executable are published.
+            if (data.objects.size() > initial_object_count)
+                data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
+            data.symbols.resize(initial_symbol_count);
+        }
+    }
+    catch (...)
+    {
+        context.exception = std::current_exception();
+        return 1;
+    }
 
     /* Continue iterations */
     return 0;
@@ -948,9 +976,7 @@ void collectSymbolsFromMachOImage(
             continue;
 
         SymbolIndex::Symbol symbol;
-        /// On macOS, store absolute virtual addresses (n_value + slide) to avoid
-        /// overlap between symbols from different objects that would have the same
-        /// relative offsets. findSymbol skips the address-to-offset conversion on macOS.
+        /// Stored as runtime addresses for now: the image start is only known after all load commands are read.
         symbol.offset_begin = reinterpret_cast<const void *>(sym.n_value + slide);
         symbol.offset_end = symbol.offset_begin; /// Size will be computed below
         symbol.setNameReference(source_id, str_index);
@@ -978,10 +1004,16 @@ void collectSymbolsFromMachOImage(
     if (!local_symbols.empty() && max_addr > min_addr)
         local_symbols.back().offset_end = reinterpret_cast<const void *>(max_addr);
 
-    data.symbols.insert(data.symbols.end(), local_symbols.begin(), local_symbols.end());
-
     if (min_addr < max_addr)
     {
+        /// As on ELF, symbols are offsets relative to the start of their image (its Mach-O header, as
+        /// `__TEXT` maps the file from offset 0), so that they do not depend on the ASLR slide.
+        for (auto & symbol : local_symbols)
+        {
+            symbol.offset_begin = reinterpret_cast<const void *>(uintptr_t(symbol.offset_begin) - min_addr);
+            symbol.offset_end = reinterpret_cast<const void *>(uintptr_t(symbol.offset_end) - min_addr);
+        }
+
         SymbolIndex::Object object;
         object.address_begin = reinterpret_cast<const void *>(min_addr);
         object.address_end = reinterpret_cast<const void *>(max_addr);
@@ -1007,6 +1039,11 @@ void collectSymbolsFromMachOImage(
             {
             }
         }
+
+        if (header->filetype == MH_EXECUTE)
+            data.symbols.insert(data.symbols.end(), local_symbols.begin(), local_symbols.end());
+        else
+            object.symbols = std::move(local_symbols);
 
         data.objects.push_back(std::move(object));
     }
@@ -1053,7 +1090,10 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 void SymbolIndex::load()
 {
 #if defined(__ELF__)
-    dl_iterate_phdr(collectSymbols, &data);
+    CollectSymbolsContext context{data, {}};
+    dl_iterate_phdr(collectSymbols, &context);
+    if (context.exception)
+        std::rethrow_exception(context.exception);
 #elif defined(OS_DARWIN)
     uint32_t image_count = _dyld_image_count();
     for (uint32_t i = 0; i < image_count; ++i)
@@ -1066,13 +1106,20 @@ void SymbolIndex::load()
 #endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
-    data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
+    auto sort_and_deduplicate = [](std::vector<Symbol> & symbols)
     {
-        return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
-    }), data.symbols.end());
+        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
+        symbols.erase(std::unique(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
+        {
+            return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
+        }), symbols.end());
+    };
+
+    sort_and_deduplicate(data.symbols);
+    for (auto & object : data.objects)
+        sort_and_deduplicate(object.symbols);
 
 #if defined(__ELF__)
     if (data.has_compact_symbols)
@@ -1102,35 +1149,24 @@ void SymbolIndex::load()
 #endif
 }
 
-const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
+const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * offset) const
 {
-    /// On ELF: Symbols are stored as file offsets (relative to object base).
-    /// Callers may pass either absolute runtime addresses OR file offsets.
-    /// - Coverage passes absolute addresses
-    /// - system.stack_trace (after PR #82809) already stores file offsets
-    ///
-    /// Strategy: Try to find containing object. If found, input is absolute address → convert.
-    /// If not found, assume input is already a file offset → use directly.
-    ///
-    /// On macOS: Symbols are stored as absolute virtual addresses to avoid
-    /// overlap between different objects. No conversion is needed.
-
-    const void * offset = address;
-
-#if defined(__ELF__)
-    const Object * object = findObject(address);
-
-    if (object)
-    {
-        /// Input is an absolute address, convert to file offset
-        offset = reinterpret_cast<const void *>(
-            reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
-    }
-    /// else: input is likely already a file offset, use it directly
-#endif
-    /// On macOS, symbols use absolute virtual addresses, so search directly.
-
+    if (!offset)
+        return nullptr;
     return find(offset, data.symbols);
+}
+
+const SymbolIndex::Symbol * SymbolIndex::findSymbolByAddress(const void * address) const
+{
+    const Object * object = findObject(address);
+    if (!object)
+        return nullptr;
+
+    const void * offset = reinterpret_cast<const void *>(
+        reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
+    if (object == thisObject())
+        return find(offset, data.symbols);
+    return find(offset, object->symbols);
 }
 
 std::string_view SymbolIndex::getSymbolName(const Symbol & symbol) const

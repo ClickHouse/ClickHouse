@@ -166,6 +166,12 @@ struct ConnectionParams
     /// table on a disk, whose configuration comes from the server.
     bool follows_session_restriction = false;
 
+    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
+    /// which the credential does not expose. Empty when the credential takes them from the environment
+    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).

@@ -20,6 +20,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_exclusive_modules_sequential,
     get_optimal_test_batch,
@@ -1351,11 +1352,18 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
@@ -2064,7 +2072,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
         # No continuous mode (see cluster.py) and no profile merge: the coverage is
         # taken from the servers' `system.coverage_log`, not from .profraw files.
-        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = os.devnull
     elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid

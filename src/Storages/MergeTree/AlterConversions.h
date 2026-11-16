@@ -63,6 +63,12 @@ public:
     /// pending drop or rename of an indexed name makes the index unusable until it is materialized.
     NameSet getColumnsInvalidatingIndexes() const;
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+    /// Columns an index over cannot read correctly regardless of how its granules were typed, as opposed
+    /// to a value-preserving type change (ALTER MODIFY COLUMN): ALTER UPDATE, patches, a pending drop
+    /// (the reader returns defaults) or a pending rename (the name now reads another column). The
+    /// per-part type record certifies the type, never the values or the column identity, so these are
+    /// not exempt from index invalidation even when the recorded type matches.
+    const NameSet & getValueUpdatedColumns() const { return value_updated_columns; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
@@ -141,6 +147,9 @@ private:
     /// Names of columns which are updated by mutation commands.
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
+
+    /// Not a subset of all_updated_columns: also holds columns dropped or renamed by a pending mutation.
+    NameSet value_updated_columns;
 
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;

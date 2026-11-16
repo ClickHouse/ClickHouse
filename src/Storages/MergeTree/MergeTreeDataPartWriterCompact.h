@@ -4,6 +4,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB

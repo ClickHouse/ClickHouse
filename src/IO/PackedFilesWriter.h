@@ -122,7 +122,8 @@ public:
     /// not write anything, so a caller that streams the archive into a freshly opened destination
     /// file can open that file after this succeeded and never leave a truncated archive behind.
     /// The caller can provide files order hint to optimize the order of files in the archive. The files listed in the hint
-    /// Will be written first in the archive in the specified order, and the rest of the files will be written after them.
+    /// are written first in the archive in the specified order, and the rest of the files are written after them.
+    /// The hint names the files as they are stored, so names of columns have to be escaped in it.
     FinalizePlan prepareFinalize(const Strings & files_order_hint, UInt8 version) const;
 
     /// Dumps the index and the contents of the files into the provided output write buffer

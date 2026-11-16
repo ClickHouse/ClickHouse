@@ -403,6 +403,74 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
             break;
         }
+        case Type::DROP_AMBER_NODE:
+        {
+            ASTPtr ast;
+            res->if_exists = ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected);
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.node_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::CREATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SHARDS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.shard_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SEGMENTS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.segment_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::DROP_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::FROM}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -1783,6 +1851,36 @@ Provides possibility to start background fetch tasks from replication queues whi
 ```sql
 SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
+
+### SYSTEM STOP REPLICATED DDL QUERIES {#stop-replicated-ddl-queries}
+
+Temporarily prohibits DDL queries in [`Replicated`](/reference/engines/database-engines/replicated) databases and distributed `ON CLUSTER` DDL queries on the server where it is executed:
+
+```sql
+SYSTEM STOP REPLICATED DDL QUERIES [ON CLUSTER cluster_name]
+```
+
+While DDL queries are stopped:
+
+- DDL queries in `Replicated` databases fail with the `QUERY_IS_PROHIBITED` error. This includes DDL queries that were initiated on this server and are already queued, but not yet committed.
+- All `ON CLUSTER` DDL queries except `SYSTEM` queries fail with the `QUERY_IS_PROHIBITED` error when initiated on this server, regardless of the engine of the target database (not only for `Replicated` databases).
+- DDL queries initiated on other replicas are still applied on this server: the statement prevents this server from initiating DDL, it does not stop the execution of the DDL queue.
+
+Without `ON CLUSTER`, the statement affects only the local server. With `ON CLUSTER`, it is executed on every host of the cluster (`SYSTEM` queries are not rejected while DDL queries are stopped, so `SYSTEM START REPLICATED DDL QUERIES ON CLUSTER` still works).
+
+The prohibition is not persistent: it is stored in memory and in ephemeral nodes in Keeper, and is lifted when the server restarts. Do not rely on it as a durable maintenance fence; execute it again after a restart if needed.
+
+The statement requires the global `SYSTEM REPLICATION QUEUES` privilege.
+
+### SYSTEM START REPLICATED DDL QUERIES {#start-replicated-ddl-queries}
+
+Cancels `SYSTEM STOP REPLICATED DDL QUERIES` and allows DDL queries in `Replicated` databases and distributed `ON CLUSTER` DDL queries again:
+
+```sql
+SYSTEM START REPLICATED DDL QUERIES [ON CLUSTER cluster_name]
+```
+
+The statement requires the global `SYSTEM REPLICATION QUEUES` privilege.
 
 ### SYSTEM STOP PULLING REPLICATION LOG {#stop-pulling-replication-log}
 

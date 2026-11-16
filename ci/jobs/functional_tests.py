@@ -743,11 +743,12 @@ def main():
         # by an interruptible exit-time dump (see integration_test_job.py).
         # It also releases the static counter section to the OS, and per-test coverage reads
         # that section in the server process, so the two modes are mutually exclusive.
-        profile_pattern = "%2m" if is_per_test_coverage else "%c%2m"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-{profile_pattern}.profraw"
         if is_per_test_coverage:
+            # No .profraw of the per-test job is merged, so it writes none.
+            os.environ["LLVM_PROFILE_FILE"] = os.devnull
             runner_options += " --collect-per-test-coverage"
         else:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%c%2m.profraw"
             runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
 
     diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"

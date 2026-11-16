@@ -107,7 +107,8 @@ void tryMarkJoin(QueryPlan::Node & node)
         BuildRuntimeFilterStep * covering_build_step = nullptr;
         for (const auto & descr : matches)
         {
-            if (descr.key_column_name != pk_column)
+            /// The key of a global row index descriptor is not a column, whatever its display name is.
+            if (descr.is_global_row_index || descr.key_column_name != pk_column)
                 continue;
             if (auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], descr.filter_id))
             {

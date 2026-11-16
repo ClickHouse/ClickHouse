@@ -152,6 +152,8 @@ public:
         std::shared_ptr<std::vector<char>> gnu_debugdata;
         std::shared_ptr<Elf> gnu_debugdata_elf;
 #endif
+        /// Symbols of a loaded library (not the main executable), as offsets relative to it; never published.
+        std::vector<Symbol> symbols;
 #if defined(OS_DARWIN)
         /// ASLR slide for this image. Subtract from runtime address to get linked (DWARF) address.
         uintptr_t slide = 0;
@@ -160,7 +162,12 @@ public:
 #endif
     };
 
-    const Symbol * findSymbol(const void * address) const;
+    /// Takes an offset inside the main executable, the form stored in system tables;
+    /// 0 (the stored form of frames outside it) finds nothing.
+    const Symbol * findSymbol(const void * offset) const;
+    /// Takes a runtime address of this process, also resolves symbols of loaded libraries.
+    /// Only for addresses the process itself captured, never for user input.
+    const Symbol * findSymbolByAddress(const void * address) const;
     /// The returned view is NUL-terminated at `data()[size()]` and remains valid only until
     /// the next call to `getSymbolName` or an iterator method on the same thread. Copy it if needed longer.
     std::string_view getSymbolName(const Symbol & symbol) const;

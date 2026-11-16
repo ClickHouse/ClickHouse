@@ -776,7 +776,7 @@ void ByteRleEncoder::write(char value)
     }
 }
 
-void ByteRleEncoder::recordPosition(std::vector<UInt64> & positions) const
+void ByteRleEncoder::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     stream.recordPosition(positions);
     positions.push_back(num_literals);
@@ -800,7 +800,7 @@ void BooleanRleEncoder::write(bool value)
     }
 }
 
-void BooleanRleEncoder::recordPosition(std::vector<UInt64> & positions) const
+void BooleanRleEncoder::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     byte_encoder.recordPosition(positions);
     positions.push_back(bits_in_current);
@@ -818,7 +818,7 @@ void BooleanRleEncoder::flush()
 }
 
 
-void IntRleEncoderV2::recordPosition(std::vector<UInt64> & positions) const
+void IntRleEncoderV2::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
 {
     stream.recordPosition(positions);
     positions.push_back(num_literals);

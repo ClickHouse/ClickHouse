@@ -544,6 +544,18 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         return res;
     }
 
+    /// A sparse filter computed from this column selects exactly its non-default rows, so the result shares `values`.
+    if constexpr (std::is_same_v<Type, UInt64>)
+    {
+        const auto & offsets_data = getOffsetsData();
+        if (limit == offsets_data.size() && memcmp(indexes.data(), offsets_data.data(), limit * sizeof(UInt64)) == 0)
+        {
+            auto res_offsets = ColumnUInt64::create(limit);
+            iota(res_offsets->getData().data(), limit, UInt64(0));
+            return ColumnSparse::create(values, std::move(res_offsets), limit);
+        }
+    }
+
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
     auto res_values = values->cloneEmpty();
@@ -584,10 +596,13 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     if (execute_linear)
     {
-        PaddedPODArray<UInt64> values_index(_size);
-        auto offset_it = begin();
-        for (size_t i = 0; i < _size; ++i, ++offset_it)
-            values_index[i] = offset_it.getValueIndex();
+        /// Scatter instead of walking the iterator row by row: that loop compares every row with the next
+        /// offset, and clang-23 compiles it into a `cmov` chain where each row waits for the previous one's
+        /// load of `offsets`. The scatter touches each offset once and has no per-row branch at all.
+        PaddedPODArray<UInt64> values_index(_size, 0);
+        const auto & offsets_data = getOffsetsData();
+        for (size_t i = 0; i < offsets_data.size(); ++i)
+            values_index[offsets_data[i]] = i + 1;
 
         for (size_t i = 0; i < limit;)
         {
@@ -615,7 +630,36 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
             pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
             const bool found = pos != offsets_end && *pos == indexes[i];
             pos += found;
-            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+
+            if (found && run_end == i + 1)
+            {
+                /// The following rows that are the next offsets, each once, select the next values.
+                const size_t value_index = pos - offsets_begin;
+                while (run_end < limit && pos != offsets_end && indexes[run_end] == *pos
+                       && (run_end + 1 == limit || indexes[run_end + 1] != indexes[run_end]))
+                {
+                    ++run_end;
+                    ++pos;
+                }
+
+                const size_t length = run_end - i;
+                if (length == 1)
+                {
+                    res_values->insertFrom(*values, value_index);
+                    res_offsets_data.push_back(i);
+                }
+                else
+                {
+                    res_values->insertRangeFrom(*values, value_index, length);
+                    const size_t old_size = res_offsets_data.size();
+                    res_offsets_data.resize(old_size + length);
+                    iota(res_offsets_data.data() + old_size, length, static_cast<UInt64>(i));
+                }
+            }
+            else
+            {
+                insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+            }
             i = run_end;
         }
 

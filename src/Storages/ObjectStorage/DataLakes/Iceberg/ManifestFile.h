@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Core/Range.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -11,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -54,6 +56,7 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
+    std::optional<Int64> nans_count;
 };
 
 struct PartitionSpecsEntry
@@ -123,6 +126,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
+    std::optional<std::vector<Int64>> split_offsets;
+
     bool isDeletionVector() const;
 
     ParsedManifestFileEntry(
@@ -146,7 +151,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_,
         Int64 record_count_,
-        Int64 file_size_in_bytes_)
+        Int64 file_size_in_bytes_,
+        std::optional<std::vector<Int64>> split_offsets_ = std::nullopt)
         : content_type(content_type_)
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
@@ -168,6 +174,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , sort_order_id(sort_order_id_)
         , record_count(record_count_)
         , file_size_in_bytes(file_size_in_bytes_)
+        , split_offsets(std::move(split_offsets_))
     {
     }
 };
@@ -199,6 +206,13 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
+
+/// Returns the delete files that apply to the data file by partition and sequence number; `deletes_objects` must be sorted.
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger);
 
 }
 

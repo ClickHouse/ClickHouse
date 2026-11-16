@@ -12,7 +12,7 @@ namespace Setting
 extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
-FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
+FormatSettingsEnums::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
 {
     if (context)
         return context->getSettingsRef()[Setting::date_time_overflow_behavior].value;

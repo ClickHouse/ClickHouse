@@ -1,4 +1,5 @@
 #include <Analyzer/Utils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 
@@ -11,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
