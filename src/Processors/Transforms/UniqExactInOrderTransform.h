@@ -27,7 +27,7 @@ public:
 
     ~UniqExactInOrderTransform() override;
 
-    String getName() const override { return "UniqExactInOrderTransform"; }
+    [[nodiscard]] String getName() const override { return "UniqExactInOrderTransform"; }
 
 protected:
     void consume(Chunk chunk) override;
@@ -54,7 +54,7 @@ class UniqExactInOrderSumTransform final : public IAccumulatingTransform
 public:
     UniqExactInOrderSumTransform(SharedHeader header, bool empty_result_for_empty_set_);
 
-    String getName() const override { return "UniqExactInOrderSumTransform"; }
+    [[nodiscard]] String getName() const override { return "UniqExactInOrderSumTransform"; }
 
 protected:
     void consume(Chunk chunk) override;

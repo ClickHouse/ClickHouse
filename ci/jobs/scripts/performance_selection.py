@@ -2,9 +2,11 @@
 
 import difflib
 import hashlib
+import http.client
 import json
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -248,6 +250,23 @@ def manifest_url(job):
     return f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/{branch}/{job['commit_sha']}/nightlycoverage/{name}/manifest.json"
 
 
+def read_manifest(url):
+    # 403 and 404 are answers: `coverage_cohort` treats them as an unpublished manifest.
+    for attempt in range(1, 6):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except (OSError, http.client.HTTPException) as error:
+            if attempt == 5 or (
+                isinstance(error, urllib.error.HTTPError) and error.code < 500
+            ):
+                raise
+            print(
+                f"WARNING: Coverage manifest read failed, attempt {attempt}: {url}: {error}"
+            )
+            time.sleep(2**attempt)
+
+
 def coverage_identity(manifest):
     # A corrected wrapper can finish a collection without changing its inputs.
     # The workflow SHA binds each manifest to its own successful job below;
@@ -324,12 +343,25 @@ def coverage_cohort(jobs, read_manifest):
             or not 1 <= plan["shard"] <= 16
         ):
             raise ValueError("Coverage manifest has an unexpected shard assignment")
-        group = groups[coverage_identity(manifest)]
+        identity = coverage_identity(manifest)
+        group = groups[identity]
         group.setdefault(plan["shard"], (job, manifest))
         if len(group) == 16:
             # Descending start time minimizes the age of the oldest shard. A
             # partial newer collection cannot displace a complete older one.
             selected = [group[n] for n in range(1, 17)]
+            if not any(
+                state["status"] == "collected"
+                for _, shard_manifest in selected
+                for state in shard_manifest["tests"].values()
+            ):
+                # Nothing was collected, so an older collection is used.
+                superseded.extend(
+                    {**shard_job, "reason": "Coverage collection covered no test"}
+                    for shard_job, _ in selected
+                )
+                del groups[identity]
+                continue
             return [j for j, _ in selected], [m for _, m in selected], superseded
     raise ValueError("No complete compatible performance coverage within 72 hours")
 
@@ -483,11 +515,6 @@ class PerformanceSelection(Targeting):
               AND check_start_time + toIntervalSecond(ceil(check_duration_ms / 1000)) < toDateTime({sql_string(cutoff)}, 'UTC')
             ORDER BY check_start_time DESC FORMAT JSONEachRow
         """)
-
-        def read_manifest(url):
-            with urllib.request.urlopen(url, timeout=60) as response:
-                return json.load(response)
-
         jobs, manifests, superseded = coverage_cohort(jobs, read_manifest)
         snapshots, tests = validate_manifests(manifests, cutoff)
         rows = self.rows(f"""
