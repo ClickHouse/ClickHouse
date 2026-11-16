@@ -37,6 +37,8 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/argsToConfig.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Exception.h>
 
 #include "config.h"
 
@@ -295,6 +297,17 @@ std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::stri
     argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
     Poco::Util::AbstractConfiguration::Keys children;
     config->keys(key, children);
+    return children;
+}
+
+/// The names of the child elements of a configuration key in the configuration as the server loads it: `config_file`
+/// with `config.d`, includes and substitutions applied. Elements included from ZooKeeper (`from_zk`) are not seen.
+std::vector<std::string> getConfigChildren(const std::string & config_file, const std::string & key)
+{
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    Poco::Util::AbstractConfiguration::Keys children;
+    loaded.configuration->keys(key, children);
     return children;
 }
 
@@ -785,9 +798,11 @@ bool runInitScripts(const std::vector<std::string> & client_base)
             if (executable)
                 args = {path.string()};
             else
-                args = {"sh", "-e", path.string()}; /// Fail on the first failed command, as `set -e` in entrypoint.sh.
+                /// Fail on the first failed command, including one in a pipeline, as `set -eo pipefail` in entrypoint.sh.
+                /// A shell without `pipefail` rejects the option and exits with an error, so the script does not run.
+                args = {"sh", "-e", "-o", "pipefail", path.string()};
 
-            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh -e") << "\n";
+            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh -e -o pipefail") << "\n";
             const int code = runCommand(args);
             if (code != 0)
             {
@@ -796,6 +811,10 @@ bool runInitScripts(const std::vector<std::string> & client_base)
                     std::cerr << "docker-init: the image may have no shell to run it; mount one into the container "
                                  "(for example, a statically linked busybox as /bin/sh), "
                                  "or use the `*.sql` and `*.sql.gz` init scripts\n";
+                else if (code == 2 && !executable)
+                    std::cerr << "docker-init: if the shell does not support `-o pipefail`, mount one that does "
+                                 "(for example, a statically linked busybox as /bin/sh), or make the script executable "
+                                 "so that it runs with the interpreter from its `#!` line\n";
                 return false;
             }
         }
@@ -905,8 +924,25 @@ bool initClickHouseDB(
     /// A single `listen_host` from the command line replaces all of them from the configuration files.
     server_args.emplace_back("--listen_host=127.0.0.1");
     server_args.emplace_back("--interserver_listen_host=127.0.0.1");
-    /// A protocol with its own `host` does not use `listen_host`, e.g. `-- --protocols.bootstrap.host=0.0.0.0`.
-    for (const auto & protocol : getOverriddenConfigChildren(extra_server_args, "protocols"))
+    /// A protocol with its own `host` does not use `listen_host`, e.g. `<protocols><bootstrap><host>0.0.0.0</host>...`
+    /// in a mounted configuration file or `-- --protocols.bootstrap.host=0.0.0.0`. Every protocol, wherever it is
+    /// defined, gets `127.0.0.1` as its host. A protocol without a port opens no listener, so the host does not affect it.
+    std::vector<std::string> protocols;
+    try
+    {
+        protocols = getConfigChildren(config_file, "protocols");
+    }
+    catch (...)
+    {
+        /// Do not start a server whose listeners are not known to be bound to localhost.
+        std::cerr << "docker-init: error: cannot read the protocols from " << config_file << ": "
+                  << DB::getCurrentExceptionMessage(false) << "\n";
+        return false;
+    }
+    for (auto & protocol : getOverriddenConfigChildren(extra_server_args, "protocols"))
+        if (std::find(protocols.begin(), protocols.end(), protocol) == protocols.end())
+            protocols.push_back(std::move(protocol));
+    for (const auto & protocol : protocols)
         server_args.push_back("--protocols." + protocol + ".host=127.0.0.1");
 
     if (g_shutdown_requested)
