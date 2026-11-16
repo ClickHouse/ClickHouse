@@ -280,8 +280,8 @@ Chunk MergingAggregatedTransform::generate()
             auto & bucket_to_chunks = grouping_set.bucket_to_chunks;
             AggregatedDataVariants data_variants;
 
-            /// Producers bucket a set by its keys before they become Nullable, so their bucket numbers do not match
-            /// this merge's hash, and merging them with single-level chunks by bucket would split equal keys.
+            /// With group_by_use_nulls, producers bucket a set by its keys before they become Nullable, so their
+            /// bucket numbers may not match this merge's hash; mixed with single-level chunks, equal keys would split.
             if (grouping_set.has_nullable_keys)
                 mergeMixedLevelsAsSingleLevel(bucket_to_chunks);
 
