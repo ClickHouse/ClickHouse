@@ -1,0 +1,92 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <use_columns_cache>0</use_columns_cache>
+        <use_query_cache>0</use_query_cache>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>lz4_short_sequences_fast</value>
+                <value>lz4_short_sequences_hc</value>
+                <value>lz4_short_sequences_repeated</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>decoder</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Small blocks of eight-symbol strings exercise short literal/match pairs.
+         Repeated strings cover highly compressed runs that keep the existing path. -->
+    <create_query>
+        CREATE TABLE lz4_short_sequences_fast (value String CODEC(LZ4))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 min_compress_block_size = 16384, max_compress_block_size = 16384
+    </create_query>
+    <create_query>
+        CREATE TABLE lz4_short_sequences_hc (value String CODEC(LZ4HC(3)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 min_compress_block_size = 16384, max_compress_block_size = 16384
+    </create_query>
+    <create_query>
+        CREATE TABLE lz4_short_sequences_repeated (value String CODEC(LZ4))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 min_compress_block_size = 16384, max_compress_block_size = 16384
+    </create_query>
+
+    <!-- One bulk insert per table keeps fixture parts deterministic without a forced merge. -->
+    <fill_query>
+        INSERT INTO lz4_short_sequences_fast
+        SELECT arrayStringConcat(arrayMap(i -> char(65 + cityHash64(number, toUInt64(i)) % 8), range(64)))
+        FROM numbers(1000000)
+        SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000,
+                 min_insert_block_size_bytes = 100000000
+    </fill_query>
+    <fill_query>
+        INSERT INTO lz4_short_sequences_hc SELECT value FROM lz4_short_sequences_fast
+        SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000,
+                 min_insert_block_size_bytes = 100000000
+    </fill_query>
+    <fill_query>
+        INSERT INTO lz4_short_sequences_repeated SELECT repeat('a', 64) FROM numbers(1000000)
+        SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000,
+                 min_insert_block_size_bytes = 100000000
+    </fill_query>
+
+    <query>
+        SELECT value FROM
+        (
+            SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+        )
+        SETTINGS use_lz4_library_decompression = {decoder}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(cityHash64(value)) FROM
+        (
+            SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+            UNION ALL SELECT value FROM {table}
+        )
+        SETTINGS use_lz4_library_decompression = {decoder}
+    </query>
+
+    <drop_query>DROP TABLE lz4_short_sequences_fast</drop_query>
+    <drop_query>DROP TABLE lz4_short_sequences_hc</drop_query>
+    <drop_query>DROP TABLE lz4_short_sequences_repeated</drop_query>
+</test>
