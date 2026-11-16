@@ -239,7 +239,7 @@ public:
 
     explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
 
-    PartsRanges select(
+    [[nodiscard]] PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
