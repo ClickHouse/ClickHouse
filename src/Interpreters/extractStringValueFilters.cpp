@@ -173,9 +173,10 @@ std::optional<std::pair<String, String>> tryGetPosition(const ActionsDAG::Node *
 
 }
 
-std::optional<bool> evaluatePositionComparisonAtZero(const String & function_name, const Field & constant, bool position_is_left_argument)
+std::optional<bool> evaluatePositionComparison(
+    const String & function_name, const Field & constant, bool position_is_left_argument, UInt64 position_value)
 {
-    /// Comparisons of 0 with the constant.
+    /// Comparisons of `position_value` with the constant.
     bool equals = false;
     bool less = false;
     bool greater = false;
@@ -185,33 +186,35 @@ std::optional<bool> evaluatePositionComparisonAtZero(const String & function_nam
         case Field::Types::UInt64:
         {
             UInt64 value = constant.safeGet<UInt64>();
-            equals = value == 0;
-            less = value > 0;
-            greater = false;
+            equals = position_value == value;
+            less = position_value < value;
+            greater = position_value > value;
             break;
         }
         case Field::Types::Int64:
         {
             Int64 value = constant.safeGet<Int64>();
-            equals = value == 0;
-            less = value > 0;
-            greater = value < 0;
+            equals = value >= 0 && position_value == static_cast<UInt64>(value);
+            less = value > 0 && position_value < static_cast<UInt64>(value);
+            greater = value < 0 || position_value > static_cast<UInt64>(value);
             break;
         }
         case Field::Types::Float64:
         {
+            /// `position_value` is 0 or 1 at the call sites, exactly representable. NaN compares false.
             Float64 value = constant.safeGet<Float64>();
-            equals = value == 0.0;
-            less = 0.0 < value;
-            greater = 0.0 > value;
+            Float64 position_float = static_cast<Float64>(position_value);
+            equals = position_float == value;
+            less = position_float < value;
+            greater = position_float > value;
             break;
         }
         case Field::Types::Bool:
         {
-            bool value = constant.safeGet<bool>();
-            equals = !value;
-            less = value;
-            greater = false;
+            UInt64 value = constant.safeGet<bool>();
+            equals = position_value == value;
+            less = position_value < value;
+            greater = position_value > value;
             break;
         }
         default:
@@ -232,6 +235,11 @@ std::optional<bool> evaluatePositionComparisonAtZero(const String & function_nam
         return position_is_left_argument ? (less || equals) : (greater || equals);
 
     return {};
+}
+
+std::optional<bool> evaluatePositionComparisonAtZero(const String & function_name, const Field & constant, bool position_is_left_argument)
+{
+    return evaluatePositionComparison(function_name, constant, position_is_left_argument, 0);
 }
 
 namespace
