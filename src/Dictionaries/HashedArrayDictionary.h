@@ -213,7 +213,7 @@ private:
     {
         if constexpr (!sharded)
             return 0;
-        return StringViewHash()(key) % configuration.shards;
+        return intHashCRC32(StringViewHash()(key)) % configuration.shards;
     }
 
     template <typename KeysProvider>
