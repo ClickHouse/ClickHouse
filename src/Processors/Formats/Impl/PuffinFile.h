@@ -14,8 +14,9 @@ class WriteBuffer;
 
 constexpr const char * PUFFIN_THETA_SKETCH_BLOB_TYPE = "apache-datasketches-theta-v1";
 
-/// Bounds a crafted compressed blob; a theta sketch of the default size is tens of KiB.
-constexpr size_t PUFFIN_BLOB_MAX_DECOMPRESSED_SIZE = 64 * 1024 * 1024;
+/// Bounds a crafted blob, stored or decompressed; a theta sketch of the default size is tens of KiB.
+constexpr int PUFFIN_BLOB_MAX_ZSTD_WINDOW_LOG = 26;
+constexpr size_t PUFFIN_BLOB_MAX_SIZE = 1ULL << PUFFIN_BLOB_MAX_ZSTD_WINDOW_LOG;
 
 /// Reads a Puffin file: the footer on construction, blobs on demand. Buffers the whole file if `in` cannot seek.
 class PuffinReader
@@ -23,10 +24,10 @@ class PuffinReader
 public:
     explicit PuffinReader(ReadBuffer & in_);
 
-    const VectorWithMemoryTracking<PuffinBlob> & getBlobs() const { return footer.blobs; }
+    [[nodiscard]] const VectorWithMemoryTracking<PuffinBlob> & getBlobs() const { return footer.blobs; }
 
     /// The decompressed bytes of `blob`, or nothing for a codec other than `zstd` and `lz4`.
-    std::optional<String> readBlob(const PuffinBlob & blob) const;
+    [[nodiscard]] std::optional<String> readBlob(const PuffinBlob & blob) const;
 
 private:
     ReadBuffer & in;

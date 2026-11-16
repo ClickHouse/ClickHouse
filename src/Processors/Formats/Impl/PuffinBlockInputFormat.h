@@ -28,7 +28,7 @@ struct PuffinBlob
     MapWithMemoryTracking<String, String> properties;
 
     /// The `BlobMetadata` JSON. Without `in_footer`, the `blob-metadata` of an Iceberg table statistics entry: no offset, length or codec.
-    Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
 };
 
 struct PuffinFooter

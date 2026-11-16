@@ -110,7 +110,7 @@ public:
     }
 
     /// Nothing if the parent snapshot has rows but no sketches.
-    std::optional<ParentSketches> readParentSketches() const
+    [[nodiscard]] std::optional<ParentSketches> readParentSketches() const
     {
         const Int64 parent_snapshot_id
             = snapshot->has(Iceberg::f_parent_snapshot_id) ? snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id) : -1;
@@ -184,7 +184,7 @@ public:
     }
 
 private:
-    Poco::JSON::Object::Ptr findStatisticsEntry(Int64 snapshot_id) const
+    [[nodiscard]] Poco::JSON::Object::Ptr findStatisticsEntry(Int64 snapshot_id) const
     {
         const auto statistics_entries = metadata->getArray(Iceberg::f_statistics);
         for (unsigned i = 0; statistics_entries && i < statistics_entries->size(); ++i)
@@ -196,7 +196,7 @@ private:
         return nullptr;
     }
 
-    bool snapshotHasRows(Int64 snapshot_id) const
+    [[nodiscard]] bool snapshotHasRows(Int64 snapshot_id) const
     {
         const auto snapshots = metadata->getArray(Iceberg::f_snapshots);
         for (unsigned i = 0; snapshots && i < snapshots->size(); ++i)
@@ -305,7 +305,7 @@ public:
     }
 
     /// The serialized compact sketch, as `update_theta_sketch::compact().serialize()` gives it.
-    String serialize() const
+    [[nodiscard]] String serialize() const
     {
         Retained retained{.empty = table.is_empty_, .theta = table.theta_, .entries = {}};
         if (!retained.empty)
@@ -329,10 +329,11 @@ private:
     /// The table of an `update_theta_sketch` with the builder's defaults.
     struct TableBuilder : datasketches::update_theta_sketch::builder
     {
-        Table build() const { return Table(starting_lg_size(), lg_k_, rf_, p_, starting_theta(), seed_, allocator_); }
+        [[nodiscard]] Table build() const { return Table(starting_lg_size(), lg_k_, rf_, p_, starting_theta(), seed_, allocator_); }
     };
 
     /// The retained hashes of the table, with the accessors the converting constructor of `compact_theta_sketch` reads.
+    // NOLINTBEGIN(modernize-use-nodiscard)
     struct Retained
     {
         bool empty;
@@ -348,8 +349,9 @@ private:
         auto begin() const { return entries.begin(); }
         auto end() const { return entries.end(); }
     };
+    // NOLINTEND(modernize-use-nodiscard)
 
-    ColumnPtr encode(const ColumnPtr & column) const
+    [[nodiscard]] ColumnPtr encode(const ColumnPtr & column) const
     {
         if (cast_to)
             return castColumn({column, type, ""}, cast_to);

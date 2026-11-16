@@ -39,6 +39,19 @@ PuffinBlob makeBlob(const String & codec)
     return blob;
 }
 
+void expectLimitExceeded(const PuffinReader & reader, const PuffinBlob & blob)
+{
+    try
+    {
+        (void)reader.readBlob(blob);
+        FAIL() << "Expected LIMIT_EXCEEDED";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::LIMIT_EXCEEDED);
+    }
+}
+
 }
 
 TEST(PuffinFile, WriteAndReadBlobs)
@@ -102,7 +115,7 @@ TEST(PuffinFile, BlobMetadataJSON)
 
 TEST(PuffinFile, DecompressedBlobSizeIsCapped)
 {
-    const String bomb = compress(String(PUFFIN_BLOB_MAX_DECOMPRESSED_SIZE + 1, '\0'), CompressionMethod::Zstd);
+    const String bomb = compress(String(PUFFIN_BLOB_MAX_SIZE + 1, '\0'), CompressionMethod::Zstd);
     WriteBufferFromOwnString out;
     PuffinWriter writer(out);
     writer.addBlob(makeBlob("zstd"), bomb);
@@ -111,14 +124,21 @@ TEST(PuffinFile, DecompressedBlobSizeIsCapped)
 
     ReadBufferFromString in(out.str());
     PuffinReader reader(in);
-    const auto & blobs = reader.getBlobs();
-    try
-    {
-        reader.readBlob(blobs.at(0));
-        FAIL() << "Expected LIMIT_EXCEEDED";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::LIMIT_EXCEEDED);
-    }
+    expectLimitExceeded(reader, reader.getBlobs().at(0));
+}
+
+TEST(PuffinFile, StoredBlobSizeIsCapped)
+{
+    WriteBufferFromOwnString out;
+    PuffinWriter writer(out);
+    writer.addBlob(makeBlob(""), "");
+    writer.finalize();
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    PuffinReader reader(in);
+    /// The footer can claim any length.
+    PuffinBlob blob = reader.getBlobs().at(0);
+    blob.length = PUFFIN_BLOB_MAX_SIZE + 1;
+    expectLimitExceeded(reader, blob);
 }

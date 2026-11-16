@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LIMIT_EXCEEDED;
+}
+
 PuffinReader::PuffinReader(ReadBuffer & in_)
     : in(in_)
     , footer(readPuffinFooter(in, /*seekable_read=*/ true))
@@ -24,6 +29,9 @@ PuffinReader::PuffinReader(ReadBuffer & in_)
 
 std::optional<String> PuffinReader::readBlob(const PuffinBlob & blob) const
 {
+    /// Checked before reading: the footer can claim any length.
+    if (static_cast<UInt64>(blob.length) > PUFFIN_BLOB_MAX_SIZE)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Puffin blob of {} bytes is larger than {} bytes", blob.length, PUFFIN_BLOB_MAX_SIZE);
     String bytes = readPuffinBlobBytes(blob, in, footer.data, /*seekable_read=*/ true);
     if (blob.compression_codec.empty())
         return bytes;
@@ -36,12 +44,12 @@ std::optional<String> PuffinReader::readBlob(const PuffinBlob & blob) const
     else
         return {};
 
-    auto decompressed = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromString>(bytes), method);
+    auto decompressed = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromString>(bytes), method, PUFFIN_BLOB_MAX_ZSTD_WINDOW_LOG);
     LimitReadBuffer limited(
         *decompressed,
-        {.read_no_more = PUFFIN_BLOB_MAX_DECOMPRESSED_SIZE,
+        {.read_no_more = PUFFIN_BLOB_MAX_SIZE,
          .expect_eof = true,
-         .excetion_hint = fmt::format("Puffin blob decompresses to more than {} bytes", PUFFIN_BLOB_MAX_DECOMPRESSED_SIZE)});
+         .excetion_hint = fmt::format("Puffin blob decompresses to more than {} bytes", PUFFIN_BLOB_MAX_SIZE)});
     String result;
     readStringUntilEOF(result, limited);
     return result;
