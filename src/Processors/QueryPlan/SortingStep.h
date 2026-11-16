@@ -106,9 +106,6 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    /// Clone sorting step for plan cache reuse.
-    QueryPlanStepPtr clone() const override;
-
     [[nodiscard]] UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
