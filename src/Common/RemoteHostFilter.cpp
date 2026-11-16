@@ -33,6 +33,7 @@ bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) cons
     if (uri.getRawQuery().empty())
         boost::replace_all(masked_uri, "%25", "%");
     maskPresignedURLParameters(masked_uri);
+    maskURIQueryValues(masked_uri);
     throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
                                                   "see <remote_url_allow_hosts>", masked_uri);
 }
