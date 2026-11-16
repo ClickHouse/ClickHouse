@@ -22,6 +22,7 @@ CREATE TABLE scratch (p UInt8, INDEX i p TYPE minmax) ENGINE = MergeTree ORDER B
 CREATE FUNCTION $udf AS (t, c) -> hasColumnInTable('$CLICKHOUSE_DATABASE', t, c);
 CREATE USER $user;
 GRANT CREATE TABLE, ALTER ADD INDEX ON $CLICKHOUSE_DATABASE.* TO $user;
+GRANT TABLE ENGINE ON MergeTree TO $user;
 "
 
 function run_as_user()
