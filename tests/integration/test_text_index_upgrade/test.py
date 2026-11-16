@@ -416,7 +416,7 @@ def test_change_codec_after_upgrade(started_cluster):
 def test_downgrade_after_writing_on_new_version(started_cluster):
     """The point of `text_index_serialization_version`: a new server can keep writing the old
     on-disk format so the data survives a rollback. Write 'v0_initial'-format parts
-    with the *new* binary, reset the setting so the metadata stays loadable by the
+    with the *new* binary, reset the settings so the metadata stays loadable by the
     old binary, downgrade, and verify the old binary reads everything back."""
     node = started_cluster.instances["node"]
     table = "text_index_downgrade_setting"
@@ -431,23 +431,29 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
         # New binary reads the old-format parts unchanged.
         assert run_search_queries(node, table) == expected_results()
 
-        # Force the new binary to keep writing the old on-disk format.
+        # Force the new binary to keep writing the old on-disk format. The default
+        # 'pfor' codec would take precedence over the version preference and bump
+        # the parts to 'v1_with_codec', so the codec has to be pinned to 'none' too.
         node.query(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_serialization_version = 'v0_initial'"
+            f"ALTER TABLE {table} MODIFY SETTING "
+            f"text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none'"
         )
 
         # This part and the merged part below are written by the *new* binary, but in
-        # the 'v0_initial' format because of the setting above.
+        # the 'v0_initial' format because of the settings above.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         node.query(f"OPTIMIZE TABLE {table} FINAL")
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
 
-        # An explicit `text_index_serialization_version` in the metadata is an unknown setting for
-        # the old binary and would block ATTACH after the downgrade. Reset it; the
-        # parts already on disk keep their 'v0_initial' format.
-        node.query(f"ALTER TABLE {table} RESET SETTING text_index_serialization_version")
+        # Explicit `text_index_serialization_version` and `text_index_posting_list_codec` in
+        # the metadata are unknown settings for the old binary and would block ATTACH after
+        # the downgrade. Reset them; the parts already on disk keep their 'v0_initial' format.
+        node.query(
+            f"ALTER TABLE {table} RESET SETTING "
+            f"text_index_serialization_version, text_index_posting_list_codec"
+        )
 
         node.restart_with_original_version()
         new_version_active = False
@@ -466,7 +472,8 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
 
 
 def test_downgrade_after_writing_pfor(started_cluster):
-    """An unknown codec must be refused, not decoded - which is why `pfor` needs no version bump."""
+    """An unknown codec must be refused, not decoded - which is why `pfor` needs no version bump.
+    `pfor` is the default codec of the new binary, so no setting is needed to write it."""
     node = started_cluster.instances["node_codec_aware"]
     table = "text_index_downgrade_pfor"
 
@@ -479,10 +486,6 @@ def test_downgrade_after_writing_pfor(started_cluster):
         assert run_search_queries(node, table) == expected_results()
 
         # The table now mixes the original parts with parts naming an unknown codec.
-        node.query(
-            f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'pfor'"
-        )
-
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
@@ -492,9 +495,7 @@ def test_downgrade_after_writing_pfor(started_cluster):
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
 
-        # Reset it so the metadata loads and the failure below can only come from the part.
-        node.query(f"ALTER TABLE {table} RESET SETTING text_index_posting_list_codec")
-
+        # The metadata names no new setting, so the failure below can only come from the part.
         node.restart_with_original_version()
         new_version_active = False
 
@@ -515,8 +516,9 @@ def test_downgrade_after_writing_pfor(started_cluster):
 def test_downgrade_with_compatibility_setting(started_cluster):
     """The realistic rolling-upgrade knob: with `compatibility` pinned to a pre-26.6
     version in the default profile, the new server resolves `text_index_serialization_version` to
-    'v0_initial' on its own, without persisting any setting into the table metadata, so
-    the data stays readable after a rollback - no ALTER and no RESET required."""
+    'v0_initial' and `text_index_posting_list_codec` to 'none' on its own, without persisting
+    any setting into the table metadata, so the data stays readable after a rollback - no
+    ALTER and no RESET required."""
     node = started_cluster.instances["node_compat"]
     table = "text_index_downgrade_compat"
 
@@ -529,7 +531,8 @@ def test_downgrade_with_compatibility_setting(started_cluster):
         assert run_search_queries(node, table) == expected_results()
 
         # No ALTER: `compatibility = '26.5'` from the default profile makes the new
-        # binary write the 'v0_initial' format, and nothing is persisted in metadata.
+        # binary write the 'v0_initial' format without a codec, and nothing is persisted
+        # in metadata.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
         node.query(f"OPTIMIZE TABLE {table} FINAL")

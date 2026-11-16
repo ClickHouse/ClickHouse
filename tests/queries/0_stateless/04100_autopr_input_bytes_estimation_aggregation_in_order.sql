@@ -29,7 +29,6 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 SET max_block_size=65409;
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS t_agg_in_order;
 
