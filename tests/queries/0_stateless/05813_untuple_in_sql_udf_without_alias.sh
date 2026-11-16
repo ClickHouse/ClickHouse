@@ -33,6 +33,8 @@ SELECT * FROM (SELECT $g(11), $g(22)) FORMAT TSVWithNames;
 SELECT '-- lambda arguments';
 SELECT * FROM (SELECT $um(x -> x + 1, [1]), $um(x -> x + 2, [1])) FORMAT TSVWithNames;
 SELECT * FROM (SELECT $m(x -> x + number, [1]), $m(x -> x * number, [1]) FROM numbers(2)) ORDER BY 1 FORMAT TSVWithNames;
+SELECT * FROM (SELECT $um(x -> toTypeName(tuple(x AS a)), [1]), $um(x -> toTypeName(tuple(x AS b)), [1])) FORMAT TSVWithNames
+SETTINGS enable_named_columns_in_function_tuple = 1, print_pretty_type_names = 0;
 SELECT '-- a lambda argument called in the body';
 SELECT * FROM (SELECT $ap(y -> untuple(tuple(y)), 11), $ap(y -> untuple(tuple(y)), 22)) FORMAT TSVWithNames;
 SELECT * FROM (SELECT $wa(11), $wa(22)) FORMAT TSVWithNames;

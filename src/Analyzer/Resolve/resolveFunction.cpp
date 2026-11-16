@@ -3086,7 +3086,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto lambda_ast = function_arguments[i]->toAST();
                     if (canDisplaySecrets(scope.context) || !lambda_ast->hasSecretParts())
                     {
-                        arguments_projection_names[i] = lambda_ast->getColumnName();
+                        arguments_projection_names[i] = lambda_ast->formatWithSecretsOneLine();
                         continue;
                     }
                     auto & mask_map = *scope.projection_mask_map;

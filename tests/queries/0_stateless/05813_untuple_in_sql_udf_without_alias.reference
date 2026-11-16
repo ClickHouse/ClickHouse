@@ -12,13 +12,15 @@ untuple_value(number).1	untuple_value(plus(number, 1)).1
 untuple_value_nested(11).1	untuple_value_nested(22).1
 11	22
 -- lambda arguments
-untuple_map(lambda(tuple(x), plus(x, 1)), [1]).1	untuple_map(lambda(tuple(x), plus(x, 2)), [1]).1
+untuple_map(x -> (x + 1), [1]).1	untuple_map(x -> (x + 2), [1]).1
 [2]	[3]
-map(lambda(tuple(x), plus(x, number)), [1])	map(lambda(tuple(x), multiply(x, number)), [1])
+map(x -> (x + number), [1])	map(x -> (x * number), [1])
 [1]	[0]
 [2]	[1]
+untuple_map(x -> toTypeName(tuple(x AS a)), [1]).1	untuple_map(x -> toTypeName(tuple(x AS b)), [1]).1
+['Tuple(a UInt8)']	['Tuple(b UInt8)']
 -- a lambda argument called in the body
-apply_lambda(lambda(tuple(y), untuple(tuple(y))), 11).1	apply_lambda(lambda(tuple(y), untuple(tuple(y))), 22).1
+apply_lambda(y -> untuple(tuple(y)), 11).1	apply_lambda(y -> untuple(tuple(y)), 22).1
 11	22
 wrap_apply_lambda(11).1	wrap_apply_lambda(22).1
 11	22
