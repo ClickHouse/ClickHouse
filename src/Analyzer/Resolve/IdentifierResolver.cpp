@@ -630,11 +630,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
         return {};
 
     QueryTreeNodePtr argument_node = it->second;
-    if (auto inside_aggregate_it = scope.expression_argument_name_to_node_inside_aggregate_function.find(it->first);
-        inside_aggregate_it != scope.expression_argument_name_to_node_inside_aggregate_function.end()
-        && isLookupInsideAggregateFunctionOfLambdaBody(scope, identifier_resolve_context))
-        argument_node = inside_aggregate_it->second();
 
+    /// Both forms of an argument have the same node type.
     auto node_type = argument_node->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
@@ -642,6 +639,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
         return {};
     if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
         return {};
+
+    if (auto inside_aggregate_it = scope.expression_argument_name_to_node_inside_aggregate_function.find(it->first);
+        inside_aggregate_it != scope.expression_argument_name_to_node_inside_aggregate_function.end()
+        && isLookupInsideAggregateFunctionOfLambdaBody(scope, identifier_resolve_context))
+        argument_node = inside_aggregate_it->second();
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {

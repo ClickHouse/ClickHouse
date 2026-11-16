@@ -48,6 +48,8 @@ WITH (x -> x) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid'))) FR
 SELECT ${CLICKHOUSE_DATABASE}_identity(toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 WITH (x -> sum(number) + x) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 WITH ((x, y) -> sum(x) + y) AS f SELECT f(number, toUInt64(if(isNullable(number), '1', 'invalid'))) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+WITH ((sum, y) -> sum(y)) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid')), number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
+WITH ((sum, y) -> sum(y) + sum) AS f SELECT f(toUInt64(if(isNullable(number), '1', 'invalid')), number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY ALL;
 
 SELECT 'nested lambda';
 WITH (y -> sum(y)) AS g, (x -> g(x)) AS f SELECT f(number) FROM numbers(3) GROUP BY number WITH ROLLUP ORDER BY 1;
