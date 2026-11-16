@@ -32,9 +32,9 @@ struct Null
 
     Value value{Value::Null};
 
-    bool isNull() const { return value == Value::Null; }
-    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
-    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
+    [[nodiscard]] bool isNull() const { return value == Value::Null; }
+    [[nodiscard]] bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
+    [[nodiscard]] bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
 
     auto operator<=>(const Null & other) const
     {

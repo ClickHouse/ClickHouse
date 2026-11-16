@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <Formats/JSONExtractTree.h>
@@ -292,6 +293,21 @@ void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, siz
     if (new_capacity - chars.capacity() > max_growth_step)
         new_capacity = chars.capacity() + max_growth_step;
     chars.reserve_exact(std::max(new_capacity, required));
+}
+
+/// `IColumn::insertDefault` inserts the zero of the column, which is not the default of every type (an `Enum`
+/// whose smallest value is not 0, or a `Tuple` or `JSON` holding one). nullptr when it is.
+DataTypePtr getTypeForDefault(const DataTypePtr & type)
+{
+    return type->isDefaultInsertTrivial() ? nullptr : type;
+}
+
+void insertDefaultOfType(IColumn & column, const DataTypePtr & type_for_default)
+{
+    if (type_for_default)
+        type_for_default->insertDefaultInto(column);
+    else
+        column.insertDefault();
 }
 
 template <typename JSONParser>
@@ -909,7 +925,7 @@ public:
     }
 
     /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    [[nodiscard]] bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
         constexpr UInt32 max_scale = 9;
         constexpr Int64 max_scale_multiplier = 1'000'000'000;
@@ -1540,7 +1556,10 @@ template <typename JSONParser>
 class ArrayNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit ArrayNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_) : nested(std::move(nested_)) { }
+    ArrayNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested_, const DataTypePtr & nested_type)
+        : nested(std::move(nested_)), nested_type_for_default(getTypeForDefault(nested_type))
+    {
+    }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -1576,7 +1595,7 @@ public:
             }
             else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
             {
-                data.insertDefault();
+                insertDefaultOfType(data, nested_type_for_default);
             }
             else
             {
@@ -1597,17 +1616,23 @@ public:
 
 private:
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> nested;
+    DataTypePtr nested_type_for_default;
 };
 
 template <typename JSONParser>
 class TupleNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    TupleNode(std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> nested_, const std::vector<String> & explicit_names_)
-        : nested(std::move(nested_)), explicit_names(explicit_names_)
+    TupleNode(
+        std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> nested_,
+        const std::vector<String> & explicit_names_,
+        const DataTypePtr & type)
+        : nested(std::move(nested_)), explicit_names(explicit_names_), type_for_default(getTypeForDefault(type))
     {
         for (size_t i = 0; i != explicit_names.size(); ++i)
             name_to_index_map.emplace(explicit_names[i], i);
+        for (const auto & element : assert_cast<const DataTypeTuple &>(*type).getElements())
+            element_types_for_default.push_back(getTypeForDefault(element));
     }
 
     bool insertResultToColumn(
@@ -1619,7 +1644,7 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
-            column.insertDefault();
+            insertDefaultOfType(column, type_for_default);
             return true;
         }
 
@@ -1644,7 +1669,7 @@ public:
                         col.popBack(col.size() - size);
                     else
                         while (col.size() < size)
-                            col.insertDefault();
+                            insertDefaultOfType(col, element_types_for_default[i]);
                 }
             }
         };
@@ -1695,7 +1720,7 @@ public:
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
-                    tuple.getColumn(index).insertDefault();
+                    insertDefaultOfType(tuple.getColumn(index), element_types_for_default[index]);
                     note_inserted_element(index);
                 }
                 else
@@ -1725,7 +1750,7 @@ public:
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
-                        tuple.getColumn(index).insertDefault();
+                        insertDefaultOfType(tuple.getColumn(index), element_types_for_default[index]);
                         note_inserted_element(index);
                     }
                     else
@@ -1791,13 +1816,18 @@ private:
     std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> nested;
     std::vector<String> explicit_names;
     std::unordered_map<std::string_view, size_t> name_to_index_map;
+    DataTypePtr type_for_default;
+    DataTypes element_types_for_default;
 };
 
 template <typename JSONParser>
 class MapNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit MapNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> value_) : value(std::move(value_)) { }
+    MapNode(std::unique_ptr<JSONExtractTreeNode<JSONParser>> value_, const DataTypePtr & value_type)
+        : value(std::move(value_)), value_type_for_default(getTypeForDefault(value_type))
+    {
+    }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -1839,7 +1869,7 @@ public:
             {
                 if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
-                    value_col.insertDefault();
+                    insertDefaultOfType(value_col, value_type_for_default);
                 }
                 else
                 {
@@ -1857,6 +1887,7 @@ public:
 
 private:
     std::unique_ptr<JSONExtractTreeNode<JSONParser>> value;
+    DataTypePtr value_type_for_default;
 };
 
 template <typename JSONParser>
@@ -2535,7 +2566,7 @@ private:
     }
 
     /// Build the full path for a child key within the current object.
-    String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
+    [[nodiscard]] String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
     {
         String path = current_path;
         if (!is_root)
@@ -2547,7 +2578,7 @@ private:
         return path;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    [[nodiscard]] bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -2940,13 +2971,13 @@ private:
         variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
     }
 
-    const FormatSettings & getDefaultFormatSettings() const
+    [[nodiscard]] const FormatSettings & getDefaultFormatSettings() const
     {
         static const FormatSettings settings;
         return settings;
     }
 
-    bool hasTypedPathWithPrefix(const String & prefix) const
+    [[nodiscard]] bool hasTypedPathWithPrefix(const String & prefix) const
     {
         for (const auto & [path, _] : typed_paths_types)
         {
@@ -2993,13 +3024,13 @@ private:
     {
         static unsigned bit(JSONElementType type) { return 1U << static_cast<unsigned>(type); }
 
-        bool acceptedEmpty() const { return accepted_mask == 0; }
-        bool accepted(JSONElementType type) const { return accepted_mask & bit(type); }
-        bool acceptedMoreThanOne() const { return std::popcount(accepted_mask) > 1; }
+        [[nodiscard]] bool acceptedEmpty() const { return accepted_mask == 0; }
+        [[nodiscard]] bool accepted(JSONElementType type) const { return accepted_mask & bit(type); }
+        [[nodiscard]] bool acceptedMoreThanOne() const { return std::popcount(accepted_mask) > 1; }
         void accept(JSONElementType type) { accepted_mask |= bit(type); }
 
-        bool emittedEmpty() const { return emitted_mask == 0; }
-        bool emitted(JSONElementType type) const { return emitted_mask & bit(type); }
+        [[nodiscard]] bool emittedEmpty() const { return emitted_mask == 0; }
+        [[nodiscard]] bool emitted(JSONElementType type) const { return emitted_mask & bit(type); }
         void emit(JSONElementType type) { emitted_mask |= bit(type); }
 
     private:
@@ -3007,7 +3038,7 @@ private:
         unsigned emitted_mask = 0;
     };
 
-    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
+    [[nodiscard]] JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
     {
         switch (element.type())
         {
@@ -3022,7 +3053,7 @@ private:
     /// Types like JSON, Map, Tuple represent structured data and should receive
     /// the object value when there is a literal+object duplicate key.
     /// Scalar types (Int, String, etc.) should receive the literal value instead.
-    bool canParseObjectValue(const DataTypePtr & type) const
+    [[nodiscard]] bool canParseObjectValue(const DataTypePtr & type) const
     {
         auto id = removeNullable(removeLowCardinality(type))->getTypeId();
         return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;
@@ -3148,7 +3179,10 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::Nullable:
             return std::make_unique<NullableNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeNullable &>(*type).getNestedType(), source_for_exception_message));
         case TypeIndex::Array:
-            return std::make_unique<ArrayNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeArray &>(*type).getNestedType(), source_for_exception_message));
+        {
+            const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+            return std::make_unique<ArrayNode<JSONParser>>(buildJSONExtractTree<JSONParser>(nested_type, source_for_exception_message), nested_type);
+        }
         case TypeIndex::Tuple:
         {
             const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
@@ -3157,7 +3191,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
                 elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{}, type);
         }
         case TypeIndex::Map:
         {
@@ -3171,7 +3205,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                     type->getName());
 
             const auto & value_type = map_type.getValueType();
-            return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message));
+            return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message), value_type);
         }
         case TypeIndex::Variant:
         {

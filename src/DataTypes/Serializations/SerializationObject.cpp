@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationObject.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
@@ -1101,7 +1102,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};
         for (size_t i = 0; i != limit; ++i)
         {
-            readStringBinary(data, *data_stream);
+            readStringBinaryGrowing(data, *data_stream);
             ReadBufferFromString buf(data);
             deserializeObject(column, data, format_settings);
         }
@@ -1281,6 +1282,22 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.binary.read_json_as_string)
+    {
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+        typed_path_columns.reserve(typed_paths_types.size());
+        for (const auto & [path, type] : typed_paths_types)
+            typed_path_columns[path] = type->createColumn();
+
+        auto column = ColumnObject::create(
+            std::move(typed_path_columns),
+            DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
+        deserializeBinary(*column, istr, settings);
+        field = (*column)[0];
+        return;
+    }
+
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1296,7 +1313,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     for (size_t i = 0; i != number_of_paths; ++i)
     {
         String path;
-        readStringBinary(path, istr);
+        readStringBinaryGrowing(path, istr);
         if (!shouldSkipPath(path))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
@@ -1386,7 +1403,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
     if (settings.binary.read_json_as_string)
     {
         String data;
-        readStringBinary(data, istr);
+        readStringBinaryGrowing(data, istr);
         deserializeObject(col, data, settings);
         return;
     }
@@ -1407,7 +1424,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         for (size_t i = 0; i != number_of_paths; ++i)
         {
             String path;
-            readStringBinary(path, istr);
+            readStringBinaryGrowing(path, istr);
             if (!shouldSkipPath(path))
             {
                 /// Check if we have this path in typed paths.
