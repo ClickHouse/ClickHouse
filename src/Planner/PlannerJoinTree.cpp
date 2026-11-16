@@ -269,7 +269,8 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
 /// uses `isDeterministicInScopeOfQuery`, so `now` and server constants such as `hostName` are accepted.
 /// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well, and
 /// so do tables with their engines (`GenerateRandom`, `FuzzQuery`, `FuzzJSON`) and script-backed reads
-/// (the `executable` table function, `Executable` and `ExecutablePool` tables).
+/// (the `executable` table function, `Executable` and `ExecutablePool` tables). `filesystemCache` counts
+/// with the `random` order only, but a table created from it counts with any order (`FilesystemCache`).
 bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
 {
     if (!node)
@@ -294,7 +295,8 @@ bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
         if (typeid_cast<const StorageExecutable *>(storage.get()))
             return true;
         const auto storage_name = storage->getName();
-        if (storage_name == "GenerateRandom" || storage_name == "FuzzQuery" || storage_name == "FuzzJSON")
+        if (storage_name == "GenerateRandom" || storage_name == "FuzzQuery" || storage_name == "FuzzJSON"
+            || storage_name == "FilesystemCache")
             return true;
     }
 

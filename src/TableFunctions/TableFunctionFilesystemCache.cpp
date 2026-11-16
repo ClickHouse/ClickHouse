@@ -32,6 +32,9 @@ public:
 
     bool hasStaticStructure() const override { return true; }
 
+    /// `random` draws a new sample on every read.
+    bool isDeterministicInScopeOfQuery() const override { return query_order != IFileCachePriority::IterationOrder::RANDOM; }
+
 private:
     /// No underlying storage engine
     const char * getStorageEngineName() const override { return ""; }
