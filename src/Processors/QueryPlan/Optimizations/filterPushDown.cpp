@@ -1392,8 +1392,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, allowed_inputs))
             return updated_steps;
 
-        /// no whole conjunct goes below, e.g. an OR over the elements of several arrays: add below the part of the filter
-        /// that the input can compute, and keep the filter above
+        /// e.g. an OR over the elements of several arrays: add the part that the input can compute below, keep the filter above
         if (!array_join->hasRelaxedFilterBelow())
         {
             auto relaxed_filter = tryToExtractPartialPredicate(
