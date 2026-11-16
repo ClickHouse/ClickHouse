@@ -60,11 +60,11 @@ def skip_hello(f):
 def header(columns):
     return vu(len(columns)) + b"".join(sb(n) + t for n, t in columns)
 
-def forge(label, payload, children=(), version=VERSION, out_columns=()):
+def forge(label, payload, children=(), version=VERSION, out_columns=(), step="Aggregating"):
     plan = vu(version) + vu(0) + NUL + vu(len(children))   # version, max_threads, concurrency
     for columns in children:   # one `ReadNothing` child per header, read before its parent
         plan += vu(0) + sb("ReadNothing") + vu(0) + sb("") + header(columns) + vu(0)
-    plan += sb("Aggregating") + (vu(0) if version >= 19 else b"")   # step name, per-step version
+    plan += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
     plan += sb("") + header(out_columns) + vu(0) + payload   # description, header, settings
     qid = os.urandom(16).hex()
     info = (b"\x01" + sb(USER) + sb(qid) + sb("127.0.0.1:9000") + bytes(8) + b"\x01"
@@ -121,6 +121,15 @@ forge("merged key is after the states", aggregating(FINAL | ONLY_MERGE, keys=["k
 forge("merged state is repeated after the states", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM),
       [STATES + STATES[:1]], VERSION, AB)
 forge("well-formed merge", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES], VERSION, AB)
+
+# `TotalsHaving` finalizes the states it finds in the input by the names of its aggregates.
+def totals_having(aggregates):   # flags (final), then the aggregates as for `Aggregating`, without the keys
+    return bytes([FINAL]) + aggregating(FINAL, aggregates=aggregates)[2:]
+
+forge("finalized column is not a state", totals_having(ANY_SUM[:1]), [A], VERSION, A, "TotalsHaving")
+forge("finalized state is not in the input", totals_having(ANY_SUM[:1]), [[("b", state("any", U64))]], VERSION, [("b", U64)], "TotalsHaving")
+forge("finalized state is of another function", totals_having(ANY_SUM[:1]), [[("a", state("sum", U64))]], VERSION, A, "TotalsHaving")
+forge("well-formed totals", totals_having(ANY_SUM), [STATES], VERSION, AB, "TotalsHaving")
 PYEOF
 
 # The server has to be serving after each refusal.

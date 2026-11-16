@@ -338,6 +338,25 @@ void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregate
     }
 }
 
+void checkDeserializedFinalizedAggregates(const AggregateDescriptions & aggregates, const Block & header)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto * column = header.findByName(aggregate.column_name);
+        if (!column)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is not in the input of a deserialized query plan step",
+                aggregate.column_name);
+
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column->type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column->type->getName(), aggregate.function->getName());
+    }
+}
+
 void checkDeserializedMergedAggregatesLayout(
     const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout)
 {

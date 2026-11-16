@@ -51,6 +51,10 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
 /// The arguments of the aggregates are found in the input by name and must have the types the functions are resolved for.
 void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header);
 
+/// The steps finalizing the states (`TotalsHaving`) find them in the input by name: every aggregate must name
+/// a column of the input holding a state of the same representation as its function.
+void checkDeserializedFinalizedAggregates(const AggregateDescriptions & aggregates, const Block & header);
+
 /// The steps merging the states read the keys and then the states by position: `layout` (the input as it reaches
 /// the `Aggregator`) must start with `keys` and then the states of `aggregates` (named by `column_name`), in order.
 void checkDeserializedMergedAggregatesLayout(
