@@ -249,11 +249,12 @@ class FakeServer:
 
 
 # The analyzer names the columns of an intermediate stage, see `queryFakeServerFromInitiator`.
-# A serialized query plan would be sent with the `QueryPlan` stage whatever the number of shards.
+# A serialized query plan would be sent with the `QueryPlan` stage whatever the number of shards,
+# and parallel replicas would send an intermediate stage to a single shard as well.
 QUERY_OF_INITIATOR = (
     "SELECT sum({alias}) FROM (SELECT {column} AS {alias} "
     "FROM remote('{addresses}', view(SELECT toUInt64(1) AS {column})) GROUP BY {column}) "
-    "SETTINGS enable_analyzer = 1, serialize_query_plan = 0"
+    "SETTINGS enable_analyzer = 1, serialize_query_plan = 0, enable_parallel_replicas = 0"
 )
 
 
