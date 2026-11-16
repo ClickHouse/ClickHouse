@@ -105,6 +105,7 @@ extern std::vector<SystemTable> systemTables;
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
 String settingCombinations(RandomGenerator & rg, DB::Strings && choices);
+String formatFirstApplicable(RandomGenerator & rg);
 String generateNextCodecString(RandomGenerator & rg);
 String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);

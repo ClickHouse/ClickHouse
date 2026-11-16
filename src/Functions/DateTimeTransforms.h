@@ -14,7 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Formats/FormatSettings.h>
+#include <Formats/FormatSettingsEnums.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -34,7 +34,7 @@ static constexpr auto millisecond_multiplier = 1'000;
 static constexpr auto microsecond_multiplier = 1'000'000;
 static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
-static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+static constexpr FormatSettingsEnums::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettingsEnums::DateTimeOverflowBehavior::Ignore;
 
 namespace ErrorCodes
 {
@@ -495,7 +495,7 @@ inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const F
     return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day, source_time_zone);
 }
 
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
+template <FormatSettingsEnums::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
     static constexpr auto name = "toDate";
@@ -513,14 +513,14 @@ struct ToDateImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         auto day_num = time_zone.toDayNum(t);
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
         {
             if (day_num < 0)
                 day_num = 0;
             else if (day_num > DATE_LUT_MAX_DAY_NUM)
                 day_num = DATE_LUT_MAX_DAY_NUM;
         }
-        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
         {
             if (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
@@ -533,14 +533,14 @@ struct ToDateImpl
     }
     static UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
         {
             if (t < 0)
                 return UInt16(0);
             if (t > DATE_LUT_MAX_DAY_NUM)
                 return UInt16(DATE_LUT_MAX_DAY_NUM);
         }
-        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
         {
             if (t < 0 || t > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);

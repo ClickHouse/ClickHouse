@@ -16,24 +16,35 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  Day 2 以降の Kubernetes 運用では、ワークステーション上の `helm` CLI を使用します。組み込みの Helm クライアントを備えているのは `init` のみであるため、最初のアップグレード前に `helm` をインストールしてください。
-</Note>
+`connector upgrade` を使用するには v0.50.0 以降の CLI が必要です。この CLI には Helm クライアントが組み込まれているため、`helm` バイナリは不要です。
 
-`init` で用意した values オーバーレイを使用して、パブリックチャートリポジトリからリリースをアップグレードします。
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add` はクラスターごとに1回実行し、コネクタ が動作する kubeconfig context を記録します。`--use` を指定するとそのコンテキストが現在のコンテキストになり、後から `context use <name>` で切り替えることもできます。`connector upgrade` は変更を加える前に確認のプロンプトを表示します。指定できるフラグについては [CLIリファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade) を参照してください。
+
+チャートのバージョンは、リリースタグから先頭の `v` を除いたものです。たとえば、タグ `v0.50.0` はチャート `0.50.0` に対応します。executor は `Recreate` 戦略を用いて単一のレプリカで実行されるため、アップグレード中は一時的に接続が切断されます。その間のコマンドの扱いについては、[コネクタ がオフラインの場合](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) を参照してください。
+
+`helm` CLI でアップグレードする場合は、`init` が用意した値のオーバーレイを使用します。
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-チャートのバージョンは、先頭の `v` を除いたリリースタグです (チャート `X.Y.Z` はタグ `vX.Y.Z` に対応します) 。公開済みのチャートはすでにパブリックコンテナーイメージを参照しているため、通常のインストールやアップグレードでイメージ値を指定する必要はありません。チャートのデフォルト値を確認するには、`helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts` を実行してください。executor は `Recreate` 戦略で単一レプリカとして実行されるため、アップグレード中は短時間切断されます。その間のコマンドの扱いについては、[コネクタがオフラインのとき](/ja/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)を参照してください。
+公開されているチャートはすでにパブリックなコンテナイメージを参照しているため、通常のインストールやアップグレードではイメージ関連の設定値を指定する必要はありません。チャートのデフォルト値を確認するには、`helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts` を実行します。
 
-直接指定したチャート参照 (`oci://`、URL、ローカルのアーカイブまたはディレクトリ) からインストールした場合、解決に使用できるリポジトリはありません。その場合は、新しいバージョンで `helm upgrade clicklink-connector <same-chart-reference>` を再実行してください。新しい CLI で `init` を再実行しても同じ状態に収束しますが、エントリポイントが必要です。バンドルを保持している場合は `--handoff` を使用し、そうでない場合は、ドキュメントに記載されたクリーンアップ後に `--force` を指定して新しい登録トークンを使用します。通常は、上記の `helm upgrade` を使用してください ([再実行と復旧](#re-runs-and-recovery)を参照) 。
+<Note>
+  v0.50.0 より前のリリースの `init` は、`clicklink-values.yaml` に `image.tag` を書き込み、そのファイルを生成したリリースのバージョンに固定していました。このファイルを使って次に `helm upgrade` を実行する前に、`yq -i 'del(.image.tag)' clicklink-values.yaml` でこのキーを一度だけ削除してください。削除しないと、チャートが更新されてもポッドは古いイメージのまま動作し続けます。なお、`connector upgrade` はオーバーレイを読み込まず、リリース自体に残っている古くなったタグをクリアします。
+</Note>
+
+`connector upgrade` は、[プライベートミラー](/ja/products/bring-your-own-cloud/connector/configuration#private-mirrors) からイメージを取得するリリースには使用できません。その場合は上記の `helm upgrade` を使用してください。こちらはオーバーレイ内のミラー設定を維持します。チャートを直接参照してインストールした場合 (`oci://`、URL、またはローカルのアーカイブやディレクトリ) は、参照先となるリポジトリが存在しないため、新しいバージョンを指定して `helm upgrade clicklink-connector <same-chart-reference>` を再実行してください。新しい CLI で `init` を再実行しても同じ状態に収束しますが、その場合はエントリーポイントが必要です。バンドルを保持している場合は `--handoff` を、保持していない場合は新しい登録トークンと `--force` を使用します ([再実行と復旧](#re-runs-and-recovery) を参照) 。
 
 ### Linux VM {#upgrades-linux-vm}
 

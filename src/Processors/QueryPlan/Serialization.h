@@ -12,7 +12,7 @@ struct DeserializedSetsRegistry;
 
 /// Serialization context passed to `IQueryPlanStep::serialize`.
 /// Settings are handled separately via `serializeSettings` method.
-struct IQueryPlanStep::Serialization
+struct QueryPlanStepSerialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
@@ -51,11 +51,11 @@ struct IQueryPlanStep::Serialization
 struct SerializedSetsRegistry;
 
 /// Deserialization context passed to `IQueryPlanStep::deserialize`.
-struct IQueryPlanStep::Deserialization
+struct QueryPlanStepDeserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;
-    std::vector<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
+    VectorWithMemoryTracking<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
 
     const ContextPtr & context;
 

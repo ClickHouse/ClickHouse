@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -14,6 +15,9 @@
 
 namespace DB
 {
+
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -54,7 +58,7 @@ struct PrewhereInfo
         UInt64 key;
         String condition;
         /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
-        std::vector<UInt64> conjunct_hashes;
+        VectorWithMemoryTracking<UInt64> conjunct_hashes;
     };
     std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
 
@@ -66,8 +70,8 @@ struct PrewhereInfo
 
     PrewhereInfo clone() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static PrewhereInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -79,8 +83,8 @@ struct FilterDAGInfo
 
     std::string dump() const;
 
-    void serialize(IQueryPlanStep::Serialization & ctx) const;
-    static FilterDAGInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+    void serialize(QueryPlanStepSerialization & ctx) const;
+    static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
 struct InputOrderInfo
@@ -252,6 +256,6 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

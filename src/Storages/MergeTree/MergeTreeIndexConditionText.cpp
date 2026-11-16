@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Formats/FormatSettings.h>
 
 #include "config.h"
 
@@ -33,6 +34,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1286,12 +1288,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
-    const auto index_column_node = unwrapLosslessConversion(argument_node);
+    auto index_column_node = unwrapLosslessConversion(argument_node);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
         return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+
+    /// `arrayJoin(arr) = const` needs an element equal to the constant, like `has(arr, const)`; a row answer cannot replace it
+    if (auto array_join_argument = index_column_node.getArrayJoinArgument();
+        function_name == "equals" && array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+    {
+        index_column_node = *array_join_argument;
+        direct_read_mode = TextIndexDirectReadMode::None;
+    }
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -2028,6 +2038,11 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
+    /// The result on the default value decides for every row without the key, so no function in the expression
+    /// may return another value on each evaluation.
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
+        return false;
+
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
     auto required_columns = subdag.getRequiredColumns();
     const auto & outputs = subdag.getOutputs();
@@ -2408,6 +2423,9 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
+        return false;
+
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
     auto required_columns = subdag.getRequiredColumns();
     const auto & outputs = subdag.getOutputs();
@@ -2466,6 +2484,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             has_index_for_map_element_value = true;
             return true;
         }
+        /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
+        if (auto array_join_argument = node.getArrayJoinArgument(); array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+            return true;
         return hasIndexForColumn(node.getColumnName())
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };
