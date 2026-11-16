@@ -1,10 +1,7 @@
-#include <filesystem>
 #include <memory>
-#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
-#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -26,8 +23,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -105,8 +102,7 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
-            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
+        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
     }
 
     std::unique_ptr<WriteBuffer> write() override
@@ -146,7 +142,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -156,10 +152,6 @@ public:
         distributed_cache_server = DistributedCache::Registry::instance()
                                        .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
                                        .chooseServer(hash.get128());
-
-        /// Both write() and read() require a non-null server for the holder's whole lifetime.
-        if (!distributed_cache_server)
-            DistributedCache::Client::throwNoServerAvailable(DistributedCache::Protocol::RequestType::Write);
     }
 
     ~TemporaryFileInDistributedCache() override
@@ -167,11 +159,7 @@ public:
         try
         {
             if (cache_client)
-            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
-                /// The hold is released — the connection can be reused by someone else.
-                cache_client->setForbidReconnect(false);
-            }
         }
         catch (...)
         {
@@ -202,7 +190,7 @@ public:
             buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
 
         auto local_read_settings = read_settings;
-        local_read_settings.remote_fs_settings.buffer_size = buffer_size_;
+        local_read_settings.remote_fs_buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
             file_key,
             bytes_written,
@@ -294,9 +282,9 @@ public:
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
-        settings.local_fs_settings.buffer_size = buffer_size_;
-        settings.remote_fs_settings.buffer_size = buffer_size_;
-        settings.remote_fs_settings.large_buffer_size = buffer_size_;
+        settings.local_fs_buffer_size = buffer_size_;
+        settings.remote_fs_buffer_size = buffer_size_;
+        settings.prefetch_buffer_size = buffer_size_;
 
         return disk->readFile(path_to_file, settings);
     }
@@ -505,15 +493,6 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 
     ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
     ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
-
-    /// Report once the first bytes have reached the file, and not when the file is created: a temporary
-    /// file is often pre-created and never written to, e.g. the bucket buffers of `GraceHashJoin`.
-    if (compressed_delta > 0 && !reported_spilled_to_disk)
-    {
-        QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
-        reported_spilled_to_disk = true;
-    }
-
     parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;

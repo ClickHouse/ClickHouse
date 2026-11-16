@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/TypeList.h>
 #include <base/range.h>
 
 
@@ -20,7 +19,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionNumericPredicate final : public IFunction
+class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -46,7 +45,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!(isNativeNumber(arguments.front()) || WhichDataType(arguments.front()).isBFloat16()))
+        if (!isNativeNumber(arguments.front()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
 
         return std::make_shared<DataTypeUInt8>();
@@ -64,14 +63,16 @@ public:
         const auto * in = arguments.front().column.get();
 
         ColumnPtr res;
-        TypeListUtils::forEach(
-            TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16>{},
-            [&]<typename T>(TypeList<T>)
-            {
-                if (!res)
-                    res = execute<T>(in, input_rows_count);
-            });
-        if (!res)
+        if (!((res = execute<UInt8>(in, input_rows_count))
+            || (res = execute<UInt16>(in, input_rows_count))
+            || (res = execute<UInt32>(in, input_rows_count))
+            || (res = execute<UInt64>(in, input_rows_count))
+            || (res = execute<Int8>(in, input_rows_count))
+            || (res = execute<Int16>(in, input_rows_count))
+            || (res = execute<Int32>(in, input_rows_count))
+            || (res = execute<Int64>(in, input_rows_count))
+            || (res = execute<Float32>(in, input_rows_count))
+            || (res = execute<Float64>(in, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return res;

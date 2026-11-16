@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
 #include <Core/Field.h>
+#include <Common/maskURIPassword.h>
 #include <optional>
 
 namespace RabbitMQ
@@ -20,10 +21,7 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
             return {};
-        /// AMQP-CPP ends the login at the FIRST '@' after the scheme, unbounded by the `/?#` that closes
-        /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds it.
-        if (masked_value.contains('@'))
-            masked_value = "[HIDDEN]";
+        DB::maskURIPassword(&masked_value);
         return fmt::format("'{}'", masked_value);
     }}
 };

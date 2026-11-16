@@ -4,6 +4,7 @@ import csv
 import socket
 import ssl
 import logging
+import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 

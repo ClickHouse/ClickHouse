@@ -11,7 +11,7 @@ namespace
 
 /** columnsSize() - get the columns size in number of rows.
   */
-class FunctionBlockSize final : public IFunction
+class FunctionBlockSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";
@@ -62,7 +62,7 @@ public:
 REGISTER_FUNCTION(BlockSize)
 {
     FunctionDocumentation::Description description = R"(
-In ClickHouse, queries are processed in [blocks](/resources/develop-contribute/introduction/architecture#block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
     )";
     FunctionDocumentation::Syntax syntax = "blockSize()";

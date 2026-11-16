@@ -58,25 +58,20 @@ def create_tables(table_name, populate_count, skip_last_replica):
         node3.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
-# `parallel_replicas_plan_based` must not change how the insert is distributed: the INSERT is shipped as
-# a query, and a replica executing it always reads the query-tree-based way. The expected query counts are
-# therefore the same for both values of the setting.
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_plan,executed_queries,plan_based",
+    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries",
     [
-        pytest.param("test_1_shard_3_replicas", 2, False, 3, False),
-        pytest.param("test_1_shard_3_replicas", 2, True, 2, False),
-        pytest.param("test_1_shard_3_replicas", 3, False, 4, False),
-        pytest.param("test_1_shard_3_replicas", 3, True, 3, False),
-        pytest.param("test_1_shard_3_replicas", 3, False, 4, True),
-        pytest.param("test_1_shard_3_replicas", 3, True, 3, True),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3, False),
-        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2, False),
+        pytest.param("test_1_shard_3_replicas", 2, False, 3),
+        pytest.param("test_1_shard_3_replicas", 2, True, 2),
+        pytest.param("test_1_shard_3_replicas", 3, False, 4),
+        pytest.param("test_1_shard_3_replicas", 3, True, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, False, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 3, True, 2),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, False, 3),
+        pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2),
     ],
 )
-def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_plan, executed_queries, plan_based):
+def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries):
     populate_count = 1000000
 
     source_table = "t_source"
@@ -92,8 +87,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
-            "parallel_replicas_local_plan": local_plan,
-            "parallel_replicas_plan_based": plan_based,
+            "parallel_replicas_insert_select_local_pipeline": local_pipeline,
             "enable_analyzer": 1,
         },
         query_id=query_id
@@ -112,7 +106,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
         == ""
     )
 
-    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},
@@ -132,13 +126,13 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
 #       Currently, we'll just fail
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_plan",
+    "cluster_name,max_parallel_replicas,local_pipeline",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
+def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
     populate_count = 100
 
     source_table = "t_source"
@@ -154,7 +148,7 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_local_plan": local_plan,
+                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
                 "enable_analyzer": 1,
             },
         )
@@ -162,13 +156,13 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
 
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_plan",
+    "cluster_name,max_parallel_replicas,local_pipeline",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
+def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
     populate_count = 100
 
     source_table = "t_source"
@@ -184,7 +178,7 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_local_plan": local_plan,
+                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
                 "enable_analyzer": 1,
             },
         )
@@ -328,7 +322,7 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
     )
 
     # check that query executed in distributed way
-    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
+    execute_on_cluster(f"SYSTEM FLUSH LOGS query_log")
     number_of_queries = node1.query(
             f"""SELECT count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE current_database = currentDatabase() AND initial_query_id = '{query_id}' AND type = 'QueryFinish' AND query_kind = 'Insert'""",
         settings={"skip_unavailable_shards": 1},

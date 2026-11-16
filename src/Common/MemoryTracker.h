@@ -3,16 +3,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <type_traits>
 #include <base/types.h>
-#include <Common/AllocationTrace.h>
-#include <Common/CacheLine.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
+#include <Common/AllocationTrace.h>
 
-/// Disabled on macOS: the malloc-zone hook observes system-library allocations (e.g. dyld mallocs
-/// on a thread's first `absl::Mutex` lock) that can occur inside deny scopes and cannot be prevented.
-#if !defined(NDEBUG) && !defined(OS_DARWIN)
+#if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
@@ -22,8 +18,7 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
-#include <Common/FiberLocal.h>
-extern constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
+extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
 
 /// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
@@ -58,128 +53,71 @@ namespace DB
   *
   * @see LockMemoryExceptionInThread
   * @see MemoryTrackerBlockerInThread
-  * @see MemoryTrackerUntrackedAllocationsBlockerInThread
   */
 class MemoryTracker
 {
 private:
-    /// Group fields by access pattern onto separate cache lines to avoid false sharing.
-    /// Anonymous nested structs are a GNU/Clang extension; suppress the pedantic warning.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#pragma clang diagnostic ignored "-Wnested-anon-types"
+    std::atomic<Int64> amount {0};
+    std::atomic<Int64> peak {0};
+    std::atomic<Int64> soft_limit {0};
+    std::atomic<Int64> hard_limit {0};
+    std::atomic<Int64> profiler_limit {0};
 
-    /// Hot: every field touched on the alloc/free path. Packed into a single cache line
-    /// (24B writes + 40B reads = 64B exactly) so each allocation needs at most one line
-    /// in flight. The line bounces among writer cores either way; co-locating the
-    /// read-mostly limits/parent/metric here means writers get them for free with the
-    /// same fetch. The only cost is reader-only cores re-fetching when allocator writes
-    /// invalidate, but allocations dominate over pure reads in practice.
-    struct
-    {
-        /// Hot writes: updated on every alloc/free flush.
-        alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<Int64> amount {0};
-        std::atomic<Int64> peak {0};
-        std::atomic<Int64> rss {0};
+    std::atomic<Int64> rss{0};
 
-        /// Hot reads: checked on every alloc but written only at construction or via
-        /// rare configuration changes.
-        std::atomic<Int64> soft_limit {0};
-        std::atomic<Int64> hard_limit {0};
-        std::atomic<Int64> profiler_limit {0};
+    Int64 profiler_step = 0;
 
-        /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
-        /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
-        /// Requires acquire-release:
-        /// 1. Thread A constructs MemoryTracker object and attaches MemoryTracker pointer
-        ///    (e.g. ProcessList::insert where the user's MemoryTracker is constructed right before calling setParent).
-        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
-        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
-        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
-        std::atomic<MemoryTracker *> parent {};
+    /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
+    std::atomic<double> fault_probability = 0;
 
-        /// You could specify custom metric to track memory usage.
-        std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
-    };
+    /// To randomly sample allocations and deallocations in trace_log.
+    double sample_probability = -1;
 
-    /// Cold: rarely-touched configuration, sampling, and log-only fields.
-    struct
-    {
-        /// This description will be used as prefix into log messages (if isn't nullptr).
-        /// Only read on logging paths, not per allocation.
-        alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<const char *> description_ptr = nullptr;
+    /// Randomly sample allocations only larger or equal to this size
+    UInt64 min_allocation_size_bytes = 0;
 
-        std::atomic<Int64> profiler_step = 0;
+    /// Randomly sample allocations only smaller or equal to this size
+    UInt64 max_allocation_size_bytes = 0;
 
-        /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-        std::atomic<double> fault_probability = 0;
+    UInt64 jemalloc_flush_profile_interval_bytes = 0;
+    bool jemalloc_flush_profile_on_memory_exceeded = false;
 
-        /// To randomly sample allocations and deallocations in trace_log.
-        std::atomic<double> sample_probability = -1;
+    /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
+    /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
+    std::atomic<MemoryTracker *> parent {};
 
-        /// Randomly sample allocations only larger or equal to this size
-        std::atomic<UInt64> min_allocation_size_bytes = 0;
+    /// You could specify custom metric to track memory usage.
+    std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
 
-        /// Randomly sample allocations only smaller or equal to this size
-        std::atomic<UInt64> max_allocation_size_bytes = 0;
+    /// This description will be used as prefix into log messages (if isn't nullptr)
+    std::atomic<const char *> description_ptr = nullptr;
 
-        UInt64 jemalloc_flush_profile_interval_bytes = 0;
-        bool jemalloc_flush_profile_on_memory_exceeded = false;
-        UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
+    std::atomic<std::chrono::microseconds> max_wait_time;
 
-        std::atomic<std::chrono::microseconds> max_wait_time;
+    std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
-        std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+    std::atomic<DB::PageCache *> page_cache = nullptr;
 
-        std::atomic<DB::PageCache *> page_cache = nullptr;
-
-        bool log_peak_memory_usage_in_destructor = true;
-    };
-#pragma clang diagnostic pop
+    bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
-    void traceLargeAllocation(Int64 size) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
 
-    /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
-    /// moving on to the parent. Returns what was actually removed. The total does not change.
-    Int64 adjustLocally(Int64 size);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    std::atomic_bool drift_expected = false;
-    /// A starting point, lowered as flagged sites get fixed.
-    static constexpr Int64 drift_warn_threshold = 1024 * 1024;
-#endif
-
-    /// `Process` trackers whose parent is this one; only a `User` tracker counts them.
-    std::atomic<Int64> children_count = 0;
-
-    void attachChild();
-    /// When the last child goes, nothing should be charged here any more, so whatever is left is settled.
-    void detachChild();
-
-    /// Whatever a query still holds when it ends is taken off its user, so the user ends at zero for that query.
-    void settleDriftOnQueryEnd();
-
-    /// Helper fields for analyzing the global memory tracker. Both are touched only by the
-    /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
-    /// no synchronization.
-    /// The value `amount` would have had with no corrections from a measurement applied:
-    /// a plain counter of allocations, as of the last tick of the worker.
+    /// helper fields for analyzing MemoryTracker
+    /// amount which is not corrected by external source like RSS
     int64_t uncorrected_amount = 0;
-    /// The value of `amount` right after the last tick of the worker, either the corrected
-    /// value it was set to or the value it had when the tick just took a snapshot of it.
+    /// last corrected amount we set to memory tracker
     int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
@@ -206,26 +144,12 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table), so
-    /// that `unexpectedDrift` does not report it. Marks every task tracker up the chain.
-    void setDriftExpected()
-    {
-#ifdef DEBUG_OR_SANITIZER_BUILD
-        for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
-        {
-            if (tracker->level == VariableContext::Process)
-                tracker->drift_expected.store(true, std::memory_order_relaxed);
-        }
-#endif
-    }
-
-    /// Debug builds only: what a query's tracker still holds (or is over-credited by) when that is large and
-    /// not marked expected, else 0. Points at the query that allocated something outliving it.
-    Int64 unexpectedDrift() const;
-
-    /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
-    /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
-    void reparent(MemoryTracker * new_parent);
+    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
+    // MemoryTracker for background task may have a non-zero counter.
+    // This method is intended to fix the counter inside of background_memory_tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
+    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
 
     Int64 getPeak() const
     {
@@ -244,16 +168,6 @@ public:
         return soft_limit.load(std::memory_order_relaxed);
     }
 
-    /// `amount / hard_limit` for this tracker, or 0 without a hard limit. Lock-free.
-    double getPressure() const
-    {
-        const Int64 limit = hard_limit.load(std::memory_order_relaxed);
-        if (limit <= 0)
-            return 0.0;
-        const Int64 used = amount.load(std::memory_order_relaxed);
-        return used <= 0 ? 0.0 : static_cast<double>(used) / static_cast<double>(limit);
-    }
-
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
@@ -268,34 +182,17 @@ public:
 
     void injectFault() const;
 
-    void setSampleProbability(double value) { sample_probability.store(value, std::memory_order_relaxed); }
-
-    struct SampleConfig
+    void setSampleProbability(double value)
     {
-        double probability = 0;
-        UInt64 min_allocation_size = 0;
-        UInt64 max_allocation_size = 0;
-    };
-
-    /// Resolve sample config by traversing the parent chain.
-    /// `sample_probability == -1` means "inherit from parent"; any non-negative value (including 0)
-    /// is an explicit override that stops the walk. Callers are expected to push the query-level
-    /// value only when the user actually changed it from the default, so that the default path
-    /// leaves the group tracker at -1 and falls through to `total_memory_tracker_sample_probability`.
-    SampleConfig getResolvedSampleConfig() const
-    {
-        const auto probability = sample_probability.load(std::memory_order_relaxed);
-        if (probability >= 0)
-            return {
-                probability,
-                min_allocation_size_bytes.load(std::memory_order_relaxed),
-                max_allocation_size_bytes.load(std::memory_order_relaxed)};
-        if (auto * loaded_next = parent.load(std::memory_order_acquire))
-            return loaded_next->getResolvedSampleConfig();
-        return {};
+        sample_probability = value;
     }
 
-    void setSampleMinAllocationSize(UInt64 value) { min_allocation_size_bytes.store(value, std::memory_order_relaxed); }
+    double getSampleProbability(UInt64 size);
+
+    void setSampleMinAllocationSize(UInt64 value)
+    {
+        min_allocation_size_bytes = value;
+    }
 
     void setJemallocFlushProfileInterval(UInt64 interval)
     {
@@ -307,16 +204,14 @@ public:
         jemalloc_flush_profile_on_memory_exceeded = flush;
     }
 
-    void setJemallocFlushProfileOnMemoryExceededSeconds(UInt64 interval_s)
+    void setSampleMaxAllocationSize(UInt64 value)
     {
-        jemalloc_flush_profile_on_memory_exceeded_interval_s = interval_s;
+        max_allocation_size_bytes = value;
     }
-
-    void setSampleMaxAllocationSize(UInt64 value) { max_allocation_size_bytes.store(value, std::memory_order_relaxed); }
 
     void setProfilerStep(Int64 value)
     {
-        profiler_step.store(value, std::memory_order_relaxed);
+        profiler_step = value;
         setOrRaiseProfilerLimit(value);
     }
 
@@ -326,7 +221,7 @@ public:
 
     MemoryTracker * getParent()
     {
-        return parent.load(std::memory_order_acquire);
+        return parent.load(std::memory_order_relaxed);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
@@ -343,11 +238,6 @@ public:
     void setDescription(const char * description)
     {
         description_ptr.store(description, std::memory_order_relaxed);
-    }
-
-    const char * getDescription() const
-    {
-        return description_ptr.load(std::memory_order_relaxed);
     }
 
     OvercommitRatio getOvercommitRatio();
@@ -386,34 +276,13 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Not below what is currently held, which belongs to whoever is still charged here.
-    void resetPeak()
-    {
-        peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
-    }
-
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
-    /// Refresh `MemoryTrackingUncorrected` from the current value of the global tracker without
-    /// correcting it. The background memory worker calls this on the ticks that do not call
-    /// `updateAllocated`, so the metric is a snapshot of the plain counter that is at most one
-    /// tick old no matter whether the correction is enabled.
-    static void updateUncorrected();
-
-    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
-    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
-    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
-    static void setMinAllocationSizeToLogStackTrace(UInt64 value);
-    static UInt64 getMinAllocationSizeToLogStackTrace();
-
-    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
-    static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
 };
-static_assert(std::alignment_of_v<MemoryTracker> == DB::CH_CACHE_LINE_SIZE);
 
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;

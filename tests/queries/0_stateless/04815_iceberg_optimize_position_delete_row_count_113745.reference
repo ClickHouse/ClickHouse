@@ -1,6 +1,0 @@
-multi_row OPTIMIZE accepted the position delete snapshot
-multi_row position deletes compacted away
-multi_row	1	1	1
-single_row OPTIMIZE accepted the position delete snapshot
-single_row position deletes compacted away
-single_row	1	1	1

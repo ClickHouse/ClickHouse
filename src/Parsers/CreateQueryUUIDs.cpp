@@ -1,71 +1,24 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
 #include <Core/ServerSettings.h>
-#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/getTimeSeriesSettingVersion.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace ServerSetting
 {
-    extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
 }
 
-namespace
+CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
-    ViewTarget::Kind parseViewTargetKindFromString(std::string_view str)
-    {
-        if (auto kind = magic_enum::enum_cast<ViewTarget::Kind>(str))
-        {
-            return *kind;
-        }
-        else if (str == "to")
-        {
-            return ViewTarget::To;
-        }
-        else if (str == "inner")
-        {
-            return ViewTarget::Inner;
-        }
-        else if (str == "data")
-        {
-            return ViewTarget::Samples;
-        }
-        else if (str == "tags")
-        {
-            return ViewTarget::Tags;
-        }
-        /// "Metrics" is the old name of the `MetricFamilies` kind (see toString()).
-        else if ((str == "metrics") || (str == "Metrics"))
-        {
-            return ViewTarget::MetricFamilies;
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
-    }
-}
-
-
-CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
-{
-    if (query.is_time_series_table)
-        time_series_version = getTimeSeriesSettingVersion(query);
-
-    if (!generate_random || !for_restore)
+    if (!generate_random || !force_random)
     {
         uuid = query.uuid;
         if (query.targets)
@@ -98,7 +51,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// If destination table (to_table_id) is not specified for materialized view,
             /// then MV will create inner table. We should generate UUID of inner table here.
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
-            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->isAppend()))
+            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
                 generate_target_uuid(ViewTarget::To);
 
 
@@ -113,20 +66,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Samples);
+                generate_target_uuid(ViewTarget::Data);
                 generate_target_uuid(ViewTarget::Tags);
-                generate_target_uuid(ViewTarget::MetricFamilies);
-
-                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
-                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
-                {
-                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
-                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
-                    /// so a fresh UUID is not stamped on RESTORE.
-                    recent_samples_enabled = false;
-                }
-                if (recent_samples_enabled)
-                    generate_target_uuid(ViewTarget::RecentSamples);
+                generate_target_uuid(ViewTarget::Metrics);
             }
         }
     }
@@ -159,12 +101,8 @@ String CreateQueryUUIDs::toString() const
         add_name_and_uuid_to_string("uuid", uuid);
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
-        if (inner_uuid == UUIDHelpers::Nil)
-            continue;
-        if ((kind == ViewTarget::MetricFamilies) && time_series_version && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
-            add_name_and_uuid_to_string("Metrics", inner_uuid);
-        else
-            add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
+        if (inner_uuid != UUIDHelpers::Nil)
+            add_name_and_uuid_to_string(::DB::toString(kind), inner_uuid);
     }
     out << "}";
     return out.str();
@@ -177,7 +115,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     skipWhitespaceIfAny(in);
     in >> "{";
     skipWhitespaceIfAny(in);
-    char c = 0;
+    char c;
     while (in.peek(c) && c != '}')
     {
         String name;
@@ -194,7 +132,8 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind = parseViewTargetKindFromString(name);
+            ViewTarget::Kind kind;
+            parseFromString(kind, name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
         if (in.peek(c) && c == ',')

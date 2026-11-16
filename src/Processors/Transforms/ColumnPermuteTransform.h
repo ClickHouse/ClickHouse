@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class ColumnPermuteTransform final : public ISimpleTransform
+class ColumnPermuteTransform : public ISimpleTransform
 {
 public:
     ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_);

@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 
 namespace DB
@@ -20,10 +19,14 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
     String filter_name_,
-    String filter_key_,
     size_t filters_to_merge_,
-    const RuntimeFilterBuildOptions & build_options_,
-    const RuntimeFilterConfig & runtime_filter_config_,
+    UInt64 exact_values_limit_,
+    UInt64 bloom_filter_bytes_,
+    UInt64 bloom_filter_hash_functions_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_,
+    bool allow_to_use_not_exact_filter_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
@@ -31,54 +34,47 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , filter_key(std::move(filter_key_))
     , query_context(std::move(query_context_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
-    if (build_options_.polarity == RuntimeFilterPolarity::Contains)
+    if (allow_to_use_not_exact_filter_)
     {
-        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<RuntimeFilter>(
+            built_filter = std::make_unique<ApproximateRuntimeFilter>(
                 filters_to_merge_,
-                runtime_filter_config_,
-                RuntimeFilter::Adaptive(
-                    filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit,
-                    build_options_.bloom.hash_functions,
-                    build_options_.max_ratio_of_set_bits,
-                    build_options_.distinct_keys_hint,
-                    build_options_.distinct_keys_hint_matches_filter_key));
+                filter_column_target_type,
+                pass_ratio_threshold_for_disabling_,
+                blocks_to_skip_before_reenabling_,
+                bloom_filter_bytes_,
+                exact_values_limit_,
+                bloom_filter_hash_functions_,
+                max_ratio_of_set_bits_in_bloom_filter_);
         }
         else
         {
-            built_filter = std::make_unique<RuntimeFilter>(
+            built_filter = std::make_unique<ExactContainsRuntimeFilter>(
                 filters_to_merge_,
-                runtime_filter_config_,
-                RuntimeFilter::ExactContains(
-                    filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit));
+                filter_column_target_type,
+                pass_ratio_threshold_for_disabling_,
+                blocks_to_skip_before_reenabling_,
+                bloom_filter_bytes_,
+                exact_values_limit_);
         }
     }
     else
     {
-        built_filter = std::make_unique<RuntimeFilter>(
+        built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
             filters_to_merge_,
-            runtime_filter_config_,
-            RuntimeFilter::ExactNotContains(
-                filter_column_target_type,
-                build_options_.bloom.bytes,
-                build_options_.exact_values_limit));
+            filter_column_target_type,
+            pass_ratio_threshold_for_disabling_,
+            blocks_to_skip_before_reenabling_,
+            bloom_filter_bytes_,
+            exact_values_limit_);
     }
-
-    /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
-    if (build_options_.track_key_range)
-        built_filter->enableIndexAnalysis();
 }
 
 
@@ -109,16 +105,10 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    /// A deserialized step has no random key and is never executed in practice; nothing to register.
-    if (filter_key.empty())
-        return;
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterTransform");
     auto filter_lookup = query_context->getRuntimeFilterLookup();
-    /// Register under the random key (matches the probe-side `__applyFilter`), not the displayed
-    /// stable `filter_name`. Keeping the key off the plan means it never enters a plan-step hash.
-    /// The stable name is passed alongside for readable stats logging (the key is opaque).
-    filter_lookup->add(filter_key, filter_name, std::move(built_filter));
+    filter_lookup->add(filter_name, std::move(built_filter));
 }
 
 }

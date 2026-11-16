@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,6 +21,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -42,21 +44,12 @@ public:
 
     std::string getName() const override { return name; }
 
-    /// The branch this function chooses depends on the current user, and a persisted table has no
-    /// user: under the global context it is created and attached with, the `ELSE` branch is unreachable.
-    bool canBeUsedToCreateTable() const override { return false; }
-
-    /// For the same reason the function cannot be persisted nested in another table function either,
-    /// e.g. `CREATE TABLE ... AS remote(..., viewIfPermitted(...))`: on a local shard the branch is
-    /// then decided under the connection's credentials instead of the reader's grants.
-    bool dependsOnCurrentUserGrants() const override { return true; }
-
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -70,7 +63,7 @@ private:
 };
 
 
-VectorWithMemoryTracking<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -126,8 +119,15 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        }
+        else
+        {
+            /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
+            sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        }
     }
     catch (Exception & e)
     {
@@ -156,7 +156,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({}, {.allow_readonly = true});
 }
 
 }

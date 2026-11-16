@@ -7,6 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -33,12 +34,12 @@ struct BitSwapLastTwoImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-/// JIT-compiled code cannot throw, so only the argument type `apply` accepts may be compiled.
-/// Every other type falls through to `apply` and raises there.
-static constexpr bool compilable = std::is_same_v<A, ResultType>;
+static constexpr bool compilable = true;
 
 static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
+    if (!arg->getType()->isIntegerTy())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");
     return b.CreateOr(
             b.CreateShl(b.CreateAnd(arg, 1), 1),
             b.CreateAnd(b.CreateLShr(arg, 1), 1)
@@ -52,12 +53,10 @@ struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
 /// The result of this function is always UInt8 regardless of the argument type.
 /// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
 /// produce Nullable(UInt8) instead of Dynamic.
-class FunctionBitSwapLastTwo final : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, false>
+class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>
 {
 public:
-    using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSwapLastTwo>(); }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

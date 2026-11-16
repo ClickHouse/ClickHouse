@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -11,7 +10,7 @@ namespace DB
 /** materialize(x) - materialize the constant
   */
 template <bool remove_special_representations>
-class FunctionMaterialize final : public IFunction
+class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
@@ -32,8 +31,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
 
     bool useDefaultImplementationForNothing() const override { return false; }
 
@@ -70,8 +67,8 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         /// Depending on the argument the function materialize() is either a constant or works as identity().
-        /// In both cases this function preserves values, so it is strictly monotonic and non-decreasing.
-        return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+        /// In both cases this function is monotonic and non-decreasing.
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 

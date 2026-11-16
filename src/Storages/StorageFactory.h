@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -17,6 +16,8 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class AccessRightsElements;
+class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
 
@@ -33,6 +34,10 @@ public:
     /// Helper function to validate if a specific storage supports a setting
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
+
+    /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
+    /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
     struct Arguments
     {
@@ -74,14 +79,10 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        /// Whether `UNIQUE KEY` is accepted at CREATE time. Currently set only on
-        /// non-replicated MergeTree variants — replicated metadata does not yet
-        /// serialize `unique_key`, which would allow replicas to diverge silently.
-        bool supports_unique_key = false;
-        bool supports_sql_security = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        GetExportAccessFn * get_export_access_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -89,7 +90,6 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
-        Documentation documentation;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -116,20 +116,19 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .supports_unique_key = false,
-        .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-    }, Documentation documentation = {});
+        .get_export_access_fn = nullptr,
+    });
 
     const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;
@@ -149,13 +148,17 @@ public:
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
+    /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
+    /// table. An unknown engine needs nothing here: creating it fails later.
+    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
+    /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
+    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+
 private:
     Storages storages;
 };
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
-
-/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
-void checkStorageSettingNames(const StorageFactory::Arguments & args);
 
 }

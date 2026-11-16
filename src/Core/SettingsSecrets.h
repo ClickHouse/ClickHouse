@@ -27,22 +27,14 @@ using ValueMaskingFunc = std::function<bool(String &)>;
 /// precondition holds by construction and needs no check.
 inline bool maskURLCredentials(String & value)
 {
-    /// A statement is masked for logging before its settings are validated, so a value that no URI
-    /// parser can read still reaches a log.
-    if (findURIAuthority(value) == String::npos && value.contains('@'))
-    {
-        value = "[HIDDEN]";
-        return true;
-    }
-
-    bool masked = maskURIUserinfo(value);
+    bool masked = maskURIPassword(&value);
     masked |= maskPresignedURLParameters(value);
     return masked;
 }
 
 /// The settings of the query-level `Settings` collection whose value can carry a credential, and how
 /// each one is masked. `system.query_log.query` shows
-/// `format_avro_schema_registry_url = 'http://[HIDDEN]@registry:8080'`, so every other place that
+/// `format_avro_schema_registry_url = 'http://user:[HIDDEN]@registry:8080'`, so every other place that
 /// prints the same value hides the same secret through this map.
 ///
 /// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this
@@ -50,8 +42,6 @@ inline bool maskURLCredentials(String & value)
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"format_avro_schema_registry_url", maskURLCredentials},
-    {"url_base", maskURLCredentials},
-    {"s3_base", maskURLCredentials},
 };
 
 /// Returns whether anything was masked.
@@ -75,7 +65,7 @@ bool maskSettingValue(const String & setting_name, const Field & field, String &
 /// The masking runs on the raw string and the result is quoted afterwards, because the two cannot be
 /// done in the other order: the value of a presigned URL parameter ends at the end of the text, so
 /// masking an already-quoted literal takes the closing quote with it and leaves
-/// `s3_base = 'https://bucket/f.csv?X-Amz-Signature=[HIDDEN]`, which no longer parses.
+/// `format_avro_schema_registry_url = 'https://h/f.csv?X-Amz-Signature=[HIDDEN]`, which no longer parses.
 ///
 /// Whether a value holds a secret and how that secret is hidden are the same question, so a
 /// `formatImpl` and the matching `hasSecretParts` both ask it here and cannot disagree.

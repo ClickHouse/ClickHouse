@@ -21,7 +21,6 @@ namespace Setting
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsBool use_uncompressed_cache;
-    extern const SettingsBool use_columns_cache;
 }
 
 namespace ErrorCodes
@@ -80,8 +79,7 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                     part.parent_part,
                     part.part_index_in_query,
                     part.part_starting_offset_in_query,
-                    std::move(part.ranges),
-                    part.read_hints);
+                    std::move(part.ranges));
 
                 break;
             }
@@ -125,15 +123,14 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                 part.parent_part,
                 part.part_index_in_query,
                 part.part_starting_offset_in_query,
-                std::move(ranges),
-                part.read_hints);
+                std::move(ranges));
         }
     }
 
     return split_parts_and_ranges;
 }
 
-IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/)
+IProcessor::Status LazyReadFromMergeTreeSource::prepare(const PortNumbers & updated_input_ports, const PortNumbers & /*updated_output_ports*/)
 {
     auto & output = outputs.front();
     if (output.isFinished())
@@ -147,7 +144,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
         return Status::PortFull;
 
     if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
+        return Status::ExpandPipeline;
 
     /// Here we reading inputs as long as they are ready, to parallelize reading.
     /// But the chunks should be processed in the order of parts and ranges.
@@ -155,10 +152,11 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
 
     if (next_input_to_process != inputs.end())
     {
-        for (const auto * input_port : updated_input_ports)
+        for (auto input_num : updated_input_ports)
         {
-            const auto input_num = input_port_to_index.at(input_port);
-            auto & input = *const_cast<InputPort *>(input_port);
+            auto it = inputs.begin();
+            std::advance(it, input_num);
+            auto & input = *it;
             if (!input.isFinished() && input.hasData())
             {
                 auto chunk = input.pull();
@@ -200,7 +198,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
     return Status::Finished;
 }
 
-IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
+Processors LazyReadFromMergeTreeSource::expandPipeline()
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromMergeTreeSource: No lazy materializing rows");
@@ -212,12 +210,11 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
         inputs.emplace_back(output.getHeader(), this);
         connect(output, inputs.back());
         inputs.back().setNeeded();
-        input_port_to_index[&inputs.back()] = input_port_to_index.size();
     }
 
     next_input_to_process = inputs.begin();
     chunks.resize(processors.size());
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return processors;
 }
 
 Processors LazyReadFromMergeTreeSource::buildReaders()
@@ -232,7 +229,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = ctx_settings[Setting::use_uncompressed_cache],
-        .use_columns_cache = ctx_settings[Setting::use_columns_cache],
         .use_const_size_tasks_for_remote_reading = ctx_settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
         .total_query_nodes = 1,
     };
@@ -247,13 +243,10 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
 
-    /// Lazy materialization reads a precomputed set of rows — no filter is applied here,
-    /// so `sum_rows` is a hard upper bound. Treat it as a hard limit.
-    bool has_hard_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
+    bool has_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
 
     auto pool = std::make_shared<MergeTreeReadPoolInOrder>(
-        has_hard_limit_below_one_block,
-        /* has_soft_limit_below_one_block */ false,
+        has_limit_below_one_block,
         MergeTreeReadType::InOrder,
         ranges_in_data_parts,
         mutations_snapshot,

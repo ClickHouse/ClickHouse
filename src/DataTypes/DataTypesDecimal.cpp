@@ -10,7 +10,6 @@
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <string_view>
 #include <type_traits>
 
 namespace DB
@@ -51,7 +50,7 @@ template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str);
-    T x{};
+    T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
 
@@ -64,7 +63,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <is_decimal T>
 SerializationPtr DataTypeDecimal<T>::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationDecimal<T>::create(this->precision, this->scale);
+    return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
 }
 
 
@@ -114,41 +113,6 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     return createDecimal<DataTypeDecimal>(precision, scale);
 }
 
-namespace
-{
-
-/// Out of line: an inlined `throw` gives the per-element conversions below a
-/// `-fstack-protector-strong` canary. Values by value, so no local's address escapes.
-template <typename T, typename U>
-[[noreturn]] NO_INLINE void throwDecimalScaleOverflow(std::string_view to_family_name, T value, U multiplier)
-{
-    throw Exception(
-        ErrorCodes::DECIMAL_OVERFLOW,
-        "{} convert overflow while multiplying {} by scale {}",
-        to_family_name,
-        toString(value),
-        toString(multiplier));
-}
-
-template <typename T, typename U>
-[[noreturn]] NO_INLINE void throwDecimalRangeOverflow(std::string_view to_family_name, T value, U min, U max)
-{
-    throw Exception(
-        ErrorCodes::DECIMAL_OVERFLOW,
-        "{} convert overflow: {} is not in range ({}, {})",
-        to_family_name,
-        toString(value),
-        toString(min),
-        toString(max));
-}
-
-[[noreturn]] NO_INLINE void throwDecimalConvertOverflow(std::string_view to_family_name, std::string_view reason)
-{
-    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. {}", to_family_name, reason);
-}
-
-}
-
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
 ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
@@ -167,7 +131,8 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
         if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
         {
             if constexpr (throw_exception)
-                throwDecimalScaleOverflow(ToDataType::family_name, value.value, converted_value);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
+                                std::string(ToDataType::family_name), toString(value.value), toString(converted_value));
             else
                 return ReturnType(false);
         }
@@ -187,11 +152,10 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
         {
             if constexpr (throw_exception)
-                throwDecimalRangeOverflow(
-                    ToDataType::family_name,
-                    converted_value,
-                    std::numeric_limits<typename ToFieldType::NativeType>::min(),
-                    std::numeric_limits<typename ToFieldType::NativeType>::max());
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
+                                std::string(ToDataType::family_name), toString(converted_value),
+                                toString(std::numeric_limits<typename ToFieldType::NativeType>::min()),
+                                toString(std::numeric_limits<typename ToFieldType::NativeType>::max()));
             else
                 return ReturnType(false);
         }
@@ -446,7 +410,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
         if (!isFinite(value))
         {
             if constexpr (throw_exception)
-                throwDecimalConvertOverflow(ToDataType::family_name, "Cannot convert infinity or NaN to decimal");
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
             else
                 return ReturnType(false);
         }
@@ -457,7 +421,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
             out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
         {
             if constexpr (throw_exception)
-                throwDecimalConvertOverflow(ToDataType::family_name, "Float is out of Decimal range");
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
             else
                 return ReturnType(false);
         }
@@ -565,13 +529,6 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         else
         {
             const WideType multiplier = DecimalUtils::scaleMultiplier<WideType>(scale);
-            /// At x86-64-v3 with `__AVX2__` the loop and SLP vectorizers widen the per-row Int128
-            /// stores into YMM/XMM packs (`vmovq`/`vpunpcklqdq`/`vmovdqu`) wrapping the BMI2
-            /// `mulxq`, regressing `sum #16`/`decimal_casts #2` ~7-12%. Plain GPR stores keep the
-            /// `mulxq` v3 win.
-#if defined(__clang__) && defined(__AVX2__)
-#pragma clang loop vectorize(disable) interleave(disable)
-#endif
             for (size_t i = 0; i < size; ++i)
             {
                 WideType converted_value;
@@ -664,150 +621,12 @@ template class DataTypeDecimal<Decimal256>;
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
-    factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::Case::Insensitive,
-        Documentation{
-            .description = "A fixed-point decimal with a fixed bit width; equivalent to `Decimal(P, S)` with a fixed precision range. See the `Decimal` entry for full documentation.",
-            .syntax = "Decimal32(S)",
-            .related = {"Decimal"},
-        });
-    factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::Case::Insensitive,
-        Documentation{
-            .description = "A fixed-point decimal with a fixed bit width; equivalent to `Decimal(P, S)` with a fixed precision range. See the `Decimal` entry for full documentation.",
-            .syntax = "Decimal64(S)",
-            .related = {"Decimal"},
-        });
-    factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::Case::Insensitive,
-        Documentation{
-            .description = "A fixed-point decimal with a fixed bit width; equivalent to `Decimal(P, S)` with a fixed precision range. See the `Decimal` entry for full documentation.",
-            .syntax = "Decimal128(S)",
-            .related = {"Decimal"},
-        });
-    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::Case::Insensitive,
-        Documentation{
-            .description = "A fixed-point decimal with a fixed bit width; equivalent to `Decimal(P, S)` with a fixed precision range. See the `Decimal` entry for full documentation.",
-            .syntax = "Decimal256(S)",
-            .related = {"Decimal"},
-        });
+    factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::Case::Insensitive);
 
-    factory.registerDataType("Decimal", create, DataTypeFactory::Case::Insensitive,
-        Documentation{
-            .description = R"DOCS_MD(
-Signed fixed-point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
-
-## Parameters {#parameters}
-
-- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
-- S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
-
-Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).
-
-Depending on P parameter value Decimal(P, S) is a synonym for:
-- P from \[ 1 : 9 \] - for Decimal32(S)
-- P from \[ 10 : 18 \] - for Decimal64(S)
-- P from \[ 19 : 38 \] - for Decimal128(S)
-- P from \[ 39 : 76 \] - for Decimal256(S)
-
-## Decimal Value Ranges {#decimal-value-ranges}
-
-- Decimal(P, S) - (-1 \* 10^(P - S), 1 \* 10^(P - S))
-- Decimal32(S) - (-1 \* 10^(9 - S), 1 \* 10^(9 - S))
-- Decimal64(S) - (-1 \* 10^(18 - S), 1 \* 10^(18 - S))
-- Decimal128(S) - (-1 \* 10^(38 - S), 1 \* 10^(38 - S))
-- Decimal256(S) - (-1 \* 10^(76 - S), 1 \* 10^(76 - S))
-
-For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 with 0.0001 step.
-
-## Internal Representation {#internal-representation}
-
-Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on conversion from a string.
-
-Because modern CPUs do not support 128-bit and 256-bit integers natively, operations on Decimal128 and Decimal256 are emulated. Thus, Decimal128 and Decimal256 work significantly slower than Decimal32/Decimal64.
-
-## Operations and Result Type {#operations-and-result-type}
-
-Binary operations on Decimal result in wider result type (with any order of arguments).
-
-- `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
-- `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
-- `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
-- `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
-
-Rules for scale:
-
-- add, subtract: S = max(S1, S2).
-- multiply: S = S1 + S2.
-- divide: S = S1.
-
-For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
-
-Operations between Decimal and Float32/Float64 are not defined. If you need them, you can explicitly cast one of argument using toDecimal32, toDecimal64, toDecimal128 or toFloat32, toFloat64 builtins. Keep in mind that the result will lose precision and type conversion is a computationally expensive operation.
-
-Some functions on Decimal return result as Float64 (for example, var or stddev). Intermediate calculations might still be performed in Decimal, which might lead to different results between Float64 and Decimal inputs with the same values.
-
-## Overflow Checks {#overflow-checks}
-
-During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
-
-<Warning>
-Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
-</Warning>
-
-```sql
-SELECT toDecimal32(2, 4) AS x, x / 3
-```
-
-```text
-┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
-│ 2.0000 │                       0.6666 │
-└────────┴──────────────────────────────┘
-```
-
-```sql
-SELECT toDecimal32(4.2, 8) AS x, x * x
-```
-
-```text
-DB::Exception: Scale is out of bounds.
-```
-
-```sql
-SELECT toDecimal32(4.2, 8) AS x, 6 * x
-```
-
-```text
-DB::Exception: Decimal math overflow.
-```
-
-Overflow checks lead to operations slowdown. If it is known that overflows are not possible, it makes sense to disable checks using `decimal_check_overflow` setting. When checks are disabled and overflow happens, the result will be incorrect:
-
-```sql
-SET decimal_check_overflow = 0;
-SELECT toDecimal32(4.2, 8) AS x, 6 * x
-```
-
-```text
-┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
-│ 4.20000000 │                     -17.74967296 │
-└────────────┴──────────────────────────────────┘
-```
-
-Overflow checks happen not only on arithmetic operations but also on value comparison:
-
-```sql
-SELECT toDecimal32(1, 8) < 100
-```
-
-```text
-DB::Exception: Can't compare.
-```
-
-**See also**
-- [isDecimalOverflow](/reference/functions/regular-functions/other-functions#isDecimalOverflow)
-- [countDigits](/reference/functions/regular-functions/other-functions#countDigits)
-)DOCS_MD",
-            .syntax = "Decimal(P, S)",
-            .related = {"Decimal32", "Decimal64", "Decimal128", "Decimal256"},
-        });
+    factory.registerDataType("Decimal", create, DataTypeFactory::Case::Insensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("FIXED", "Decimal", DataTypeFactory::Case::Insensitive);

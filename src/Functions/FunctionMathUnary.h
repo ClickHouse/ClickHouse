@@ -4,6 +4,7 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnary final : public IFunction
+class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -88,12 +89,6 @@ private:
             const size_t rows_remaining = size % Impl::rows_per_iteration;
             const size_t rows_size = size - rows_remaining;
 
-            /// When rows_per_iteration == 1, the loop body is a scalar libm call (or an inlined
-            /// implementation like `preciseExp10` that itself calls libm), so unrolling cannot
-            /// overlap iterations and only bloats the code. Removing this pragma made `exp10`
-            /// 19-23% slower in the CI performance tests on m7i (Sapphire Rapids) with clang 22,
-            /// while a Zen 5 machine showed no difference with the same binaries.
-#pragma clang loop unroll(disable)
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&src_data[i], &dst_data[i]);
 

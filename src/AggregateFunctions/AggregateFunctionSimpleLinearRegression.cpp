@@ -125,7 +125,7 @@ public:
         data(place).add(x, y);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -199,7 +199,6 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 }
 
-void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_simpleLinearRegression = R"(
@@ -222,9 +221,8 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3]);
         )",
         R"(
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
-├───────────────────────────────k─┬───────────────────────────────b─┤
-│                               1 │                               0 │
-└─────────────────────────────────┴─────────────────────────────────┘
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -234,9 +232,8 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6]);
         )",
         R"(
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
-├───────────────────────────────k─┬───────────────────────────────b─┤
-│                               1 │                               3 │
-└─────────────────────────────────┴─────────────────────────────────┘
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
         )"
     }
     };

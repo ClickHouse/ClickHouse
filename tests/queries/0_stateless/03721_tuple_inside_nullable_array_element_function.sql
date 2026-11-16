@@ -1,6 +1,6 @@
 -- { echoOn }
 
-SET enable_nullable_tuple_type = 1;
+SET allow_experimental_nullable_tuple_type = 1;
 
 SELECT toTypeName(arrayElementOrNull([(1, 'a'), (2, 'b')], 1));
 
@@ -781,7 +781,7 @@ FROM
 
 
 
-SET enable_nullable_tuple_type = 0;
+SET allow_experimental_nullable_tuple_type = 0;
 
 SELECT toTypeName(arrayElementOrNull([(1, 'a'), (2, 'b')], 1));
 

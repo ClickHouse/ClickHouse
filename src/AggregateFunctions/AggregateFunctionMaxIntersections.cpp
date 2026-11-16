@@ -105,7 +105,7 @@ public:
             this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -206,7 +206,6 @@ AggregateFunctionPtr createAggregateFunctionMaxIntersections(
 
 }
 
-void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -257,7 +256,7 @@ SELECT maxIntersections(start, end) FROM my_events;
         }, documentation});
 
     FunctionDocumentation::Description position_description = R"(
-Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/reference/functions/aggregate-functions/maxIntersections) function.
+Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/sql-reference/aggregate-functions/reference/maxintersections) function.
     )";
     FunctionDocumentation::Syntax position_syntax = R"(
 maxIntersectionsPosition(start_column, end_column)

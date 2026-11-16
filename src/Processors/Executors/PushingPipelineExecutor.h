@@ -1,5 +1,4 @@
 #pragma once
-#include <list>
 #include <memory>
 #include <atomic>
 #include <vector>
@@ -12,12 +11,12 @@ class Chunk;
 class QueryPipeline;
 class PushingSource;
 
-class IExecutor;
-using ExecutorPtr = std::shared_ptr<IExecutor>;
+class PipelineExecutor;
+using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::vector<ProcessorPtr>;
 
 /// Pushing executor for Chain of processors. Always executed in single thread.
 /// Typical usage is:
@@ -51,7 +50,7 @@ private:
     std::atomic_bool input_wait_flag = false;
     std::shared_ptr<PushingSource> pushing_source;
 
-    ExecutorPtr executor;
+    PipelineExecutorPtr executor;
     bool started = false;
     bool finished = false;
 };

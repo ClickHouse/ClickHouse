@@ -2,20 +2,15 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
-#include <unordered_map>
-#include <utility>
 
 
 namespace DB
 {
 
 class ColumnsDescription;
-class DataTypeTuple;
 
 namespace Nested
 {
@@ -61,48 +56,11 @@ namespace Nested
     /// Same as flatten but only for Nested column.
     Block flattenNested(const Block & block);
 
-    /// Returns the Tuple type if `type` is a Tuple that recursive flattening expands into leaf
-    /// columns (that is, a non-empty Tuple without a custom type name), and returns nullptr
-    /// otherwise. Empty tuples (`Tuple()`) and custom-named tuples (such as `Point` or a
-    /// `SimpleAggregateFunction` state) are kept as opaque leaves. This is the single predicate
-    /// that defines what flattening descends into, and flatten and reconstruct must agree on it.
-    const DataTypeTuple * tryGetFlattenableTuple(const DataTypePtr & type);
-
-    /// Recursively flatten all Tuple columns in the block.
-    /// For tuples with explicit names: t Tuple(x Int32, y String) -> t.x Int32, t.y String
-    /// For tuples without explicit names: t Tuple(Int32, String) -> t.1 Int32, t.2 String
-    /// Nested tuples are recursively flattened: t Tuple(a Int32, b Tuple(c Int64, d String))
-    ///   -> t.a Int32, t.b.c Int64, t.b.d String
-    /// If `flattened_ancestors` is not null, it is filled (aligned by position with the result)
-    /// with each leaf's tuple ancestor paths.
-    Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors = nullptr);
-
-    /// All tuples are flattened recursively, regardless of whether they have explicit names.
-    /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].
-    /// Non-tuple columns are kept as-is in the result.
-    Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns);
-
-    /// Appends to `out` the leaf names that `flattenTupleRecursive` would produce for a single
-    /// top-level column `(name, type)`.
-    void flattenTupleLeafNames(const String & name, const DataTypePtr & type, Names & out);
-
-    /// This is the inverse operation of flattenTupleColumnsRecursive.
-    /// All tuples in the header will be reconstructed, regardless of whether they have explicit names.
-    /// The header defines the expected structure (including tuple types).
-    Columns reconstructTupleColumnsRecursive(const Block & header, const Columns & flattened_columns);
-
     /// Collect Array columns in a form of `column_name.element_name` to single Nested column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
     NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types);
-
-    /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
-    /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged
-    /// null maps, and non-nullable-compatible elements (Array, Map) get defaults at null positions.
-    /// When there are no actual nulls, simply strips the Nullable wrapper.
-    /// Used by format readers (Arrow, ORC) to convert Nullable struct elements for Nested flattening.
-    ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column);
 
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);
@@ -118,34 +76,19 @@ namespace Nested
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
-/// The requested name is cut at the first dot: the head names a block column and the tail is a
-/// subcolumn of its type, so the result is whatever `SELECT <head>.<tail>` yields for that column.
+/// It can extract a column from a multiple nested type column, e.g. named Tuple in named Tuple
+/// Keeps some intermediate data to avoid rebuild them multi-times.
 class NestedColumnExtractHelper
 {
 public:
     explicit NestedColumnExtractHelper(const Block & block_, bool case_insentive_);
     std::optional<ColumnWithTypeAndName> extractColumn(const String & column_name);
 private:
-    /// The subcolumns of one block column, listed on that column's first request. Paths rather than
-    /// columns: a subcolumn whose column is derived from its parent (`String.size`) is built by
-    /// `createFromPath`, so listing must not reach that far or every name would be materialized.
-    struct Subcolumns
-    {
-        /// Keyed by the declared spelling, the way `IDataType::getSubcolumnData` matches a name.
-        std::unordered_map<String, ISerialization::SubstreamPath> path_by_name;
-        /// Lower-cased spelling to the declared one, filled only when matching is case-insensitive.
-        std::unordered_map<String, String> name_by_lowercase;
-        /// When false the set could not be listed up front and `path_by_name` says nothing about a miss.
-        bool complete = false;
-    };
-
-    const Subcolumns & subcolumnsOf(const ColumnWithTypeAndName & root);
     std::optional<ColumnWithTypeAndName>
-    resolveSubcolumn(const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const;
-
+    extractColumn(const String & original_column_name, const String & column_name_prefix, const String & column_name_suffix);
     const Block & block;
     bool case_insentive;
-    std::unordered_map<String, Subcolumns> subcolumns_by_root;
+    std::map<String, BlockPtr> nested_tables;
 };
 
 /// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.

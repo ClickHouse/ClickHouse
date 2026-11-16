@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionToStringCutToZero final : public IFunction
+class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
@@ -148,7 +148,7 @@ REGISTER_FUNCTION(ToStringCutToZero)
 {
     /// toStringCutToZero documentation
     FunctionDocumentation::Description description = R"(
-Accepts a [String](/reference/data-types/string) or [FixedString](/reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
+Accepts a [String](/sql-reference/data-types/string) or [FixedString](/sql-reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
 
 Null bytes (\\0) are considered as string terminators.
 This function is useful for processing C-style strings or binary data where null bytes mark the end of meaningful content.
@@ -167,7 +167,7 @@ SELECT
     toStringCutToZero('hello\0world')
         )",
         R"(
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
         )"
