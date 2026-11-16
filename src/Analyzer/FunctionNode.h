@@ -66,6 +66,10 @@ public:
     [[nodiscard]] NullsAction getNullsAction() const { return nulls_action; }
     void setNullsAction(NullsAction action) { nulls_action = action; }
 
+    /// the name and the nulls action that the aggregate function was made from, not a part of equality or hash
+    [[nodiscard]] const String & getSourceFunctionName() const { return source_function_name; }
+    [[nodiscard]] NullsAction getSourceNullsAction() const { return source_nulls_action; }
+
     void markAsOperator(bool val = true) { this->is_operator = val; }
 
     /// Whether the parser saw operator syntax for this call, e.g. `a + b` rather than `plus(a, b)`.
@@ -178,7 +182,7 @@ public:
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value);
+    void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, String source_function_name_ = {}, NullsAction source_nulls_action_ = NullsAction::EMPTY);
 
     /** Resolve function node as window function.
       * It is important that function name is updated with resolved function name.
@@ -231,6 +235,8 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    String source_function_name;
+    NullsAction source_nulls_action = NullsAction::EMPTY;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
