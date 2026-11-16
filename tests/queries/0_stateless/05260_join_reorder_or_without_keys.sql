@@ -94,3 +94,10 @@ SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5) JOI
 DROP TABLE t5;
 DROP TABLE t6;
 DROP TABLE t7;
+
+-- An OR without join keys inside a JOIN ON that is split into several clauses is split as well, so join_algorithm = 'auto' works (issue #130122).
+SELECT count() FROM (SELECT number AS k, number % 3 AS x, number % 2 AS k2 FROM numbers(8)) AS a INNER JOIN (SELECT number AS k, number % 4 AS y, number % 3 AS k2 FROM numbers(8)) AS b ON (a.k = b.k OR a.k2 = b.k2) AND (a.x = 1 OR b.y = 2) SETTINGS join_algorithm = 'auto';
+SELECT count() FROM (SELECT number AS k, number % 3 AS x, number % 2 AS k2 FROM numbers(8)) AS a INNER JOIN (SELECT number AS k, number % 4 AS y, number % 3 AS k2 FROM numbers(8)) AS b ON (a.k = b.k AND (a.x = 1 OR b.y = 2)) OR a.k2 = b.k2 SETTINGS join_algorithm = 'auto';
+SELECT count() FROM (SELECT number AS k, number % 3 AS x, number % 2 AS k2 FROM numbers(8)) AS a INNER JOIN (SELECT number AS k, number % 4 AS y, number % 3 AS k2 FROM numbers(8)) AS b ON (a.k = b.k OR a.k2 = b.k2) AND (a.x > 1 OR b.y > 2) SETTINGS join_algorithm = 'auto,full_sorting_merge';
+-- Under join_algorithm = 'hash' such ORs stay one condition each, so the number of clauses does not grow with their count.
+SELECT countSubstrings(explain, ' OR ') + 1 FROM (EXPLAIN SELECT count() FROM numbers(1) AS a INNER JOIN numbers(1) AS b ON (a.number = b.number OR a.number = b.number + 1) AND (bitTest(a.number, 0) OR bitTest(b.number, 0)) AND (bitTest(a.number, 1) OR bitTest(b.number, 1)) AND (bitTest(a.number, 2) OR bitTest(b.number, 2)) SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Join conditions%';

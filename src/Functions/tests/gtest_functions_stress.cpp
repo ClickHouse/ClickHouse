@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Formats/FormatSettings.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>

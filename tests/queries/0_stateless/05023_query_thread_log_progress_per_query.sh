@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Parallel replicas move the reads off the initiating thread the same way, hence the no-parallel-replicas
 # tag. The four queries of an arm are sent as one curl invocation with --next, so they share a
 # single keep-alive connection and therefore a single handler thread.
-URL="${CLICKHOUSE_URL}&log_queries=1&log_query_threads=1&log_profile_events=1"
+URL="${CLICKHOUSE_URL}&log_queries=1&log_query_threads=1&log_profile_events=1&use_statistics_for_sum_avg_aggregation=0"
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_progress_src;

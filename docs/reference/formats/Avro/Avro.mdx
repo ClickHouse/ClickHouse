@@ -52,6 +52,8 @@ This comparison is case-sensitive and unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
 
+A record of exactly two `bytes` fields named `metadata` and `value`, which is how Iceberg v3 stores a `variant` in Avro, is read into a [`Dynamic`](/reference/data-types/dynamic) or [`JSON`](/reference/data-types/newjson) column with the [variant binary encoding](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), the same way as a `VARIANT` column of the `Parquet` format.
+
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
 ### Writing Avro data {#writing-avro-data}

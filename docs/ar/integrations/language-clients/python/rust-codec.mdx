@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-تُنشر حزم wheel الأساسية لإصدارات CPython من 3.10 حتى 3.14، وكذلك لإصدار CPython 3.14t الخالي من قفل GIL (free-threaded)، على أنظمة Linux وmacOS وWindows. وفي إصدارات بايثون الخالية من قفل GIL، لا يؤدي استيراد الامتداد الأساسي إلى إعادة تفعيل GIL.
+تُنشر حزم wheel الأساسية لإصدارات CPython من 3.10 حتى 3.15، وكذلك لإصداري CPython 3.14t و3.15t الخاليين من قفل GIL (free-threaded)، على أنظمة Linux وmacOS وWindows. وفي إصدارات بايثون الخالية من قفل GIL، لا يؤدي استيراد الامتداد الأساسي إلى إعادة تفعيل GIL.
 
 لا يتطلب الإخراج العادي بصيغتي NumPy وPandas المعتمد على Rust مكتبة PyArrow أو أي حزمة Arrow أخرى. ويشمل ذلك `query_np` و`query_df` وبدائلهما المتدفقة، إضافةً إلى `query(..., use_numpy=True)`. كما أن استعلامات NumPy لا تتطلب مكتبة Pandas. أضف مجموعة التبعيات الاختيارية `async` لاستخدام العميل غير المتزامن.
 
@@ -85,21 +85,25 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 تُتَّخذ قرارات الاحتياط (fallback) قبل قراءة أي بايتات أو إرسالها، لذا لا يحدث تبديل للـ codec في منتصف الـ stream مطلقًا. ففي حالة الـ queries يجري الاختيار قبل استهلاك جسم الاستجابة، أما في حالة الـ inserts فلا يُختار مُرمِّز Rust إلا إذا كانت جميع أنواع الأعمدة مدعومة، وإلا نُفِّذت عملية الـ insert بأكملها باستخدام برنامج ترميز بايثون.
 
-عند تفعيل `naive_datetime_insert="server"`، يوجّه `rust` أي عملية insert تحتوي على عمود من نوع `DateTime` أو `DateTime64` إلى برنامج ترميز بايثون، بحيث يُطبَّق الـ timezone المعلن للعمود أو server timezone. أما `rust_strict` فيرفض هذا المزيج، بينما يواصل الوضع الافتراضي `naive_datetime_insert="local"` استخدام مُرمِّز Rust.
+عند تفعيل `naive_datetime_insert="server"`، يوجّه `rust` أي عملية insert تحتوي على عمود من نوع `DateTime` أو `DateTime64` إلى برنامج ترميز بايثون، بحيث يُطبَّق الـ timezone المعلن للعمود أو المنطقة الزمنية للخادم. أما `rust_strict` فيرفض هذا المزيج، بينما يواصل الوضع الافتراضي `naive_datetime_insert="local"` استخدام مُرمِّز Rust.
 
-أما استعلامات الـ metadata الداخلية للـ driver، بما في ذلك عبارات reflection الخاصة بـ dialect في SQLAlchemy، فتستخدم برنامج ترميز بايثون دائمًا وبصمت، في جميع الأوضاع.
+تستخدم استعلامات الصفوف والأعمدة في بايثون (`query` و`query_row_block_stream` و`query_column_block_stream` و`query_rows_stream`) برنامجَ ترميز Rust عندما تدعم النواة المثبّتة ذلك، إذا كانت أعمدتها من نوع `DateTime` أو `DateTime64` الخالية من المنطقة الزمنية تُعرَض بمنطقة زمنية متاحة من البيئة غير UTC، سواء أكانت المنطقة الزمنية للخادم أم المنطقة الزمنية المحلية. وتتطابق القيم الناتجة مع ما ينتجه برنامج ترميز بايثون. ولا تُعدّ المنطقة الزمنية المحلية مؤهَّلة إلا إذا أمكن تحليلها إلى اسم IANA، أي عند تعيين `TZ` أو تثبيت `tzlocal`؛ وإلا فهي إزاحة ثابتة بلا اسم IANA، فتُوجَّه إلى برنامج ترميز بايثون. أما استعلامات NumPy وPandas (`query_np` و`query_df` وبدائلها الخاصة بالتدفق) التي تعمل بمنطقة زمنية متاحة من البيئة غير UTC، وكذلك الاستعلامات التي تعيّن `query_tz` أو `column_tzs` أو قيمة غير افتراضية لـ `tz_mode`، أو التي تتلقى ترويسة المنطقة الزمنية للخادم، فلا تزال تُوجَّه إلى برنامج ترميز بايثون، ويرفض `rust_strict` هذه الحالات.
+
+أما استعلامات البيانات الوصفية الداخلية للمشغّل، بما في ذلك عبارات reflection الخاصة بـ dialect في SQLAlchemy، فتستخدم برنامج ترميز بايثون دائمًا وبصمت، في جميع الأوضاع.
 
 وتؤدي payloads الـ Native المشوّهة التي يكتشفها برنامج ترميز Rust إلى إطلاق `DataError`.
 
 ## Versioning {#versioning}
 
-تصدر إصدارات `clickhouse-connect-core` بشكل مستقل عن `clickhouse-connect`. تتطلب الإضافة `rust` الإصدار `clickhouse-connect-core>=0.2.1,<0.3`. يتحقق المشغّل من كلٍّ من إصدار واجهة برمجة تطبيقات binding وقدرة column-buffer عند اختيار مرمِّز Rust. تفتقر حزمة wheel المنشورة للإصدار الأساسي 0.2.0 إلى قدرة column-buffer. وإذا كانت الحزمة (wheel) المثبّتة غير متوافقة، فإن إنشاء العميل يثير `NotSupportedError` لكلٍّ من `rust` و`rust_strict`، مع أمر الترقية التالي:
+تصدر إصدارات `clickhouse-connect-core` بشكل مستقل عن `clickhouse-connect`. تتطلب مجموعة التبعيات الاختيارية `rust` الإصدار `clickhouse-connect-core>=0.2.1,<0.3`. يتحقق المشغّل من كلٍّ من إصدار واجهة برمجة تطبيقات binding وقدرة column-buffer عند اختيار برنامج ترميز Rust. تفتقر حزمة wheel المنشورة للإصدار الأساسي 0.2.0 إلى قدرة column-buffer. وإذا كانت الحزمة (wheel) المثبّتة غير متوافقة، فإن إنشاء العميل يثير `NotSupportedError` لكلٍّ من `rust` و`rust_strict`، مع أمر الترقية التالي:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
-تُشحن الإصلاحات وتحسينات الأداء في المرمِّز المُصرَّف ضمن إصدارات (releases) `clickhouse-connect-core`، ويمكن الحصول عليها بترقية (upgrade) حزمة wheel الأساسية إلى إصدار متوافق. أما التغييرات على تكامل المشغّل مع Rust فتتطلب ترقية `clickhouse-connect`.
+تُشحن الإصلاحات وتحسينات الأداء في المرمِّز المُصرَّف ضمن إصدارات (releases) `clickhouse-connect-core`، ويمكن الحصول عليها بترقية (upgrade) حزمة wheel الأساسية إلى إصدار متوافق. أما التغييرات على تكامل المشغّل مع Rust فتتطلب ترقية `clickhouse-connect`.
+
+يتطلب دعم Rust لاستعلامات الصفوف والأعمدة في بايثون، عندما تكون المناطق الزمنية المتاحة من البيئة غير UTC، الإصدارين `clickhouse-connect>=1.11.0` و`clickhouse-connect-core>=0.2.3`. لتمكين هذا الدعم، قم بترقية الحزمتين كلتيهما. أما الإصدارات الأساسية الأقدم المتوافقة فتُبقي على السلوك الحالي، أي اللجوء إلى الآلية الاحتياطية في بايثون في الوضع `rust`، والرفض في الوضع `rust_strict`.
 
 ## اختلافات سلوكية معروفة {#known-behavior-differences}
 

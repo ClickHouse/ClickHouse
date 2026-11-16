@@ -92,6 +92,10 @@ public:
 
     virtual bool isEncrypted() const { return false; }
 
+#if CLICKHOUSE_CLOUD && USE_SSL
+    virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
+#endif
+
     /// Only the encrypted storage types authenticate backup entries (see
     /// `NamedCollectionsMetadataStorageEncrypted`): the entries of the other types are backed up
     /// as plaintext SQL and these methods are never reached for them.
@@ -449,6 +453,15 @@ public:
 
     bool isEncrypted() const override { return true; }
 
+#if CLICKHOUSE_CLOUD
+    std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
+    {
+        loadIfNeeded();
+        return NamedCollectionsEncryptionKeyInfo{
+            .algorithm = FileEncryption::toString(algorithm), .key_fingerprint = key_fingerprint, .kms_key_info = kms_key_info};
+    }
+#endif
+
     /// The CTR ciphertext is malleable: with known plaintext positions (the statement framing
     /// around a value) it can be reshaped without the key, for example to move an unknown secret
     /// value into a key name, which `SHOW NAMED COLLECTIONS` displays. Inside the server the
@@ -747,6 +760,13 @@ bool NamedCollectionsMetadataStorage::isEncrypted() const
 {
     return storage->isEncrypted();
 }
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+std::optional<NamedCollectionsEncryptionKeyInfo> NamedCollectionsMetadataStorage::getEncryptionKeyInfo() const
+{
+    return storage->getEncryptionKeyInfo();
+}
+#endif
 
 std::string NamedCollectionsMetadataStorage::authenticateStoredForBackup(const std::string & stored) const
 {

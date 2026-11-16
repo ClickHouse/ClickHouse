@@ -273,8 +273,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable query_plan_lower_array_join_function by default."}]}]}/>
 
-Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
-Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -714,6 +713,28 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "New setting."}]}]}/>
 
 Toggles a query-plan-level optimization which tries to use the vector similarity index.
+Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+## query_plan_use_shuffle_for_order_by_rand {#query_plan_use_shuffle_for_order_by_rand}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to execute `ORDER BY rand()` by shuffling the rows instead of sorting them."}]}]}/>
+
+Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
+(the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
+The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+(the shuffle does not spill to disk).
 Only takes effect if setting [`query_plan_enable_optimizations`](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
 
 <Note>

@@ -7,8 +7,6 @@ score: 10000
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Background {#background}
 
 Incremental Materialized Views (Materialized Views) allow you to shift the cost of computation from query time to insert time, resulting in faster `SELECT` queries.
@@ -19,7 +17,15 @@ The principal motivation for Materialized Views is that the results inserted int
 
 Materialized views in ClickHouse are updated in real time as data flows into the table they're based on, functioning more like continually updating indexes. This is in contrast to other databases where Materialized Views are typically static snapshots of a query that must be refreshed (similar to ClickHouse [Refreshable Materialized Views](/reference/statements/create/view#refreshable-materialized-view)).
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Materialized view diagram"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Materialized view diagram](/images/materialized-view/materialized-view-diagram.webp)
+
+</Frame>
+
+</div>
 
 ## Example {#example}
 
