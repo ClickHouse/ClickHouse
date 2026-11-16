@@ -61,3 +61,20 @@ EOF
 local_query "OPTIMIZE TABLE t_legacy_parent_clear FINAL"
 local_query "SELECT \`n.a\` FROM t_legacy_parent_clear"
 rm -rf "$data_dir"
+
+# The same parent clear written before commands were wrapped in parentheses.
+data_dir="${CLICKHOUSE_TMP}/legacy_parent_clear_unparen_${CLICKHOUSE_DATABASE}"
+rm -rf "$data_dir"
+mkdir -p "$data_dir"
+local_query "CREATE TABLE t_legacy_parent_clear UUID '${table_uuid}' (id UInt8, \`n.a\` UInt8) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000, min_bytes_for_wide_part = 1000000000, enable_block_number_column = 0, enable_block_offset_column = 0"
+local_query "INSERT INTO t_legacy_parent_clear VALUES (1, 7)"
+local_query "SELECT part_type FROM system.parts WHERE active"
+table_dir=$(find "$data_dir" -type d -name "$table_uuid")
+cat > "${table_dir}/mutation_100000.txt" << 'EOF'
+format version: 1
+create time: 2026-11-09 00:00:00
+commands: CLEAR COLUMN n
+EOF
+local_query "OPTIMIZE TABLE t_legacy_parent_clear FINAL"
+local_query "SELECT \`n.a\` FROM t_legacy_parent_clear"
+rm -rf "$data_dir"

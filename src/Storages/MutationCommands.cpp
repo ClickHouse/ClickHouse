@@ -312,6 +312,23 @@ ASTPtr parseMutationCommandsList(const String & commands_str)
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
+/// Legacy mutation files store an unparenthesized list (`CLEAR COLUMN n`). The exact-column mark
+/// exists only inside the parentheses of the current format, so a parenthesis of an expression
+/// such as `toIntervalMonth(3)` is not a command boundary.
+bool mutationCommandsAreParenthesized(const String & commands_str)
+{
+    Tokens tokens(commands_str.data(), commands_str.data() + commands_str.size(), 0, false);
+    for (size_t index = 0;; ++index)
+    {
+        const Token & token = tokens[index];
+        if (token.isEnd())
+            return false;
+        if (token.type == TokenType::Whitespace || token.type == TokenType::Comment)
+            continue;
+        return token.type == TokenType::OpeningRoundBracket;
+    }
+}
+
 /// `/*exact*/` is the first token of an exact command. A parenthesis inside a literal is not a command boundary.
 std::vector<char> exactColumnMarks(const String & commands_str)
 {
@@ -429,7 +446,9 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
     readEscapedString(commands_str, in);
 
     auto commands_ast = parseMutationCommandsList(commands_str);
-    const auto marks = exactColumnMarks(commands_str);
+    /// Unparenthesized text predates exact-column marks. Expression parentheses must not be read as marks.
+    const bool parenthesized = mutationCommandsAreParenthesized(commands_str);
+    const auto marks = parenthesized ? exactColumnMarks(commands_str) : std::vector<char>{};
     size_t index = 0;
 
     for (const auto & child : commands_ast->children)
@@ -438,14 +457,21 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
         auto command = MutationCommand::parse(*command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
-        if (index >= marks.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
-        command->targets_exact_column = marks[index];
+        if (parenthesized)
+        {
+            if (index >= marks.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
+            command->targets_exact_column = marks[index];
+        }
+        else
+        {
+            command->targets_exact_column = false;
+        }
         ++index;
         push_back(std::move(*command));
     }
 
-    if (index != marks.size())
+    if (parenthesized && index != marks.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
 }
 
