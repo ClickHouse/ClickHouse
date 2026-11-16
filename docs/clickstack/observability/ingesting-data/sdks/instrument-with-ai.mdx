@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 Use a coding assistant to add instrumentation to your application using the guide for its language or framework. The assistant can identify the entry points, install the appropriate SDK, and configure telemetry export.
 
@@ -26,7 +25,15 @@ You need your application source code, a coding assistant with access to the rep
 
 Open **Team Settings → Data → Managed Telemetry** and copy your OTLP HTTP endpoint and ingestion API key. Store them in an environment file excluded from version control or in your secrets store.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 If your service displays the **Getting Started** page, you can instead select **Copy prompt** under **Instrument with AI**. Copy the prompt from **Set it up with an AI agent**, and set the `CLICKSTACK_OTLP_ENDPOINT` and `CLICKSTACK_API_KEY` variables shown in that dialog. Follow the remaining review and verification steps below.
 

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 페이지에서는 가능하면 조인을 피하고, 조인이 불가피한 경우에는 그 비용을 줄이는 방법에 대한 권장 지침을 제공합니다. 구문과 의미 체계는 [`JOIN` 절 참고](/ko/reference/statements/select/join)를 참조하십시오. 실행 알고리즘과 알고리즘 선택 방법은 [테이블 조인](/ko/concepts/features/operations/select/joining-tables)을 참조하십시오.
 
 ## 조인 사용 지양 {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ ClickHouse는 속도와 메모리 사이에서 서로 다른 절충점을 갖는
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="조인 성능 최적화 의사 결정 트리" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 성능 최적화 의사 결정 트리](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ ClickHouse는 속도와 메모리 사이에서 서로 다른 절충점을 갖는
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="조인 메모리 최적화 결정 트리" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![조인 메모리 최적화 결정 트리](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

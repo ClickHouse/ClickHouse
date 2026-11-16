@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualización', 'sql', 'observabilidad']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickStack admite visualizaciones basadas en consultas SQL directas. Esto te da un control total sobre la lógica de la consulta, sin dejar de integrarse con los intervalos de tiempo, los filtros y la representación de gráficos a nivel de dashboard.
 
 Las visualizaciones basadas en SQL son útiles cuando necesitas ir más allá del Chart Explorer integrado; por ejemplo, para hacer join entre tablas o crear agregaciones complejas que el chart builder no admite.
@@ -19,7 +17,15 @@ Las visualizaciones basadas en SQL son útiles cuando necesitas ir más allá de
 
 Para crear una visualización basada en SQL, abra el editor de tile de un dashboard y seleccione la pestaña **SQL**.
 
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="Botón de SQL Editor" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Botón de SQL Editor](/images/use-cases/observability/sql-editor-button.webp)
+
+</Frame>
+
+</div>
 
 Desde allí:
 

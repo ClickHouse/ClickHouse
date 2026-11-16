@@ -339,7 +339,7 @@ struct RegrResult
     {
     }
 
-    Float64 get(RegrKind kind) const
+    [[nodiscard]] Float64 get(RegrKind kind) const
     {
         static constexpr auto nan = std::numeric_limits<Float64>::quiet_NaN();
 
@@ -405,9 +405,9 @@ public:
     {
     }
 
-    String getName() const override { return String(regrKindName(kind)); }
+    [[nodiscard]] String getName() const override { return String(regrKindName(kind)); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
