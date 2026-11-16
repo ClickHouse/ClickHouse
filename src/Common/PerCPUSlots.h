@@ -15,10 +15,10 @@ public:
     PerCPUSlots();
 
     /// Number of allowed CPUs, or zero if the affinity mask could not be read.
-    size_t size() const { return num_slots; }
+    [[nodiscard]] size_t size() const { return num_slots; }
 
     /// Slot of the CPU the calling thread runs on, or zero if that CPU is unknown or was not allowed at construction.
-    size_t getCurrentSlot() const;
+    [[nodiscard]] size_t getCurrentSlot() const;
 
 private:
     std::vector<UInt32> slot_by_cpu;

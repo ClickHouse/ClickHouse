@@ -24,9 +24,9 @@ public:
 
     operator std::string_view() const { return {bytes.data(), bytes.size()}; } /// NOLINT(google-explicit-constructor)
 
-    bool empty() const { return bytes.empty(); }
-    size_t size() const { return bytes.size(); }
-    const char * data() const { return bytes.data(); }
+    [[nodiscard]] bool empty() const { return bytes.empty(); }
+    [[nodiscard]] size_t size() const { return bytes.size(); }
+    [[nodiscard]] const char * data() const { return bytes.data(); }
     void clear() { bytes.clear(); }
 
     bool operator==(const SecretString & rhs) const = default;

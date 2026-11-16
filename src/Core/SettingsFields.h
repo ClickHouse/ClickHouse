@@ -391,13 +391,13 @@ struct SettingFieldSecretString final
     SettingFieldSecretString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldSecretString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const SecretString &() const { return value; } /// NOLINT
     explicit operator Field() const { return String(value); }
 
-    String toString() const { return String(value); }
+    [[nodiscard]] String toString() const { return String(value); }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
