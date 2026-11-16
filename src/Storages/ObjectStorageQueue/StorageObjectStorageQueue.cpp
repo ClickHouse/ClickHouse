@@ -1762,6 +1762,12 @@ void StorageObjectStorageQueue::alter(
             old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
             for (auto & setting : *old_settings)
                 setting.name = normalizeSetting(setting.name);
+
+            /// Take the values from keeper, table definition can be outdated.
+            auto settings_in_effect = getSettings();
+            for (auto & setting : *old_settings)
+                if (ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name))
+                    setting.value = settings_in_effect.get(setting.name);
         }
 
         /// settings_changes will be cloned.

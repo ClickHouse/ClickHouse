@@ -117,13 +117,27 @@ DROP TABLE tq_az_sas;
 SET send_logs_level = 'fatal';
 
 CREATE TABLE tq_a (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
-CREATE TABLE tq_b (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
+CREATE TABLE tq_b (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1, after_processing = 'keep';
 SELECT JSONExtractString(value, 'source_type'), JSONExtractString(value, 'source_endpoint'), JSONExtractString(value, 'source_bucket'), JSONExtractString(value, 'source_path_pattern') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 
 -- After the `ALTER` of `tq_a`, `tq_b` still has `keep` in its definition, but is attached with `delete` from keeper.
 ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
 DETACH TABLE tq_b; ATTACH TABLE tq_b;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+
+-- `tq_b` already has `keep` in its definition, but an `ALTER` or a `RESET` to `keep` must still change the queue.
+-- The same holds for `tq_a`, whose definition already has `delete`.
+ALTER TABLE tq_b MODIFY SETTING after_processing = 'keep';
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
+ALTER TABLE tq_b RESET SETTING after_processing;
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+ALTER TABLE tq_a MODIFY SETTING after_processing = 'delete';
+SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
+-- The same holds for any setting stored in keeper, e.g. `processing_threads_num`.
+ALTER TABLE tq_a MODIFY SETTING processing_threads_num = 2;
+ALTER TABLE tq_b MODIFY SETTING processing_threads_num = 1;
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'processing_threads_num' ORDER BY table;
 
 -- Set `after_processing` to `keep` directly in keeper, as another server would. The in-memory metadata of this server
 -- still has `delete`, and `tq_b` must still attach.
