@@ -1693,8 +1693,14 @@ ASTPtr getViewQueryWithPrewhere(
         if (const auto * lambda = node->as<LambdaNode>();
             lambda && std::ranges::any_of(lambda->getArguments().getNames(), [&](const auto & name) { return prewhere_columns.contains(name); }))
             return false;
-        if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull().get() == table_expression.get())
-            return prewhere_columns.contains(column->getColumnName());
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            /// Besides the columns of the view only the arguments of lambdas are known in its query.
+            const auto source = column->getColumnSourceOrNull();
+            if (source.get() == table_expression.get())
+                return prewhere_columns.contains(column->getColumnName());
+            return source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+        }
         return std::ranges::all_of(node->getChildren(), can_be_moved);
     };
 

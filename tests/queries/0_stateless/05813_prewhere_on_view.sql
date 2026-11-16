@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS t_prewhere_view;
 DROP VIEW IF EXISTS v_prewhere_all;
 DROP VIEW IF EXISTS v_prewhere_columns;
 DROP VIEW IF EXISTS v_prewhere_definer;
+DROP VIEW IF EXISTS v_prewhere_qualified;
+DROP TABLE IF EXISTS t_prewhere_view_other;
 DROP VIEW IF EXISTS v_prewhere_swapped;
 DROP VIEW IF EXISTS v_prewhere_alias_of_alias;
 DROP VIEW IF EXISTS v_prewhere_stateful;
@@ -25,6 +27,9 @@ INSERT INTO t_prewhere_view SELECT number, 100 - number, toString(number), [numb
 CREATE VIEW v_prewhere_all AS SELECT * FROM t_prewhere_view;
 CREATE VIEW v_prewhere_columns AS SELECT b AS x, s, flag, d, a + b AS total FROM t_prewhere_view WHERE a >= 10;
 CREATE VIEW v_prewhere_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM t_prewhere_view WHERE b > 10;
+CREATE VIEW v_prewhere_qualified AS SELECT t.a, t.b AS y, arr FROM t_prewhere_view AS t;
+CREATE TABLE t_prewhere_view_other (a UInt64) ENGINE = Memory;
+INSERT INTO t_prewhere_view_other VALUES (200);
 
 SELECT 'the same rows as with WHERE';
 SELECT count(), sum(a) FROM v_prewhere_all PREWHERE a < 10;
@@ -35,6 +40,7 @@ SELECT count(), sum(total) FROM v_prewhere_columns PREWHERE flag WHERE total = 1
 SELECT count(), sum(total) FROM v_prewhere_columns WHERE flag AND total = 100;
 SELECT count() FROM v_prewhere_all PREWHERE arrayExists(e -> e = a + 1, arr);
 SELECT count() FROM v_prewhere_all WHERE arrayExists(e -> e = a + 1, arr);
+SELECT count() FROM v_prewhere_qualified PREWHERE a < 10 AND y > 95;
 -- A condition without a column of the view outside a lambda.
 SELECT count() FROM v_prewhere_all PREWHERE 1;
 SELECT count() FROM v_prewhere_all PREWHERE arrayExists(e -> e = a, [2, 4]);
@@ -56,6 +62,8 @@ SELECT count() FROM v_prewhere_all PREWHERE arrayExists(a -> a = v_prewhere_all.
 SELECT count() FROM v_prewhere_all PREWHERE a IN (SELECT a FROM t_prewhere_view WHERE a < 10); -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_all PREWHERE a < 10 SETTINGS prefer_column_name_to_alias = 1; -- { serverError ILLEGAL_PREWHERE }
 SELECT count() FROM v_prewhere_all FINAL PREWHERE a < 10; -- { serverError ILLEGAL_PREWHERE }
+-- A column of another table inside a lambda is not a column of the view.
+SELECT l.a, r.a FROM v_prewhere_qualified AS l CROSS JOIN t_prewhere_view_other AS r PREWHERE arrayExists(e -> e = r.a, l.arr); -- { serverError ILLEGAL_PREWHERE }
 -- A stateful function would see the rows of the table instead of the rows of the view.
 SELECT count() FROM v_prewhere_all PREWHERE a = rowNumberInAllBlocks(); -- { serverError ILLEGAL_PREWHERE }
 
@@ -95,6 +103,8 @@ DROP ROW POLICY p_prewhere_view ON v_prewhere_all;
 DROP VIEW v_prewhere_all;
 DROP VIEW v_prewhere_columns;
 DROP VIEW v_prewhere_definer;
+DROP VIEW v_prewhere_qualified;
+DROP TABLE t_prewhere_view_other;
 DROP VIEW v_prewhere_swapped;
 DROP VIEW v_prewhere_alias_of_alias;
 DROP VIEW v_prewhere_stateful;

@@ -812,6 +812,21 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
         String table_column;
         bool has_alias = false;
     };
+    const auto table_metadata = table->getInMemoryMetadataPtr(context, false);
+    const auto & table_columns = table_metadata->getColumns();
+
+    /// A column may be qualified with the alias of the table, or with its name when it has no alias.
+    const auto & table_identifier = select.tables()->children.front()->as<ASTTablesInSelectQueryElement &>()
+        .table_expression->as<ASTTableExpression &>().database_and_table_name;
+    const auto table_alias = table_identifier->tryGetAlias();
+    const auto table_id = table->getStorageID();
+    auto is_qualifier = [&](std::span<const String> parts)
+    {
+        if (!table_alias.empty())
+            return parts.size() == 1 && parts[0] == table_alias;
+        return (parts.size() == 1 || (parts.size() == 2 && parts[0] == table_id.database_name)) && parts.back() == table_id.table_name;
+    };
+
     std::unordered_map<String, ListedColumn> listed_columns;
     bool has_asterisk = false;
     for (const auto & expr : select.select()->children)
@@ -819,7 +834,14 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
         if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
             has_asterisk = true;
         else if (const auto * identifier = expr->as<ASTIdentifier>())
-            listed_columns[expr->getAliasOrColumnName()] = {identifier->name(), !expr->tryGetAlias().empty()};
+        {
+            /// A column whose name has dots takes precedence over a qualified one.
+            const std::span parts(identifier->name_parts);
+            const bool qualified = !table_columns.tryGetPhysical(identifier->name()) && parts.size() > 1 && is_qualifier(parts.first(parts.size() - 1));
+            const auto & name = qualified ? identifier->shortName() : identifier->name();
+            const auto alias = expr->tryGetAlias();
+            listed_columns[alias.empty() ? name : alias] = {name, !alias.empty()};
+        }
         else
             listed_columns[expr->getAliasOrColumnName()] = {};
     }
@@ -827,9 +849,6 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
     std::unordered_map<String, size_t> aliases;
     countAliases(select.select(), aliases);
     countAliases(select.where(), aliases);
-
-    const auto table_metadata = table->getInMemoryMetadataPtr(context, false);
-    const auto & table_columns = table_metadata->getColumns();
 
     /// The condition would change the rows that such functions of the view see, also behind an `ALIAS` column of the table.
     if (dependsOnOtherRows(select.select(), view_context) || dependsOnOtherRows(select.where(), view_context)
