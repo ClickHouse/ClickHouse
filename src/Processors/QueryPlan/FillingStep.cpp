@@ -14,10 +14,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// A generated row defaults every `ORDER BY` key that is neither filled nor part of the filling
-/// sorting prefix. That breaks the order only for a key which some filled key follows: past the last
-/// filled key a comparison never reaches it, because a generated row already differs from its
-/// neighbours on a filled key. The keys ahead of the first such key keep their order.
+/// A generated row defaults every key that is neither filled nor in the filling sorting prefix. Only such a key ahead of a
+/// filled key loses its order: past the last filled key, a generated row already differs from its neighbours on a filled key.
 static size_t preservedSortPrefixSize(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
 {
     size_t begin = 0;

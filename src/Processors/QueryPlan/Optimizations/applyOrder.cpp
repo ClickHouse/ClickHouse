@@ -153,9 +153,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
 
-        /// The trait is all-or-nothing, but filling breaks the order only from one `ORDER BY` key on, so
-        /// the keys ahead of it are still sorted. A collated key stays in: it is ordered by its collation,
-        /// which only a consumer that needs equal values to be adjacent has to reject.
+        /// Keep the prefix filling leaves sorted, collated keys included: a consumer needing equal values adjacent rejects them.
         if (const auto * filling_step = typeid_cast<const FillingStep *>(transforming))
         {
             const auto & filling_description = filling_step->getSortDescription();
