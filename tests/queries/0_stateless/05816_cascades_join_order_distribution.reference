@@ -89,3 +89,33 @@ Expression (Project names)
                 Expression ((WHERE + Change column names to column identifiers))
                   ReadFromMergeTree (default.u_date)
 1	1
+-- Join from an earlier join graph
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              ShuffleExchange
+                JoinLogical (Shuffle HashJoin )
+                  Expression (Change column names to column identifiers)
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.m_fact)
+                  Expression ((Change column names to column identifiers + (Project names + Projection)))
+                    Filter (HAVING)
+                      Aggregating
+                        Expression (Before GROUP BY)
+                          JoinLogical (Broadcast HashJoin )
+                            Expression (Change column names to column identifiers)
+                              ShuffleExchange
+                                ReadFromMergeTree (ParallelRead default.m_events)
+                            Expression (Change column names to column identifiers)
+                              ReadFromMergeTree (ReplicatedRead default.m_users)
+            ShuffleExchange
+              JoinLogical (Broadcast HashJoin )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ParallelRead default.m_dim)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (ReplicatedRead default.m_type)
+1	1

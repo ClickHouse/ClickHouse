@@ -1221,6 +1221,9 @@ static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input
     /// of the whole input cannot use, such as a `HAVING` over an aggregation, leaves it without one.
     if (const auto below = QueryPlanOptimizations::estimateReadRowsCount(*node); below.estimated_rows)
         result.scanned_rows = static_cast<double>(*below.estimated_rows);
+    /// A join that an earlier search planned has the rows it was costed with.
+    else if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step))
+        result.scanned_rows = join_step->getDistributedCostingRows();
     /// A `UNION ALL` has the rows of all its inputs.
     if (typeid_cast<const UnionStep *>(step) && result.scanned_rows == 0)
     {
@@ -1703,7 +1706,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
             if (entry->distributed_costs)
-                join_step->setRowsEstimationFromDistributedCosts();
+                join_step->setRowsEstimationFromDistributedCosts(entry->costing_rows);
 
             auto & new_node = nodes.emplace_back();
 

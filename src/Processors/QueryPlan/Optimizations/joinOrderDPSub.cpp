@@ -1464,6 +1464,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     auto result = std::make_shared<DPJoinEntry>(
         left, right, entry.rows_cost, entry.sel, entry.estimated_rows, std::move(join_operator), entry.method);
     result->distributed_costs = useDistribution();
+    result->costing_rows = entry.search_rows;
     return result;
 }
 

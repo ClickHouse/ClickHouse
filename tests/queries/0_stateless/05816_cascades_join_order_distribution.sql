@@ -164,6 +164,48 @@ FROM (SELECT s_customer, s_date, s_item FROM u_sales1 UNION ALL SELECT s_custome
 WHERE s_customer = c_customer AND s_date = d_date AND s_item = i_item AND d_month = 12 AND i_category = 'Women'
 SETTINGS query_plan_join_order_distribution = 1;
 
+-- A join without a row estimate that an earlier search planned enters the next join graph with the rows it was costed
+-- with. With one row instead, joining it to `m_dim` first would look cheaper than broadcasting the join of the dimensions.
+-- The `HAVING` over an aggregation of a join leaves the inner joins without an estimate, and the limit of the join order
+-- search puts the last two joins into a graph of their own.
+DROP TABLE IF EXISTS m_fact;
+DROP TABLE IF EXISTS m_events;
+DROP TABLE IF EXISTS m_users;
+DROP TABLE IF EXISTS m_dim;
+DROP TABLE IF EXISTS m_type;
+CREATE TABLE m_fact (f_key Int32, f_dim Int32) ENGINE = MergeTree ORDER BY f_key SETTINGS auto_statistics_types = '';
+CREATE TABLE m_events (e_key Int32, e_user Int32) ENGINE = MergeTree ORDER BY e_key SETTINGS auto_statistics_types = '';
+CREATE TABLE m_users (u_user Int32, u_score Int32) ENGINE = MergeTree ORDER BY u_user SETTINGS auto_statistics_types = '';
+CREATE TABLE m_dim (d_dim Int32, d_type Int32, d_name String) ENGINE = MergeTree ORDER BY d_dim SETTINGS auto_statistics_types = '';
+CREATE TABLE m_type (t_type Int32, t_name String) ENGINE = MergeTree ORDER BY t_type SETTINGS auto_statistics_types = '';
+INSERT INTO m_fact VALUES (1, 1);
+INSERT INTO m_events VALUES (1, 1), (1, 1);
+INSERT INTO m_users VALUES (1, 5);
+INSERT INTO m_dim VALUES (1, 1, 'a');
+INSERT INTO m_type VALUES (1, 'x');
+
+SET param__internal_join_table_stat_hints = '{
+    "m_fact":   { "cardinality": 20000000, "avg_row_bytes": 8,  "distinct_keys": { "f_key": 5000000, "f_dim": 2000000 } },
+    "m_events": { "cardinality": 30000000, "avg_row_bytes": 8,  "distinct_keys": { "e_key": 5000000, "e_user": 1000000 } },
+    "m_users":  { "cardinality": 1000000,  "avg_row_bytes": 8,  "distinct_keys": { "u_user": 1000000 } },
+    "m_dim":    { "cardinality": 2000000,  "avg_row_bytes": 40, "distinct_keys": { "d_dim": 2000000, "d_type": 100000 } },
+    "m_type":   { "cardinality": 5000,     "avg_row_bytes": 8,  "distinct_keys": { "t_type": 5000 } }
+}';
+
+SELECT '-- Join from an earlier join graph';
+EXPLAIN
+SELECT count(), sum(length(d_name))
+FROM (SELECT f_dim FROM m_fact JOIN (SELECT e_key FROM m_events JOIN m_users ON e_user = u_user GROUP BY e_key HAVING sum(u_score) > 2 * count()) AS repeated ON f_key = e_key) AS x
+JOIN m_dim ON f_dim = d_dim
+JOIN m_type ON d_type = t_type
+SETTINGS query_plan_join_order_distribution = 1, query_plan_optimize_join_order_limit = 3;
+
+SELECT count(), sum(length(d_name))
+FROM (SELECT f_dim FROM m_fact JOIN (SELECT e_key FROM m_events JOIN m_users ON e_user = u_user GROUP BY e_key HAVING sum(u_score) > 2 * count()) AS repeated ON f_key = e_key) AS x
+JOIN m_dim ON f_dim = d_dim
+JOIN m_type ON d_type = t_type
+SETTINGS query_plan_join_order_distribution = 1, query_plan_optimize_join_order_limit = 3;
+
 DROP TABLE nation;
 DROP TABLE supplier;
 DROP TABLE customer;
@@ -174,3 +216,8 @@ DROP TABLE u_sales2;
 DROP TABLE u_customer;
 DROP TABLE u_date;
 DROP TABLE u_item;
+DROP TABLE m_fact;
+DROP TABLE m_events;
+DROP TABLE m_users;
+DROP TABLE m_dim;
+DROP TABLE m_type;

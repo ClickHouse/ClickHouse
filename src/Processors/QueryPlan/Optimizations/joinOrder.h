@@ -53,6 +53,8 @@ struct DPJoinEntry
     /// Whether the join order search costed this join by the data it moves between nodes, with the cost model of
     /// Cascades (`QueryGraph::distribution_node_count`). Cascades then costs the join with `estimated_rows` as it is.
     bool distributed_costs = false;
+    /// With `distributed_costs`: the rows the search costed the join with, the same as `estimated_rows` when it is known.
+    double costing_rows = 0;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -207,8 +209,9 @@ struct QueryGraph
         InputPlacement placement = InputPlacement::SingleNode;
         /// The bytes of a row of the input columns of the relation that the graph uses.
         double row_bytes = 1;
-        /// The rows before the filters of the input: those of the granules a read selects, or the estimate of a join below
-        /// them. 0 when unknown.
+        /// The rows the search costs the input with when it has no estimate: those of the granules a read selects, the
+        /// estimate of the step below its filters, or the costing rows of a join that an earlier search planned. 0 when
+        /// unknown.
         double scanned_rows = 0;
         /// Cascades reads such a table on every node instead of broadcasting it.
         bool can_read_on_every_node = false;
