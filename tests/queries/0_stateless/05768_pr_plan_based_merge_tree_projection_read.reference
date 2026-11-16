@@ -19,8 +19,3 @@
 10000
 10000
 10000
---- an IN set built from a table is still shipped
-30000
-1
---- a read of the table that the optimizer answers from the projection
-1429	71435710

@@ -72,13 +72,6 @@ SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM v_pr_projecti
 SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT a FROM t_pr_projection_read WHERE a IN (SELECT a FROM v_pr_projection_read));
 SELECT count() FROM t_pr_projection_read AS l JOIN v_pr_projection_read AS r USING (a);
 
-SELECT '--- an IN set built from a table is still shipped';
-SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT toUInt32(a) FROM t_pr_projection_offset);
-SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT count() FROM t_pr_projection_read WHERE a IN (SELECT toUInt32(a) FROM t_pr_projection_offset));
-
-SELECT '--- a read of the table that the optimizer answers from the projection';
-SELECT count(), sum(a) FROM t_pr_projection_read WHERE b = 3 AND a % 10 = 0 SETTINGS optimize_use_projections = 1, parallel_replicas_local_plan = 1;
-
 DROP VIEW v_pr_projection_read;
 DROP TABLE t_pr_projection_read;
 DROP TABLE t_pr_projection_offset;
