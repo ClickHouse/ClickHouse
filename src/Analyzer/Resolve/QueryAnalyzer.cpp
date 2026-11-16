@@ -6013,7 +6013,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 argument_nodes.erase(argument_nodes.begin(), argument_nodes.begin() + qualified->num_arguments);
                 argument_nodes.insert(argument_nodes.begin(), qualified_nodes.begin(), qualified_nodes.end());
 
-                /// The indexes of the arguments that follow move with them.
                 std::erase_if(skip_analysis_arguments_indexes, [&](size_t index) { return index < qualified->num_arguments; });
                 for (auto & index : skip_analysis_arguments_indexes)
                     index = index + qualified->arguments.size() - qualified->num_arguments;
