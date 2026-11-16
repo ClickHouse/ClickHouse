@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -172,7 +173,7 @@ TEST(CascadesSelectInputImplementation, EvictionGuardKeepsBase)
     /// The cheaper sorted gather wins an unguarded empty-sort lookup ...
     EXPECT_EQ(group.getBestImplementation(propsAt(1), cost_config).expression, sorted_gather);
     /// ... but the base survived eviction and the resolver returns it when the gather is excluded.
-    std::unordered_set<GroupExpression *> active_path{sorted_gather.get()};
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path{sorted_gather.get()};
     auto picked = group.selectInputImplementation(propsAt(1), cost_config, active_path, /*input_is_self_referential=*/true);
     EXPECT_EQ(picked.expression, base);
 }
@@ -192,7 +193,7 @@ TEST(CascadesSelectInputImplementation, FallbackScansPhysicalExpressions)
     auto base = costedExpr(propsAt(1), 100);
     group.physical_expressions.push_back(base);
 
-    std::unordered_set<GroupExpression *> active_path{sorted_gather.get()};
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path{sorted_gather.get()};
     auto picked = group.selectInputImplementation(propsAt(1), cost_config, active_path, /*input_is_self_referential=*/true);
     EXPECT_EQ(picked.expression, base);
 }
@@ -234,6 +235,35 @@ TEST(CascadesBestImplementation, SortingSatisfactionSelectsImplementation)
     only_k.updateBestImplementation(costedExpr(propsAt(4, sortByColumns({"k"})), 50), cost_config);
     auto for_k_ts = only_k.getBestImplementation(propsAt(4, sortByColumns({"k", "ts"})), cost_config);
     EXPECT_EQ(for_k_ts.expression, nullptr);
+}
+
+/// A partitioned sort satisfies a disjoint-streams requirement at a strictly lower cost than
+/// the plain sort (it pays no merge), so the cost comparison alone picks the plan that keeps
+/// the streams split; a plain sort with its merge cost never suppresses it.
+TEST(CascadesBestImplementation, CheaperDisjointWinsDisjointRequirement)
+{
+    Group group(0);
+    CostConfig cost_config;
+
+    auto single_props = propsAt(4, sortByColumns({"k"}));
+    single_props.stream_layout = StreamLayout::Single;
+    auto single_sort = costedExpr(single_props, 50);
+
+    auto disjoint_props = propsAt(4, sortByColumns({"k"}));
+    disjoint_props.setDisjointStreams({NameSet{"k"}});
+    auto disjoint_sort = costedExpr(disjoint_props, 45);
+
+    group.updateBestImplementation(single_sort, cost_config);
+    group.updateBestImplementation(disjoint_sort, cost_config);
+
+    auto disjoint_required = propsAt(4, sortByColumns({"k"}));
+    disjoint_required.setDisjointStreams({NameSet{"k"}});
+    EXPECT_EQ(group.getBestImplementation(disjoint_required, cost_config).expression, disjoint_sort);
+
+    /// The requirement for one stream is served only by the single-stream sort.
+    auto single_required = propsAt(4, sortByColumns({"k"}));
+    single_required.stream_layout = StreamLayout::Single;
+    EXPECT_EQ(group.getBestImplementation(single_required, cost_config).expression, single_sort);
 }
 
 /// Implementations of different distribution shapes do not satisfy each other's requirements.
