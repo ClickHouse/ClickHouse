@@ -254,7 +254,7 @@ static T BSONElementAsNumber(const bsoncxx::types::bson_value::view & value, con
             const auto number = value.get_double().value;
             if constexpr (is_integer<T>)
             {
-                T converted;
+                T converted{};
                 if (!isFinite(number) || !accurate::convertNumeric<Float64, T, false>(std::trunc(number), converted))
                     throw Exception(
                         ErrorCodes::CANNOT_CONVERT_TYPE,
