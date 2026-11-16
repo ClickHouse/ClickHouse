@@ -80,7 +80,7 @@ public:
     }
 
     /// Whether a table that holds `keys` keys after it learned from `learned_rows` rows freezes.
-    bool reached(size_t keys, size_t learned_rows) const
+    [[nodiscard]] bool reached(size_t keys, size_t learned_rows) const
     {
         if (keys >= threshold)
             return true;
@@ -95,7 +95,7 @@ public:
     /// The rows that such a table, which has not reached a bound, takes before the bounds are asked again: as many
     /// as the keys it lacks to the next key count that can freeze it, so that it cannot pass that count unnoticed,
     /// but at least `adaptive_learning_slice_rows`, and no further than the end of a trial that can freeze it.
-    size_t rowsToNextCheck(size_t keys, size_t learned_rows) const
+    [[nodiscard]] size_t rowsToNextCheck(size_t keys, size_t learned_rows) const
     {
         size_t rows = std::max(nextKeyBound(keys) - keys, adaptive_learning_slice_rows);
         if (trialCanFreeze(learned_rows))
@@ -105,17 +105,23 @@ public:
 
     /// Whether a block of `rows` rows can take such a table to a bound before the block ends, so that the block has
     /// to be taken in slices: it can pass the next key count that can freeze the table, or the trial ends in it.
-    bool reachableWithin(size_t keys, size_t learned_rows, size_t rows) const
+    [[nodiscard]] bool reachableWithin(size_t keys, size_t learned_rows, size_t rows) const
     {
         return keys + rows > nextKeyBound(keys) || trialCanFreeze(learned_rows);
     }
 
 private:
     /// The next key count at which the table can freeze.
-    size_t nextKeyBound(size_t keys) const { return expected_rows && keys < early_threshold ? early_threshold : threshold; }
+    [[nodiscard]] size_t nextKeyBound(size_t keys) const
+    {
+        return expected_rows && keys < early_threshold ? early_threshold : threshold;
+    }
 
     /// Whether the table is still in a trial whose end can freeze it.
-    bool trialCanFreeze(size_t learned_rows) const { return early_freeze_pays && learned_rows < adaptive_learning_trial_rows; }
+    [[nodiscard]] bool trialCanFreeze(size_t learned_rows) const
+    {
+        return early_freeze_pays && learned_rows < adaptive_learning_trial_rows;
+    }
 
     const size_t threshold;
     const size_t early_threshold;

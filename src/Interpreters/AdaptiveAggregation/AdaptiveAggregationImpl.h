@@ -566,7 +566,7 @@ struct AdaptiveAggregationProducer
     bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
     /// The rows that the learning table took. The caller guarantees that the producer is learning.
-    size_t learnedRows() const { return std::get<LearningState>(phase).rows; }
+    [[nodiscard]] size_t learnedRows() const { return std::get<LearningState>(phase).rows; }
 
     void freeze(size_t used_arena_bytes_at_freeze, size_t memory_usage_at_freeze)
     {
@@ -591,7 +591,7 @@ struct AdaptiveAggregationProducer
 
     /// The rows that this producer is expected to receive in all: its even share of the rows that the aggregation
     /// expects (see `AdaptiveAggregationSession::expectedRows`), or nothing when the query does not tell.
-    std::optional<size_t> expectedRows() const;
+    [[nodiscard]] std::optional<size_t> expectedRows() const;
 
     /// The records this producer staged, created by its freeze; a producer that stands down keeps them for the
     /// merge. Handed over to the session when the producer finishes.
