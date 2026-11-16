@@ -1160,6 +1160,47 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
     }
 }
 
+/// Returns whether the `rewrite_in_to_join` rewrite of `x IN (subquery)` into
+/// `EXISTS (SELECT 1 FROM (subquery) WHERE x = <row> LIMIT 1)` keeps the semantics of regular `IN`: the
+/// same result or the same error. The left operand has the type `left_type`, and the subquery has the
+/// columns `subquery_columns`. The caller guarantees that `left_type` is not null and that
+/// `validateInColumnsCountMatch` accepted both sides.
+///
+/// Regular `IN` rejects a left operand with dynamic structure before it builds the set. With
+/// `transform_null_in = 0`, which the rewrite requires, it returns NULL for a NULL left operand, while
+/// `NOT EXISTS` returns 1.
+///
+/// For any other operand, the set has one key per subquery column. `FunctionIn` compares the whole left
+/// operand with the only column of a subquery, even when the operand is a tuple. Otherwise it compares
+/// each element of the left tuple with its own column. `Set::execute` converts each key to the type of
+/// its column, and a value that the column cannot hold is not a member. For example,
+/// `(t, 1) IN (SELECT toFloat64(1767225600), 1)` returns 0 for
+/// `t = fromUnixTimestamp64Nano(1767225600000000001, 'UTC')` because `Float64` cannot hold the nanosecond,
+/// while `equals` compares in a common supertype and matches. The conversion also parses text as a number,
+/// where `equals` finds no common type. The set holds NULL as a value of a `Variant` key and NULL fields
+/// as values of a tuple key, while `equals` returns NULL for them. So the rewrite keeps the semantics only
+/// when every key has the type of its column and is neither a tuple nor a `Variant`. A `Nullable` element
+/// of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
+/// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
+{
+    if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))
+        return false;
+
+    /// `validateInColumnsCountMatch` made a left operand without dynamic structure a tuple as wide as a
+    /// subquery with several columns.
+    const DataTypes key_types = subquery_columns.size() == 1 ? DataTypes{left_type} : getInKeyColumnTypes(left_type);
+    chassert(key_types.size() == subquery_columns.size());
+    for (size_t i = 0; i < key_types.size(); ++i)
+    {
+        const auto key_type_without_nullable = removeNullable(key_types[i]);
+        if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable)
+            || !key_types[i]->equals(*subquery_columns[i].type))
+            return false;
+    }
+    return true;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -1970,40 +2011,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
             }
 
-            /// When the right side is a single column and the left side is kept as one key,
-            /// regular `IN` does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing, including
-            /// parsing text fields as numbers. The `equals` predicate built by this rewrite
-            /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular `IN`
-            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
-            /// The mutated clones are discarded; the regular path re-resolves the original
-            /// arguments and flattens/validates them again itself.
-            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
-            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
-            /// structure, which regular `IN` rejects before building the set, and for plain
-            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Scalar values also need that cast when their type differs from the sole
-            /// subquery column type. Unwrap the wrappers before identifying the structural types.
-            bool left_value_compared_as_single_key = false;
-            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
-            {
-                const auto & left_result_type = in_first_argument->getResultType();
-                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
-                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
-                        || isNullableOrLowCardinalityNullable(left_result_type)
-                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
-            }
-
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            /// The rewrite applies only where it keeps the semantics of regular `IN`, see
+            /// `existsRewriteKeepsInSemantics`. The other shapes fall through to the regular `IN` handling
+            /// below, so the observable behavior does not depend on `rewrite_in_to_join`. The mutated
+            /// clones are discarded: the regular path re-resolves the original arguments and flattens and
+            /// validates them again itself. A lambda on the left has no result type, and the rewrite
+            /// rejects it like regular `IN`.
+            const auto * rhs_query_node = in_second_argument->as<QueryNode>();
+            const auto left_type = in_first_argument->getResultType();
+            if (rhs_query_node
+                && (!left_type || existsRewriteKeepsInSemantics(left_type, rhs_query_node->getProjectionColumns())))
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
                 /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// the shapes whose semantics the rewrite would change, which stay on the regular path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
                 if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])

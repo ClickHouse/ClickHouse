@@ -32,6 +32,10 @@ SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0
 -- the rewrite must report the very same error.
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Dynamic') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM numbers(1) WHERE CAST('{"a":1}', 'JSON') IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- A subquery with several columns gets the same error, also for a left tuple wider than the subquery and
+-- for a `Dynamic` value that holds a tuple.
+SELECT count() FROM numbers(1) WHERE (number, number, CAST(number, 'Dynamic')) IN (SELECT number, number FROM numbers(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM numbers(1) WHERE CAST((number, number), 'Dynamic') IN (SELECT number, number FROM numbers(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- A plain `Variant` keeps a tuple value as one key and casts it like a plain tuple. `256` does not fit into
 -- `Int8`, so this key does not match either.
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
@@ -54,6 +58,48 @@ SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELEC
 SET transform_null_in = 0;
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
+
+-- A subquery with several columns makes each element of the left tuple a key of its own, which `Set::execute`
+-- converts to the type of its column. `tag` has the type of its column, so only the timestamp needs that
+-- conversion. A timestamp that `Float64` cannot hold exactly matches nothing, whether the rewrite is enabled
+-- or not.
+SELECT (t, tag) IN (SELECT toFloat64(1767225600), 1), (t, tag) NOT IN (SELECT toFloat64(1767225600), 1)
+FROM (SELECT fromUnixTimestamp64Nano(1767225600000000001, 'UTC') AS t, toUInt8(number + 1) AS tag FROM numbers(1))
+SETTINGS rewrite_in_to_join = 0;
+SELECT (t, tag) IN (SELECT toFloat64(1767225600), 1), (t, tag) NOT IN (SELECT toFloat64(1767225600), 1)
+FROM (SELECT fromUnixTimestamp64Nano(1767225600000000001, 'UTC') AS t, toUInt8(number + 1) AS tag FROM numbers(1))
+SETTINGS rewrite_in_to_join = 1;
+
+-- Elements of the same type as their columns: a tuple element keeps its NULL fields as values, and a
+-- `Variant` element keeps its NULL, so both match, while `equals` returns NULL for them. A NULL element of a
+-- `Nullable` type matches nothing, as in `equals`, and `IN` of the plain tuple returns 0 rather than NULL, so
+-- the rewrite applies to it.
+SELECT
+    (t, 1) IN (SELECT CAST((NULL, 1), 'Tuple(Nullable(UInt8), UInt8)'), 1),
+    (v, 1) IN (SELECT CAST(NULL, 'Variant(UInt8, String)'), 1),
+    (n, 1) IN (SELECT CAST(NULL, 'Nullable(UInt8)'), 1),
+    (n, 1) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'), 1)
+FROM
+(
+    SELECT
+        materialize(CAST((NULL, 1), 'Tuple(Nullable(UInt8), UInt8)')) AS t,
+        materialize(CAST(NULL, 'Variant(UInt8, String)')) AS v,
+        materialize(CAST(NULL, 'Nullable(UInt8)')) AS n
+)
+SETTINGS rewrite_in_to_join = 0;
+SELECT
+    (t, 1) IN (SELECT CAST((NULL, 1), 'Tuple(Nullable(UInt8), UInt8)'), 1),
+    (v, 1) IN (SELECT CAST(NULL, 'Variant(UInt8, String)'), 1),
+    (n, 1) IN (SELECT CAST(NULL, 'Nullable(UInt8)'), 1),
+    (n, 1) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'), 1)
+FROM
+(
+    SELECT
+        materialize(CAST((NULL, 1), 'Tuple(Nullable(UInt8), UInt8)')) AS t,
+        materialize(CAST(NULL, 'Variant(UInt8, String)')) AS v,
+        materialize(CAST(NULL, 'Nullable(UInt8)')) AS n
+)
+SETTINGS rewrite_in_to_join = 1;
 
 -- The shapes above stay on the regular `IN` path, so they perform no correlated rewrite and must
 -- not require `allow_correlated_subqueries`: enabling `rewrite_in_to_join` alone must
