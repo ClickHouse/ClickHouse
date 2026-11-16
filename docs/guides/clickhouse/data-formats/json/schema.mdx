@@ -515,10 +515,12 @@ ENGINE = MergeTree
 ORDER BY json.username;
 ```
 
-On versions before 25.3, where the `JSON` type is experimental, run `SET allow_experimental_json_type = 1;` before creating the table.
-
 <Note>
 We provide a [type hint](#using-type-hints-and-skipping-paths) for the `username` column in the JSON definition as we use it in the ordering/primary key. This helps ClickHouse know this column won't be null and ensures it knows which `username` sub-column to use (there may be multiple for each type, so this is ambiguous otherwise).
+</Note>
+
+<Note>
+In versions 24.8 to 25.2, enable the `JSON` type with `SET allow_experimental_json_type = 1;` before creating the table.
 </Note>
 
 Inserting rows into the above table can be achieved using the `JSONAsObject` format:

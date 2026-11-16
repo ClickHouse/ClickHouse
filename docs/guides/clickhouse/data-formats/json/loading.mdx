@@ -174,7 +174,9 @@ ENGINE = MergeTree
 ORDER BY (project, date);
 ```
 
-On versions before 25.3, where the `JSON` type is experimental, run `SET allow_experimental_json_type = 1;` before creating the table.
+<Note>
+In versions 24.8 to 25.2, enable the `JSON` type with `SET allow_experimental_json_type = 1;` before creating the table.
+</Note>
 
 We populate the table using the same approach as for the original dataset:
 
