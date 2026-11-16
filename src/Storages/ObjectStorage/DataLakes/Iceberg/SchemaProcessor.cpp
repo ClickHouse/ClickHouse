@@ -2,6 +2,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <unordered_map>
 #include <vector>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -204,6 +205,9 @@ bool equals(const T & first, const T & second)
 
 
 bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping);
+bool membersAreStructurallyIdentical(
+    const Poco::JSON::Object & first, const Poco::JSON::Object & second, std::span<const char * const> members,
+    const std::unordered_map<String, String> & type_mapping);
 
 /// Canonicalize spacing in an Iceberg primitive type string by removing ASCII whitespace that is
 /// only optional formatting around the delimiters '(', ')', '[', ']', ',' (and at the string edges).
@@ -339,33 +343,13 @@ bool typesAreStructurallyIdentical(
         if (first_obj->isArray(f_fields) || second_obj->isArray(f_fields))
             return schemasAreIdentical(*first_obj, *second_obj, type_mapping);
 
-        /// list / map wrappers: same member set, with the nested type members (element / key /
-        /// value) compared recursively so their primitive strings are whitespace-insensitive too,
-        /// and the remaining scalar members (ids, required flags) compared textually.
-        auto names_first = first_obj->getNames();
-        auto names_second = second_obj->getNames();
-        std::sort(names_first.begin(), names_first.end());
-        std::sort(names_second.begin(), names_second.end());
-        if (names_first != names_second)
-            return false;
-        for (const auto & name : names_first)
-        {
-            if (name == f_element || name == f_key || name == f_value)
-            {
-                if (!typesAreStructurallyIdentical(first_obj->get(name), second_obj->get(name), type_mapping))
-                    return false;
-            }
-            else
-            {
-                Poco::JSON::Object wrapper_first;
-                wrapper_first.set(name, first_obj->get(name));
-                Poco::JSON::Object wrapper_second;
-                wrapper_second.set(name, second_obj->get(name));
-                if (!equals(wrapper_first, wrapper_second))
-                    return false;
-            }
-        }
-        return true;
+        /// list / map: only the members the Iceberg spec defines for the kind; writers that rewrite a schema drop any other member.
+        static constexpr const char * list_members[] = {f_type, f_element_id, f_element_required, f_element};
+        static constexpr const char * map_members[] = {f_type, f_key_id, f_key, f_value_id, f_value_required, f_value};
+        const bool is_map = first_obj->optValue<String>(f_type, "") == f_map;
+        return membersAreStructurallyIdentical(
+            *first_obj, *second_obj, is_map ? std::span<const char * const>(map_members) : std::span<const char * const>(list_members),
+            type_mapping);
     }
 
     /// Mismatched shapes (string vs object) or scalar values: compare textually.
@@ -376,10 +360,11 @@ bool typesAreStructurallyIdentical(
     return equals(wrapper_first, wrapper_second);
 }
 
-bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
+bool membersAreStructurallyIdentical(
+    const Poco::JSON::Object & first, const Poco::JSON::Object & second, std::span<const char * const> members,
+    const std::unordered_map<String, String> & type_mapping)
 {
-    static constexpr const char * structural_keys[] = {f_id, f_name, f_required, f_type};
-    for (const char * key : structural_keys)
+    for (const char * key : members)
     {
         const bool first_has = first.has(key);
         const bool second_has = second.has(key);
@@ -388,7 +373,7 @@ bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, cons
         if (!first_has)
             continue;
 
-        if (key == f_type)
+        if (key == f_type || key == f_element || key == f_key || key == f_value)
         {
             if (!typesAreStructurallyIdentical(first.get(key), second.get(key), type_mapping))
                 return false;
@@ -413,11 +398,12 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
     const auto second_fields = second.getArray(f_fields);
     if (first_fields->size() != second_fields->size())
         return false;
+    static constexpr const char * field_members[] = {f_id, f_name, f_required, f_type};
     for (UInt32 i = 0; i != first_fields->size(); ++i)
     {
         const auto first_field = first_fields->getObject(i);
         const auto second_field = second_fields->getObject(i);
-        if (!first_field || !second_field || !schemaFieldsAreStructurallyIdentical(*first_field, *second_field, type_mapping))
+        if (!first_field || !second_field || !membersAreStructurallyIdentical(*first_field, *second_field, field_members, type_mapping))
             return false;
     }
     return true;
@@ -844,7 +830,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser, const String & timezone_for_timestamptz)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -868,11 +854,11 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
-        return std::make_shared<DataTypeDateTime64>(6, "UTC");
+        return std::make_shared<DataTypeDateTime64>(6, timezone_for_timestamptz);
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
+        return std::make_shared<DataTypeDateTime64>(9, timezone_for_timestamptz);
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_variant)
@@ -983,7 +969,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, allow_geo_parser, timezone_for_timestamptz);
         if (required && data_type->onlyNull())
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -1177,7 +1163,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (!type->isNullable() && !field->isObject(f_type))
+            if (required && !field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,

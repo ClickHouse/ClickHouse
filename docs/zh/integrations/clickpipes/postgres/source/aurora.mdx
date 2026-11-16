@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,49 @@ postgres=> SHOW rds.logical_replication ;
 1. 为您的 Aurora PostgreSQL 版本创建一个新的参数组，并配置所需设置：
    * 将 `rds.logical_replication` 设置为 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="在 Aurora 中查找参数组的位置" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="更改 rds.logical_replication" size="lg" border />
+<Frame>
+
+![在 Aurora 中查找参数组的位置](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![更改 rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+
+</Frame>
+
+</div>
 
 2. 将新的参数组应用到您的 Aurora PostgreSQL 集群
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="使用新参数组修改 Aurora PostgreSQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![使用新参数组修改 Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+
+</Frame>
+
+</div>
 
 3. 重启您的 Aurora 集群以应用更改
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="重启 Aurora PostgreSQL" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![重启 Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-database-user">
   ## 配置数据库用户
@@ -120,9 +151,25 @@ postgres=> SHOW rds.logical_replication ;
 
 如果你想限制流向 Aurora 集群的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到 Aurora 安全组 (Security Group) 的 `Inbound rules` 中。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="在 Aurora PostgreSQL 中在哪里可以找到安全组（Security Group）？" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="编辑上述安全组（Security Group）的入站规则" size="lg" border />
+<Frame>
+
+![在 Aurora PostgreSQL 中在哪里可以找到安全组（Security Group）？](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![编辑上述安全组（Security Group）的入站规则](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### 通过 AWS PrivateLink 进行私有访问

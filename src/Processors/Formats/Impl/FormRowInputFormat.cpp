@@ -169,7 +169,7 @@ void registerInputFormatForm(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Form", Documentation{
         .description = R"DOCS_MD(

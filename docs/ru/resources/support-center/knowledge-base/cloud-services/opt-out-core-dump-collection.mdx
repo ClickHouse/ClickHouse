@@ -5,8 +5,6 @@ description: 'В этой статье показано, как отключит
 tags: ['Управление Cloud']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="overview">
   ## Обзор
 </div>
@@ -62,10 +60,26 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 4. Прокрутите страницу до пункта &quot;Share crash reports with ClickHouse&quot;
 5. Выключите этот переключатель, чтобы отказаться
 
-<Image img="/images/crash-reports.png" size="md" alt="Где найти параметр отказа в интерфейсе Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Где найти параметр отказа в интерфейсе Cloud](/images/crash-reports.png)
+
+</Frame>
+
+</div>
 
 <Note>
   Помимо настройки на уровне сервиса, можно также задать предпочтения на уровне организации. Если этот параметр отключен, то есть вы отказались от сбора отчетов о сбоях, все существующие и новые сервисы будут автоматически исключены из этого сбора. Если же задать предпочтение как включенный, то есть согласиться на участие, вы сможете выборочно отключать его на уровне сервиса, чтобы переопределить эту настройку и отказаться.
 </Note>
 
-<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="Сбор отчетов о сбоях" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Сбор отчетов о сбоях](/images/cloud/crash-reports-collection.png)
+
+</Frame>
+
+</div>
