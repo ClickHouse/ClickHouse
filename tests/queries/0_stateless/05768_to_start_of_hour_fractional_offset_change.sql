@@ -51,6 +51,22 @@ SELECT countIf(s < p)
 FROM (SELECT s, lagInFrame(s, 1, s) OVER (ORDER BY t ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS p
       FROM (SELECT t, t, toUnixTimestamp64Second(toStartOfHour(t)) AS s
             FROM (SELECT toDateTime64(-778500000 + number * 60, 0, 'Asia/Rangoon') AS t FROM numbers(3000))));
+
+SELECT 'dates outside the lookup table (after 2299) follow the offset changes too';
+SELECT toStartOfHour(toDateTime64('2400-04-02 12:00:00', 0, 'Australia/Lord_Howe'));
+SELECT toStartOfHour(toDateTime64('2400-10-01 12:00:00', 0, 'Australia/Lord_Howe'));
+SELECT dateTrunc('hour', toDateTime64('2400-04-02 12:00:00', 0, 'Australia/Lord_Howe'));
+SELECT toStartOfInterval(toDateTime64('2400-04-02 12:00:00', 0, 'Australia/Lord_Howe'), INTERVAL 1 HOUR);
+SELECT countIf(s > u OR u - s >= 3600)
+FROM (SELECT toUnixTimestamp64Second(t) AS u, toUnixTimestamp64Second(toStartOfHour(t)) AS s
+      FROM (SELECT toTimeZone(toDateTime64('2400-04-01 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t FROM numbers(3 * 1440)));
+SELECT countIf(s > u OR u - s >= 3600)
+FROM (SELECT toUnixTimestamp64Second(t) AS u, toUnixTimestamp64Second(toStartOfHour(t)) AS s
+      FROM (SELECT toTimeZone(toDateTime64('2400-09-30 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t FROM numbers(3 * 1440)));
+SELECT countIf(s < p)
+FROM (SELECT s, lagInFrame(s, 1, s) OVER (ORDER BY t ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS p
+      FROM (SELECT t, toUnixTimestamp64Second(toStartOfHour(t)) AS s
+            FROM (SELECT toTimeZone(toDateTime64('2400-04-01 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t FROM numbers(3 * 1440))));
 SET enable_extended_results_for_datetime_functions = 0;
 
 SELECT 'time windows are a fixed hour long, so each one contains its time';
