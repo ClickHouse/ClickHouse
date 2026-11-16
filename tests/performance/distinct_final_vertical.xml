@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- A `DISTINCT` over a `FINAL` read of a `ReplacingMergeTree` with no `LIMIT` does not read in order,
          which keeps vertical `FINAL`, also through a join. -->
     <create_query>CREATE TABLE distinct_final_vertical (k1 String, k2 String, payload String, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY (k1, k2)</create_query>
