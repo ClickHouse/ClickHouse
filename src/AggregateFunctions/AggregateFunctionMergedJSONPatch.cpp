@@ -283,8 +283,9 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
+        /// Do not reserve `size` entries upfront: it comes from untrusted data and can be arbitrarily large.
+        /// A state with a wrong size fails on reading after the end of the buffer instead.
         VectorWithMemoryTracking<Entry> batch;
-        batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
