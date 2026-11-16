@@ -203,6 +203,8 @@ private:
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
+    /// `mute_logging` mutes the messages about the final error, which the caller handles; the
+    /// retries are logged anyway.
     void doWithRetries(
         std::function<void()> && callable,
         std::function<void()> on_retry = nullptr,

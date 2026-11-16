@@ -42,6 +42,9 @@ namespace Net
     POCO_DECLARE_EXCEPTION(Net_API, NoMessageException, NetException)
     POCO_DECLARE_EXCEPTION(Net_API, MessageException, NetException)
     POCO_DECLARE_EXCEPTION(Net_API, MultipartException, MessageException)
+    /// A message whose received bytes violate the protocol or exceed a limit, as opposed to
+    /// one that ends too early. Sending the same request again gets the same message.
+    POCO_DECLARE_EXCEPTION(Net_API, MalformedMessageException, MessageException)
     POCO_DECLARE_EXCEPTION(Net_API, HTTPException, NetException)
     POCO_DECLARE_EXCEPTION(Net_API, NotAuthenticatedException, HTTPException)
     POCO_DECLARE_EXCEPTION(Net_API, UnsupportedRedirectException, HTTPException)
