@@ -8,6 +8,7 @@
 -- The rows of `system.mutations` are not sorted: for a table, they are returned in the order of mutations and commands.
 
 -- 1. `DELETE`, both replicas mutate the part
+SELECT '-- delete';
 DROP TABLE IF EXISTS t_delete_r1 SYNC;
 DROP TABLE IF EXISTS t_delete_r2 SYNC;
 CREATE TABLE t_delete_r1 (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_delete', 'r1') ORDER BY id;
@@ -15,12 +16,13 @@ CREATE TABLE t_delete_r2 (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t
 INSERT INTO t_delete_r1 SELECT number FROM numbers(10);
 SYSTEM SYNC REPLICA t_delete_r2;
 ALTER TABLE t_delete_r1 DELETE WHERE id < 3 SETTINGS mutations_sync = 2;
-SELECT 'delete', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_r1';
-SELECT 'delete', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_r2';
 DROP TABLE t_delete_r1 SYNC;
 DROP TABLE t_delete_r2 SYNC;
 
 -- 2. `UPDATE`, both replicas mutate the part
+SELECT '-- update';
 DROP TABLE IF EXISTS t_update_r1 SYNC;
 DROP TABLE IF EXISTS t_update_r2 SYNC;
 CREATE TABLE t_update_r1 (id UInt64, v UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_update', 'r1') ORDER BY id;
@@ -28,12 +30,13 @@ CREATE TABLE t_update_r2 (id UInt64, v UInt64) ENGINE = ReplicatedMergeTree('/cl
 INSERT INTO t_update_r1 (id) SELECT number FROM numbers(10);
 SYSTEM SYNC REPLICA t_update_r2;
 ALTER TABLE t_update_r1 UPDATE v = 1 WHERE id < 4 SETTINGS mutations_sync = 2;
-SELECT 'update', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_update_r1';
-SELECT 'update', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_update_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_update_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_update_r2';
 DROP TABLE t_update_r1 SYNC;
 DROP TABLE t_update_r2 SYNC;
 
 -- 3. `DELETE` and then `UPDATE` in one mutation, the update counts only the rows that are not deleted
+SELECT '-- delete then update';
 DROP TABLE IF EXISTS t_delete_update_r1 SYNC;
 DROP TABLE IF EXISTS t_delete_update_r2 SYNC;
 CREATE TABLE t_delete_update_r1 (id UInt64, v UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_delete_update', 'r1') ORDER BY id;
@@ -41,12 +44,13 @@ CREATE TABLE t_delete_update_r2 (id UInt64, v UInt64) ENGINE = ReplicatedMergeTr
 INSERT INTO t_delete_update_r1 (id) SELECT number FROM numbers(10);
 SYSTEM SYNC REPLICA t_delete_update_r2;
 ALTER TABLE t_delete_update_r1 DELETE WHERE id < 3, UPDATE v = 1 WHERE id < 5 SETTINGS mutations_sync = 2;
-SELECT 'delete then update', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_update_r1';
-SELECT 'delete then update', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_update_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_update_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_delete_update_r2';
 DROP TABLE t_delete_update_r1 SYNC;
 DROP TABLE t_delete_update_r2 SYNC;
 
 -- 4. The same as 3, but in several mutations applied together, and a no-op mutation `DELETE WHERE 0` waits for them
+SELECT '-- batch delete update';
 DROP TABLE IF EXISTS t_batch_r1 SYNC;
 DROP TABLE IF EXISTS t_batch_r2 SYNC;
 CREATE TABLE t_batch_r1 (id UInt64, v UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_batch', 'r1') ORDER BY id;
@@ -60,12 +64,13 @@ ALTER TABLE t_batch_r1 UPDATE v = 1 WHERE id < 5;
 SYSTEM START MERGES t_batch_r1;
 SYSTEM START MERGES t_batch_r2;
 ALTER TABLE t_batch_r1 DELETE WHERE 0 SETTINGS mutations_sync = 2;
-SELECT 'batch delete then update', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_batch_r1';
-SELECT 'batch delete then update', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_batch_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_batch_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_batch_r2';
 DROP TABLE t_batch_r1 SYNC;
 DROP TABLE t_batch_r2 SYNC;
 
 -- 5. The second replica fetches the mutated part instead of mutating it, so it does not count the rows
+SELECT '-- fetched part';
 DROP TABLE IF EXISTS t_fetch_r1 SYNC;
 DROP TABLE IF EXISTS t_fetch_r2 SYNC;
 CREATE TABLE t_fetch_r1 (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_fetch', 'r1') ORDER BY id
@@ -75,12 +80,13 @@ CREATE TABLE t_fetch_r2 (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/ta
 INSERT INTO t_fetch_r1 SELECT number FROM numbers(10);
 SYSTEM SYNC REPLICA t_fetch_r2;
 ALTER TABLE t_fetch_r1 DELETE WHERE id < 3 SETTINGS mutations_sync = 2;
-SELECT 'fetched part', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_fetch_r1';
-SELECT 'fetched part', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_fetch_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_fetch_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_fetch_r2';
 DROP TABLE t_fetch_r1 SYNC;
 DROP TABLE t_fetch_r2 SYNC;
 
 -- 6. The counts are reset when the table is reloaded, the other replica keeps them
+SELECT '-- reloaded table';
 DROP TABLE IF EXISTS t_reload_r1 SYNC;
 DROP TABLE IF EXISTS t_reload_r2 SYNC;
 CREATE TABLE t_reload_r1 (id UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_reload', 'r1') ORDER BY id;
@@ -90,7 +96,7 @@ SYSTEM SYNC REPLICA t_reload_r2;
 ALTER TABLE t_reload_r1 DELETE WHERE id < 3 SETTINGS mutations_sync = 2;
 DETACH TABLE t_reload_r1;
 ATTACH TABLE t_reload_r1;
-SELECT 'reloaded table', 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_reload_r1';
-SELECT 'reloaded table', 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_reload_r2';
+SELECT 'r1', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_reload_r1';
+SELECT 'r2', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_reload_r2';
 DROP TABLE t_reload_r1 SYNC;
 DROP TABLE t_reload_r2 SYNC;
