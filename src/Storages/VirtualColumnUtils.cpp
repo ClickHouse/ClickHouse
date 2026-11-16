@@ -47,7 +47,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -317,6 +316,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
 static void addPathAndFileToVirtualColumns(
     const Block & block,
     MutableColumns & columns,
+    const NamesAndTypesList & partition_columns,
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
@@ -344,19 +344,15 @@ static void addPathAndFileToVirtualColumns(
         columns[block.getPositionByName("_file")]->insert(file);
     }
 
-    /// Any other column of the block, except `_idx`, is a Hive partition column.
     std::optional<HivePartitioningUtils::HivePartitioningKeysAndValues> keys_and_values;
-    for (size_t pos = 0; pos < block.columns(); ++pos)
+    for (const auto & column : partition_columns)
     {
-        const auto & column = block.getByPosition(pos);
-        if (column.name == "_path" || column.name == "_file" || column.name == "_idx")
-            continue;
-
         if (!keys_and_values)
             keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
 
-        ReadBufferFromString buf(HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.name, path));
-        column.type->getDefaultSerialization()->deserializeWholeText(*columns[pos], buf, format_settings);
+        const auto value = HivePartitioningUtils::getPartitionValueFromPath(*keys_and_values, column.getNameInStorage(), path);
+        columns[block.getPositionByName(column.name)]->insert(
+            HivePartitioningUtils::convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, format_settings));
     }
 
     columns[block.getPositionByName("_idx")]->insert(idx);
@@ -407,18 +403,27 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
 
     Block block;
+    /// Every column of the block except `_path`, `_file` and `_idx` is a Hive partition column.
+    NamesAndTypesList partition_columns;
+    auto add_column = [&](const NameAndTypePair & column)
+    {
+        block.insert({column.type->createColumn(), column.type, column.name});
+        if (column.name != "_path" && column.name != "_file" && column.name != "_idx")
+            partition_columns.push_back(column);
+    };
+
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (required.contains(column.name) && (column.name == "_file" || column.name == "_path"
             || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name))))
-            block.insert({column.type->createColumn(), column.type, column.name});
+            add_column(column);
     }
 
     for (const auto & column : hive_columns)
     {
         if (required.contains(column.name) && !block.has(column.name))
-            block.insert({column.type->createColumn(), column.type, column.name});
+            add_column(column);
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -434,6 +439,7 @@ ColumnPtr getFilterByPathAndFileIndexes(
         addPathAndFileToVirtualColumns(
             block,
             columns,
+            partition_columns,
             paths[i],
             /* idx */i,
             hive_format_settings,
