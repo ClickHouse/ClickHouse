@@ -69,7 +69,7 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    std::map<String, String> getSerializedSettings() const override;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
 
 private:
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
@@ -111,9 +111,23 @@ public:
     bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    void copyFileFromDisk(
+    bool copyFileFromDiskNatively(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
+    void copyFileFromDiskWithFallback(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
+
+    bool copyFileFromBlobPath(
+        const String & path_in_backup,
+        DiskPtr src_disk,
+        const String & src_blob_key,
+        const String & src_blob_namespace,
+        bool copy_encrypted,
+        UInt64 start_pos,
+        UInt64 length,
+        UInt64 src_object_size,
+        const CreateReadBufferFunction & create_fallback_read_buffer) override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 

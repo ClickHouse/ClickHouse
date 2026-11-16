@@ -194,7 +194,7 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         (void)fs::remove(current_dir);
 }
 
-void BackupWriterFile::copyFileFromDisk(
+bool BackupWriterFile::copyFileFromDiskNatively(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
@@ -218,14 +218,13 @@ void BackupWriterFile::copyFileFromDisk(
                     auto abs_dest_path = root_path / path_in_backup;
                     fs::create_directories(abs_dest_path.parent_path());
                     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
-                    return; /// copied!
+                    return true;
                 }
             }
         }
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    return false;
 }
 
 void BackupWriterFile::copyFile(const String & destination, const String & source, size_t /*size*/)

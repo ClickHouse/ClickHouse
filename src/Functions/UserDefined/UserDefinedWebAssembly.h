@@ -35,9 +35,9 @@ class WebAssemblyFunctionSettings
 {
 public:
     void trySet(const String & name, Field value);
-    Field getValue(const String & name) const;
-    bool isFuelEnabled() const;
-    WebAssembly::FuelMode getFuelMode() const;
+    [[nodiscard]] Field getValue(const String & name) const;
+    [[nodiscard]] bool isFuelEnabled() const;
+    [[nodiscard]] WebAssembly::FuelMode getFuelMode() const;
 
 private:
     UnorderedMapWithMemoryTracking<String, Field> settings;
@@ -49,13 +49,13 @@ public:
     virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const = 0;
 
     /// True when a call reads or writes the guest's linear memory.
-    virtual bool requiresGuestLinearMemory() const = 0;
+    [[nodiscard]] virtual bool requiresGuestLinearMemory() const = 0;
 
     /// COLUMNAR_V1 returns false to pass LowCardinality arguments to the guest as is.
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /// True when a call writes the whole input block to guest memory, so batches are split by its size.
-    virtual bool serializesInputBlockToGuestMemory() const = 0;
+    [[nodiscard]] virtual bool serializesInputBlockToGuestMemory() const = 0;
 
     virtual ~UserDefinedWebAssemblyFunction() = default;
 
@@ -69,13 +69,13 @@ public:
         WebAssemblyFunctionSettings function_settings_,
         bool is_deterministic_ = false);
 
-    const String & getInternalFunctionName() const { return function_name; }
-    const DataTypes & getArguments() const { return arguments; }
-    const Strings & getArgumentNames() const { return argument_names; }
-    const DataTypePtr & getResultType() const { return result_type; }
-    std::shared_ptr<WebAssembly::WasmModule> getModule() const { return wasm_module; }
-    const WebAssemblyFunctionSettings & getSettings() const { return settings; }
-    bool getIsDeterministic() const { return is_deterministic; }
+    [[nodiscard]] const String & getInternalFunctionName() const { return function_name; }
+    [[nodiscard]] const DataTypes & getArguments() const { return arguments; }
+    [[nodiscard]] const Strings & getArgumentNames() const { return argument_names; }
+    [[nodiscard]] const DataTypePtr & getResultType() const { return result_type; }
+    [[nodiscard]] std::shared_ptr<WebAssembly::WasmModule> getModule() const { return wasm_module; }
+    [[nodiscard]] const WebAssemblyFunctionSettings & getSettings() const { return settings; }
+    [[nodiscard]] bool getIsDeterministic() const { return is_deterministic; }
 
 protected:
 
