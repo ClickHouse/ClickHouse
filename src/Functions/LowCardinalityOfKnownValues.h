@@ -2,6 +2,7 @@
 
 #include <Columns/IColumnUnique.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ struct LowCardinalityOfKnownValues
 {
     MutableColumnUniquePtr dictionary;
     /// `positions[i]` is the index in `dictionary` of row `i` of `values`.
-    std::vector<UInt64> positions;
+    VectorWithMemoryTracking<UInt64> positions;
 
     /// `values` is a full column of the dictionary type of `type`.
     LowCardinalityOfKnownValues(const DataTypeLowCardinality & type, const IColumn & values)
