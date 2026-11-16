@@ -6,7 +6,6 @@ src_ttl_02184	1
 0
 0
 Variant(Array(Float32), String)
-qv_buffer_02184	0
 qv_distributed_02184	0
 qv_merge_02184	0
 qv_narrow_02184	1

@@ -48,7 +48,7 @@ public:
         return result;
     }
 
-    bool ignoresOSPageCacheReads() const override
+    [[nodiscard]] bool ignoresOSPageCacheReads() const override
     {
         for (const auto & throttler : throttlers)
         {
@@ -59,7 +59,7 @@ public:
     }
 
     /// Check if any throttler is currently throttling
-    bool isThrottling() const override
+    [[nodiscard]] bool isThrottling() const override
     {
         for (const auto & throttler : throttlers)
         {
@@ -79,7 +79,7 @@ public:
     }
 
     /// Returns the minimum speed among all throttlers (the most restrictive one)
-    UInt64 getMaxSpeed() const override
+    [[nodiscard]] UInt64 getMaxSpeed() const override
     {
         UInt64 min_speed = std::numeric_limits<UInt64>::max();
         for (const auto & throttler : throttlers)
@@ -92,7 +92,7 @@ public:
     }
 
     /// Returns the minimum burst size among all throttlers (the most restrictive one)
-    UInt64 getMaxBurst() const override
+    [[nodiscard]] UInt64 getMaxBurst() const override
     {
         UInt64 min_burst = std::numeric_limits<UInt64>::max();
         for (const auto & throttler : throttlers)

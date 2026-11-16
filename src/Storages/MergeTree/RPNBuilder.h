@@ -24,31 +24,31 @@ public:
     explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_);
 
     /// Get DAG node
-    const ActionsDAG::Node * getDAGNode() const { return dag_node; }
+    [[nodiscard]] const ActionsDAG::Node * getDAGNode() const { return dag_node; }
 
     /// Get column name
-    std::string getColumnName() const;
+    [[nodiscard]] std::string getColumnName() const;
 
     /** Get column name.
       * Function `modulo` is replaced with `moduloLegacy`.
       */
-    std::string getColumnNameWithModuloLegacy() const;
+    [[nodiscard]] std::string getColumnNameWithModuloLegacy() const;
 
     /// Is node function
-    bool isFunction() const;
+    [[nodiscard]] bool isFunction() const;
 
     /// Is node constant
-    bool isConstant() const;
+    [[nodiscard]] bool isConstant() const;
 
     /// Whether the node's result type is Nullable
-    bool isNullable() const;
+    [[nodiscard]] bool isNullable() const;
 
-    bool isSubqueryOrSet() const;
+    [[nodiscard]] bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.
       * Node must be constant before calling these method, otherwise logical exception is thrown.
       */
-    ColumnWithTypeAndName getConstantColumn() const;
+    [[nodiscard]] ColumnWithTypeAndName getConstantColumn() const;
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
@@ -57,18 +57,18 @@ public:
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
-    FutureSetPtr tryGetPreparedSet() const;
+    [[nodiscard]] FutureSetPtr tryGetPreparedSet() const;
 
     /** Convert node to function node.
       * Node must be function before calling these method, otherwise exception is thrown.
       */
-    RPNBuilderFunctionTreeNode toFunctionNode() const;
+    [[nodiscard]] RPNBuilderFunctionTreeNode toFunctionNode() const;
 
     /// Convert node to function node or null optional
-    std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
+    [[nodiscard]] std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
 
     /// If this node is the `ARRAY_JOIN` action `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
-    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
+    [[nodiscard]] std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
 protected:
     const ActionsDAG::Node * dag_node = nullptr;
@@ -83,15 +83,15 @@ public:
     using RPNBuilderTreeNode::RPNBuilderTreeNode;
 
     /// Get function name
-    std::string getFunctionName() const;
+    [[nodiscard]] std::string getFunctionName() const;
 
-    FunctionBasePtr getFunctionBase() const;
+    [[nodiscard]] FunctionBasePtr getFunctionBase() const;
 
     /// Get function arguments size
-    size_t getArgumentsSize() const;
+    [[nodiscard]] size_t getArgumentsSize() const;
 
     /// Get function argument at index
-    RPNBuilderTreeNode getArgumentAt(size_t index) const;
+    [[nodiscard]] RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
 
 /// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes

@@ -13,7 +13,7 @@ class ExternalLoaderDictionaryStorageConfigRepository : public IExternalLoaderCo
 public:
     explicit ExternalLoaderDictionaryStorageConfigRepository(const StorageDictionary & dictionary_storage_);
 
-    std::string getName() const override;
+    [[nodiscard]] std::string getName() const override;
 
     std::set<std::string> getAllLoadablesDefinitionNames() override;
 

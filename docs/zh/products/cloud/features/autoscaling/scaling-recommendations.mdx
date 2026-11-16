@@ -7,8 +7,6 @@ title: '扩缩容建议'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="introduction">
   ## 简介
 </div>
@@ -95,7 +93,15 @@ ClickHouse Cloud 不使用单一窗口，而是采用两个时间范围不同的
 每个窗口都会基于内存和 CPU 分析独立生成一个推荐结果。
 然后，系统会根据每个窗口给出的扩缩容方向合并这些推荐结果，如下图所示：
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="双窗口推荐器合并逻辑" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![双窗口推荐器合并逻辑](/images/cloud/features/autoscaling/two-window-recommender.webp)
+
+</Frame>
+
+</div>
 
 如需深入了解该推荐器的设计决策，请参阅 [“ClickHouse 的更智能自动扩缩容：双窗口方法
 ”](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

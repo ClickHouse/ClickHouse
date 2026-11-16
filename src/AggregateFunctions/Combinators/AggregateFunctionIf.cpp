@@ -32,11 +32,11 @@ static bool hasNullableArrayElements(const DataTypePtr & type)
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "If"; }
+    [[nodiscard]] String getName() const override { return "If"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -57,7 +57,7 @@ public:
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
@@ -124,7 +124,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -243,7 +243,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
@@ -300,7 +300,7 @@ private:
 
 public:
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Base::getName();
     }
@@ -494,7 +494,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
