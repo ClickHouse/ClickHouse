@@ -3276,12 +3276,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `context->isDistributed()` when they are built, and it decides whether they are folded to a
         /// constant (see `FunctionConstantBase::isSuitableForConstantFolding`). A sub-SELECT over
         /// `clusterAllReplicas` and the outer query disagree on it, so a base shared between them makes
-        /// the shard query and the local plan disagree on the header. Hence the flag is a part of the key.
+        /// the shard query and the local plan disagree on the header. Hence for them the flag is a part
+        /// of the key. Other functions (`randConstant`, `now64`, ...) do not depend on it and must keep
+        /// a single value for the whole query, so they are shared regardless of the flag.
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[{hash, scope.context->isDistributed()}];
+            bool distributed = function->isServerConstant() && scope.context->isDistributed();
+            function_base_cache = &functions_cache[{hash, distributed}];
         }
     }
 
