@@ -2783,6 +2783,30 @@ bool TableNameHints::isHintNameVisible(const String & name) const
 }
 
 
+namespace
+{
+
+/// Whether the user holds `access` on the table, or on at least one of its columns for a right that can be
+/// granted per column (the user then sees those columns). The stand-in of a lazily loaded table knows
+/// its columns without being loaded.
+bool isAnyAccessGranted(const IStorage & table, const StorageID & table_id, const ContextPtr & context, const AccessFlags & access)
+{
+    const auto access_rights = context->getAccess();
+    if (access_rights->isGranted(access, table_id.database_name, table_id.table_name))
+        return true;
+
+    if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(access))
+        return false;
+
+    const auto metadata = table.getInMemoryMetadataPtr(context, false);
+    for (const auto & column : metadata->getColumns())
+        if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
+            return true;
+    return false;
+}
+
+}
+
 void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access)
 {
     /// Only a local database defers loading, and looking a table up in a remote one costs a round trip.
@@ -2793,29 +2817,20 @@ void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType 
     if (!table)
         return;
 
-    const auto access_rights = context->getAccess();
-    if (!access_rights->isGranted(access, table_id.database_name, table_id.table_name))
-    {
-        /// A column-level right such as `SHOW_COLUMNS` can be granted for some columns only, and the user then
-        /// sees those columns, so one of them is enough. The stand-in knows the columns without being loaded.
-        if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(AccessFlags(access)))
-            return;
-
-        const auto metadata = table->getInMemoryMetadataPtr(context, false);
-        bool any_column_granted = false;
-        for (const auto & column : metadata->getColumns())
-        {
-            if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
-            {
-                any_column_granted = true;
-                break;
-            }
-        }
-        if (!any_column_granted)
-            return;
-    }
+    if (!isAnyAccessGranted(*table, table_id, context, AccessFlags(access)))
+        return;
 
     resolveStorageProxyLoading(table);
+}
+
+void checkAccessBeforeLoadingLazyTable(const StoragePtr & table, const StorageID & table_id, const ContextPtr & context, AccessType access)
+{
+    const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+    if (!proxy || !proxy->isLazyStandIn() || proxy->tryGetNested())
+        return;
+
+    if (!isAnyAccessGranted(*table, table_id, context, AccessFlags(access)))
+        context->checkAccess(access, table_id.database_name, table_id.table_name);
 }
 
 }

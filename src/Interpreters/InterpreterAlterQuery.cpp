@@ -641,7 +641,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         /// Resolve once here so every branch below validates against the real structure instead of
         /// the columns-only metadata a lazily loaded table reports.
-        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+        /// Loading a lazily loaded table constructs and starts it, so a user without the rights to alter it
+        /// must not be able to trigger that. Without the storage the requirement is the one checked for
+        /// a table that is not on this host, which the precise check below can only make stricter.
+        if (table && !skip_access_check && !isStorageLoaded(table))
+            getContext()->checkAccess(getRequiredAccess(nullptr));
+        table = resolveStorageProxyLoading(table);
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

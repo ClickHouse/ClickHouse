@@ -375,6 +375,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    /// The refresh below loads a lazily loaded table, which constructs and starts the storage. A user who cannot read
+    /// the table must not be able to trigger that. The planner checks the read columns precisely later.
+    checkAccessBeforeLoadingLazyTable(storage, storage_id, context, AccessType::SELECT);
     storage->updateExternalDynamicMetadataIfExists(context);
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 

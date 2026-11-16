@@ -419,6 +419,13 @@ private:
 /// that read the passive system tables need this to observe keys and indices.
 void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access);
 
+/// Throws `ACCESS_DENIED` if `table` is a table that a database with `lazy_load_tables` has not loaded yet and
+/// the user holds `access` neither on it nor (for a right that can be granted per column) on any of its columns.
+/// Loading constructs and starts the storage under the global context, which runs expensive initialization and
+/// background work, and reports errors from the table definition. So a command that names a table explicitly
+/// checks this before loading it, and keeps its precise checks (per column, per engine) for later.
+void checkAccessBeforeLoadingLazyTable(const StoragePtr & table, const StorageID & table_id, const ContextPtr & context, AccessType access);
+
 
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.

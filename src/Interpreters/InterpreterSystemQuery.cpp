@@ -2924,7 +2924,19 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
     const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
 
-    auto storage = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+    auto throw_not_authorized = [&]
+    {
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. To execute this query, it's necessary to have the grant "
+            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
+            "streaming engines) on {}", table_id.getNameForLogs());
+    };
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    /// Loading a lazily loaded table constructs and starts it, so it is not done for a user who holds neither grant.
+    if (storage && !isStorageLoaded(storage) && !can_views && !can_streaming)
+        throw_not_authorized();
+    storage = resolveStorageProxyLoading(storage);
     const bool is_streaming = storage && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
@@ -2934,10 +2946,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
         : storage ? (can_views || can_streaming)
         : (can_views && can_streaming);
     if (!authorized)
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges. To execute this query, it's necessary to have the grant "
-            "SYSTEM VIEWS (for refreshable materialized views) or SYSTEM STREAMING ENGINES (for "
-            "streaming engines) on {}", table_id.getNameForLogs());
+        throw_not_authorized();
 
     if (!storage)
         storage = DatabaseCatalog::instance().getTable(table_id, getContext()); /// throws UNKNOWN_TABLE
