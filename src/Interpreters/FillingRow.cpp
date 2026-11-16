@@ -326,14 +326,8 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (pos == row_size)
         return false;
 
-    if (row[pos].isNaN() || row[pos].isInf())
-        return false;
-
-    /// Stepping never reaches a non-finite value, so it stops the filling unless a border comes before it.
     /// `less` orders NaN above every value, which is its sort position only for `nulls_direction == 1`.
-    if ((next_original_row[pos].isNaN() || next_original_row[pos].isInf())
-        && (constraints[pos].isNull() || !less(constraints[pos], next_original_row[pos], getDirection(pos))
-            || (next_original_row[pos].isNaN() && sort_description[pos].nulls_direction != 1)))
+    if (next_original_row[pos].isNaN() && sort_description[pos].nulls_direction != 1)
         return false;
 
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
@@ -401,6 +395,15 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         value_changed = true;
         return true;
     }
+
+    /// Stepping never starts from or reaches a non-finite value, so the filling of `pos` stops here unless a border
+    /// comes before the next value. The later columns are filled above independently of it.
+    if (row[pos].isNaN() || row[pos].isInf())
+        return false;
+
+    if ((next_original_row[pos].isNaN() || next_original_row[pos].isInf())
+        && (constraints[pos].isNull() || !less(constraints[pos], next_original_row[pos], getDirection(pos))))
+        return false;
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
