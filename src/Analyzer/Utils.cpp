@@ -2182,6 +2182,7 @@ SipHash hashScopeSelect(const ASTSelectQuery & select)
 TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
 {
     TableOccurrences result;
+    std::unordered_map<UInt128, size_t> counts;
     std::vector<const IQueryTreeNode *> stack{tree.get()};
     while (!stack.empty())
     {
@@ -2239,7 +2240,7 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
                         hash.update(index);
                     const auto identity = hash.get128();
 
-                    ++result.counts[identity];
+                    ++counts[identity];
                     result.identity_by_ast.emplace(table_expression_ast, identity);
                 }
             }
@@ -2248,6 +2249,10 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
         for (const auto & child : node->getChildren())
             stack.push_back(child.get());
     }
+
+    std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
+    for (const auto & [_, identity] : result.identity_by_ast)
+        result.identities.insert(identity);
     return result;
 }
 

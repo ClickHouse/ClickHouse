@@ -606,23 +606,15 @@ VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Nod
 }
 
 /// Where the read's table was written in the query, if that is certain to be the same occurrence in both plans: the
-/// read's table was found in its own plan's tree, `own`, and exactly one table in each tree has that identity.
-std::optional<UInt128> certainOccurrence(
-    const ReadFromMergeTree & read,
-    const TableOccurrences & own,
-    const TableOccurrences & single_node_table_occurrences,
-    const TableOccurrences & replicas_table_occurrences)
+/// read's table has an identity in its own plan's tree, `own`, which keeps only those no other table there has, and
+/// the other tree has it too, so exactly one table there.
+std::optional<UInt128> certainOccurrence(const ReadFromMergeTree & read, const TableOccurrences & own, const TableOccurrences & other)
 {
     const auto & table_expression = read.getQueryInfo().table_expression;
     if (!table_expression || !table_expression->getOriginalAST())
         return {};
     auto it = own.identity_by_ast.find(table_expression->getOriginalAST());
-    if (it == own.identity_by_ast.end())
-        return {};
-    auto single_node_count = single_node_table_occurrences.counts.find(it->second);
-    auto replicas_count = replicas_table_occurrences.counts.find(it->second);
-    if (single_node_count == single_node_table_occurrences.counts.end() || single_node_count->second != 1
-        || replicas_count == replicas_table_occurrences.counts.end() || replicas_count->second != 1)
+    if (it == own.identity_by_ast.end() || !other.identities.contains(it->second))
         return {};
     return it->second;
 }
@@ -651,14 +643,13 @@ MakeSingleNodeReadFinder makeSingleNodeReadFinder(QueryPlan::Node & single_node_
             if (it->second.size() == 1)
                 return it->second.front();
 
-            auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences, *replicas_table_occurrences);
+            auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences);
             if (!identity)
                 return nullptr;
             const ReadFromMergeTree * found = nullptr;
             for (const auto * candidate : it->second)
             {
-                if (certainOccurrence(*candidate, *single_node_table_occurrences, *single_node_table_occurrences, *replicas_table_occurrences)
-                    != identity)
+                if (certainOccurrence(*candidate, *single_node_table_occurrences, *replicas_table_occurrences) != identity)
                     continue;
                 if (found)
                     return nullptr;
@@ -748,7 +739,7 @@ bool transplantAnalysisToAllReads(
         UnorderedMapWithMemoryTracking<UInt128, ReadFromMergeTree *> single_node_by_occurrence;
         for (auto * read : single_node_reads_of_table)
         {
-            auto identity = certainOccurrence(*read, single_node_table_occurrences, single_node_table_occurrences, replicas_table_occurrences);
+            auto identity = certainOccurrence(*read, single_node_table_occurrences, replicas_table_occurrences);
             if (!identity || !single_node_by_occurrence.emplace(*identity, read).second)
             {
                 LOG_TRACE(
@@ -764,7 +755,7 @@ bool transplantAnalysisToAllReads(
         UnorderedSetWithMemoryTracking<const ReadFromMergeTree *> claimed;
         for (auto * read : reads_of_table)
         {
-            auto identity = certainOccurrence(*read, replicas_table_occurrences, single_node_table_occurrences, replicas_table_occurrences);
+            auto identity = certainOccurrence(*read, replicas_table_occurrences, single_node_table_occurrences);
             auto it = identity ? single_node_by_occurrence.find(*identity) : single_node_by_occurrence.end();
             if (it == single_node_by_occurrence.end() || !claimed.insert(it->second).second)
             {
