@@ -31,7 +31,7 @@ struct TestEntry : TestPlan
 {
     using Plan = TestPlan;
     UInt32 neighbor = 0;
-    VectorWithMemoryTracking<TestPlan> ordered;
+    VectorWithMemoryTracking<TestPlan> ordered = {};
 };
 
 using TestDPTable = DPTable<TestEntry, UInt32>;
@@ -41,35 +41,35 @@ struct TestOptimizer
     LoggerPtr log = getLogger("EnumeratorCheckerTest");
     VectorWithMemoryTracking<JoinActionRef *> edges;
 
-    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32, UInt32) const
+    [[nodiscard]] std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32, UInt32) const
     {
         return std::pair{JoinKind::Inner, JoinStrictness::All};
     }
-    const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32, UInt32) { return edges; }
-    bool areTransitivelyConnectedMask(UInt32, UInt32) const { return true; }
-    SelectivityEstimate computeSelectivityMask(
+    [[nodiscard]] const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32, UInt32) const { return edges; }
+    [[nodiscard]] bool areTransitivelyConnectedMask(UInt32, UInt32) const { return true; }
+    [[nodiscard]] SelectivityEstimate computeSelectivityMask(
         const VectorWithMemoryTracking<JoinActionRef *> &, UInt32, UInt32,
         std::optional<UInt64> left_rows, std::optional<UInt64>) const
     {
         const double value = left_rows == 10 ? 0.1 : 0.01;
         return {.value = value, .reported_value = value, .reliable = true, .has_equi = true};
     }
-    double hashJoinWork(UInt32, std::optional<UInt64>, UInt32, std::optional<UInt64>) const { return 0; }
-    bool useInterestingOrders() const { return true; }
-    bool isReadInOrder(UInt32, Int32) const { return false; }
-    bool isShardableLeaf(UInt32, Int32) const { return false; }
-    UInt64 mergeKeyClasses(
+    [[nodiscard]] double hashJoinWork(UInt32, std::optional<UInt64>, UInt32, std::optional<UInt64>) const { return 0; }
+    [[nodiscard]] bool useInterestingOrders() const { return true; }
+    [[nodiscard]] bool isReadInOrder(UInt32, Int32) const { return false; }
+    [[nodiscard]] bool isShardableLeaf(UInt32, Int32) const { return false; }
+    [[nodiscard]] UInt64 mergeKeyClasses(
         const VectorWithMemoryTracking<JoinActionRef *> &, UInt32, UInt32, JoinKind, JoinStrictness) const
     {
         return 1;
     }
-    double mergeJoinCost(MergeJoinInput left, UInt32, MergeJoinInput, UInt32, Int32, const SelectivityEstimate &) const
+    [[nodiscard]] double mergeJoinCost(MergeJoinInput left, UInt32, MergeJoinInput, UInt32, Int32, const SelectivityEstimate &) const
     {
         return left.rows == 10 ? 0 : 100;
     }
-    bool isInterestingOrder(Int32, UInt32) const { return true; }
-    bool isShardedMerge(const MergeJoinInput &, UInt32, const MergeJoinInput &, UInt32) const { return false; }
-    std::optional<UInt64> estimateCardinality(
+    [[nodiscard]] bool isInterestingOrder(Int32, UInt32) const { return true; }
+    [[nodiscard]] bool isShardedMerge(const MergeJoinInput &, UInt32, const MergeJoinInput &, UInt32) const { return false; }
+    [[nodiscard]] std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows,
         const SelectivityEstimate & selectivity, JoinKind kind, JoinStrictness strictness) const
     {
