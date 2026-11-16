@@ -51,12 +51,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// The whole input is the module: `wasmtime` is the only WebAssembly backend.
         const std::string_view wasm_bytes(reinterpret_cast<const char *>(data), size);
 
-#if !USE_WASMTIME
+#if USE_WASMTIME
+        std::unique_ptr<IWasmEngine> engine = std::make_unique<WasmTimeRuntime>();
+#else
         /// No WASM backend available - nothing to fuzz.
         (void)wasm_bytes;
         return 0;
-#else
-        std::unique_ptr<IWasmEngine> engine = std::make_unique<WasmTimeRuntime>();
+#endif
 
         /// Attempt to compile the fuzzer-supplied bytes as a WASM module.
         /// Fuel accounting is enabled so a fuzzer-supplied `(start)` function cannot loop forever.
@@ -87,7 +88,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         catch (...)
         {
         }
-#endif
     }
     catch (...)
     {

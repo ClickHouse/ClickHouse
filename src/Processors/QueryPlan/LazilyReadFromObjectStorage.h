@@ -28,7 +28,7 @@ struct LazyObjectStorageFileRegistry
     static constexpr UInt64 MAX_FILES = 1ul << (64 - ROW_INDEX_BITS);
 
     std::mutex mutex;
-    VectorWithMemoryTracking<ObjectInfoPtr> files;
+    std::vector<ObjectInfoPtr> files;
 
     UInt64 registerFile(const ObjectInfoPtr & object_info);
 };

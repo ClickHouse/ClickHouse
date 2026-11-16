@@ -212,7 +212,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "ReadFromSystemFilesystemCache"; }
+    String getName() const override { return "ReadFromSystemFilesystemCache"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {

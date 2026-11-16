@@ -253,7 +253,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
+    std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

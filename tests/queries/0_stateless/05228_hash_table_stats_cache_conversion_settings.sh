@@ -16,6 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # spill thresholds are pinned to 0 (see 04625_hash_table_sizes_stats_table_expression_modifiers).
 
 $CLICKHOUSE_LOCAL \
+    --enable_analyzer=1 \
     --optimize_aggregation_in_order=0 \
     --collect_hash_table_stats_during_aggregation=1 \
     --max_size_to_preallocate_for_aggregation=1000000000000 \

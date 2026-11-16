@@ -26,12 +26,12 @@ public:
         return std::make_shared<FunctionIsNullable>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull() || canContainNull(*elem.type))
@@ -40,29 +40,29 @@ public:
         return result_type->createColumnConst(1, UInt8(0));
     }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & elem = arguments[0];
         return ColumnUInt8::create(input_rows_count, isColumnNullable(*elem.column) || elem.type->isLowCardinalityNullable());

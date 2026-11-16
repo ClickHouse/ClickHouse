@@ -13,7 +13,6 @@ namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationConvertedToTwoLevel;
-    extern const Event AggregationIndexedTables;
 }
 
 namespace DB
@@ -58,7 +57,6 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
-    cell_index.reset();
     /// `init` also reinitializes a table after an external-aggregation flush, so preserve
     /// whether the heap rejected anything before the old method is replaced.
     top_k_heap_ever_rejected = topKHeapEverRejected();
@@ -138,7 +136,6 @@ bool AggregatedDataVariants::topKHeapInactive() const
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);
-    cell_index.reset();
     switch (type)
     {
         case Type::EMPTY:
@@ -164,33 +161,23 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 
 size_t AggregatedDataVariants::allocatedBytes() const
 {
-    size_t res = hashTableBufferBytes();
+    size_t res = 0;
     for (const auto & pool : aggregates_pools)
         res += pool->allocatedBytes();
-    return res;
-}
 
-size_t AggregatedDataVariants::hashTableBufferBytes() const
-{
     switch (type)
     {
         case Type::EMPTY:
         case Type::without_key:
-            return 0;
+            break;
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            return (NAME)->data.getBufferSizeInBytes();
+            res += (NAME)->data.getBufferSizeInBytes(); \
+            break;
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
-}
-
-size_t AggregatedDataVariants::usedArenaBytes() const
-{
-    size_t res = 0;
-    for (const auto & pool : aggregates_pools)
-        res += pool->usedBytes();
     return res;
 }
 
@@ -273,30 +260,9 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     }
 }
 
-void AggregatedDataVariants::resetToSingleLevel()
-{
-    chassert(!hasData());
-    switch (type)
-    {
-#define M(NAME) \
-        case Type::NAME ## _two_level: \
-            init(Type::NAME); \
-            (NAME ## _two_level).reset(); \
-            break;
-
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-
-    #undef M
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
-    }
-}
-
 void AggregatedDataVariants::convertToTwoLevel()
 {
     ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
-    cell_index.reset();
 
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
@@ -318,17 +284,6 @@ void AggregatedDataVariants::convertToTwoLevel()
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
     }
-}
-
-void AggregatedDataVariants::setCellIndex(AggregationCellIndex && index)
-{
-    ProfileEvents::increment(ProfileEvents::AggregationIndexedTables);
-    cell_index = std::move(index);
-}
-
-void AggregatedDataVariants::throwCannotIndexCells() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
 }
 
 bool AggregatedDataVariants::isLowCardinality() const
