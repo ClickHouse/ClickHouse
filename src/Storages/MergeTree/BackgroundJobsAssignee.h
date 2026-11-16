@@ -67,8 +67,7 @@ public:
     /// again before the exception leaves, so the assignee is exactly as it was before the call.
     bool start();
     void trigger();
-    /// `refused_by_executor`: the job is pending but the executor had no free slot, so the next attempt
-    /// uses the first backoff step instead of the idle backoff.
+    /// `refused_by_executor`: the executor had no free slot, so retry after the first backoff step, not the idle backoff.
     void postpone(bool refused_by_executor = false);
     void finish();
 
