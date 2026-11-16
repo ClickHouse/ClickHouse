@@ -70,6 +70,19 @@ MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, siz
     return result_column;
 }
 
+Chunk GroupByModifierTransform::makeGrandTotalRow()
+{
+    MutableColumns columns;
+    columns.reserve(intermediate_header.columns());
+    for (const auto & column : intermediate_header)
+    {
+        columns.emplace_back(column.column->cloneEmpty());
+        columns.back()->insertDefault();
+    }
+    const size_t rows = columns.empty() ? 0 : 1;
+    return Chunk(std::move(columns), rows);
+}
+
 RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
@@ -80,6 +93,7 @@ Chunk RollupTransform::generate()
     if (!consumed_chunks.empty())
     {
         mergeConsumed();
+        has_input = true;
         last_removed_key = keys.size();
     }
 
@@ -97,6 +111,18 @@ Chunk RollupTransform::generate()
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);
         current_chunk = merge(std::move(chunks), !use_nulls, false);
+    }
+    else if (gen_chunk.empty() && !has_input && !keys.empty() && !generated_grand_total)
+    {
+        /// Aggregation over an empty input yields no rows to roll up, while the equivalent
+        /// `GROUPING SETS ((c0), ())` still reports the grand-total row (the Aggregator creates
+        /// its without-key state eagerly). Emit that row once: keys take their default values
+        /// and aggregate states are freshly created, so finalized aggregates report their
+        /// empty-input values (count() = 0). The grand-total set is the last grouping set of a
+        /// ROLLUP, numbered `keys.size()`.
+        generated_grand_total = true;
+        set_counter = keys.size();
+        gen_chunk = makeGrandTotalRow();
     }
 
     finalizeChunk(gen_chunk, aggregates_mask);

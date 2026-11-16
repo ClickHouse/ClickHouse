@@ -23,6 +23,7 @@ Chunk CubeTransform::generate()
     if (!consumed_chunks.empty())
     {
         mergeConsumed();
+        has_input = true;
 
         auto num_rows = current_chunk.getNumRows();
         mask = (static_cast<UInt64>(1) << keys.size()) - 1;
@@ -51,6 +52,18 @@ Chunk CubeTransform::generate()
         Chunks chunks;
         chunks.emplace_back(std::move(columns), current_columns.front()->size());
         current_chunk = merge(std::move(chunks), !use_nulls, false);
+    }
+    else if (gen_chunk.empty() && !has_input && !keys.empty() && !generated_grand_total)
+    {
+        /// Aggregation over an empty input yields no rows to roll up, while the equivalent
+        /// `GROUPING SETS` with an empty set still reports the grand-total row (the Aggregator
+        /// creates its without-key state eagerly). Emit that row once: keys take their default
+        /// values and aggregate states are freshly created, so finalized aggregates report their
+        /// empty-input values (count() = 0). The grand-total set is the last grouping set of a
+        /// CUBE, numbered `(1 << keys.size()) - 1`.
+        generated_grand_total = true;
+        grouping_set = (static_cast<UInt64>(1) << keys.size()) - 1;
+        gen_chunk = makeGrandTotalRow();
     }
 
     finalizeChunk(gen_chunk, aggregates_mask);
