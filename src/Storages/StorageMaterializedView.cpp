@@ -1316,7 +1316,8 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
         auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, local_context));
         if (!view)
             continue;
-        auto metadata = view->getInMemoryMetadataPtr(local_context, false);
+        /// The override also looks up the target table, which may be unreachable.
+        auto metadata = view->IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
         const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
         if (!refresh_strategy || !refresh_strategy->isIncremental())
             continue;

@@ -3205,6 +3205,38 @@ def test_drop_mv_with_unreachable_target(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
 
+def test_rename_mv_source_with_unreachable_target(started_cluster):
+    # Renaming the source of a non-incremental view must not depend on its `TO` table in a catalog that cannot be reached.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"mv_src_unreachable_ns_{uid}"
+    tgt_table = f"mv_src_unreachable_tgt_{uid}"
+    src = f"mv_src_unreachable_src_{uid}"
+    mv = f"mv_src_unreachable_mv_{uid}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+    node.query(f"CREATE TABLE {src} (k Int64) ENGINE = MergeTree ORDER BY k")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND
+            TO {CATALOG_NAME}.`{namespace}.{tgt_table}` EMPTY
+            AS SELECT k FROM {src}
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        node.query(f"RENAME TABLE {src} TO {src}_moved")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    node.query(f"DROP TABLE {mv} SYNC")
+    node.query(f"DROP TABLE {src}_moved SYNC")
+
+
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
     node = started_cluster.instances["node1"]
 
