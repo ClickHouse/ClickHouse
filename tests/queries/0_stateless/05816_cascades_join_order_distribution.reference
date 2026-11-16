@@ -1,0 +1,69 @@
+-- Q07, join order by rows
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression (Before GROUP BY)
+              Filter (WHERE)
+                JoinLogical (Broadcast HashJoin  swapped)
+                  JoinLogical (Shuffle HashJoin )
+                    Expression ((WHERE + Change column names to column identifiers))
+                      ShuffleExchange
+                        ReadFromMergeTree (ParallelRead default.lineitem)
+                    ShuffleExchange
+                      JoinLogical (Shuffle HashJoin )
+                        Expression (Change column names to column identifiers)
+                          ShuffleExchange
+                            ReadFromMergeTree (ParallelRead default.orders)
+                        ShuffleExchange
+                          JoinLogical (Broadcast HashJoin )
+                            Expression (Change column names to column identifiers)
+                              ReadFromMergeTree (ParallelRead default.customer)
+                            Expression (( + Change column names to column identifiers))
+                              ReadFromMergeTree (ReplicatedRead default.nation)
+                  BroadcastExchange
+                    GatherExchange
+                      JoinLogical (Broadcast HashJoin )
+                        Expression (Change column names to column identifiers)
+                          ReadFromMergeTree (ParallelRead default.supplier)
+                        Expression (( + Change column names to column identifiers))
+                          ReadFromMergeTree (ReplicatedRead default.nation)
+-- Q07, join order by the data moved between nodes
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
+            Expression (Before GROUP BY)
+              Filter (WHERE)
+                JoinLogical (Shuffle HashJoin )
+                  ShuffleExchange
+                    JoinLogical (Broadcast HashJoin )
+                      Expression ((WHERE + Change column names to column identifiers))
+                        ReadFromMergeTree (ParallelRead default.lineitem)
+                      BroadcastExchange
+                        GatherExchange
+                          JoinLogical (Broadcast HashJoin )
+                            Expression (Change column names to column identifiers)
+                              ReadFromMergeTree (ParallelRead default.supplier)
+                            Expression (( + Change column names to column identifiers))
+                              ReadFromMergeTree (ReplicatedRead default.nation)
+                  ShuffleExchange
+                    JoinLogical (Shuffle HashJoin )
+                      Expression (Change column names to column identifiers)
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.orders)
+                      ShuffleExchange
+                        JoinLogical (Broadcast HashJoin )
+                          Expression (Change column names to column identifiers)
+                            ReadFromMergeTree (ParallelRead default.customer)
+                          Expression (( + Change column names to column identifiers))
+                            ReadFromMergeTree (ReplicatedRead default.nation)
+-- The same rows in both join orders
+1	2
+1	2
+-- No effect with an explicit join_algorithm
+1

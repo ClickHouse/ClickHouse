@@ -344,10 +344,12 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
 
     /// Use the join order optimizer's cardinality as a lower bound - it handles
-    /// correlated predicates (e.g. composite FK joins) better than multiplicative independence.
+    /// correlated predicates (e.g. composite FK joins) better than multiplicative independence. When the join order was
+    /// chosen with the costs of Cascades, its cardinality is used as it is: otherwise the plan would be costed with other
+    /// rows than the ones it was chosen for.
     if (auto hint = join_step.getResultRowsEstimation())
     {
-        if (Float64(*hint) > statistics.estimated_row_count)
+        if (join_step.isRowsEstimationFromDistributedCosts() || Float64(*hint) > statistics.estimated_row_count)
         {
             LOG_TEST(log, "Using join order optimizer hint: {} rows (multiplicative estimate was {})",
                 *hint, statistics.estimated_row_count);

@@ -154,6 +154,10 @@ public:
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    /// Whether the join order search chose this join with the costs of Cascades (`query_plan_join_order_distribution`),
+    /// so that Cascades must cost it with `getResultRowsEstimation` as it is, not only as a lower bound.
+    bool isRowsEstimationFromDistributedCosts() const { return rows_estimation_from_distributed_costs; }
+    void setRowsEstimationFromDistributedCosts() { rows_estimation_from_distributed_costs = true; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     [[nodiscard]] bool hasImpreciseEstimate() const { return imprecise_estimate; }
@@ -299,6 +303,7 @@ protected:
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
+    bool rows_estimation_from_distributed_costs = false;
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;

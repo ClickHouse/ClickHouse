@@ -148,6 +148,8 @@ struct QueryPlanOptimizationSettings
     JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
     /// DPsub chooses between hash and sort-merge joins using the sort order of the inputs.
     bool query_plan_join_order_use_interesting_orders = true;
+    /// DPsub costs the joins of a graph that Cascades distributes by the data they move between nodes.
+    bool query_plan_join_order_distribution = false;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only

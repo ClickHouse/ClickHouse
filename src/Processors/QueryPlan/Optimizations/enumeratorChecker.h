@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <vector>
 #include <Common/VectorWithMemoryTracking.h>
@@ -59,6 +60,14 @@ public:
     [[nodiscard]] size_t numRelations() const { return num_relations; }
 private:
     using Plan = typename DPTable::DPEntry::Plan;
+
+    /// Offers the plans of a distributed hash join of the two sides, for every pair of their plans and every way to
+    /// distribute it, see `DPSubJoinOrderOptimizer::useDistribution`.
+    void acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
+        const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
+    /// Keeps the plan as the cheapest plan of the subset and as its cheapest plan in its state, where that state is
+    /// interesting.
+    void offerPlan(UInt subset, const Plan & plan);
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
@@ -149,6 +158,12 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
 
+    if (optimizer.useDistribution())
+    {
+        acceptDistributedJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+        return;
+    }
+
     if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
     {
         auto & entry = dp_table[result_subset];
@@ -171,6 +186,163 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
 
     if (optimizer.useInterestingOrders())
         acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subset, const Plan & plan)
+{
+    auto & entry = dp_table[subset];
+    if (optimizer.isInterestingState(plan.partition_state, static_cast<UInt32>(subset)))
+    {
+        auto it = std::ranges::find(entry.ordered, plan.partition_state, &Plan::partition_state);
+        if (it == entry.ordered.end())
+            entry.ordered.push_back(plan);
+        else if (plan.cost < it->cost)
+            *it = plan;
+    }
+    const bool has_plan = entry.left != 0 || entry.right != 0;
+    if (!has_plan || plan.cost < entry.cost)
+    {
+        static_cast<Plan &>(entry) = plan;
+        /// The partitioning of the cheapest plan matters only while a later join may use it.
+        if (entry.partition_state >= 0 && !optimizer.isInterestingPartition(entry.partition_state, static_cast<UInt32>(subset)))
+            entry.partition_state = Optimizer::any_partitioning_state;
+    }
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
+    const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
+    const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
+{
+    const auto left_mask = static_cast<UInt32>(lhs_subset);
+    const auto right_mask = static_cast<UInt32>(rhs_subset);
+    const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double nodes = join_cost.nodes;
+    const double left_bytes = optimizer.rowBytes(left_mask);
+    const double right_bytes = optimizer.rowBytes(right_mask);
+    constexpr Int8 any_partitioning = Optimizer::any_partitioning_state;
+    constexpr Int8 replicated = Optimizer::replicated_state;
+    constexpr Int8 single_node = Optimizer::single_node_state;
+
+    /// The plans of a side: its cheapest plan and its plans in the other states.
+    auto side_plans = [&](UInt subset)
+    {
+        std::vector<Int8> plans{-1};
+        for (size_t i = 0; i < dp_table[subset].ordered.size(); ++i)
+            plans.push_back(static_cast<Int8>(i));
+        return plans;
+    };
+
+    for (const Int8 left_index : side_plans(lhs_subset))
+    {
+        const Plan & left = planAt(lhs_subset, left_index);
+        const double left_rows = left.search_rows;
+        const Int8 left_state = left.partition_state;
+        for (const Int8 right_index : side_plans(rhs_subset))
+        {
+            const Plan & right = planAt(rhs_subset, right_index);
+            const double right_rows = right.search_rows;
+            const Int8 right_state = right.partition_state;
+            /// Rows far above any real count only rank plans: the cap keeps their conversion to `UInt64` in range.
+            static constexpr double max_search_rows = 1e18;
+            auto to_rows = [](double rows) { return static_cast<UInt64>(std::min(rows, max_search_rows)); };
+            const double joined_rows = std::clamp(
+                estimateJoinedRows(selectivity, to_rows(left_rows), to_rows(right_rows)), 1.0, max_search_rows);
+            const double inputs_cost = left.cost + right.cost;
+
+            Plan plan;
+            plan.left = lhs_subset;
+            plan.right = rhs_subset;
+            plan.left_plan = left_index;
+            plan.right_plan = right_index;
+            plan.rows_cost = left.rows_cost + right.rows_cost + joined_rows;
+            plan.sel = selectivity.reported_value;
+            plan.kind = kind;
+            plan.strictness = strictness;
+            plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, selectivity, kind, strictness);
+            plan.search_rows = plan.estimated_rows ? static_cast<double>(*plan.estimated_rows) : joined_rows;
+            plan.edges.assign(edges.begin(), edges.end());
+            plan.method = JoinMethod::Hash;
+
+            auto offer = [&](double cost, Int8 state)
+            {
+                if (!std::isfinite(cost))
+                    return;
+                plan.cost = inputs_cost + cost;
+                plan.partition_state = state;
+                offerPlan(result_subset, plan);
+            };
+
+            /// Where both sides are split the same way, Cascades may swap the sides of an inner join: the cheaper side builds
+            /// the hash table.
+            auto join_work = [&](double parallelism)
+            {
+                return std::min(
+                    join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, parallelism, parallelism),
+                    join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, parallelism, parallelism));
+            };
+
+            /// Broadcast: one side copied to every node, the other one partitioned; its partitioning is kept, a side on
+            /// one node is scattered first.
+            offer(join_cost.toPartitioned(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                    + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                left_state == single_node ? any_partitioning : left_state);
+            offer(join_cost.toPartitioned(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                    + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                right_state == single_node ? any_partitioning : right_state);
+
+            /// Shuffle: both sides hashed by one equality of a class. Predicate cleanup keeps the first edge of a class and
+            /// drops the others as redundant, and when the join has no edge of the class, it may add one with a column that
+            /// is not known here. After a shuffle by an edge of two columns of one type, Cascades knows the rows are hashed
+            /// by these two columns, so a later shuffle by an edge with one of them moves no rows of that side. An edge cast
+            /// before hashing, or an added one, gives rows that no later join reuses.
+            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+            {
+                const auto key_class = static_cast<UInt32>(std::countr_zero(classes));
+                const auto edge = std::ranges::find_if(edges, [&](const JoinActionRef * candidate)
+                {
+                    return optimizer.shuffleKey(candidate).key_class == static_cast<Int32>(key_class);
+                });
+                if (edge == edges.end())
+                {
+                    if (optimizer.hasSynthesizedShuffleKey(key_class, !edges.empty()))
+                        offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes)
+                                + join_cost.toNewPartitioning(right_state, right_rows, right_bytes) + join_work(nodes),
+                            any_partitioning);
+                    continue;
+                }
+
+                const auto & key = optimizer.shuffleKey(*edge);
+                if (!key.hashable)
+                    continue;
+                const bool lhs_on_left = (left_mask >> key.lhs_relation) & 1;
+                const UInt32 left_relation = lhs_on_left ? key.lhs_relation : key.rhs_relation;
+                const UInt32 right_relation = lhs_on_left ? key.rhs_relation : key.lhs_relation;
+                auto move = [&](Int8 state, UInt32 relation, double rows, double bytes)
+                {
+                    return key.raw && optimizer.isPartitionedBy(state, key_class, relation) ? 0.0 : join_cost.toNewPartitioning(state, rows, bytes);
+                };
+                const Int8 state = key.raw
+                    ? optimizer.partitionState(key_class, (static_cast<UInt32>(1) << left_relation) | (static_cast<UInt32>(1) << right_relation))
+                    : any_partitioning;
+                offer(move(left_state, left_relation, left_rows, left_bytes) + move(right_state, right_relation, right_rows, right_bytes)
+                        + join_work(nodes),
+                    state);
+            }
+
+            /// Local: both sides on one node.
+            offer(join_cost.toSingleNode(left_state, left_rows, left_bytes) + join_cost.toSingleNode(right_state, right_rows, right_bytes)
+                    + join_work(1),
+                single_node);
+
+            /// Replicated: every node joins its copies of both sides, so its result is a copy too.
+            offer(join_cost.toReplicated(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                    + join_work(1),
+                replicated);
+        }
+    }
 }
 
 template <class TDPTable, class TOptimizer>

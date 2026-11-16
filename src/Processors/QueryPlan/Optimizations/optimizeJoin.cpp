@@ -3,6 +3,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
@@ -22,10 +23,15 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
@@ -36,7 +42,11 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
@@ -1155,6 +1165,70 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
     return prefixes;
 }
 
+static double estimateRowBytes(const Block & header)
+{
+    double bytes = 0;
+    for (const auto & column : header)
+        bytes += estimateColumnWidthFromType(*column.type);
+    return std::max(bytes, 1.0);
+}
+
+/// How a join input looks to the distribution-aware join order search, see `QueryGraph::DistributionInput`. The read
+/// below expressions and filters is sized as Cascades sizes it: the widths of its columns and the rows it scans.
+static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input, bool distributed_plan_execute_locally)
+{
+    QueryGraph::DistributionInput result;
+    QueryPlan::Node * node = &input;
+    while (node->children.size() == 1)
+    {
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+            dag = &filter->getExpression();
+        if (!dag)
+            break;
+        /// Cascades runs such a step on one node, see `DistributionPassthrough`.
+        if (QueryPlanOptimizations::dagContainsNonDeterministicFunction(*dag))
+        {
+            result.row_bytes = estimateRowBytes(*input.step->getOutputHeader());
+            return result;
+        }
+        node = node->children.front();
+    }
+    const auto * step = node->step.get();
+
+    /// Cascades splits a read between nodes, or reads it on every node, only when the read can be split into buckets.
+    if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(step); read_step && read_step->supportsBucketedRead())
+    {
+        result.placement = QueryGraph::InputPlacement::Read;
+        double bytes = 0;
+        for (const auto & [_, width] : estimateReadColumnWidths(*read_step))
+            bytes += width;
+        result.row_bytes = std::max(bytes, 1.0);
+        /// The analysis `Cascades/Statistics.cpp` takes for the scan of a read.
+        auto analyzed_result = read_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_step->selectRangesToRead();
+        if (analyzed_result)
+            result.scanned_rows = static_cast<double>(analyzed_result->selected_rows);
+        /// The condition of `ReplicatedReadImplementation`.
+        result.can_read_on_every_node = read_step->getMergeTreeData().isSharedStorage() || distributed_plan_execute_locally;
+        return result;
+    }
+
+    result.row_bytes = estimateRowBytes(*input.step->getOutputHeader());
+    /// The estimate of the step below the filters of the input, a bound of the filtered rows: a filter that the estimate
+    /// of the whole input cannot use, such as a `HAVING` over an aggregation, leaves it without one.
+    if (const auto below = QueryPlanOptimizations::estimateReadRowsCount(*node); below.estimated_rows)
+        result.scanned_rows = static_cast<double>(*below.estimated_rows);
+    /// Cascades distributes these steps. It runs any other step on one node, see `DefaultImplementation`.
+    const auto * aggregating = typeid_cast<const AggregatingStep *>(step);
+    if (typeid_cast<const JoinStepLogical *>(step) || typeid_cast<const DistinctStep *>(step) || typeid_cast<const WindowStep *>(step)
+        || (aggregating && !aggregating->getParams().keys.empty()))
+        result.placement = QueryGraph::InputPlacement::Partitioned;
+    return result;
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
@@ -1246,6 +1320,33 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
+
+    /// A graph of inner joins that Cascades distributes: DPsub may cost its joins by the data they move between nodes.
+    /// The search shuffles by the equivalence classes of the join keys, which exist only with transitive predicates, and
+    /// Cascades distributes only hash joins: an explicit `join_algorithm` may allow none.
+    const bool inner_joins_only = query_graph.join_strictness == JoinStrictness::All && query_graph.join_kinds.empty()
+        && query_graph.outer_join_conditions.empty() && query_graph.prepared_storage_relations.none();
+    if (optimization_settings.query_plan_join_order_distribution && optimization_settings.make_distributed_plan
+        && optimization_settings.enable_cascades_optimizer && optimization_settings.enable_join_transitive_predicates
+        && query_graph_builder.context->join_settings.hasDefaultJoinAlgorithms() && inner_joins_only)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+        {
+            size_t node_count = getCascadesClusterNodeCountParam(query_context);
+            if (node_count == 0)
+                node_count = getCascadesPlanningNodeCount(query_context);
+            if (node_count > 1)
+            {
+                query_graph.distribution_node_count = node_count;
+                const auto & parameters = query_context->getQueryParameters();
+                auto it = parameters.find(CascadesParams::COST_CONFIG);
+                query_graph.distribution_cost_config
+                    = std::make_shared<const CostConfig>(it != parameters.end() ? parseCostConfig(it->second) : CostConfig{});
+                for (auto * input : query_graph_builder.inputs)
+                    query_graph.distribution_inputs.push_back(distributionInputOf(*input, optimization_settings.distributed_plan_execute_locally));
+            }
+        }
+    }
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
@@ -1587,6 +1688,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .column_stats = entry->column_stats};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            if (entry->distributed_costs)
+                join_step->setRowsEstimationFromDistributedCosts();
 
             auto & new_node = nodes.emplace_back();
 

@@ -19,6 +19,7 @@ namespace DB
 
 struct DPJoinEntry;
 using DPJoinEntryPtr = std::shared_ptr<DPJoinEntry>;
+struct CostConfig;
 
 enum class JoinMethod : UInt8
 {
@@ -49,6 +50,9 @@ struct DPJoinEntry
     /// For join nodes
     JoinOperator join_operator;
     JoinMethod join_method = JoinMethod::None;
+    /// Whether the join order search costed this join by the data it moves between nodes, with the cost model of
+    /// Cascades (`QueryGraph::distribution_node_count`). Cascades then costs the join with `estimated_rows` as it is.
+    bool distributed_costs = false;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -186,6 +190,31 @@ struct QueryGraph
     };
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
     std::function<VectorWithMemoryTracking<ReadInOrder>(const VectorWithMemoryTracking<NameSet> & candidates)> find_read_in_order_prefixes;
+
+    /// With `query_plan_join_order_distribution`: the nodes Cascades distributes the plan over, 0 when DPsub costs only
+    /// rows. DPsub then costs every join as a local, shuffle, broadcast or replicated join, with the cost model of Cascades.
+    size_t distribution_node_count = 0;
+    std::shared_ptr<const CostConfig> distribution_cost_config;
+    /// Where the rows of a join input are when its own plan ends.
+    enum class InputPlacement : uint8_t
+    {
+        Read,        /// A table read: partitioned, on one node or on every node, each with the cost of its read.
+        SingleNode,  /// A result on one node, like a `UNION ALL` or a step that Cascades does not distribute.
+        Partitioned, /// A result on several nodes: a join, or a step that Cascades distributes, like a `GROUP BY`.
+    };
+    struct DistributionInput
+    {
+        InputPlacement placement = InputPlacement::SingleNode;
+        /// The bytes of a row of the input columns of the relation that the graph uses.
+        double row_bytes = 1;
+        /// The rows before the filters of the input: those of the granules a read selects, or the estimate of a join below
+        /// them. 0 when unknown.
+        double scanned_rows = 0;
+        /// Cascades reads such a table on every node instead of broadcasting it.
+        bool can_read_on_every_node = false;
+    };
+    /// Per relation, with `distribution_node_count`.
+    std::vector<DistributionInput> distribution_inputs;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

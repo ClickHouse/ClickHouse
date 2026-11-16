@@ -11672,6 +11672,14 @@ Only affects the `dpsub` join order algorithm. Makes it aware of the sort order 
 An input counts as sorted by a join key when `optimize_read_in_order` can read it in the order of that key from a `MergeTree` table, or when it is the result of a `full_sorting_merge` join on that key. A join chosen to run as `full_sorting_merge` tries it first, with the `join_algorithm` list as its fallback. The choice is made only when `join_algorithm` has its default value: any other list is a priority list, used as it is. Requires `enable_join_transitive_predicates`.
 )", BETA, \
         {"26.11", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
+    DECLARE(Bool, query_plan_join_order_distribution, false, R"(
+Only affects the `dpsub` join order algorithm for a graph of inner joins that the Cascades optimizer distributes
+(`make_distributed_plan` and `enable_cascades_optimizer`). Makes it aware of how the data is spread over the nodes: it
+costs every join as a local, shuffle, broadcast or replicated join with the cost model of Cascades, and keeps for every set
+of joined tables its cheapest plan partitioned by each join key that a later join can use. Replaces
+`query_plan_join_order_use_interesting_orders` for the graphs it plans.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
 )", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
