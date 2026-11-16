@@ -21,7 +21,7 @@ SETTINGS max_uniq_number_for_low_cardinality = 100, ratio_of_defaults_for_sparse
 INSERT INTO schemas VALUES (1, '${PROTO_SCHEMA}');
 
 -- The output is the Protobuf stream, so the storage of the schema is asserted instead of printed.
-SELECT throwIf(countIf(serialization_kind = 'LowCardinality') != 1) FROM system.parts_columns WHERE table = 'schemas' AND column = 's' AND active FORMAT Null;
+SELECT throwIf(countIf(serialization_kind = 'LowCardinality') != 1) FROM system.parts_columns WHERE database = currentDatabase() AND table = 'schemas' AND column = 's' AND active FORMAT Null;
 
 SELECT 1 AS key, 'abc' AS value
 SETTINGS format_schema_source = 'query', format_schema = 'SELECT s FROM schemas LIMIT 1', format_schema_message_name = 'KVP'
