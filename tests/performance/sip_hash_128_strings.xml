@@ -1,15 +1,33 @@
 <test>
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>strings_0_15</value>
+                <value>strings_16_64</value>
+                <value>strings_0_300</value>
+                <value>fixed_strings_16</value>
+                <value>fixed_strings_64</value>
+                <value>ipv6s</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <create_query>CREATE TABLE strings_0_15 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE strings_16_64 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE strings_0_300 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE strings_1000_2000 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE fixed_strings_16 (s FixedString(16)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixed_strings_64 (s FixedString(64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE ipv6s (s IPv6) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO strings_0_15 SELECT substring(hex(cityHash64(number)), 1, number % 16) FROM numbers(20000000)</fill_query>
     <fill_query>INSERT INTO strings_16_64 SELECT substring(repeat(hex(cityHash64(number)), 4), 1, 16 + number % 49) FROM numbers(4000000)</fill_query>
     <fill_query>INSERT INTO strings_0_300 SELECT substring(repeat(hex(cityHash64(number)), 19), 1, number % 301) FROM numbers(1000000)</fill_query>
     <fill_query>INSERT INTO strings_1000_2000 SELECT substring(repeat(hex(cityHash64(number)), 125), 1, 1000 + number % 1001) FROM numbers(100000)</fill_query>
     <fill_query>INSERT INTO fixed_strings_16 SELECT toFixedString(hex(cityHash64(number)), 16) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO fixed_strings_64 SELECT toFixedString(hex(cityHash64(number)), 64) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO ipv6s SELECT CAST(toUInt128(cityHash64(number)) * 18446744073709551557 + number AS IPv6) FROM numbers(5000000)</fill_query>
 
     <query>SELECT count() FROM strings_0_15 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM strings_16_64 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
@@ -19,9 +37,22 @@
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(SearchPhrase)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(URL)) SETTINGS max_threads = 1</query>
 
+    <!-- `uniqExact` hashes the rows of a chunk at once: with GROUP BY, with `Nullable`, with `-If` true on 50% and on 1% of the rows
+         (where it gains least), without a key, and on runs of repeated values with and without GROUP BY. A `UInt8` key
+         would add one row at a time, so the keys are `UInt16`. -->
+    <query>SELECT toUInt16(rowNumberInBlock() % 16) AS k, uniqExact(s) FROM (SELECT s FROM {table} LIMIT 5000000) GROUP BY k SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT uniqExact(toNullable(s)), count() FROM (SELECT s FROM {table} LIMIT 5000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT uniqExactIf(s, rowNumberInBlock() % 100 &lt; 1) FROM (SELECT s FROM {table} LIMIT 5000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT uniqExactIf(s, rowNumberInBlock() % 100 &lt; 50) FROM (SELECT s FROM {table} LIMIT 5000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT uniqExactState(s) FROM (SELECT s FROM {table} LIMIT 5000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT uniqExactState(s) FROM (SELECT s FROM {table} LIMIT 5000000) ARRAY JOIN range(3) AS r SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toUInt16(intDiv(rowNumberInBlock(), 64) % 16) AS k, uniqExact(s) FROM (SELECT s FROM {table} LIMIT 5000000) ARRAY JOIN range(3) AS r GROUP BY k SETTINGS max_threads = 1 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS strings_0_15</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_16_64</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_0_300</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_1000_2000</drop_query>
     <drop_query>DROP TABLE IF EXISTS fixed_strings_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixed_strings_64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ipv6s</drop_query>
 </test>

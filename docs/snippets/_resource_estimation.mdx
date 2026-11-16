@@ -1,4 +1,4 @@
-The following provides a model for estimating the compute and storage resources required for a ClickStack deployment based on your expected ingest volume. The values produced are **estimates only** and should be used as an **initial baseline** - they are not a prescriptive answer. Actual requirements depend on query complexity, concurrency, retention policies, and variance in ingestion throughput. Always monitor resource usage and scale as needed.
+The following provides a model for estimating the compute and storage resources required for an observability deployment based on your expected ingest volume. The values produced are **estimates only** and should be used as an **initial baseline** - they are not a prescriptive answer. Actual requirements depend on query complexity, concurrency, retention policies, and variance in ingestion throughput. Always monitor resource usage and scale as needed.
 
 <Warning>
 **All figures are based on uncompressed raw ingest**
@@ -8,7 +8,7 @@ Every number on this page - throughput (MB/s, TB/month), CPU sizing, and storage
 This is the figure you should estimate from your existing logs, traces, and metrics pipelines. Storage figures in the table below already have the assumed **10x compression ratio** applied to this raw volume.
 </Warning>
 
-When deploying ClickStack, provision compute to cover two independent workloads: **ingest** and **query**.
+Provision compute to cover two independent workloads: **ingest** and **query**.
 
 | Workload | Estimated resources |
 |----------|---------------|
@@ -28,7 +28,7 @@ In most self-managed deployments, ingest and query share the same nodes. In this
 - While query compute can be scaled independently of ingest compute, it remains intrinsically linked to ingest volume. We assume as ingest increases, data density grows, resulting in larger scan volumes at query time and consequently higher query compute requirements.
 </Accordion>
 
-The following table provides example sizings based on increasing ingest throughput in megabytes per second, alongside the corresponding data volumes in terabytes per month. This assumes a sustained average of **1 QPS** from ClickStack across all query types (search, dashboards, alerting). 
+The following table provides example sizings based on increasing ingest throughput in megabytes per second, alongside the corresponding data volumes in terabytes per month. This assumes a sustained average of **1 QPS** across all query types (search, dashboards, alerting).
 
 | MB/s | TB/month | Ingest CPUs | Query CPUs | Total CPUs | Total Storage (per month) (GB) |
 |-----:|--------:|------------:|-----------:|-----------:|-------------:|

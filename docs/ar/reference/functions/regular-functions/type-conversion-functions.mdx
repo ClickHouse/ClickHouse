@@ -343,20 +343,22 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 ## accurateCastOrNull {#accurateCastOrNull}
 
-قُدِّمت في: v1.1.0
+أُضيف في: v1.1.0
 
 تحوّل قيمة إلى نوع البيانات المحدد.
 وهي تشبه [`accurateCast`](#accurateCast)، لكنها تُرجع `NULL` بدلًا من طرح استثناء إذا تعذّر إجراء التحويل بدقة.
 
 تجمع هذه الدالة بين أمان [`accurateCast`](#accurateCast) والمعالجة السلسة للأخطاء.
 
-**الصياغة**
+الصيغة `TRY_CAST(x AS T)`، المستخدمة في لهجات SQL الخاصة بـ Trino وSpark وSnowflake وSQL Server، تكافئ `accurateCastOrNull(x, 'T')`.
+
+**الصيغة**
 
 ```sql
 accurateCastOrNull(x, T)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — قيمة مطلوب تحويلها. [`Any`](/ar/reference/data-types/index)
 * `T` — اسم نوع البيانات الهدف. [`String`](/ar/reference/data-types/string)
@@ -2874,18 +2876,19 @@ toBool('FALSE'):         false
 
 ## toDate {#toDate}
 
-أُضيف في: v1.1.0
+أُضيف: v1.1.0
 
 يحوّل قيمة مُدخلة إلى النوع [`Date`](/ar/reference/data-types/date).
 يدعم التحويل من الأنواع String وFixedString وDateTime أو من الأنواع الرقمية.
+تخضع القيم العددية الواقعة خارج نطاق النوع للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد القيم بحدود النطاق، أما في الوضع `throw` فيُطرح استثناء.
 
-**البنية**
+**الصيغة**
 
 ```sql
 toDate(x)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — قيمة الإدخال المطلوب تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
@@ -2927,19 +2930,20 @@ SELECT toDate(20297)
 
 ## toDate32 {#toDate32}
 
-أُضيف في: v21.9.0
+أُضيف: v21.9.0
 
 يحوّل الوسيطة إلى نوع البيانات [Date32](/ar/reference/data-types/date32).
 إذا كانت القيمة خارج النطاق `[0000-01-01, 9999-12-31]`، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
 إذا كانت الوسيطة من النوع [`Date`](/ar/reference/data-types/date)، فتُؤخذ حدودها في الاعتبار.
+تخضع القيم العددية الواقعة خارج نطاق النوع للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد القيم بحدود النطاق، أما في الوضع `throw` فيُطرح استثناء.
 
-**البنية**
+**الصيغة**
 
 ```sql
 toDate32(expr)
 ```
 
-**وسيط**
+**وسيطات**
 
 * `expr` — القيمة المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date)
 
@@ -3236,10 +3240,12 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 يحوّل قيمة مُدخلة إلى النوع [DateTime](/ar/reference/data-types/datetime).
 
 <Note>
-  إذا كانت `expr` رقمًا، فسيُفسَّر على أنه عدد الثواني منذ بداية حقبة Unix (أي كـ طابع زمني لـ Unix).
-  إذا كانت `expr` من النوع [String](/ar/reference/data-types/string)، فقد تُفسَّر على أنها طابع زمني لـ Unix أو على أنها تمثيل نصي لتاريخ أو لتاريخ مع وقت.
-  لذلك، يُعطَّل صراحةً تحليل التمثيلات النصية للأرقام القصيرة (حتى 4 أرقام) بسبب الالتباس؛ فعلى سبيل المثال، قد تكون السلسلة `'1999'` سنةً (تمثيلًا نصيًا غير مكتمل لـ Date / DateTime) أو طابع زمني لـ Unix. ويُسمح بالسلاسل الرقمية الأطول.
+  إذا كانت `expr` رقمًا، فسيُفسَّر على أنه عدد الثواني منذ بداية حقبة Unix (أي كـ الطابع الزمني ليونكس).
+  إذا كانت `expr` من النوع [String](/ar/reference/data-types/string)، فقد تُفسَّر على أنها الطابع الزمني ليونكس أو على أنها تمثيل نصي لتاريخ أو لتاريخ مع وقت.
+  لذلك، يُعطَّل صراحةً تحليل التمثيلات النصية للأرقام القصيرة (حتى 4 أرقام) بسبب الالتباس؛ فعلى سبيل المثال، قد تكون السلسلة `'1999'` سنةً (تمثيلًا نصيًا غير مكتمل لـ Date / DateTime) أو الطابع الزمني ليونكس. ويُسمح بالسلاسل الرقمية الأطول.
 </Note>
+
+تخضع القيم العددية الواقعة خارج نطاق النوع (من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`) للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد بحدود النطاق، أما في الوضع `throw` فيُطرح استثناء.
 
 إذا كانت `expr` قيمة من النوع [Time](/ar/reference/data-types/time) أو [Time64](/ar/reference/data-types/time64)، فسيُفسَّر على أنه عدد الثواني منذ بداية حقبة Unix: ويُقرَّب الجزء الكسري من `Time64` نزولًا نحو سالب اللانهاية، أما القيم الواقعة خارج نطاق `DateTime` فتتبع الإعداد `date_time_overflow_behavior`.
 
@@ -3281,8 +3287,8 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 يحوّل قيمة الإدخال إلى النوع `DateTime`.
 يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `Time64` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `(U)Int128` أو `(U)Int256` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` وتؤدي إلى استثناء.
 `DateTime32` اسم مستعار لـ `DateTime` ويدعم التواريخ من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`.
-عند التحويل من سلسلة أو من أحد الأنواع الرقمية القابلة للإشباع المذكورة أعلاه، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
-تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64` أو `Time` أو `Time64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً. تُقرَّب قيم `Time64` أولاً نزولاً نحو ما لا نهاية السالبة إلى ثوانٍ كاملة.
+عند التحويل من سلسلة، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده.
+تتبع التحويلات من الأنواع الرقمية المذكورة أعلاه ومن أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64` أو `Time` أو `Time64`، الإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): فوضع `ignore` الافتراضي يقيّد القيم الرقمية بحدود النطاق، لكنه قد ينتج قيمًا ملتفة عند التحويل من مصادر التاريخ والوقت، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً. تُقرَّب قيم `Time64` أولاً نزولاً نحو ما لا نهاية السالبة إلى ثوانٍ كاملة. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
 
 **الصيغة**
 
@@ -3313,7 +3319,7 @@ SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 └─────────────────────┴───────────────────┘
 ```
 
-**من طابع زمني لـ Unix**
+**من الطابع الزمني ليونكس**
 
 ```sql title=Query
 SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
@@ -3342,6 +3348,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 أُضيف في: v20.1.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع [`DateTime64`](/ar/reference/data-types/datetime64).
+تخضع القيم العددية الواقعة خارج نطاق النوع للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد القيم عند حدود النطاق (آخر tick قابل للتمثيل وفق قيمة `scale` المطلوبة)، أما في الوضع `throw` فيُطرح استثناء.
 
 **الصيغة**
 
@@ -6978,7 +6985,7 @@ SELECT
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
 يدعم التحويل من String وFixedString وDateTime وDateTime64 وTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
-تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
+تخضع القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد بحدود النطاق، أما في الوضع `throw` فيُطرح استثناء. ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
 تُقرَّب قيم `Time64` نزولًا نحو اللانهاية السالبة إلى ثوانٍ كاملة وتُقيَّد بالنطاق نفسه.
 
 <Note title="`toTime` القديم">
@@ -7050,8 +7057,9 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 يحوّل قيمة الإدخال إلى النوع [Time64](/ar/reference/data-types/time64).
 يدعم التحويل من String وFixedString وDateTime64 أو من الأنواع الرقمية التي تمثل الثواني منذ منتصف الليل.
 يوفّر دقة أقل من الثانية لقيم الوقت، حتى `scale` من الخانات الكسرية.
+تخضع القيم العددية الواقعة خارج نطاق النوع (من `-999:59:59.999999999` إلى `999:59:59.999999999`) للإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior): ففي الوضع الافتراضي `ignore` وفي الوضع `saturate` تُقيَّد هذه القيم بحدود النطاق، أما في الوضع `throw` فيُطرح استثناء.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 toTime64(x, scale)
@@ -7064,7 +7072,7 @@ toTime64(x, scale)
 
 **القيمة المعادة**
 
-تُرجِع القيمة المحوَّلة بالدقة `scale` المطلوبة. [`Time64`](/ar/reference/data-types/time64)
+تُرجِع القيمة المحوَّلة بالدقة `scale` المطلوبة. [`Time64`](/ar/reference/data-types/time64)
 
 **أمثلة**
 

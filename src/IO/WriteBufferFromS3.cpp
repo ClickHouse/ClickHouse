@@ -8,6 +8,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -186,10 +187,14 @@ void WriteBufferFromS3::preFinalize()
     }
 
     if (!do_single_part_upload && client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
-        throw S3Exception(
-            Aws::S3::S3Errors::UNKNOWN,
-            "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
-            key);
+    {
+        if (!write_settings.object_storage_write_if_none_match_best_effort)
+            throw S3Exception(
+                Aws::S3::S3Errors::UNKNOWN,
+                "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
+                key);
+        LOG_DEBUG(log, "GCS cannot condition a multipart upload, so {} is written unconditionally", key);
+    }
 
     if (do_single_part_upload)
     {
@@ -481,6 +486,9 @@ void WriteBufferFromS3::abortMultipartUpload()
         return;
     }
 
+    /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
     S3::AbortMultipartUploadRequest req;
@@ -672,7 +680,9 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetUploadId(multipart_upload_id);
     req.setIdempotencyId(idempotency_id);
 
-    if (!write_settings.object_storage_write_if_none_match.empty())
+    /// GCS evaluates no precondition on a multipart upload: it ignores `If-None-Match`
+    /// and rejects its `x-goog-if-generation-match` translation.
+    if (!write_settings.object_storage_write_if_none_match.empty() && !client_ptr->isClientForGCS())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
 
     if (!write_settings.object_storage_write_if_match.empty())

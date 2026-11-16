@@ -193,6 +193,7 @@ public:
         return nested_function->isLargeMergePair(nestedPlace(place), nestedPlace(rhs));
     }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+    bool ignoresRepeatedValues() const override { return nested_function->ignoresRepeatedValues(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -12,7 +13,6 @@ class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 struct ObjectStorageTopKQueryConditionCacheKey;
-using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -40,9 +40,9 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
     const StorageID & getStorageID() const { return storage_id; }
 
-    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. std::nullopt when the
-    /// storage gives no estimate and with distributed processing.
-    std::optional<DataLakeReadEstimate> estimateReadFromDataLakeMetadata() const;
+    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr when the storage gives
+    /// no estimate and with distributed processing.
+    std::shared_ptr<const DataLakeReadEstimate> getOrCreateDataLakeReadEstimate() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -72,7 +72,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif
 
-    bool requestReadingInOrder() const;
+    /// Returns true only if the pipeline will deliver one sorted run per output port. Decides
+    /// everything here: it runs during optimization, and the caller drops the sorting step on true.
+    bool requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings);
 
     // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
     // and is taken from the storage metadata.
@@ -92,6 +94,9 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
+    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
@@ -100,17 +105,26 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
+    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
+    StorageMetadataPtr iterator_metadata;
 
-    /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
-    /// A storage without an estimate returns nullopt without any work, so nullopt is not memoized.
-    mutable std::optional<DataLakeReadEstimate> data_lake_read_estimate;
+    RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+
+    /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
+    /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
+    mutable std::shared_ptr<const DataLakeReadEstimate> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
 
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
-    const std::optional<DB::FormatSettings> format_settings;
+    /// Not const: the in-order path pins Parquet's preserve_order, which is what makes a single
+    /// file a sorted run at all.
+    std::optional<DB::FormatSettings> format_settings;
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
@@ -118,6 +132,13 @@ private:
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
     bool allow_top_k_query_condition_cache = true;
+
+    /// Set by a successful requestReadingInOrder. `read_in_order_files` is the file list
+    /// enumerated there, so initializePipeline consumes it instead of re-deciding.
+    /// `read_in_order_attempted` keeps the enumeration, which consumes the iterator, single-shot.
+    bool read_in_order_attempted = false;
+    bool read_in_order = false;
+    ObjectInfos read_in_order_files;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
@@ -129,7 +150,16 @@ private:
 
     void createIterator();
 
-    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
+    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
+
+    /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
+    bool isReadPinnedToListedGeneration() const;
+
+    bool sortingKeyIsComputableFromSourceHeader() const;
+    Pipe buildInOrderPipe(
+        const ContextPtr & local_context,
+        const FormatFilterInfoPtr & format_filter_info,
+        const std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey> & top_k_query_condition_cache_key);
 };
 
 }

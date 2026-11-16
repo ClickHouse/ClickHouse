@@ -4,6 +4,8 @@
 #include <string_view>
 #include <base/types.h>
 #include <fmt/format.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -71,6 +73,7 @@ struct RelationEstimateInfo
     bool imprecise_estimate = false;
     /// A relation composed of sub-joins is rendered as the chain only, without its own estimate.
     bool composite = false;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 
     /// `name[source~rows]`, e.g. `a[no_stats~1000]`, `b[100]`, `c[hint~?]`.
     String displayName() const

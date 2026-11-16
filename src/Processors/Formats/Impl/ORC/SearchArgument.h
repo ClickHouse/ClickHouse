@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Processors/Formats/Impl/ORC/Proto.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <string>
-#include <vector>
 
 /// Predicates for skipping stripes and row groups by the column statistics and the bloom filters.
 /// The semantics (the truth values, the normalization of the expression, the evaluation of each
@@ -114,7 +114,7 @@ public:
         IS_NULL,
     };
 
-    PredicateLeaf(Operator op_, PredicateDataType type_, UInt64 column_id_, std::vector<Literal> literals_)
+    PredicateLeaf(Operator op_, PredicateDataType type_, UInt64 column_id_, VectorWithMemoryTracking<Literal> literals_)
         : op(op_), type(type_), column_id(column_id_), literals(std::move(literals_)) {}
 
     UInt64 getColumnId() const { return column_id; }
@@ -129,7 +129,7 @@ private:
     Operator op;
     PredicateDataType type;
     UInt64 column_id;
-    std::vector<Literal> literals;
+    VectorWithMemoryTracking<Literal> literals;
 };
 
 class ExpressionTree;
@@ -138,14 +138,14 @@ using ExpressionTreePtr = std::shared_ptr<ExpressionTree>;
 class SearchArgument
 {
 public:
-    SearchArgument(ExpressionTreePtr root_, std::vector<PredicateLeaf> leaves_);
+    SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_);
 
-    const std::vector<PredicateLeaf> & getLeaves() const { return leaves; }
-    TruthValue evaluate(const std::vector<TruthValue> & leaf_values) const;
+    const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
+    TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
 
 private:
     ExpressionTreePtr root;
-    std::vector<PredicateLeaf> leaves;
+    VectorWithMemoryTracking<PredicateLeaf> leaves;
 };
 
 class SearchArgumentBuilder
@@ -163,7 +163,7 @@ public:
     SearchArgumentBuilder & lessThanEquals(UInt64 column_id, PredicateDataType type, Literal value);
     SearchArgumentBuilder & equals(UInt64 column_id, PredicateDataType type, Literal value);
     SearchArgumentBuilder & nullSafeEquals(UInt64 column_id, PredicateDataType type, Literal value);
-    SearchArgumentBuilder & in(UInt64 column_id, PredicateDataType type, const std::vector<Literal> & values);
+    SearchArgumentBuilder & in(UInt64 column_id, PredicateDataType type, const VectorWithMemoryTracking<Literal> & values);
     SearchArgumentBuilder & isNull(UInt64 column_id, PredicateDataType type);
     SearchArgumentBuilder & between(UInt64 column_id, PredicateDataType type, Literal lower, Literal upper);
 
@@ -173,9 +173,9 @@ private:
     SearchArgumentBuilder & start(UInt8 op);
     SearchArgumentBuilder & addLeaf(PredicateLeaf leaf);
 
-    std::vector<ExpressionTreePtr> stack;
+    VectorWithMemoryTracking<ExpressionTreePtr> stack;
     ExpressionTreePtr root;
-    std::vector<PredicateLeaf> leaves;
+    VectorWithMemoryTracking<PredicateLeaf> leaves;
 };
 
 /// A bloom filter of a row group (or a stripe), from the BLOOM_FILTER_UTF8 stream.
@@ -192,7 +192,7 @@ private:
     bool testHash(Int64 hash) const;
 
     UInt32 num_hash_functions;
-    std::vector<UInt64> bits;
+    VectorWithMemoryTracking<UInt64> bits;
 };
 
 }
