@@ -67,7 +67,7 @@ def background(query, query_id, **settings):
     settings.update(run_query_in_background=1, async_insert=0, log_queries=0, query_metric_log_interval=0,
                     send_logs_level='none', send_profile_events=0, max_threads=1,
                     max_query_size=32 * 1024 * 1024, max_insert_block_size=16,
-                    input_format_parallel_parsing=0)
+                    input_format_parallel_parsing=0, function_sleep_max_microseconds_per_block=6_000_000)
     settings.setdefault('max_untracked_memory', 0)
     with socket.create_connection((os.environ['CLICKHOUSE_HOST'], int(os.environ['CLICKHOUSE_PORT_TCP'])), timeout=60) as sock:
         with sock.makefile('rb') as stream:
@@ -116,6 +116,7 @@ admin(f'CREATE USER {user}')
 try:
     # Small input blocks keep execution memory below the low admission limits.
     # Sleeping per row keeps the accepted query observable without retaining data in storage.
+    # The materialized expression can receive all 1024 rows together, requiring 5.12 seconds.
     admin(f'CREATE TABLE {table} (s String, pause UInt8 MATERIALIZED sleepEachRow(0.005)) ENGINE=Null')
     admin(f'GRANT SELECT, INSERT ON *.* TO {user}')
     query = f'INSERT INTO {table} FORMAT TSV\n' + payload
