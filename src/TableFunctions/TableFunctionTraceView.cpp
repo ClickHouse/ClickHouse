@@ -345,9 +345,9 @@ struct SpanColumns
     const IColumn & shard_num;
     const IColumn & attribute;
 
-    UInt64 start(size_t row) const { return start_time_us.getUInt(row); }
+    [[nodiscard]] UInt64 start(size_t row) const { return start_time_us.getUInt(row); }
     /// A finish before the start is a clock artifact: such a span is treated as instantaneous.
-    UInt64 finish(size_t row) const { return std::max(finish_time_us.getUInt(row), start(row)); }
+    [[nodiscard]] UInt64 finish(size_t row) const { return std::max(finish_time_us.getUInt(row), start(row)); }
 };
 
 /// The parent links of a trace resolved into a forest of row indexes.

@@ -458,7 +458,7 @@ public:
 private:
     /// Not exhausted, so at least one more address exists beyond the batch; the query can never
     /// consume more than the limit anyway.
-    size_t upperBound() const TSA_REQUIRES(mutex)
+    [[nodiscard]] size_t upperBound() const TSA_REQUIRES(mutex)
     {
         /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
         const auto total = generator->totalCount();
