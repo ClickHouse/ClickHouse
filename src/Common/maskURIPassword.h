@@ -211,8 +211,9 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
         {
             const size_t initial_offset = offset;
             offset = skip_valid_schema_chars(uri, offset, original_size);
-            if (offset > initial_offset && uri.compare(offset, 3, SCHEMA_SEPARATOR) == 0)
-                return parse_userinfo_and_authority(offset + 3);
+            if (offset > initial_offset && offset + 3 < original_size
+                && uri.compare(offset, SCHEMA_SEPARATOR.length(), SCHEMA_SEPARATOR) == 0)
+                return parse_userinfo_and_authority(offset + SCHEMA_SEPARATOR.length());
             ++offset;
         }
         return original_size;
@@ -226,6 +227,10 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
         if (offset < original_size - 3)
         {
             offset = skip_valid_schema_chars(uri, offset, original_size);
+            if (offset + 3 >= original_size)
+            {
+                return original_size;
+            }
             const char c = uri[offset];
             if (c == ':' && uri.compare(offset + 1, 2, "//") == 0)
                 return parse_userinfo_and_authority(offset + 3);

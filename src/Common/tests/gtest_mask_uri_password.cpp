@@ -38,6 +38,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"just some text", "just some text"},
         {"", ""},
         {"://", "://"},
+        {"http://", "http://"},
 
         /// Fails closed: a raw '@' in the password extends the userinfo to the last '@' of the authority.
         {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
@@ -59,6 +60,12 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"https://host/key?redirect=http://u:p@elsewhere", "https://host/key?redirect=http://u:[HIDDEN]@elsewhere"},
         {"https://u:p@host/key?redirect=http://u:p@elsewhere", "https://u:[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
         {"https://token@host/key?redirect=http://u:p@elsewhere", "https://[HIDDEN]@host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+        {"https://token@host/key?redirect_schema=http://", "https://[HIDDEN]@host/key?redirect_schema=http://"},
+        {"https://token@host/key?redirect_schema={a}p:/", "https://[HIDDEN]@host/key?redirect_schema={a}p:/"},
+        {"a\np:/", "a\np:/"},
+        {"a\npppp:/", "a\npppp:/"},
+        {"}pp}ppp:/", "}pp}ppp:/"},
+        {"https://host/}pppp:/", "https://host/}pppp:/"},
 
         /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
         {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
