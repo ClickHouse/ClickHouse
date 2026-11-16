@@ -12,7 +12,7 @@ public:
 
     /// Generates an object storage key based on a path in the virtual filesystem.
     /// @returns Keys that should be used to save data.
-    virtual ObjectStorageKey generate() const = 0;
+    [[nodiscard]] virtual ObjectStorageKey generate() const = 0;
 };
 
 using ObjectStorageKeyGeneratorPtr = std::shared_ptr<IObjectStorageKeyGenerator>;

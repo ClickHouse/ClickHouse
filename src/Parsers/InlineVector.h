@@ -42,13 +42,13 @@ public:
             ::operator delete(heap);
     }
 
-    const T * begin() const { return data(); }
-    const T * end() const { return data() + count; }
+    [[nodiscard]] const T * begin() const { return data(); }
+    [[nodiscard]] const T * end() const { return data() + count; }
     T * begin() { return data(); }
     T * end() { return data() + count; }
 
-    size_t size() const { return count; }
-    bool empty() const { return count == 0; }
+    [[nodiscard]] size_t size() const { return count; }
+    [[nodiscard]] bool empty() const { return count == 0; }
 
     void clear() { count = 0; }
 
@@ -67,7 +67,7 @@ private:
     size_t capacity = N;
 
     T * data() { return heap ? heap : inplace; }
-    const T * data() const { return heap ? heap : inplace; }
+    [[nodiscard]] const T * data() const { return heap ? heap : inplace; }
 
     void assign(const InlineVector & other)
     {

@@ -31,15 +31,15 @@ public:
     void updatePartitionSet(const ClassifiedPartitions & partitions);
     void markSourceIdle();
 
-    bool hasWork(const ClassifiedPartitions & partitions) const;
-    int64_t calculateTimeToNextIdle(const StreamSettings & stream_settings) const;
-    bool isSourceMarkedIdle() const;
+    [[nodiscard]] bool hasWork(const ClassifiedPartitions & partitions) const;
+    [[nodiscard]] int64_t calculateTimeToNextIdle(const StreamSettings & stream_settings) const;
+    [[nodiscard]] bool isSourceMarkedIdle() const;
 
-    PartitionCursor getPartitionCursor(const std::string & partition) const;
-    const std::map<std::string, PartitionCursor> & getPartitionCursors() const;
-    Field getPartitionWatermark(const std::string & partition) const;
-    Field getGlobalWatermark() const;
-    bool isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const;
+    [[nodiscard]] PartitionCursor getPartitionCursor(const std::string & partition) const;
+    [[nodiscard]] const std::map<std::string, PartitionCursor> & getPartitionCursors() const;
+    [[nodiscard]] Field getPartitionWatermark(const std::string & partition) const;
+    [[nodiscard]] Field getGlobalWatermark() const;
+    [[nodiscard]] bool isPartitionIdle(const std::string & partition, const StreamSettings & stream_settings) const;
 
 private:
     /// Read position.

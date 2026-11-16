@@ -90,6 +90,10 @@ void checkPreloadConfigurationFile()
 {
     constexpr auto path = "/etc/ld.so.preload";
 
+    /// The loader skips the file if it is not readable, see `rtld.c`.
+    if (0 != access(path, R_OK))
+        return;
+
     std::string content;
     if (!readFile(path, content))
         return;
@@ -340,7 +344,7 @@ struct Mapping
     ino_t inode = 0;
     std::string_view path;
 
-    bool isSameFile(const Mapping & other) const { return device == other.device && inode == other.inode; }
+    [[nodiscard]] bool isSameFile(const Mapping & other) const { return device == other.device && inode == other.inode; }
 };
 
 /// Parses a number in the given base at the beginning of `str` and removes it from `str`.

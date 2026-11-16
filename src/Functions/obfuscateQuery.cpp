@@ -109,7 +109,7 @@ public:
 
     explicit ObfuscateQueryFunction(String function_name_, Mode mode_) : function_name(std::move(function_name_)), mode(mode_) {}
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
 private:
     String function_name;
@@ -227,7 +227,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
 class ObfuscateQueryFunctionAdaptor final : public IFunction
 {
 private:
-    ObfuscateQueryFunction::Mode getMode(size_t num_args) const
+    [[nodiscard]] ObfuscateQueryFunction::Mode getMode(size_t num_args) const
     {
         if (name == "obfuscateQueryWithSeed")
         {
@@ -246,50 +246,50 @@ private:
 public:
     explicit ObfuscateQueryFunctionAdaptor(String name_) : name(std::move(name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         // Only deterministic for obfuscateQueryWithSeed with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return true;
     }
 
-    bool canBeExecutedOnLowCardinalityDictionary() const override
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override
     {
         // `obfuscateQuery` relies on per-row randomness, so dictionary execution
         // would collapse equal values and produce undesired behavior.
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool isDeterministic() const override
+    [[nodiscard]] bool isDeterministic() const override
     {
         // obfuscateQueryWithSeed is deterministic when provided with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    bool isDeterministicInScopeOfQuery() const override
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
     {
         // Only obfuscateQueryWithSeed is deterministic in scope of query.
         return name == "obfuscateQueryWithSeed";
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (name == "obfuscateQueryWithSeed")
             return "(String, Integer | String) -> String";
         return "(String, [Integer | String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ObfuscateQueryFunction::Mode mode = getMode(arguments.size());
         ObfuscateQueryFunction impl(name, mode);
