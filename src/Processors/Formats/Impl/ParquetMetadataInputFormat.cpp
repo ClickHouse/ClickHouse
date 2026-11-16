@@ -220,9 +220,13 @@ static void checkSchemaDepth(arrow::io::RandomAccessFile & file, const FormatSet
     if (metadata_size > file_size - 8)
         return;
 
+    /// Only the schema is needed: skip the column chunks, the bulk of a large footer, without decoding them,
+    /// because Arrow parses the whole footer again right after.
     auto footer = readAt(file, file_size - 8 - metadata_size, metadata_size);
     Parquet::parq::FileMetaData metadata;
-    Parquet::deserializeThriftStruct(metadata, reinterpret_cast<const char *>(footer->data()), footer->size());
+    Parquet::ColumnChunkOffsets column_chunk_offsets;
+    Parquet::deserializeFileMetaDataWithoutColumnChunks(
+        metadata, reinterpret_cast<const char *>(footer->data()), footer->size(), column_chunk_offsets);
 
     /// The schema is a depth-first list of elements where a group element is followed by its `num_children` children.
     /// The stack holds the number of children still to come for each group the walk is in.
