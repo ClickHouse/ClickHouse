@@ -59,6 +59,7 @@ SELECT if(user = '${user_a}', 'first_replica', user)
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND type = 'QueryFinish'
+  AND has(databases, currentDatabase())
   AND log_comment = '05632_before'
   AND user IN ('${user_a}', '${user_b}')
 ORDER BY event_time_microseconds
@@ -84,6 +85,7 @@ SELECT if(user = '${user_b}', 'second_replica', user)
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND type = 'QueryFinish'
+  AND has(databases, currentDatabase())
   AND log_comment = '05632_after'
   AND user IN ('${user_a}', '${user_b}')
 ORDER BY event_time_microseconds

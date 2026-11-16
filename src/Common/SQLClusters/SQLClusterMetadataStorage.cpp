@@ -68,11 +68,11 @@ class SQLClusterMetadataStorage::ISQLClusterStorage
 public:
     virtual ~ISQLClusterStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
 
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
 
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -80,7 +80,7 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 
@@ -89,10 +89,10 @@ public:
     virtual void commitReload() const {}
 
     /// Current root-node data version (replicated) or 0 (local). Used by `getAll` for snapshot retries.
-    virtual Int32 getVersion() const { return 0; }
+    [[nodiscard]] virtual Int32 getVersion() const { return 0; }
 
     /// Root version observed when the update watch was last armed in `list`.
-    virtual Int32 getArmedVersion() const { return 0; }
+    [[nodiscard]] virtual Int32 getArmedVersion() const { return 0; }
 };
 
 
@@ -112,9 +112,9 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -134,12 +134,12 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -147,7 +147,7 @@ public:
         return readHook(data);
     }
 
-    virtual std::string readHook(const std::string & data) const
+    [[nodiscard]] virtual std::string readHook(const std::string & data) const
     {
         return data;
     }
@@ -195,7 +195,7 @@ public:
         }
     }
 
-    virtual std::string writeHook(const std::string & data) const
+    [[nodiscard]] virtual std::string writeHook(const std::string & data) const
     {
         return data;
     }
@@ -216,7 +216,7 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
@@ -290,7 +290,7 @@ public:
 
     ~ZooKeeperStorage() override = default;
 
-    bool isReplicated() const override { return true; }
+    [[nodiscard]] bool isReplicated() const override { return true; }
 
     bool waitUpdate(size_t timeout) override
     {
@@ -308,7 +308,7 @@ public:
         return stat.version != root_version;
     }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::list");
         /// Set a data-watch on the root node and remember its version as the armed version. Every
@@ -327,7 +327,7 @@ public:
         root_version = armed_version.load();
     }
 
-    Int32 getVersion() const override
+    [[nodiscard]] Int32 getVersion() const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::getVersion");
         Coordination::Stat stat;
@@ -335,22 +335,22 @@ public:
         return stat.version;
     }
 
-    Int32 getArmedVersion() const override { return armed_version.load(); }
+    [[nodiscard]] Int32 getArmedVersion() const override { return armed_version.load(); }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::exists");
         return getClient()->exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLClusterMetadataStorage::read");
         auto data = getClient()->get(getPath(file_name));
         return readHook(data);
     }
 
-    virtual std::string readHook(const std::string & data) const
+    [[nodiscard]] virtual std::string readHook(const std::string & data) const
     {
         return data;
     }
@@ -396,7 +396,7 @@ public:
         zkutil::KeeperMultiException::check(code, requests, responses);
     }
 
-    virtual std::string writeHook(const std::string & data) const
+    [[nodiscard]] virtual std::string writeHook(const std::string & data) const
     {
         return data;
     }
@@ -453,7 +453,7 @@ private:
         return zookeeper_client;
     }
 
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())
@@ -487,7 +487,7 @@ public:
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("cluster_metadata.algorithm", "aes_128_ctr"));
     }
 
-    std::string readHook(const std::string & data) const override
+    [[nodiscard]] std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
 
@@ -517,7 +517,7 @@ public:
         return decrypted_buffer;
     }
 
-    std::string writeHook(const std::string & data) const override
+    [[nodiscard]] std::string writeHook(const std::string & data) const override
     {
         FileEncryption::Header header{
             .algorithm = algorithm,
