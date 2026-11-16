@@ -38,14 +38,17 @@ namespace
 class FunctionReducedColumn final : public IFunction
 {
 public:
-    String getName() const override { return "__reducedColumn"; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override { return arguments[0].column; }
+    [[nodiscard]] String getName() const override { return "__reducedColumn"; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        return arguments[0].column;
+    }
 };
 
 }
@@ -549,7 +552,7 @@ struct ColumnFunction::ReducedColumns
         return {column.shared_node, column.recursively_convert_result_to_full_column_if_low_cardinality};
     }
 
-    const ColumnWithTypeAndName * find(const ColumnFunction & column) const
+    [[nodiscard]] const ColumnWithTypeAndName * find(const ColumnFunction & column) const
     {
         if (!column.shared_node)
             return nullptr;
