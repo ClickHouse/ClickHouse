@@ -95,30 +95,27 @@ public:
             rhs_begin = sorted_other_buffer.begin();
             rhs_end = sorted_other_buffer.end();
         }
-        const size_t rhs_size = rhs_end - rhs_begin;
-
-        /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
+        /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append.
         if (buffer.back().first < rhs_begin->first)
         {
             buffer.insert(rhs_begin, rhs_end, arena);
             return;
         }
-        if ((rhs_end - 1)->first < buffer.front().first)
-        {
-            Buffer merged;
-            merged.reserve_exact(rhs_size + buffer.size(), arena);
-            merged.insert(rhs_begin, rhs_end, arena);
-            merged.insert(std::as_const(buffer).begin(), std::as_const(buffer).end(), arena);
-            buffer.swap(merged, arena);
-            return;
-        }
 
-        Buffer merged;
-        merged.resize_exact(buffer.size() + rhs_size, arena);
-        Sample * merged_end = std::merge(buffer.begin(), buffer.end(), rhs_begin, rhs_end, merged.begin(), lessByTimestamp);
-        merged.resize_assume_reserved(merged_end - merged.begin());
-        deduplicateSorted(merged);
-        buffer.swap(merged, arena);
+        /// Merges in place from the back, so no unread sample of `buffer` is overwritten.
+        size_t lhs_pos = buffer.size();
+        size_t rhs_pos = rhs_end - rhs_begin;
+        buffer.resize(lhs_pos + rhs_pos, arena);
+        Sample * out = buffer.end();
+        while (lhs_pos > 0 && rhs_pos > 0)
+        {
+            if (rhs_begin[rhs_pos - 1].first < buffer[lhs_pos - 1].first)
+                *--out = buffer[--lhs_pos];
+            else
+                *--out = rhs_begin[--rhs_pos];
+        }
+        std::copy(rhs_begin, rhs_begin + rhs_pos, buffer.begin());
+        deduplicateSorted(buffer);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -200,7 +197,7 @@ private:
     using Sample = std::pair<TimestampType, ValueType>;
     /// Buffers of 4096 bytes and more are allocated with the ordinary allocator, to avoid fragmentation and trash in the arena.
     using Allocator = MixedAlignedArenaAllocator<alignof(Sample), 4096>;
-    using Buffer = PODArray<Sample, 32, Allocator>;
+    using Buffer = PODArray<Sample, /* initial_bytes = */ sizeof(Sample), Allocator>;
     /// For the sorted copies made where no arena is available.
     using TemporaryBuffer = PODArray<Sample, 32>;
 
