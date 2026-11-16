@@ -1793,14 +1793,17 @@ namespace
             String url;
             while (buffered_addresses - addresses_before < target && url_producer(url))
             {
-                auto options = getFailoverOptions(url, description, max_addresses, caller);
                 /// The URL that crosses the limit is not buffered: inference may still stop at one of
                 /// the addresses before it, and only if it does not, the next call reports the limit.
-                if (buffered_addresses + options.size() > max_addresses)
+                /// This holds for a URL whose failover options alone exceed the limit as well, so they
+                /// are counted without throwing before they are materialized, as in the glob iterator.
+                const auto count = countReplicasOfShard(url, description, max_addresses, caller);
+                if (!count || buffered_addresses + *count > max_addresses)
                 {
                     limit_exceeded = true;
                     break;
                 }
+                auto options = getFailoverOptions(url, description, max_addresses, caller);
                 buffered_addresses += options.size();
                 url_options_to_check.push_back(std::move(options));
             }
