@@ -201,3 +201,81 @@ def test_shutdown_cancels_running_zero_copy_fetch(started_cluster):
 
     node4.query("DROP TABLE t_shutdown_zc_fetch SYNC")
     node3.query("DROP TABLE t_shutdown_zc_fetch SYNC")
+
+
+def test_shutdown_does_not_start_parts_cleanup(started_cluster):
+    """Once the server shutdown has begun, the cleanup thread must not start
+    removing outdated parts: the shutdown would wait for that work, and the
+    parts are removed after the restart anyway. A queued asynchronous insert
+    with a sleeping DEFAULT keeps the shutdown in the flush of the asynchronous
+    insert queue for ~20 seconds, and the outdated parts reach
+    `old_parts_lifetime` meanwhile.
+    """
+    node.query("""
+        CREATE TABLE t_shutdown_cleanup (k UInt64)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS old_parts_lifetime = 10, cleanup_delay_period = 1,
+            cleanup_delay_period_random_add = 0,
+            cleanup_thread_preferred_points_per_iteration = 0,
+            merge_tree_clear_old_parts_interval_seconds = 1
+        """)
+
+    node.query("SYSTEM STOP MERGES t_shutdown_cleanup")
+    for i in range(10):
+        node.query(f"INSERT INTO t_shutdown_cleanup VALUES ({i})")
+    node.query("SYSTEM START MERGES t_shutdown_cleanup")
+    node.query("OPTIMIZE TABLE t_shutdown_cleanup FINAL")
+
+    # A background merge may have taken some of the parts before OPTIMIZE,
+    # so the number of outdated parts is read rather than assumed.
+    parts = node.query(
+        "SELECT count(), countIf(active) FROM system.parts WHERE database = 'default' AND table = 't_shutdown_cleanup'"
+    ).split()
+    assert int(parts[1]) == 1
+    total_parts = int(parts[0])
+    assert total_parts >= 11
+
+    data_path = node.query(
+        "SELECT data_paths[1] FROM system.tables WHERE database = 'default' AND name = 't_shutdown_cleanup'"
+    ).strip()
+
+    def count_part_dirs():
+        return int(
+            node.exec_in_container(
+                ["bash", "-c", f"ls -d {data_path}all_* | wc -l"]
+            ).strip()
+        )
+
+    node.query("""
+        CREATE TABLE t_shutdown_slow_insert (k UInt64, s UInt8 DEFAULT sleepEachRow(1))
+        ENGINE = Null
+        """)
+    values = ", ".join(f"({i})" for i in range(20))
+    node.query(f"""
+        INSERT INTO t_shutdown_slow_insert (k)
+        SETTINGS async_insert = 1, wait_for_async_insert = 0,
+            async_insert_use_adaptive_busy_timeout = 0,
+            async_insert_busy_timeout_max_ms = 600000,
+            function_sleep_max_microseconds_per_block = 0
+        VALUES {values}
+        """)
+
+    assert node.stop_clickhouse(stop_wait_sec=90) is True
+
+    # The outdated parts expired during the shutdown and were left on disk.
+    assert count_part_dirs() == total_parts
+
+    node.start_clickhouse()
+
+    # They are removed after the restart.
+    for _ in range(300):
+        if count_part_dirs() == 1:
+            break
+        time.sleep(0.2)
+    else:
+        raise Exception("The outdated parts were not removed after the restart")
+
+    assert node.query("SELECT count() FROM t_shutdown_cleanup") == "10\n"
+
+    node.query("DROP TABLE t_shutdown_cleanup SYNC")
+    node.query("DROP TABLE t_shutdown_slow_insert SYNC")
