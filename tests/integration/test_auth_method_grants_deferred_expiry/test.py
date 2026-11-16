@@ -1,3 +1,4 @@
+import uuid
 from time import sleep
 
 import pytest
@@ -68,11 +69,13 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
 
     # Both pushes happen while the credentials are valid, so neither is rejected at push time. The rows
     # sit in the async insert queue until the deferred flush at push + BUSY_TIMEOUT_MS.
+    expired_query_id = f"deferred_expired_{uuid.uuid4().hex}"
     node.query(
         "INSERT INTO default.t_deferred_expired VALUES (1)",
         user="u_deferred_expired",
         password="pw",
         settings=async_insert_settings(),
+        query_id=expired_query_id,
     )
     node.query(
         "INSERT INTO default.t_deferred_valid VALUES (1)",
@@ -91,6 +94,23 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     assert node.query("SELECT count() FROM default.t_deferred_expired").strip() == "0"
     # The control token never expired, so its deferred flush executed normally.
     assert node.query("SELECT count() FROM default.t_deferred_valid").strip() == "1"
+
+    # The failed flush is logged like any other failed flush. The queue is flushed first in case the deferred
+    # flush has not run yet; either way it runs after the expiry.
+    node.query("SYSTEM FLUSH ASYNC INSERT QUEUE default.t_deferred_expired")
+    node.query("SYSTEM FLUSH LOGS query_log, asynchronous_insert_log")
+    assert (
+        node.query(
+            f"SELECT status, exception LIKE '%USER_EXPIRED%' FROM system.asynchronous_insert_log WHERE query_id = '{expired_query_id}'"
+        )
+        == "FlushError\t1\n"
+    )
+    assert (
+        node.query(
+            f"SELECT type, exception_code FROM system.query_log WHERE query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{expired_query_id}')"
+        )
+        == "ExceptionBeforeStart\t720\n"
+    )
 
     node.query("DROP USER u_deferred_expired")
     node.query("DROP USER u_deferred_valid")
