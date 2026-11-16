@@ -67,7 +67,11 @@ void TableFunctionRemote::skipLocalShardsWithoutTable(const ContextPtr & context
     const bool skip = query_settings[Setting::skip_unavailable_shards].changed
         ? query_settings[Setting::skip_unavailable_shards].value
         : declared[DistributedSetting::skip_unavailable_shards].value;
-    if (!skip)
+    const auto mode = query_settings[Setting::skip_unavailable_shards_mode].changed
+        ? query_settings[Setting::skip_unavailable_shards_mode].value
+        : declared[DistributedSetting::skip_unavailable_shards_mode].value;
+    /// This mode skips a shard that cannot be reached, never one without the table.
+    if (!skip || mode == SkipUnavailableShardsMode::UNAVAILABLE)
         return;
 
     const auto & shards = cluster->getShardsInfo();

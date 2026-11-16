@@ -6,3 +6,5 @@
 --- skip_unavailable_shards = 1 on the table
 1
 1
+--- skip_unavailable_shards_mode = unavailable skips no shard without the table
+1

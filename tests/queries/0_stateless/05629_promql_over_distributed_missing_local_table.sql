@@ -9,6 +9,7 @@ SET distributed_foreground_insert = 1;
 
 DROP TABLE IF EXISTS ts_dist;
 DROP TABLE IF EXISTS ts_dist_skip;
+DROP TABLE IF EXISTS ts_dist_strict;
 DROP DATABASE IF EXISTS shard_1;
 
 CREATE DATABASE shard_1;
@@ -17,6 +18,7 @@ INSERT INTO shard_1.ts_local (metric_name, tags, samples) VALUES ('m', map('job'
 
 CREATE TABLE ts_dist AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases_with_local, '', ts_local);
 CREATE TABLE ts_dist_skip AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases_with_local, '', ts_local) SETTINGS skip_unavailable_shards = 1;
+CREATE TABLE ts_dist_strict AS shard_1.ts_local ENGINE = Distributed(test_cluster_two_shards_different_databases_with_local, '', ts_local) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
 
 SELECT '--- skip_unavailable_shards = 0';
 SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS prefer_localhost_replica = 0; -- { serverError UNKNOWN_TABLE }
@@ -32,6 +34,14 @@ SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS prefer_loca
 SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS prefer_localhost_replica = 1;
 SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS skip_unavailable_shards = 0; -- { serverError UNKNOWN_TABLE }
 
+SELECT '--- skip_unavailable_shards_mode = unavailable skips no shard without the table';
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable', prefer_localhost_replica = 0; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable', prefer_localhost_replica = 1; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM prometheusQuery(ts_dist_strict, 'm', 140); -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM prometheusQuery(ts_dist_strict, 'm', 140) SETTINGS skip_unavailable_shards_mode = 'unavailable_or_table_missing';
+
 DROP TABLE ts_dist;
 DROP TABLE ts_dist_skip;
+DROP TABLE ts_dist_strict;
 DROP DATABASE shard_1;
