@@ -1,0 +1,26 @@
+--- dictGet on a dictionary the user cannot access
+CREATE TABLE w_view (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
+
+SELECT * FROM w_view
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
+
+SELECT * FROM cluster_db.w_view
+ACCESS_DENIED
+NOT_LOADED
+--- a dictionary name that depends on the context
+CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = 'user', 'db.d_allowed', 'db.d'), 'value', toUInt64(1)) AS value)
+
+SELECT * FROM w_context
+a
+NOT_LOADED
+--- a table that does not exist where the table is created, e.g. on the initiator of ON CLUSTER
+CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM db.missing_table)
+
+CREATE TABLE cluster_db.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM db.missing_table)
+
+2
+--- a Nullable column returned through a JOIN is converted to the declared type
+a
+(CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)

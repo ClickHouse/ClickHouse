@@ -58,10 +58,17 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
 }
 
 StoragePtr TableFunctionView::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    /// The columns are known for a table created `AS view(...)` with a column list. Do not analyze the query then: the storage
+    /// of such a table is created with the global context, so the analysis would evaluate the query, e.g. its `dictGet` calls,
+    /// with full access. The query is analyzed by each query that reads the view, in its own context, and `StorageView`
+    /// converts the result to the columns.
+    const bool columns_are_declared = !cached_columns.empty();
+    auto columns = columns_are_declared ? std::move(cached_columns) : getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    if (columns_are_declared)
+        res->allowNullableFromJoin();
     res->startup();
     return res;
 }

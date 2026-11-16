@@ -26,6 +26,10 @@ public:
     bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
+    /// The columns of a table created `AS view(...)` with a column list are given by `CREATE`, not by the query, so a
+    /// `Nullable` column that the query returns through a `JOIN` is converted to the declared type, like any other column.
+    void allowNullableFromJoin() { allow_nullable_from_join = true; }
+
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -82,6 +86,7 @@ public:
 
 protected:
     bool is_parameterized_view;
+    bool allow_nullable_from_join = false;
 };
 
 }
