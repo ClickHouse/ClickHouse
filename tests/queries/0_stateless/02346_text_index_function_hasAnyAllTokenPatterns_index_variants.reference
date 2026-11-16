@@ -231,3 +231,15 @@ FixedString key short query not any	64
 FixedString key short query not any	64
 FixedString key short query not any	64
 FixedString key short query not any	64
+FixedString key short query buckets any	0
+FixedString key short query buckets any	0
+FixedString key short query buckets any	0
+FixedString key short query buckets any	0
+FixedString key short query buckets all	0
+FixedString key short query buckets all	0
+FixedString key short query buckets all	0
+FixedString key short query buckets all	0
+FixedString key short query buckets element	0
+FixedString key short query buckets element	0
+FixedString key full query buckets any	16
+FixedString key full query buckets any	16

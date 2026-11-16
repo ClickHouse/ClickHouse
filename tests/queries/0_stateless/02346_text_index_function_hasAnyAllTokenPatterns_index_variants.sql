@@ -574,3 +574,32 @@ SELECT 'FixedString key short query not any', count() FROM tab WHERE NOT hasAnyT
 DROP TABLE tab;
 
 SET optimize_functions_to_subcolumns = DEFAULT;
+
+-- The same with bucketed maps, where m['k'] can be read as a subcolumn.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(FixedString(3), String),
+    INDEX idx_k(m['k\0\0']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi',
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab SELECT number, if(number < 16, map('k', 'env:prod-eu'), map('x', 'env:prod-eu')) FROM numbers(64);
+
+SELECT 'FixedString key short query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array');
+SELECT 'FixedString key short query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'FixedString key short query buckets all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array');
+SELECT 'FixedString key short query buckets all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key short query buckets all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString key short query buckets all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%'], 'array') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'FixedString key short query buckets element', countIf(m['k'] != '') FROM tab;
+SELECT 'FixedString key short query buckets element', countIf(m['k'] != '') FROM tab SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString key full query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array');
+SELECT 'FixedString key full query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+
+DROP TABLE tab;
