@@ -418,6 +418,14 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     # live in the `NOP` encoding space: they are real operations on a core implementing
     # `FEAT_PAuth` (ARMv8.3 and later, which covers Graviton3 and Graviton4) and decode as no-ops
     # on older cores, so one binary still runs everywhere - just unprotected on the older ones.
+    # That holds only for code compiled for a target without `FEAT_PAuth`, which is our baseline
+    # (`cmake/cpu_features.cmake`). In a function compiled for ARMv8.3 or later, through `-march`
+    # or a `target` attribute, clang folds `autiasp; ret` into `retaa`, which raises SIGILL on the
+    # older cores. Such functions have to opt out with `target("branch-protection=none")`, as
+    # the ARMv8.3+ targets in our fork of SimSIMD do, and the compatibility check fails the
+    # `arm_release` package if a `retaa` or `retab` is left anywhere in it. Opting out a whole
+    # library instead does not work: a callee whose branch protection differs from the caller's
+    # is not inlined, and under ThinLTO that fails the `vectorize(enable)` loops in usearch.
     # Leaf functions are left unsigned, which is the default and free, because they do not spill
     # the return address to the stack.
     # `bti` is deliberately left out. The linker keeps the BTI property only when every input
