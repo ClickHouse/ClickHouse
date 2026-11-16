@@ -177,6 +177,13 @@
                     "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                     "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
                   ]
+                },
+                {
+                  "group": "Organization network connectivity",
+                  "hidden": true,
+                  "pages": [
+                    "products/cloud/guides/security/connectivity/org-network-connectivity"
+                  ]
                 }
               ]
             },

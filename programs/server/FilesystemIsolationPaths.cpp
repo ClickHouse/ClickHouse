@@ -412,7 +412,7 @@ private:
     }
 
     /// Every key `name` and `name[N]` under `prefix`.
-    std::vector<std::string> getMultipleKeys(const std::string & prefix, const std::string & name) const
+    [[nodiscard]] std::vector<std::string> getMultipleKeys(const std::string & prefix, const std::string & name) const
     {
         std::vector<std::string> result;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -645,7 +645,7 @@ private:
 
     /// The directory of the filesystem caches with relative paths, as in `getCache` in `RegisterDiskCache.cpp`. An
     /// empty `filesystem_caches_path` is the same as none.
-    fs::path getCachesBase() const
+    [[nodiscard]] fs::path getCachesBase() const
     {
         const std::string value = getPathSetting(config, "filesystem_caches_path", "");
         return value.empty() ? data_path / "caches" : absolute(value, data_path);
@@ -724,7 +724,7 @@ private:
 
     /// The directories a configuration file is loaded in: `startup_directory` at the startup, and `runtime_directory`
     /// when it is reloaded.
-    std::vector<fs::path> configLoadDirectories() const
+    [[nodiscard]] std::vector<fs::path> configLoadDirectories() const
     {
         if (startup_directory == runtime_directory)
             return {startup_directory};
@@ -733,7 +733,7 @@ private:
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
     /// changes to that directory, or to `/tmp` without a log.
-    fs::path logDirectory() const
+    [[nodiscard]] fs::path logDirectory() const
     {
         if (!is_daemon)
             return startup_directory;
@@ -744,7 +744,7 @@ private:
     /// The directory of the core dumps that `BaseDaemon::initialize` changes to at its end with `--daemon`: `core_path`
     /// relative to `logDirectory`, or `cores` in `path`. If it cannot create it, it falls back to the directory of the
     /// log, which is visible anyway.
-    fs::path coreDirectory() const
+    [[nodiscard]] fs::path coreDirectory() const
     {
         const std::string core_path = config.getString("core_path", "");
         return core_path.empty() ? data_path / "cores" : absolute(core_path, logDirectory());
