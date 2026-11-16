@@ -266,7 +266,7 @@ struct IdentifierResolveScope
     void popExpressionNode();
 
     /// `ExpressionsStack` is per-scope, so an aggregate enclosing a lambda sits on a parent scope's stack.
-    bool isInAggregateOrGroupingFunctionScope() const;
+    [[nodiscard]] bool isInAggregateOrGroupingFunctionScope() const;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
