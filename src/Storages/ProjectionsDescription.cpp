@@ -14,8 +14,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
@@ -1001,6 +1003,18 @@ VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames()
     for (const auto & pair : map)
         names.push_back(pair.first);
     return names;
+}
+
+ExpressionActionsPtr
+ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
+{
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
+    for (const auto & projection : projections)
+        for (const auto & projection_expr : projection.query_ast->children)
+            combined_expr_list->children.push_back(projection_expr->clone());
+
+    auto syntax_result = TreeRewriter(query_context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, query_context).getActions(false);
 }
 
 }
