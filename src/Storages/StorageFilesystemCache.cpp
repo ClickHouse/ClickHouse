@@ -1,8 +1,10 @@
 #include <Storages/StorageFilesystemCache.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
@@ -148,11 +150,14 @@ Pipe StorageFilesystemCache::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
-    ContextPtr /* context */,
+    ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
     size_t /* num_streams */)
 {
+    /// It shows the same segments as `system.filesystem_cache`, so it requires the same privilege.
+    context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "filesystem_cache");
+
     storage_snapshot->check(column_names);
 
     auto cache = FileCacheFactory::instance().get(cache_name);

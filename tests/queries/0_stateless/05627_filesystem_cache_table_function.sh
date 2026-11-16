@@ -137,6 +137,20 @@ done
 data_count=$($CLICKHOUSE_CLIENT --query "SELECT countIf(queue = 'SplitCache_Data') FROM filesystemCache('$split', 1000, 1000000)")
 $CLICKHOUSE_CLIENT --query "SELECT groupUniqArray(queue) FROM filesystemCache('$split', $data_count, 1000000, 'coldest')"
 
+echo "Access: requires SELECT on system.filesystem_cache"
+user="user_05627_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -m --query "
+DROP USER IF EXISTS $user;
+CREATE USER $user IDENTIFIED WITH no_password;
+"
+$CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() FROM filesystemCache('$lru', 100, 1000000)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+# A grant on some columns only is not enough.
+$CLICKHOUSE_CLIENT --query "GRANT SELECT(path) ON system.filesystem_cache TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() FROM filesystemCache('$lru', 100, 1000000)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON system.filesystem_cache TO $user"
+$CLICKHOUSE_CLIENT --user "$user" --query "SELECT count() > 0 FROM filesystemCache('$lru', 100, 1000000)"
+$CLICKHOUSE_CLIENT --query "DROP USER $user"
+
 echo "Errors"
 $CLICKHOUSE_CLIENT -m --query "
 SELECT * FROM filesystemCache('$lru', 100); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -48,4 +48,8 @@ hottest	1
 coldest	1
 random	1
 ['SplitCache_Data']
+Access: requires SELECT on system.filesystem_cache
+ACCESS_DENIED
+ACCESS_DENIED
+1
 Errors

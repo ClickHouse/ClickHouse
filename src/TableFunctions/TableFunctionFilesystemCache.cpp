@@ -125,7 +125,9 @@ With 'random', the whole queue is walked to take a uniform sample of at most `ma
 
 A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue, and the data queue always comes first, in every order.
 
-Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.)",
+Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.
+
+It requires the `SELECT` privilege on `system.filesystem_cache`.)",
             .syntax = "filesystemCache(cache_name, max_elements, max_total_size[, order])",
             .arguments = {
                 {"cache_name", "The name of the cache, the same as in `SYSTEM DROP FILESYSTEM CACHE` and `system.filesystem_cache.cache_name`.", {"String"}},
