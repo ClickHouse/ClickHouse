@@ -486,6 +486,14 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
+        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type))
+            && (isDynamic(element_bare_type) || isVariant(element_bare_type)))
+        {
+            auto equals = makeASTFunction("__scalarCarrierValueEqualsForIn", left_operand->clone(), std::move(candidate));
+            auto match = makeASTFunction("ifNull", std::move(equals), make_intrusive<ASTLiteral>(0u));
+            any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
+            continue;
+        }
         if ((isDate(left_bare_type) || isDate32(left_bare_type))
             && (isDateTime(element_bare_type) || isDateTime64(element_bare_type)))
         {
@@ -526,6 +534,19 @@ ASTPtr makeNumericNonConstantInReplacement(
 
 /// Keep a nullable scalar's source `NULL` separate from its conversion to an
 /// `Array` or `Map` candidate. A complex type cannot hold the conversion's `NULL`.
+bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_array->getNestedType(), right_array->getNestedType());
+    }
+    return ((isDate(left) || isDate32(left)) && (isDateTime(right) || isDateTime64(right)))
+        || ((isDate(right) || isDate32(right)) && (isDateTime(left) || isDateTime64(left)));
+}
+
 bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -1796,6 +1817,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             || (canContainNull(*type) && !isArray(bare_type) && !isMap(bare_type));
                     };
                     const bool left_is_complex = left_bare_type && (isArray(left_bare_type) || isMap(left_bare_type));
+                    if (use_standard_null_semantics && left_is_complex
+                        && ((right_argument_type && hasNestedCalendarDateInComparison(left_argument_type, right_argument_type))
+                            || (right_array_type && hasNestedCalendarDateInComparison(left_argument_type, right_array_type->getNestedType()))
+                            || (element_types_known && std::any_of(element_types.begin(), element_types.end(), [&](const auto & type)
+                                { return hasNestedCalendarDateInComparison(left_argument_type, type); }))))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Setting 'in_null_as_unknown' does not yet support nested calendar comparison for {}",
+                            left_argument_type->getName());
                     const bool compare_complex_sources = use_standard_null_semantics && left_is_complex
                         && element_types_known && !element_types.empty()
                         && std::any_of(element_types.begin(), element_types.end(), [&](const auto & type)

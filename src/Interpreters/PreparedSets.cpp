@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <variant>
 #include <Columns/ColumnTuple.h>
@@ -33,6 +34,16 @@ namespace DB
 
 namespace
 {
+
+bool samePreparedSetTypes(const DataTypes & lhs, const DataTypes & rhs)
+{
+    return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin(), [](const auto & left, const auto & right)
+    {
+        /// `IDataType::equals` ignores custom names such as `Bool`, although member
+        /// conversion and therefore the contents of a prepared set depend on them.
+        return left->getName() == right->getName();
+    });
+}
 
 /// Check if any step in the query plan tree contains correlated expressions (PLACEHOLDER nodes).
 /// Such plans cannot be executed standalone — they require decorrelation first.
@@ -811,7 +822,7 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(
     auto & sets_by_hash = sets_from_tuple[key];
 
     for (const auto & set : sets_by_hash)
-        if (equals(set->getTypes(), set_types))
+        if (samePreparedSetTypes(set->getTypes(), set_types))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, set_types));
 
     sets_by_hash.push_back(from_tuple);
@@ -874,7 +885,7 @@ FutureSetFromTuplePtr PreparedSets::findTuple(const Hash & key, const DataTypes 
         return nullptr;
 
     for (const auto & set : it->second)
-        if (equals(set->getTypes(), types))
+        if (samePreparedSetTypes(set->getTypes(), types))
             return set;
 
     return nullptr;

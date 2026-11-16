@@ -1250,6 +1250,18 @@ static bool needsCalendarDateInCast(const DataTypePtr & source_type, const DataT
     return (isDate(target) || isDate32(target)) && (isDateTime(source) || isDateTime64(source));
 }
 
+static bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasNestedCalendarDateInComparison(left_array->getNestedType(), right_array->getNestedType());
+    }
+    return needsCalendarDateInCast(left, right) || needsCalendarDateInCast(right, left);
+}
+
 static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_type)
 {
     const auto bare_type = removeNullable(removeLowCardinality(source_type));
@@ -1516,6 +1528,13 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         const auto * source_array_type = typeid_cast<const DataTypeArray *>(removeNullable(source_array->getResultType()).get());
         if (source_array_type)
         {
+            if (isArray(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                && hasNestedCalendarDateInComparison(element_arg->getResultType(), source_array_type->getNestedType()))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
+                    element_arg->getResultType()->getName(), source_array_type->getNestedType()->getName());
+
             const auto target_type = removeNullable(recursiveRemoveLowCardinality(element_arg->getResultType()));
             const auto source_element_type = source_array_type->getNestedType();
             const bool both_numeric = isNumber(removeNullable(removeLowCardinality(target_type)))
@@ -1593,20 +1612,15 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         }
         else if (source_array_type
             && (isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isBool(removeNullable(removeLowCardinality(element_arg->getResultType()))))
+                || isBool(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isStringOrFixedString(removeNullable(removeLowCardinality(element_arg->getResultType()))))
             && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
                 || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
         {
-            const String candidate_name = "__in_numeric_carrier_array_candidate";
-            auto candidate = std::make_shared<IdentifierNode>(Identifier{candidate_name});
-            auto converted = std::make_shared<FunctionNode>("accurateCastOrNull");
-            converted->getArguments().getNodes() = {
-                std::move(candidate),
-                std::make_shared<ConstantNode>(
-                    removeNullable(removeLowCardinality(element_arg->getResultType()))->getName(),
-                    std::make_shared<DataTypeString>())};
-            auto comparison = std::make_shared<FunctionNode>("equals");
-            comparison->getArguments().getNodes() = {element_arg, std::move(converted)};
+            const String candidate_name = "__in_scalar_carrier_array_candidate";
+            auto comparison = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
+            comparison->getArguments().getNodes() = {
+                element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name})};
             auto non_null_match = std::make_shared<FunctionNode>("ifNull");
             non_null_match->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
             auto lambda = std::make_shared<LambdaNode>(
@@ -3441,6 +3455,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto * lhs_array = typeid_cast<const DataTypeArray *>(in_first_argument->getResultType().get());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
+                            && hasNestedCalendarDateInComparison(in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
+                                in_first_argument->getResultType()->getName(), non_const_set_candidate->getResultType()->getName());
+                        if (rhs_array && lhs_array
+                            && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
                             && !isCompoundCarrierForIn(in_first_argument->getResultType(), rhs_array->getNestedType())
                             && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
@@ -3661,22 +3682,33 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             bind_argument(element);
                             const bool numeric_element = isNumber(removeNullable(removeLowCardinality(element->getResultType())));
                             QueryTreeNodePtr right_argument = std::make_shared<IdentifierNode>(Identifier{argument_names.back()});
-                            if (!numeric_element)
+                            const auto source_type = removeNullable(removeLowCardinality(element->getResultType()));
+                            const bool carrier_element = isDynamic(source_type) || isVariant(source_type);
+                            QueryTreeNodePtr comparison;
+                            if (carrier_element)
                             {
-                                auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
-                                const auto source_type = removeNullable(removeLowCardinality(element->getResultType()));
-                                auto cast = std::make_shared<FunctionNode>(
-                                    isDynamic(source_type) || isVariant(source_type) ? "accurateCastOrNull" : "CAST");
-                                cast->getArguments().getNodes() = {
-                                    std::move(right_argument),
-                                    std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};
-                                right_argument = std::move(cast);
+                                auto carrier_match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
+                                carrier_match->getArguments().getNodes() = {
+                                    std::make_shared<IdentifierNode>(Identifier{argument_names.front()}), std::move(right_argument)};
+                                comparison = std::move(carrier_match);
                             }
-                            QueryTreeNodePtr comparison = buildNumericInEquality(
-                                std::make_shared<IdentifierNode>(Identifier{argument_names.front()}),
-                                right_argument,
-                                in_first_argument->getResultType(),
-                                numeric_element ? element->getResultType() : in_first_argument->getResultType());
+                            else
+                            {
+                                if (!numeric_element)
+                                {
+                                    auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
+                                    auto cast = std::make_shared<FunctionNode>("CAST");
+                                    cast->getArguments().getNodes() = {
+                                        std::move(right_argument),
+                                        std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};
+                                    right_argument = std::move(cast);
+                                }
+                                comparison = buildNumericInEquality(
+                                    std::make_shared<IdentifierNode>(Identifier{argument_names.front()}),
+                                    right_argument,
+                                    in_first_argument->getResultType(),
+                                    numeric_element ? element->getResultType() : in_first_argument->getResultType());
+                            }
                             if (!numeric_element)
                             {
                                 /// A failed conversion is a nonmatch; only a source `NULL`
@@ -3741,10 +3773,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     QueryTreeNodes string_elements;
                     QueryTreeNodes exact_compound_elements;
                     QueryTreeNodes compound_carrier_elements;
+                    QueryTreeNodes scalar_carrier_elements;
                     const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     if (use_standard_null_semantics)
                     {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
+                        if (isStringOrFixedString(left_complex_type))
+                        {
+                            std::erase_if(matchable_elements, [&](const auto & arg)
+                            {
+                                const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
+                                if (isDynamic(source_type) || isVariant(source_type))
+                                {
+                                    scalar_carrier_elements.push_back(arg);
+                                    return true;
+                                }
+                                return false;
+                            });
+                        }
                         if (isArray(left_complex_type) || isMap(left_complex_type))
                         {
                             std::erase_if(matchable_elements, [&](const auto & arg)
@@ -3810,6 +3856,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         QueryTreeNodePtr match = buildCompoundCarrierInComparison(
                             in_first_argument, source_carrier,
                             in_first_argument->getResultType());
+                        resolveFunction(match, scope);
+                        if (extra_match_predicate)
+                        {
+                            auto either_match = std::make_shared<FunctionNode>("or");
+                            either_match->getArguments().getNodes() = {std::move(extra_match_predicate), std::move(match)};
+                            extra_match_predicate = std::move(either_match);
+                            resolveFunction(extra_match_predicate, scope);
+                        }
+                        else
+                            extra_match_predicate = std::move(match);
+                    }
+                    for (const auto & source_carrier : scalar_carrier_elements)
+                    {
+                        auto equals = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
+                        equals->getArguments().getNodes() = {in_first_argument, source_carrier};
+                        auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+                        non_null_match->getArguments().getNodes() = {std::move(equals), std::make_shared<ConstantNode>(Field{0u})};
+                        QueryTreeNodePtr match = std::move(non_null_match);
                         resolveFunction(match, scope);
                         if (extra_match_predicate)
                         {

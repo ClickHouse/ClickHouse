@@ -48,6 +48,73 @@ namespace Setting
 namespace
 {
 
+class FunctionScalarCarrierValueEqualsForIn final : public IFunction
+{
+public:
+    static constexpr auto name = "__scalarCarrierValueEqualsForIn";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionScalarCarrierValueEqualsForIn>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const auto left_type = removeNullable(removeLowCardinality(arguments[0]));
+        if (!isNumber(left_type) && !isBool(left_type) && !isStringOrFixedString(left_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be numeric, Bool or String", getName());
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
+        if (!isDynamic(source_type) && !isVariant(source_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a Dynamic or Variant", getName());
+        auto result_type = std::make_shared<DataTypeUInt8>();
+        if (canContainNull(*arguments[1]))
+            return std::make_shared<DataTypeNullable>(result_type);
+        return result_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto left_type = removeNullable(removeLowCardinality(arguments[0].type));
+        const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
+        auto left_values = recursiveRemoveLowCardinality(arguments[0].column->convertToFullColumnIfConst());
+        auto sources = recursiveRemoveLowCardinality(arguments[1].column->convertToFullColumnIfConst());
+        const IColumn * left = left_values.get();
+        const IColumn * carrier = sources.get();
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(left))
+            left = &nullable->getNestedColumn();
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
+            carrier = &nullable->getNestedColumn();
+
+        auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
+        auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
+        auto & values = result->getData();
+        auto & null_values = null_map->getData();
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (sources->isNullAt(row))
+            {
+                null_values[row] = 1;
+                continue;
+            }
+            if (left_values->isNullAt(row))
+                continue;
+
+            auto source_row = carrier->cut(row, 1);
+            auto converted = tryConvertColumnToTypeOrNull(
+                *source_row, source_type, left_type, {}, /*strict=*/true);
+            values[row] = converted && left->compareAt(row, 0, *converted, 1) == 0;
+        }
+        if (canContainNull(*arguments[1].type))
+            return ColumnNullable::create(std::move(result), std::move(null_map));
+        return result;
+    }
+};
+
 class FunctionMapValueEqualsForIn final : public IFunction
 {
 public:
@@ -817,6 +884,7 @@ REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl(factory, false);
     registerFunctionsInImpl(factory, true);
+    factory.registerFunction<FunctionScalarCarrierValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
     factory.registerFunction<FunctionMapValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
     factory.registerFunction<FunctionArrayValueEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
