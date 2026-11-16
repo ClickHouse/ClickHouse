@@ -1,0 +1,39 @@
+--- MergeTree
+PREWHERE
+1
+1
+1
+100	1088
+wide_filtered	0	0
+1
+10000	0	128690	14307067333621248254
+10000	0	128690	14307067333621248254
+wide_full	0	0
+wide_full	1	0
+100	1088
+wide_cached	1	0
+100	1088
+wide_no_writes	0	1
+100	1088
+compact_filtered	0	0
+1
+10000	0	128690	14307067333621248254
+10000	0	128690	14307067333621248254
+compact_full	0	0
+compact_full	1	0
+--- Parquet
+PREWHERE
+1
+1
+1
+100	1088
+parquet_filtered	0	0
+1
+10000	0	128690	14307067333621248254
+10000	0	128690	14307067333621248254
+parquet_full	0	0
+parquet_full	1	0
+100	1088
+parquet_cached	1	0
+100	1088
+parquet_no_writes	0	1

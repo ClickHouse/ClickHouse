@@ -1,0 +1,53 @@
+---
+description: 'Overlay 데이터베이스 엔진은 기존 여러 데이터베이스에 있는 테이블들을 합쳐 하나로 노출합니다.'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+`Overlay` 데이터베이스 엔진은 기존 여러 데이터베이스에 있는 테이블들을 합쳐 하나로 노출합니다.
+
+## 데이터베이스 생성 {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+테이블 이름은 원본 데이터베이스가 나열된 순서대로 해석되며, 해당 이름의 테이블이 있는 첫 번째 데이터베이스가 선택됩니다.
+
+이 데이터베이스는 자체 테이블을 소유하지 않습니다. Overlay 데이터베이스의 모든 테이블은 원본 데이터베이스 테이블에 대한 [`Alias`](/ko/reference/engines/table-engines/special/alias) 테이블처럼 동작하므로, 읽기와 쓰기는 원본 테이블에서 수행됩니다.
+Overlay 데이터베이스 내 테이블에 대한 `CREATE`, `DROP`, `RENAME`, `ATTACH`, `DETACH`는 지원되지 않습니다.
+
+원본 데이터베이스는 액세스할 때마다 이름으로 해석됩니다. 따라서 원본 데이터베이스가 삭제되면 해당 테이블이 Overlay 데이터베이스에서 사라지고, 원본 데이터베이스가 다시 생성되면 다시 나타납니다.
+`Overlay` 데이터베이스는 다른 `Overlay` 데이터베이스의 원본으로 사용할 수 없습니다.
+
+## 액세스 제어 {#access-control}
+
+`Alias` 테이블과 마찬가지로 overlay 데이터베이스의 테이블을 사용하려면 overlay 데이터베이스와 원본 테이블 모두에 대한 권한 부여가 필요하며, 양쪽의 row policy가 모두 적용됩니다.
+overlay 데이터베이스의 테이블은 overlay 데이터베이스와 원본 테이블을 모두 볼 수 있는 사용자, 즉 두 곳 모두에 `SHOW TABLES` 권한이 있는 사용자에게만 표시됩니다.
+이름은 사용자가 해당 이름의 테이블을 볼 수 있는 첫 번째 원본 데이터베이스에서 해석됩니다. 사용자에게 보이지 않는 테이블은 존재하지 않는 것으로 간주되어 건너뜁니다.
+
+## 예시 {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

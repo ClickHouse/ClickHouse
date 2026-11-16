@@ -95,8 +95,9 @@ static InConversion buildInConversion(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
-    const ActionsDAG::Node * in_rhs_arg =
-        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
+    /// The set is filled from the right side at execution time, so it is not a constant across queries.
+    const ActionsDAG::Node * in_rhs_arg = &lhs_dag.addColumn(
+        std::move(set_col), std::make_shared<DataTypeSet>(), "set column", /*is_deterministic_constant=*/false);
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
@@ -166,8 +167,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
-        !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return 0;
 
     const auto & join_operator = join->getJoinOperator();

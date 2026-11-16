@@ -7,7 +7,6 @@
 -- change the node's result type (ancestors already captured it) - otherwise a debug/sanitizer
 -- build raises a LOGICAL_ERROR from the query-tree ValidationChecker. Reproducer shape from AST fuzzer STID 0250-20a8.
 
-SET enable_analyzer = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SET optimize_min_equality_disjunction_chain_length = 3;
 SET optimize_min_inequality_conjunction_chain_length = 3;

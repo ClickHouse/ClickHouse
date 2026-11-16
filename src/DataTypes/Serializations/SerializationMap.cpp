@@ -610,14 +610,14 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMap>(*this);
-        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
-        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone() : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone(context) : nullptr;
+        new_state->buckets_info_state = buckets_info_state ? buckets_info_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_nested_states.size(); ++bucket)
-            new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone() : nullptr;
-        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
+            new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone(context) : nullptr;
+        new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -639,9 +639,9 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     {
     }
 
-    DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
-    ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
-    SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
+    [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
+    [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
         return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);
     }

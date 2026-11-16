@@ -45,6 +45,7 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -151,6 +152,23 @@ StorageRabbitMQ::StorageRabbitMQ(
         || queue_settings_list.end() !=
         std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
                      [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
+
+    /// The first routing key is used unconditionally for binding and publishing.
+    /// An empty list is meaningful (e.g. `fanout` ignores the routing key, `rabbitmq_queue_consume`
+    /// does not bind at all), so treat it as a single empty routing key.
+    if (routing_keys.empty())
+        routing_keys.emplace_back();
+
+    /// For the `headers` exchange every routing key is a `key=value` pair.
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        for (const auto & header : routing_keys)
+        {
+            if (!header.contains('='))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid routing key '{}' for the `headers` exchange type: expected `key=value`", header);
+        }
+    }
 
     const auto & config = getContext()->getConfigRef();
 
@@ -979,6 +997,7 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
@@ -1099,7 +1118,7 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
 }
 
 
@@ -1435,6 +1454,9 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel, as Kafka does: with `parallel_view_processing = 0` the pipeline has one thread, and
+    /// sources that share the flush deadline would run one after another, the later ones finding it already spent.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), num_created_consumers));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });

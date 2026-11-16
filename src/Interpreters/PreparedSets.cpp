@@ -531,6 +531,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         if (set)
         {
             set_and_key->set = set;
+            set_and_key->spill_state = external_table_set->getSetAndKey()->spill_state;
             return set_and_key->set;
         }
     }
@@ -754,7 +755,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// FutureSetFromSubquery with no query plan`, and keeping it cannot cause a rebuild. On the destructive
     /// fallback `source` was already consumed by `build` and is gone.
     if (tmp_set_and_key)
+    {
         set_and_key->set = tmp_set_and_key->set;
+        set_and_key->spill_state = tmp_set_and_key->spill_state;
+    }
 
     return set_and_key->set;
 }

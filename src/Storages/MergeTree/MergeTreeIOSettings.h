@@ -70,8 +70,17 @@ struct MergeTreeReaderSettings
     bool can_read_part_without_marks = false;
     /// If true, the data stream is compressed.
     bool is_compressed = true;
+    /// If false (the default), text index streams read out of file order (dictionary, postings,
+    /// positions) use a userspace page cache lookahead of one block instead of
+    /// `page_cache_lookahead_blocks`, see `makeTextIndexReaderSettings`.
+    bool use_page_cache_lookahead_for_text_index = false;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// If the query condition cache should serve conditions involving the current time by deriving
+    /// deterministic conditions from them (rounding time constants onto a grid).
+    bool use_query_condition_cache_for_time_conditions = false;
+    /// Grid step for the above, as a fraction of the distance between the constant and the current time.
+    double query_condition_cache_time_condition_grid_factor = 1.0;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
     bool enable_columns_cache_reads = false;
@@ -102,6 +111,9 @@ struct MergeTreeReaderSettings
     /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
     /// set, and threshold-determining predicate. Unset for non-TopK reads.
     std::optional<UInt64> query_condition_cache_top_k_salt;
+    /// `TopKFilterInfo::rows_equal_to_threshold_dropped`: once set, a granule left without rows by the filter may hold rows
+    /// of the result, so the read records nothing more in the query condition cache.
+    std::shared_ptr<std::atomic<bool>> top_k_filter_rows_equal_to_threshold_dropped;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
@@ -185,6 +197,9 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
     size_t object_shared_data_target_chunk_rows = 8192;
+    /// 0 is reserved, so the field is not value-initialized.
+    MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+        = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
@@ -204,8 +219,25 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
+    float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    UInt64 adaptive_codec_selection_period = 1;
 };
+
+/// Write settings for a part produced by a merge or a mutation.
+///
+/// Adaptive write buffers make the compressed blocks smaller, which changes the offsets stored in the marks. Replicas
+/// compare the checksums of a merged or mutated part (`checkPartChecksumsAndAddCommitOps`), and the uncompressed
+/// content of marks is a part of them. So the choice of buffers for these parts must not depend on anything local to
+/// a replica, like its memory limit: otherwise replicas with different memory limits produce different parts, and
+/// one of them rejects its own result with `CHECKSUM_DOESNT_MATCH` and fetches the part. Inserted parts are not
+/// compared - other replicas fetch them.
+inline WriteSettings getWriteSettingsForMergeOrMutation(WriteSettings settings, bool is_replicated)
+{
+    if (is_replicated)
+        settings.allow_adaptive_write_buffer_by_memory_ratio = false;
+    return settings;
+}
 
 }
