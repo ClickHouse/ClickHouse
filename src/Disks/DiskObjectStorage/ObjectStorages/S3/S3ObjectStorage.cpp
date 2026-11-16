@@ -597,7 +597,9 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 {
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    /// The metadata must describe the version that `readObject` reads (`?versionId=`), not the current one:
+    /// its size bounds the read (e.g. with the small-file prefetch).
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, uri.version_id, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -618,9 +620,10 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
     S3::ObjectInfo object_info;
+    /// Of the version that `readObject` reads (`?versionId=`), see `tryGetObjectMetadata`.
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+        object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -631,7 +634,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
             if (new_client)
             {
                 client.set(std::move(new_client));
-                object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
                 updated = true;
             }
         }
