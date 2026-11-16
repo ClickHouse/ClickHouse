@@ -948,12 +948,13 @@ ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IC
 size_t Aggregator::collectAdaptiveTableStatistics(
     AggregatedDataVariants & variants,
     AdaptiveTopKCountBins * bins,
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+    AdaptiveTopKThreshold * table_threshold) const
 {
     size_t work = 0;
 #define M(NAME) \
     else if (variants.type == AggregatedDataVariants::Type::NAME) \
-        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins, max_count_per_bucket);
+        work = collectAdaptiveTableStatistics(*variants.NAME, variants.aggregates_pool, bins, max_count_per_bucket, table_threshold);
 
     if (variants.empty()) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -971,7 +972,8 @@ size_t Aggregator::collectAdaptiveTableStatistics(
     Method & method,
     Arena * arena,
     AdaptiveTopKCountBins * bins,
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket) const
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * max_count_per_bucket,
+    AdaptiveTopKThreshold * table_threshold) const
 {
     size_t work = 0;
     if constexpr (MapAggregationMethod<Method>)
@@ -980,20 +982,40 @@ size_t Aggregator::collectAdaptiveTableStatistics(
         /// is at most the sum of those of the cells and records merged into it, so the bins bound it as they bound a row
         /// count.
         ColumnUInt64::MutablePtr scratch;
-        if ((bins || max_count_per_bucket) && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
+        if ((bins || max_count_per_bucket || table_threshold) && bucket_top_k_rank == BucketTopKRank::FinalizedResult)
             scratch = ColumnUInt64::create();
+
+        /// The threshold takes its lock for every offer, so the ranks reach it a batch at a time.
+        std::array<UInt64, 1024> rank_batch;
+        size_t batched_ranks = 0;
+        const auto offer_ranks = [&]
+        {
+            table_threshold->offer({rank_batch.data(), batched_ranks});
+            batched_ranks = 0;
+        };
+
         const auto add = [&](auto & table)
         {
             forEachMappedCellWithHashOnDemand(
                 table,
                 [&](AggregateDataPtr & mapped, const auto & hash_of)
                 {
-                    if (bins)
-                        bins->add(hash_of(), adaptiveRankCount(mapped, scratch.get(), arena));
-                    if (max_count_per_bucket)
+                    if (bins || max_count_per_bucket || table_threshold)
                     {
-                        UInt64 & maximum = (*max_count_per_bucket)[adaptiveCountBin(hash_of()) / adaptive_count_bins_per_bucket];
-                        maximum = std::max(maximum, adaptiveRankCount(mapped, scratch.get(), arena));
+                        const UInt64 count = adaptiveRankCount(mapped, scratch.get(), arena);
+                        if (bins)
+                            bins->add(hash_of(), count);
+                        if (max_count_per_bucket)
+                        {
+                            UInt64 & maximum = (*max_count_per_bucket)[adaptiveCountBin(hash_of()) / adaptive_count_bins_per_bucket];
+                            maximum = std::max(maximum, count);
+                        }
+                        if (table_threshold)
+                        {
+                            rank_batch[batched_ranks++] = count;
+                            if (batched_ranks == rank_batch.size())
+                                offer_ranks();
+                        }
                     }
                     for (size_t i : adaptive_parallel_merge_indices)
                         work += aggregate_functions[i]->getEstimatedMergeWork(mapped + offsets_of_aggregate_states[i]);
@@ -1008,6 +1030,8 @@ size_t Aggregator::collectAdaptiveTableStatistics(
         {
             add(method.data);
         }
+        if (batched_ranks)
+            offer_ranks();
     }
     return work;
 }
