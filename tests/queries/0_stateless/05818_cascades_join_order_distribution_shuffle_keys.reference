@@ -1,0 +1,33 @@
+-- Shuffle keys
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin  swapped)
+            JoinLogical (Shuffle HashJoin  swapped)
+              JoinLogical (Shuffle HashJoin  swapped)
+                Expression (Change column names to column identifiers)
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.q_d)
+                Expression (Change column names to column identifiers)
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.q_a)
+              Expression (Change column names to column identifiers)
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.q_b)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.q_c)
+3076
+3076
+union all	false	2
+union all	true	2
+grouping sets	false	2
+grouping sets	true	2
+outer join defaults	false	1
+outer join defaults	true	1
+types of a class	false	1
+types of a class	true	1
+using casts	false	1
+using casts	true	1

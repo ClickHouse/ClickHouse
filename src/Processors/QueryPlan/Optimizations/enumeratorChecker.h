@@ -73,6 +73,7 @@ private:
     struct SplitShuffle
     {
         UInt32 key_class = 0;
+        bool chosen = false;        /// the search chooses the key by the states of the sides, see `shuffleKeyTypes`
         bool raw = false;           /// the key hashes its values as they are; false for a cast key or an added one
         UInt32 left_relation = 0;   /// with `raw`: the relations of the key columns on the two sides
         UInt32 right_relation = 0;
@@ -243,15 +244,20 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     constexpr Int8 replicated = Optimizer::replicated_state;
     constexpr Int8 single_node = Optimizer::single_node_state;
 
-    /// Shuffle: both sides hashed by one equality of a class. Predicate cleanup keeps the first edge of a class and drops
-    /// the others as redundant, and when the join has no edge of the class, it may add one with a column that is not
-    /// known here. After a shuffle by an edge of two columns of one type, Cascades knows the rows are hashed by these two
-    /// columns, so a later shuffle by an edge with one of them moves no rows of that side. An edge cast before hashing,
-    /// or an added one, gives rows that no later join reuses.
+    /// Shuffle: both sides hashed by one equality of a class. After a shuffle by two columns of one type, Cascades knows
+    /// the rows are hashed by these two columns, so a later shuffle by one of them moves no rows of that side. For a class
+    /// of one type the search chooses the two columns, see `shuffleKeyTypes`. For another class, predicate cleanup keeps
+    /// the first edge of the class, and when the join has no edge of the class, it adds none. An edge cast before hashing
+    /// gives rows that no later join reuses.
     split_shuffles.clear();
     for (UInt64 classes = key_classes; classes; classes &= classes - 1)
     {
         const auto key_class = static_cast<UInt32>(std::countr_zero(classes));
+        if (optimizer.choosesShuffleKey(key_class))
+        {
+            split_shuffles.push_back({.key_class = key_class, .chosen = true});
+            continue;
+        }
         const auto edge = std::ranges::find_if(edges, [&](const JoinActionRef * candidate)
         {
             return optimizer.shuffleKey(candidate).key_class == static_cast<Int32>(key_class);
@@ -317,6 +323,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                 plan.partition_state = state;
                 offerPlan(result_subset, plan);
             };
+            plan.shuffle_class = -1;
 
             /// Where both sides are split the same way, Cascades may swap the sides of an inner join: the cheaper side builds
             /// the hash table.
@@ -329,23 +336,50 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
 
             /// Broadcast: one side copied to every node, the other one partitioned; its partitioning is kept, a side on
             /// one node is scattered first.
+            plan.partitioned_side = 0;
             offer(join_cost.toPartitioned(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
                     + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
                 left_state == single_node ? any_partitioning : left_state);
+            plan.partitioned_side = 1;
             offer(join_cost.toPartitioned(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
                     + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
                 right_state == single_node ? any_partitioning : right_state);
+            plan.partitioned_side = 0;
 
             for (const auto & shuffle : split_shuffles)
             {
-                auto move = [&](Int8 state, UInt32 relation, double rows, double bytes)
+                auto offer_shuffle = [&](bool left_routed, bool right_routed, Int8 state)
                 {
-                    const bool reused = shuffle.raw && optimizer.isPartitionedBy(state, shuffle.key_class, relation);
-                    return reused ? 0.0 : join_cost.toNewPartitioning(state, rows, bytes);
+                    offer((left_routed ? 0.0 : join_cost.toNewPartitioning(left_state, left_rows, left_bytes))
+                            + (right_routed ? 0.0 : join_cost.toNewPartitioning(right_state, right_rows, right_bytes)) + join_work(nodes),
+                        state);
                 };
-                offer(move(left_state, shuffle.left_relation, left_rows, left_bytes)
-                        + move(right_state, shuffle.right_relation, right_rows, right_bytes) + join_work(nodes),
-                    shuffle.state);
+                if (!shuffle.chosen)
+                {
+                    offer_shuffle(
+                        shuffle.raw && optimizer.isPartitionedBy(left_state, shuffle.key_class, shuffle.left_relation),
+                        shuffle.raw && optimizer.isPartitionedBy(right_state, shuffle.key_class, shuffle.right_relation),
+                        shuffle.state);
+                    continue;
+                }
+                /// One shuffle per exact type that both sides have columns of: a side hashed by a column of that type
+                /// moves no rows. Without such a type, the key is cast before hashing.
+                plan.shuffle_class = static_cast<Int8>(shuffle.key_class);
+                const Int32 left_type = optimizer.stateType(left_state, shuffle.key_class);
+                const Int32 right_type = optimizer.stateType(right_state, shuffle.key_class);
+                const UInt64 types = optimizer.shuffleKeyTypes(shuffle.key_class, left_mask, right_mask);
+                for (UInt64 remaining = types; remaining; remaining &= remaining - 1)
+                {
+                    const auto type = static_cast<Int32>(std::countr_zero(remaining));
+                    plan.shuffle_type = static_cast<Int8>(type);
+                    offer_shuffle(left_type == type, right_type == type, optimizer.partitionState(shuffle.key_class, 0, type));
+                }
+                if (!types)
+                {
+                    plan.shuffle_type = -1;
+                    offer_shuffle(false, false, any_partitioning);
+                }
+                plan.shuffle_class = -1;
             }
 
             /// Local: both sides on one node.
