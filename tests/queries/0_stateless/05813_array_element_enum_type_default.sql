@@ -89,6 +89,10 @@ FROM (SELECT materialize(map('a', CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'))) AS 
 ORDER BY k NULLS FIRST SETTINGS enable_lazy_columns_replication = 0;
 SELECT i, toInt8(assumeNotNull(arr[i])) FROM (SELECT materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr)
 ARRAY JOIN [CAST(NULL, 'Nullable(UInt64)'), 1, 5] AS i ORDER BY i NULLS FIRST SETTINGS enable_lazy_columns_replication = 1;
+SELECT i, toInt8(assumeNotNull(arr[i]).1), toInt8(assumeNotNull(arr[5]).1)
+FROM (SELECT materialize([CAST(tuple('y', 1), 'Nullable(Tuple(Enum8(\'x\' = 1, \'y\' = 2), UInt8))')]) AS arr, arrayJoin([1, 5]) AS i)
+ORDER BY i SETTINGS enable_lazy_columns_replication = 0;
+SELECT toInt8(assumeNotNull(m['b']).1) FROM (SELECT materialize(map('a', CAST(tuple('y', 1), 'Nullable(Tuple(Enum8(\'x\' = 1, \'y\' = 2), UInt8))'))) AS m);
 
 SELECT 'tuple with nothing';
 SELECT tupleElement(arrayZip(CAST([], 'Array(Enum8(\'a\' = -1, \'z\' = 0))'), CAST([], 'Array(Nothing)'))[number + 1], 1) FROM numbers(1);

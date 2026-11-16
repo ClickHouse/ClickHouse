@@ -364,6 +364,7 @@ public:
     /// Rows the caller makes NULL afterwards (a NULL index): a missing element there keeps the column default.
     void initMask(const UInt8 * mask_) { mask = mask_; }
     const UInt8 * getMask() const { return mask; }
+    const UInt8 * getSinkNullMap() const { return sink_null_map; }
     bool isMasked(size_t row) const { return mask && mask[row]; }
 
 private:
@@ -423,7 +424,7 @@ struct ArrayElementNumImpl
             }
             else
             {
-                result[i] = default_value;
+                result[i] = builder.isMasked(i) ? T() : default_value;
                 builder.update();
             }
 
@@ -973,7 +974,7 @@ struct ArrayElementGenericImpl
             }
             else
             {
-                insertTypeDefault(result, type, trivial_default);
+                insertTypeDefault(result, type, trivial_default || builder.isMasked(i));
                 builder.update();
             }
 
@@ -1896,6 +1897,9 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     ColumnsWithTypeAndName temporary_results(2);
     temporary_results[1] = arguments[1];
 
+    /// With a sink, every missing element is NULL in the result: its tuple elements keep the column default.
+    const UInt8 * masked_rows = builder.getSinkNullMap() ? builder.getSinkNullMap() : builder.getMask();
+
     /// results of taking elements by index for arrays from each element of the tuples;
     Columns result_tuple_columns(tuple_size);
 
@@ -1907,7 +1911,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
         temporary_results[0] = array_of_tuple_section;
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
-        auto col = recurse(temporary_results, type, input_rows_count, builder.getMask());
+        auto col = recurse(temporary_results, type, input_rows_count, masked_rows);
         result_tuple_columns[i] = removeNullableIfNeeded(col, tuple_types[i]);
     }
 
