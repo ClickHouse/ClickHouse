@@ -75,7 +75,7 @@ public:
 
     const SharedPartColumns & operator*() const { return *bundle; }
     const SharedPartColumns * operator->() const { return bundle.get(); }
-    const SharedPartColumns * get() const { return bundle.get(); }
+    [[nodiscard]] const SharedPartColumns * get() const { return bundle.get(); }
 
 private:
     friend class MergeTreeData;
@@ -273,6 +273,9 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
+    /// because the statistics of these columns are cached or the part has none for them.
+    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
     /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
     /// otherwise `std::nullopt`. It never reads from disk.
     std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
@@ -535,6 +538,8 @@ public:
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
+    /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
+    bool isIndexInMemory() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

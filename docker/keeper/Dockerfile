@@ -38,7 +38,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="26.10.2.103"
+ARG VERSION="26.10.4.207"
 ARG PACKAGES="clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
 
@@ -59,6 +59,10 @@ RUN addgroup -S -g "${DEFAULT_GID}" clickhouse && \
 ARG WGET_RETRIES=5
 ARG WGET_RETRY_DELAY=1
 
+# `apk upgrade` runs first because `apk add` never bumps packages already in the base
+# image, so without it the image keeps whatever (possibly vulnerable) libssl3 the
+# `alpine` snapshot had at build time.
+#
 # `apk` has no retry option, and it does not treat a failed repository index fetch
 # as fatal: it proceeds with an empty index, so every requested package is then
 # reported as `no such package`.
@@ -81,7 +85,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && apk_add_with_retry() { \
         local attempt=1; \
         while [ "$attempt" -le "${APK_RETRIES}" ]; do \
-            if apk add --no-cache "$@"; then return 0; fi; \
+            if apk upgrade --no-cache && apk add --no-cache "$@"; then return 0; fi; \
             echo "Attempt $attempt/${APK_RETRIES} failed for apk add $*, retrying in ${APK_RETRY_DELAY}s..."; \
             sleep "${APK_RETRY_DELAY}"; \
             attempt=$((attempt + 1)); \
