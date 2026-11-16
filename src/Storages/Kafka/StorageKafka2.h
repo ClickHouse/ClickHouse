@@ -112,6 +112,7 @@ public:
 
     /// A streaming query reads the partitions with its own consumer, see `KafkaStreamSource`.
     bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
 
     SinkToStoragePtr
     write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;

@@ -30,6 +30,7 @@ namespace DB
 /// The cursor of the read can be reconstructed from the `_topic`, `_partition` and `_offset` virtual columns.
 ///
 /// A bounded stream (`STREAM BOUNDED`) finishes once it reaches the end of every partition (at the start of the read).
+/// For an incremental refresh of a materialized view, it reports the cursor it advanced to through `Context::getStreamingCursor`.
 class KafkaStreamSource final : public ISource
 {
 public:
@@ -76,6 +77,7 @@ private:
 
     void start();
     bool allPartitionsReachedEnd() const;
+    void reportFinalCursor() const;
 
     Params params;
     StorageSnapshotPtr storage_snapshot;

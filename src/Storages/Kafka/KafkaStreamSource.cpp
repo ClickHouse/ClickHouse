@@ -141,6 +141,20 @@ bool KafkaStreamSource::allPartitionsReachedEnd() const
     return true;
 }
 
+void KafkaStreamSource::reportFinalCursor() const
+{
+    /// Only an incremental refresh of a materialized view has the holder of the cursor.
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor)
+        return;
+
+    auto cursor = std::make_shared<CursorTreeNode>();
+    for (const auto & [topic_partition, state] : partitions)
+        if (state.last_offset >= 0)
+            cursor->getSubtreeOrCreate(topic_partition.first)->setValue(toString(topic_partition.second), state.last_offset);
+    streaming_cursor->merge(cursor);
+}
+
 std::optional<Chunk> KafkaStreamSource::tryGenerate()
 {
     /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
@@ -217,6 +231,7 @@ Chunk KafkaStreamSource::generate()
     {
         if (bounded && allPartitionsReachedEnd())
         {
+            reportFinalCursor();
             stream_finished = true;
             break;
         }

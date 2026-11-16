@@ -4548,12 +4548,24 @@ def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
             == "3\n12\n"
         )
 
-        # An incremental refresh resumes only from the cursor of a `MergeTree` source.
+        # An incremental refresh appends only the messages that arrived after the previous refresh.
         instance.query(f"CREATE TABLE test.{kafka_table}_target (key UInt64) ENGINE = MergeTree ORDER BY key")
-        assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+        instance.query(
             f"""CREATE MATERIALIZED VIEW test.{kafka_table}_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
                 TO test.{kafka_table}_target EMPTY AS SELECT key FROM test.{kafka_table}"""
         )
+
+        def refresh():
+            instance.query(f"SYSTEM REFRESH VIEW test.{kafka_table}_mv")
+            instance.query(f"SYSTEM WAIT VIEW test.{kafka_table}_mv")
+            return instance.query(f"SELECT count(), sum(key) FROM test.{kafka_table}_target")
+
+        assert refresh() == "7\t39\n"
+        produce(1, [13])
+        assert refresh() == "8\t52\n"
+        assert refresh() == "8\t52\n"
+
+        instance.query(f"DROP TABLE test.{kafka_table}_mv")
         instance.query(f"DROP TABLE test.{kafka_table}_target")
         instance.query(f"DROP TABLE test.{kafka_table}")
 

@@ -837,7 +837,7 @@ A streaming query (`SELECT ... FROM kafka_table STREAM`, an experimental feature
 SELECT _topic, _partition, _offset, * FROM kafka_table STREAM CURSOR {'events': {'0': 41, '1': 17}}
 ```
 
-A partition without an entry in the cursor is read from the beginning. `STREAM BOUNDED` finishes after reaching the end of every partition as of the start of the query. A topic name may contain dots: the partition is the last part of the path of an offset in the cursor. `WATERMARK` is not supported.
+A partition without an entry in the cursor is read from the beginning. `STREAM BOUNDED` finishes after reaching the end of every partition as of the start of the query, so a `Kafka` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`), which resumes every refresh from the offsets the previous one read up to, without a consumer group. A topic name may contain dots: the partition is the last part of the path of an offset in the cursor. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
