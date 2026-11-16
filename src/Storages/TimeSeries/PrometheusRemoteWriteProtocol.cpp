@@ -34,6 +34,8 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
+#include <optional>
+#include <unordered_map>
 
 
 namespace ProfileEvents
@@ -103,7 +105,9 @@ constexpr Int64 EXEMPLAR_MAX_AHEAD_TIME_MS = 10 * 60 * 1000;
 
 /// Returns the exemplars of a time series which Prometheus 3.5 stores, in order. Like `AppendExemplar` it drops the empty labels,
 /// the exemplars too far in the future and with too long labels, and a duplicate of the newest one or an exemplar older than it.
-std::vector<Exemplar> getAcceptedExemplars(const prometheus::TimeSeries & element, Int64 max_timestamp, size_t & num_out_of_order)
+/// `newest_accepted` is the newest exemplar of the series accepted in the request so far.
+std::vector<Exemplar> getAcceptedExemplars(
+    const prometheus::TimeSeries & element, Int64 max_timestamp, std::optional<Exemplar> & newest_accepted, size_t & num_out_of_order)
 {
     std::vector<Exemplar> accepted;
     for (const auto & proto_exemplar : element.exemplars())
@@ -127,10 +131,10 @@ std::vector<Exemplar> getAcceptedExemplars(const prometheus::TimeSeries & elemen
             continue;
         std::sort(exemplar.labels.begin(), exemplar.labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
-        if (!accepted.empty())
+        if (newest_accepted)
         {
             /// A zero timestamp means the exemplar has no timestamp, then only the labels and the value are compared.
-            const auto & newest = accepted.back();
+            const auto & newest = *newest_accepted;
             bool has_timestamp = (exemplar.timestamp != 0) || (newest.timestamp != 0);
             if ((exemplar.labels == newest.labels) && (exemplar.value == newest.value)
                 && (!has_timestamp || (exemplar.timestamp == newest.timestamp)))
@@ -146,9 +150,30 @@ std::vector<Exemplar> getAcceptedExemplars(const prometheus::TimeSeries & elemen
             }
         }
 
+        newest_accepted = exemplar;
         accepted.push_back(std::move(exemplar));
     }
     return accepted;
+}
+
+/// The sorted labels of a time series as one string.
+String getSeriesKey(const prometheus::TimeSeries & element)
+{
+    std::vector<std::pair<std::string_view, std::string_view>> labels;
+    labels.reserve(element.labels_size());
+    for (const auto & label : element.labels())
+        labels.emplace_back(label.name(), label.value());
+    std::sort(labels.begin(), labels.end());
+
+    String key;
+    for (const auto & [name, value] : labels)
+    {
+        key += name;
+        key += '\xff';
+        key += value;
+        key += '\xff';
+    }
+    return key;
 }
 
 Block makeTimeSeriesBlock(
@@ -192,6 +217,7 @@ Block makeTimeSeriesBlock(
     auto exemplar_labels_offsets = ColumnArray::ColumnOffsets::create();
     auto exemplars_offsets = ColumnArray::ColumnOffsets::create();
     Int64 max_exemplar_timestamp = 0;
+    std::unordered_map<String, std::optional<Exemplar>> newest_exemplars;
     if (const auto * exemplars_column = metadata.columns.tryGet(TimeSeriesColumnNames::Exemplars))
     {
         exemplars_type = exemplars_column->type;
@@ -240,16 +266,21 @@ Block makeTimeSeriesBlock(
 
         if (exemplars_type)
         {
-            for (const auto & exemplar : getAcceptedExemplars(element, max_exemplar_timestamp, num_out_of_order_exemplars))
+            if (!element.exemplars().empty())
             {
-                insertTimestamp(exemplar.timestamp, timestamp_scale, *exemplar_timestamps);
-                exemplar_values->insert(exemplar.value);
-                for (const auto & [name, value] : exemplar.labels)
+                /// A request can have several entries of the same series, they share the newest accepted exemplar.
+                auto & newest_exemplar = newest_exemplars[getSeriesKey(element)];
+                for (const auto & exemplar : getAcceptedExemplars(element, max_exemplar_timestamp, newest_exemplar, num_out_of_order_exemplars))
                 {
-                    exemplar_label_names->insertData(name.data(), name.size());
-                    exemplar_label_values->insertData(value.data(), value.size());
+                    insertTimestamp(exemplar.timestamp, timestamp_scale, *exemplar_timestamps);
+                    exemplar_values->insert(exemplar.value);
+                    for (const auto & [name, value] : exemplar.labels)
+                    {
+                        exemplar_label_names->insertData(name.data(), name.size());
+                        exemplar_label_values->insertData(value.data(), value.size());
+                    }
+                    exemplar_labels_offsets->insert(exemplar_label_names->size());
                 }
-                exemplar_labels_offsets->insert(exemplar_label_names->size());
             }
             exemplars_offsets->insert(exemplar_timestamps->size());
         }

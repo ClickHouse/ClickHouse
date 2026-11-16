@@ -1,4 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Access/Common/AccessFlags.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
@@ -65,6 +67,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -1167,6 +1170,12 @@ bool PrometheusHTTPProtocolAPI::queryExemplars(
     const String & end_param,
     QueryFinishCallback query_finish_callback)
 {
+    /// The exemplars are read from the inner tables, so the grant and the row policies of the table itself are checked here.
+    getContext()->checkAccess(AccessType::SELECT, time_series_storage->getStorageID());
+    if (getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Exemplars of table {} cannot be read by a user with a row policy on it", time_series_storage->getStorageID().getNameForLogs());
+
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
     auto table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;

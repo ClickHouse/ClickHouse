@@ -273,7 +273,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries SETTINGS store_exemplars = 1
 ```
 
 Remote write then stores the exemplars of each series the way Prometheus with `--enable-feature=exemplar-storage` accepts them
-(see the [exemplars table](/reference/engines/table-engines/integrations/time-series#exemplars-table)), and the endpoint
+(see the exemplars table of the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine), and the endpoint
 `/prometheus/api/v1/query_exemplars` returns them like Prometheus does. It takes the `query`, `start` and `end` parameters, and returns the exemplars
 with timestamps in [`start`, `end`] of the series matched by any selector of the PromQL expression `query`, grouped by series and sorted by the series labels:
 

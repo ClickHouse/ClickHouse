@@ -29,7 +29,15 @@ write ts_plain 204
 200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","instance":"1","job":"a"},"exemplars":[{"labels":{"trace_id":"t1"},"value":"1","timestamp":1724112000.001}]}]}
 -- a table without the exemplars table
 200 {"status":"success","data":[]}
--- out-of-order exemplars counted: 3
+-- entries of the same series in one request share the newest accepted exemplar
+write ts_repeated 204
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"repeated_metric","job":"r"},"exemplars":[{"labels":{"trace_id":"n2"},"value":"2","timestamp":1724112000.002},{"labels":{"trace_id":"n3"},"value":"3","timestamp":1724112000.003}]}]}
+-- a user needs a grant on the table itself and no row policy on it
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","job":"b"},"exemplars":[{"labels":{"trace_id":"b1"},"value":"10","timestamp":1724112005}]}]}
+400 bad_data
+400 bad_data
+400 bad_data
+-- out-of-order exemplars counted: 4
 -- the inner exemplars table keeps the duplicate written by the second request, the reads return it once
 2024-08-20 00:00:00.001	1	{'trace_id':'t1'}
 2024-08-20 00:00:00.002	2	{'trace_id':'t2'}

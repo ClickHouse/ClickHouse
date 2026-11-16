@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: the Prometheus protocols need protobufs and PromQL needs ANTLR4, both disabled in the fast-test build.
+# Tag no-parallel: the test reads a counter of system.events.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,6 +13,7 @@ $CLIENT -n -q "
 DROP TABLE IF EXISTS ts;
 DROP TABLE IF EXISTS ts_plain;
 DROP TABLE IF EXISTS ts_clause;
+DROP TABLE IF EXISTS ts_repeated;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS store_exemplars = 1;
 CREATE TABLE ts_plain ENGINE = TimeSeries;
 "
@@ -34,14 +36,24 @@ $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS version = 11 EXEMPL
 $CLIENT -q "CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_exemplars = 0 EXEMPLARS INNER ENGINE = MergeTree ORDER BY (id, timestamp)" 2>&1 | grep -o -m1 "INCORRECT_QUERY"
 $CLIENT -q "ALTER TABLE ts MODIFY SETTING store_exemplars = 0" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 
+USER_PREFIX="user_05617_${CLICKHOUSE_DATABASE}"
+$CLIENT -n -q "
+CREATE TABLE ts_repeated ENGINE = TimeSeries SETTINGS store_exemplars = 1;
+DROP USER IF EXISTS ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
+CREATE USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
+REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.ts FROM ${USER_PREFIX}_revoked;
+CREATE ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts USING metric_name = 'other_metric' TO ${USER_PREFIX}_policy;
+"
+
 BEFORE=$($CLIENT -q "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteOutOfOrderExemplars'")
 
 # Writes remote-write requests with exemplars and prints the answers of /api/v1/query_exemplars, one line per request.
 # The expected answers were taken from Prometheus 3.5.0 (--enable-feature=exemplar-storage) fed with the same requests.
-python3 - "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/prometheus/api/v1" "${CLICKHOUSE_DATABASE}" <<'PYTHON'
+python3 - "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/prometheus/api/v1" "${CLICKHOUSE_DATABASE}" "${USER_PREFIX}" <<'PYTHON'
 import json, struct, sys, urllib.error, urllib.parse, urllib.request
 
-base, database = sys.argv[1], sys.argv[2]
+base, database, user_prefix = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def varint(n):
     n &= (1 << 64) - 1
@@ -107,10 +119,10 @@ def write(table, body):
         headers={'Content-Type': 'application/x-protobuf', 'Content-Encoding': 'snappy'})
     print('write', table, urllib.request.urlopen(request).status)
 
-def query(table, params):
+def query(table, params, user=None):
     url = base + '/query_exemplars?' + urllib.parse.urlencode(dict(params, database=database, table=table))
     try:
-        response = urllib.request.urlopen(url)
+        response = urllib.request.urlopen(urllib.request.Request(url, headers={'X-ClickHouse-User': user} if user else {}))
         code, body = response.status, response.read().decode()
     except urllib.error.HTTPError as e:
         code, body = e.code, e.read().decode()
@@ -137,6 +149,23 @@ for params in [
 
 print('-- a table without the exemplars table')
 query('ts_plain', {'query': 'test_exemplars'})
+
+print('-- entries of the same series in one request share the newest accepted exemplar')
+R = [('__name__', 'repeated_metric'), ('job', 'r')]
+write('ts_repeated',
+    series(R, [(T, 1.0)], [([('trace_id', 'n2')], 2.0, T + 2)])
+    + series(R, [(T + 60000, 2.0)], [
+        ([('trace_id', 'n1')], 1.0, T + 1),  # out of order: older than the exemplar of the first entry
+        ([('trace_id', 'n2')], 2.0, T + 2),  # a duplicate of the exemplar of the first entry
+        ([('trace_id', 'n3')], 3.0, T + 3),
+    ]))
+query('ts_repeated', {'query': 'repeated_metric'})
+
+print('-- a user needs a grant on the table itself and no row policy on it')
+query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_granted')
+query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_revoked')
+query('ts', {'query': 'test_exemplars{job="b"}'}, user_prefix + '_policy')
+query('ts', {'query': '1 + 1'}, user_prefix + '_revoked')
 PYTHON
 
 AFTER=$($CLIENT -q "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteOutOfOrderExemplars'")
@@ -154,4 +183,7 @@ $CLIENT -n -q "
 DROP TABLE ts;
 DROP TABLE ts_plain;
 DROP TABLE ts_clause;
+DROP TABLE ts_repeated;
+DROP ROW POLICY policy_05617 ON ${CLICKHOUSE_DATABASE}.ts;
+DROP USER ${USER_PREFIX}_granted, ${USER_PREFIX}_revoked, ${USER_PREFIX}_policy;
 "
