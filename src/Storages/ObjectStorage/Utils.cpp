@@ -24,6 +24,9 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 
 namespace DB
 {
@@ -431,6 +434,10 @@ void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & ob
     if (object_storage.getType() == ObjectStorageType::Azure)
         object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
             context->shouldRestrictUserQueryS3Credentials());
+#endif
+#if USE_AWS_S3
+    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+        s3_object_storage->checkSessionMayUseServerCredentials(context);
 #endif
 }
 

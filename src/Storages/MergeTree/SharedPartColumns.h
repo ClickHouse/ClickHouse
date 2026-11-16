@@ -77,7 +77,7 @@ public:
     PartSerializations(NameToSlotPtr name_to_slot_, std::vector<ColumnGroupPtr> groups_)
         : name_to_slot(std::move(name_to_slot_)), groups(std::move(groups_)) {}
 
-    SerializationPtr tryGet(const String & name) const
+    [[nodiscard]] SerializationPtr tryGet(const String & name) const
     {
         auto it = name_to_slot->find(name);
         if (it == name_to_slot->end())
@@ -89,9 +89,9 @@ public:
     /// when `column_name` is not a column of the part or the subcolumn is not in its group. Dynamic
     /// subcolumns are not stored, and the full name alone is ambiguous: it can be a column or a subcolumn
     /// of another column (e.g. `n.b.t` of the column `n.b` and of a collected `Nested` column `n`).
-    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
+    [[nodiscard]] SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
 
-    bool empty() const { return groups.empty(); }
+    [[nodiscard]] bool empty() const { return groups.empty(); }
 
     template <typename Callback>
     void forEach(Callback && callback) const
@@ -101,7 +101,7 @@ public:
     }
 
     /// Materialize a flat map (for consumers that keep their own copy, e.g. part writers).
-    SerializationByName toSerializationByName() const;
+    [[nodiscard]] SerializationByName toSerializationByName() const;
 
 private:
     NameToSlotPtr name_to_slot = getEmptyNameToSlot();

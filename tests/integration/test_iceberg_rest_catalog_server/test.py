@@ -19,20 +19,25 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from test_storage_s3.test_sts import run_s3_mocks
 
 cluster = ClickHouseCluster(__file__)
+
+# Ambient credentials of the server. Only the STS call is signed with them.
+AWS_ENV = {"AWS_ACCESS_KEY_ID": "aws", "AWS_SECRET_ACCESS_KEY": "aws123"}
 
 node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/iceberg_rest_catalog.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
         "configs/ssl_conf.xml",
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
     ],
     user_configs=["configs/users.xml"],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
@@ -43,20 +48,43 @@ node_aux = cluster.add_instance(
     main_configs=[
         "configs/iceberg_rest_catalog_aux.xml",
         "configs/auxiliary_zookeeper.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
     ],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
 )
+
+# Mock STS. It hands out the MinIO credentials when the session name and external id match.
+sts = cluster.add_instance(
+    name="sts.amazonaws.com",
+    hostname="sts.amazonaws.com",
+    image="clickhouse/python-bottle",
+    tag="latest",
+    stay_alive=True,
+)
+sts.stop_clickhouse(kill=True)
 
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
-KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 2"
+KEEPER_PARENT = "/clickhouse/iceberg_rest_catalog"
+KEEPER_ROOT = f"{KEEPER_PARENT}/my_warehouse"
+# Incarnation of `my_warehouse` on both nodes.
+WAREHOUSE_UUID = str(uuid.uuid4())
+KEEPER_STORE_ROOT = f"{KEEPER_ROOT}/{WAREHOUSE_UUID}"
+FORMAT_VERSION = 3
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
+ROLE_SESSION_NAME = "miniorole"
+EXTERNAL_ID = "miniexternalid"
+CREDENTIAL = {
+    "type": "aws_role",
+    "role_arn": "arn:aws:iam::123456789012:role/warehouse",
+    "external_id": EXTERNAL_ID,
+    "role_session_name": ROLE_SESSION_NAME,
+}
 
 # Iceberg JSON schema as a client sends it in CreateTableRequest.
 DEFAULT_SCHEMA = {
@@ -84,16 +112,37 @@ def wait_catalog_ready(timeout=60, instance=None):
     raise AssertionError("Catalog port did not start accepting connections")
 
 
+def warehouse_definition(base_location, warehouse_uuid, credential=CREDENTIAL):
+    return {"format_version": FORMAT_VERSION, "uuid": warehouse_uuid, "base_location": base_location, "credential": credential}
+
+
+# TODO: Replace with `POST /management/v1/warehouses` when the management API lands.
+def create_warehouse_in_keeper(name, base_location, keeper_parent=KEEPER_PARENT, credential=CREDENTIAL, warehouse_uuid=None):
+    warehouse_uuid = warehouse_uuid or str(uuid.uuid4())
+    path = f"{keeper_parent}/{name}"
+    zk = get_keeper()
+    zk.create(path, json.dumps(warehouse_definition(base_location, warehouse_uuid, credential)).encode(), makepath=True)
+    zk.create(f"{path}/{warehouse_uuid}/namespaces", makepath=True)
+    zk.create(f"{path}/{warehouse_uuid}/tables_by_uuid")
+    return path
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     global keeper
     try:
         cluster.start()
+        run_s3_mocks(cluster, [ROLE_SESSION_NAME, EXTERNAL_ID])
         # One Keeper session for the whole module. It reconnects on its own if Keeper restarts.
         keeper = cluster.get_kazoo_client("zoo1")
         keeper.ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
+        create_warehouse_in_keeper("my_warehouse", BASE_LOCATION, warehouse_uuid=WAREHOUSE_UUID)
+        # The aux Keeper is chrooted to /aux_root. A bucket root with a trailing slash as the base location.
+        create_warehouse_in_keeper(
+            "my_warehouse", f"s3://{BUCKET}/", keeper_parent=f"/aux_root{KEEPER_PARENT}", warehouse_uuid=WAREHOUSE_UUID
+        )
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
         yield cluster
@@ -329,6 +378,11 @@ def test_config(started_cluster):
 
     response = catalog_request(
         "GET", "/v1/config", params={"warehouse": "unknown"}, expected_code=404
+    )
+    assert_error_shape(response, "NoSuchWarehouseException")
+
+    response = catalog_request(
+        "GET", "/v1/config", params={"warehouse": ""}, expected_code=404
     )
     assert_error_shape(response, "NoSuchWarehouseException")
 
@@ -595,7 +649,7 @@ def test_survives_server_restart(started_cluster):
     assert response.status_code == 204, response.text
 
     zk = get_keeper()
-    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
+    assert zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
 
 
 def test_authentication(started_cluster):
@@ -861,11 +915,11 @@ def test_keeper_layout(started_cluster):
     result = create_table(f"{ns}\x1feu-west", "my.table").json()
 
     zk = get_keeper()
-    assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
+    assert json.loads(zk.get(KEEPER_ROOT)[0]) == warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
-    parent_path = f"{KEEPER_ROOT}/namespaces/{escaped}"
+    parent_path = f"{KEEPER_STORE_ROOT}/namespaces/{escaped}"
     child_path = f"{parent_path}/namespaces/eu%2Dwest"
     assert sorted(zk.get_children(parent_path)) == ["namespaces", "tables"]
     assert sorted(zk.get_children(child_path)) == ["namespaces", "tables"]
@@ -878,7 +932,7 @@ def test_keeper_layout(started_cluster):
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
     assert zk.get_children(table_path) == [table_uuid]
-    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
+    assert zk.get(f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -1157,8 +1211,8 @@ def test_rename_table(started_cluster):
 
     # No nodes are left behind under the old names.
     zk = get_keeper()
-    assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{ns}/tables") == ["d"]
-    assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{ns}/namespaces/other/tables") == ["c"]
+    assert zk.get_children(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables") == ["d"]
+    assert zk.get_children(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/namespaces/other/tables") == ["c"]
 
 
 def test_rename_keeps_commit_version(started_cluster):
@@ -1169,14 +1223,14 @@ def test_rename_keeps_commit_version(started_cluster):
 
     # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
     zk = get_keeper()
-    uuid_path = f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}"
+    uuid_path = f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}"
     assert zk.get(uuid_path)[1].version == 1
 
     # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
     rename_table([ns], "a", [ns], "b")
     rename_table([ns], "b", [ns], "a")
     assert zk.get(uuid_path)[1].version == 1
-    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+    assert zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
 
     committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
     assert committed["metadata"]["current-snapshot-id"] == 200
@@ -1275,26 +1329,69 @@ def test_slash_at_name_edge_does_not_retarget(started_cluster):
 
 def test_unsupported_format_is_refused(started_cluster):
     zk = get_keeper()
-    zk.set(KEEPER_ROOT, b"IcebergRESTCatalog\nformat_version: 999")
+    definition = warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
+    zk.set(KEEPER_ROOT, json.dumps({**definition, "format_version": 999}).encode())
     try:
-        # The marker is checked when a new Keeper session is opened.
-        restart_node()
         for _ in range(2):
             response = catalog_request(
                 "GET", "/v1/my_warehouse/namespaces", expected_code=500
             )
             assert_error_shape(response, "InternalServerError")
-        assert node.contains_in_log("has an unsupported format")
+        assert node.contains_in_log("has an unsupported format version")
     finally:
-        zk.set(KEEPER_ROOT, FORMAT_MARKER)
-        restart_node()
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
 
     list_namespaces()
 
 
+def test_invalid_definition_is_server_error(started_cluster):
+    # A damaged definition in Keeper is not a client error.
+    zk = get_keeper()
+    definition = warehouse_definition(BASE_LOCATION, WAREHOUSE_UUID)
+    damaged = {k: v for k, v in definition.items() if k != "base_location"}
+    zk.set(KEEPER_ROOT, json.dumps(damaged).encode())
+    try:
+        response = catalog_request(
+            "GET", "/v1/my_warehouse/namespaces", expected_code=500
+        )
+        assert_error_shape(response, "InternalServerError")
+        assert node.contains_in_log(
+            "is invalid: Missing or empty string 'base_location'"
+        )
+    finally:
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
+
+    list_namespaces()
+
+
+def test_warehouse_discovery(started_cluster):
+    # The server has no fixed list of warehouses. It looks a warehouse up in Keeper on each request.
+    # So a warehouse node created or deleted in Keeper takes effect at once, with no restart.
+    warehouse = f"fresh_{uuid.uuid4().hex[:8]}"
+    config_params = {"warehouse": warehouse}
+    namespaces_url = f"/v1/{warehouse}/namespaces"
+
+    # Before the node exists the warehouse is unknown.
+    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
+
+    # After the node is created the warehouse is served, and tables land under its base location.
+    keeper_path = create_warehouse_in_keeper(warehouse, f"s3://{BUCKET}/{warehouse}")
+    response = catalog_request("GET", "/v1/config", params=config_params)
+    assert response.json()["overrides"]["prefix"] == warehouse
+    catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
+    result = catalog_request("POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}).json()
+    assert result["metadata"]["location"].startswith(f"s3://{BUCKET}/{warehouse}/ns/t-")
+
+    # After the node is deleted the warehouse is unknown again.
+    get_keeper().delete(keeper_path, recursive=True)
+    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
+    response = catalog_request("GET", namespaces_url, expected_code=404)
+    assert_error_shape(response, "NotFoundException")
+
+
 def test_bucket_root_base_location(started_cluster):
-    # node_aux is configured with `s3://warehouse/`, the bucket root with a trailing slash.
-    # The server accepted that config at startup. Tables land directly under the bucket.
+    # The warehouse of node_aux has a base location of `s3://warehouse/`.
+    # Verify that for a bucket root with a trailing slash, tables land directly under the bucket, with no extra slash.
     ns = f"root_{uuid.uuid4().hex[:8]}"
     ns_url = catalog_url("/v1/my_warehouse/namespaces", node_aux)
     assert requests.post(ns_url, json={"namespace": [ns]}).status_code == 200
@@ -1313,8 +1410,8 @@ def test_auxiliary_keeper(started_cluster):
     assert ["aux_ns"] in requests.get(url).json()["namespaces"]
 
     zk = get_keeper()
-    assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
-    assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
+    assert zk.exists(f"/aux_root{KEEPER_STORE_ROOT}/namespaces/aux_ns")
+    assert not zk.exists(f"{KEEPER_STORE_ROOT}/namespaces/aux_ns")
 
 
 def test_commit_append(started_cluster):
@@ -1361,8 +1458,8 @@ def test_commit_append(started_cluster):
     assert len(list_metadata_files(location)) == 3
 
     zk = get_keeper()
-    table_uuid = zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/events")[0].decode()
-    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == second["metadata-location"].encode()
+    table_uuid = zk.get(f"{KEEPER_STORE_ROOT}/namespaces/{ns}/tables/events")[0].decode()
+    assert zk.get(f"{KEEPER_STORE_ROOT}/tables_by_uuid/{table_uuid}")[0] == second["metadata-location"].encode()
 
 
 def test_commit_empty(started_cluster):
