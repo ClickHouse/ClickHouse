@@ -507,7 +507,7 @@ public:
         mask = words.size() - 1;
     }
 
-    bool empty() const { return words.empty(); }
+    [[nodiscard]] bool empty() const { return words.empty(); }
 
     ALWAYS_INLINE void add(UInt64 hash)
     {
@@ -515,7 +515,7 @@ public:
         words[mixed_hash & mask] |= bitsOf(mixed_hash);
     }
 
-    ALWAYS_INLINE bool mayContain(UInt64 hash) const
+    [[nodiscard]] ALWAYS_INLINE bool mayContain(UInt64 hash) const
     {
         const UInt64 mixed_hash = intHash64(hash);
         const UInt64 bits = bitsOf(mixed_hash);
