@@ -120,7 +120,7 @@ struct ExplainPlanOptions
     /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
     const MapStepToExchangeIds * exchange_ids = nullptr;
 
-    SettingsChanges toSettingsChanges() const;
+    [[nodiscard]] SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
 struct DistributedPlanCut;
