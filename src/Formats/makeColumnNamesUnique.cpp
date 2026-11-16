@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void makeColumnNamesUnique(Names & names)
+void makeColumnNamesUnique(std::span<String> names)
 {
     UnorderedSetWithMemoryTracking<String> used(names.begin(), names.end());
     if (used.size() == names.size())

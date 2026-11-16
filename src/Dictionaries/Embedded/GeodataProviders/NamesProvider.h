@@ -20,15 +20,15 @@ public:
     {
     }
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
-    size_t estimateTotalSize() const override;
+    [[nodiscard]] size_t estimateTotalSize() const override;
 
     ILanguageRegionsNamesReaderPtr createReader() override;
 
-    std::string getLanguage() const override;
+    [[nodiscard]] std::string getLanguage() const override;
 
-    std::string getSourceName() const override;
+    [[nodiscard]] std::string getSourceName() const override;
 };
 
 using ILanguageRegionsNamesDataSourcePtr = std::unique_ptr<ILanguageRegionsNamesDataSource>;
@@ -43,10 +43,10 @@ private:
 public:
     explicit RegionsNamesDataProvider(const std::string & directory_);
 
-    ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const override;
+    [[nodiscard]] ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const override;
 
 private:
-    std::string getDataFilePath(const std::string & language) const;
+    [[nodiscard]] std::string getDataFilePath(const std::string & language) const;
 };
 
 }
