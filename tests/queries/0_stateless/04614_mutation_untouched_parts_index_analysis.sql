@@ -40,3 +40,14 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_mutation_index_analysis' AND event_type = 'MutatePart';
 
 DROP TABLE t_mutation_index_analysis;
+
+-- The part minmax bound skips NaN, so a negated range does not prove a part with a NaN row untouched.
+DROP TABLE IF EXISTS t_mutation_index_analysis_nan;
+CREATE TABLE t_mutation_index_analysis_nan (id UInt64, val Nullable(Float64), v UInt64)
+ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id;
+INSERT INTO t_mutation_index_analysis_nan VALUES (1, 1., 0), (2, nan, 0), (3, 3., 0);
+ALTER TABLE t_mutation_index_analysis_nan UPDATE v = 1 WHERE NOT ((val >= 0.) AND (val <= 3.));
+SELECT sum(v) FROM t_mutation_index_analysis_nan;
+ALTER TABLE t_mutation_index_analysis_nan DELETE WHERE NOT ((val >= 0.) AND (val <= 3.));
+SELECT count() FROM t_mutation_index_analysis_nan;
+DROP TABLE t_mutation_index_analysis_nan;

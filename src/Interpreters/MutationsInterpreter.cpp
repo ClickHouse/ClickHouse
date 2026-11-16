@@ -126,8 +126,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -404,49 +402,29 @@ bool canExcludePartByIndexAnalysis(
     if (context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         return false;
 
-    /// Only the predicate rewrite/analysis below is allowed to fall back silently: a genuine
-    /// error there will surface again when the fallback path executes the check query. The
-    /// index analysis call further down reads primary key / minmax metadata and must not have
-    /// resource, I/O or cancellation errors swallowed here.
-    std::shared_ptr<ActionsDAGWithInversionPushDown> inverted_dag;
-    try
-    {
-        ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
+    /// The analysis below resolves the predicate as the check query does, so an error here is the error
+    /// the check query would throw, and it is not swallowed.
+    ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
 
-        /// SQL UDF bodies are allowed to contain subqueries and table reads; the analysis below
-        /// expands them, so the guard must run after the same substitution, not on the raw predicate.
-        if (!UserDefinedSQLFunctionFactory::instance().empty())
-            UserDefinedSQLFunctionVisitor::visit(condition, context);
+    /// SQL UDF bodies are allowed to contain subqueries and table reads; the analysis below
+    /// expands them, so the guard must run after the same substitution, not on the raw predicate.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(condition, context);
 
-        /// Sets for subqueries and table references would be built again by the fallback path.
-        if (mutationPredicateContainsDeferredSet(condition))
-            return false;
-
-        /// Resolve the predicate with the analyzer that will interpret the mutation, so this
-        /// shortcut sees every predicate shape the fallback check query resolves.
-        auto predicate_context = Context::createCopy(context);
-        auto table_expression = std::make_shared<TableNode>(storage_from_part, predicate_context);
-        auto actions = buildActionsForMutationPredicate(condition, table_expression, predicate_context);
-
-        if (!actions)
-            return false;
-
-        inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(actions->predicate, context, /*boolean_context=*/true);
-    }
-    catch (...)
-    {
-        /// An interruption or a resource limit is not a "cannot analyze this predicate" answer, so it
-        /// must not be turned into extra work on the fallback path.
-        const int code = getCurrentExceptionCode();
-        if (code == ErrorCodes::QUERY_WAS_CANCELLED || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            throw;
-
-        tryLogCurrentException(
-            getLogger("MutationsInterpreter"),
-            "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
-            LogsLevel::debug);
+    /// Sets for subqueries and table references would be built again by the check query.
+    if (mutationPredicateContainsDeferredSet(condition))
         return false;
-    }
+
+    /// Resolve the predicate with the analyzer that will interpret the mutation, so this
+    /// shortcut sees every predicate shape the check query resolves.
+    auto predicate_context = Context::createCopy(context);
+    auto table_expression = std::make_shared<TableNode>(storage_from_part, predicate_context);
+    auto actions = buildActionsForMutationPredicate(condition, table_expression, predicate_context);
+
+    if (!actions)
+        return false;
+
+    auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(actions->predicate, context, /*boolean_context=*/true);
 
     static const LoggerPtr log = getLogger("MutationsInterpreter");
     return MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(part, inverted_dag, metadata_snapshot, context, log);

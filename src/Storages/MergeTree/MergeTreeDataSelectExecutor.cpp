@@ -2667,7 +2667,10 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
         {
             auto minmax_expression = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), storage_settings, ExpressionActionsSettings(context));
             ActionsDAGWithInversionPushDown wrapped(predicate, context, /*boolean_context=*/false);
-            return KeyCondition{wrapped, context, minmax_columns.getNames(), minmax_expression, /*single_point_=*/false, skip_minmax_analysis};
+            KeyCondition condition{wrapped, context, minmax_columns.getNames(), minmax_expression, /*single_point_=*/false, skip_minmax_analysis};
+            /// The part minmax bound comes from `getExtremes`, which skips NaN, as in `ReadFromMergeTree::buildPartitionPruningIndexes`.
+            condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
+            return condition;
         };
         auto minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(
             filter_dag, std::move(minmax_factory), metadata_snapshot, context, skip_constant_folding);

@@ -42,9 +42,15 @@ def create_table(instance, table):
 
 
 def drop_table(instance, table):
-    instance.query(
-        f"KILL MUTATION WHERE database = 'default' AND table = '{table}' SYNC"
-    )
+    # A mutation rejected by the check query stays in the queue; `KILL MUTATION` throws when there is none.
+    if int(
+        instance.query(
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{table}' AND NOT is_done"
+        )
+    ):
+        instance.query(
+            f"KILL MUTATION WHERE database = 'default' AND table = '{table}' SYNC"
+        )
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
