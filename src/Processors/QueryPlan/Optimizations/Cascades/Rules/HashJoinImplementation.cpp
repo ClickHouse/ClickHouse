@@ -289,6 +289,11 @@ void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_c
             return;
     }
 
+    /// The join does not move the left rows, so it also keeps a partitioning whose keys are cast before hashing
+    /// (`Nullable(Int32)` joined with `Int32`).
+    keyed_left_dist.hash_type_names = required_properties.distribution.hash_type_names;
+    keyed_output_dist.hash_type_names = required_properties.distribution.hash_type_names;
+
     addAlternative(strategySingleton<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
 }
 
