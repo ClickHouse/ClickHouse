@@ -8,13 +8,15 @@
 # its field id. A reader projects by field id and simply does not select a file column that the
 # read schema has no id for (https://iceberg.apache.org/spec/#column-projection), but the native
 # (V3) Parquet reader threw ICEBERG_SPECIFICATION_VIOLATION instead, which made such tables
-# unreadable.
+# unreadable. The dropped id is at or below `last-column-id` of the table metadata, so the reader
+# can tell it apart from an id the table has never assigned, which is still reported.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `y` takes field id 2 and is then dropped, so the current schema holds only `x` (field id 1).
+# `y` takes field id 2 and is then dropped, so the current schema holds only `x` (field id 1) while
+# `last-column-id` stays 2: field id 2 is a dropped column, field id 3 was never assigned.
 create_table_with_dropped_field_id_2() {
     local table=$1
     local table_dir=$2
@@ -55,12 +57,15 @@ TABLE_DROPPED="t_${CLICKHOUSE_DATABASE}_dropped"
 TABLE_DROPPED_DIR="${USER_FILES_PATH}/${TABLE_DROPPED}"
 TABLE_SHADOWED="t_${CLICKHOUSE_DATABASE}_shadowed"
 TABLE_SHADOWED_DIR="${USER_FILES_PATH}/${TABLE_SHADOWED}"
+TABLE_UNASSIGNED="t_${CLICKHOUSE_DATABASE}_unassigned"
+TABLE_UNASSIGNED_DIR="${USER_FILES_PATH}/${TABLE_UNASSIGNED}"
 
 trap '
-    rm -rf "${TABLE_DROPPED_DIR}" "${TABLE_SHADOWED_DIR}"
+    rm -rf "${TABLE_DROPPED_DIR}" "${TABLE_SHADOWED_DIR}" "${TABLE_UNASSIGNED_DIR}"
     ${CLICKHOUSE_CLIENT} --query "
         DROP TABLE IF EXISTS ${TABLE_DROPPED};
         DROP TABLE IF EXISTS ${TABLE_SHADOWED};
+        DROP TABLE IF EXISTS ${TABLE_UNASSIGNED};
     "
 ' EXIT
 
@@ -75,3 +80,9 @@ ${CLICKHOUSE_CLIENT} --input_format_parquet_use_native_reader_v3=1 --query "SELE
 create_table_with_dropped_field_id_2 "${TABLE_SHADOWED}" "${TABLE_SHADOWED_DIR}"
 add_column_to_data_file "${TABLE_SHADOWED_DIR}" 2 x
 ${CLICKHOUSE_CLIENT} --input_format_parquet_use_native_reader_v3=1 --query "SELECT x FROM ${TABLE_SHADOWED} ORDER BY x;"
+
+# Conversely, field id 3 is above `last-column-id`, so the table cannot ever have written it: the
+# file does not belong to this table, and reading it is still an error.
+create_table_with_dropped_field_id_2 "${TABLE_UNASSIGNED}" "${TABLE_UNASSIGNED_DIR}"
+add_column_to_data_file "${TABLE_UNASSIGNED_DIR}" 3 z
+${CLICKHOUSE_CLIENT} --input_format_parquet_use_native_reader_v3=1 --query "SELECT x FROM ${TABLE_UNASSIGNED} ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1

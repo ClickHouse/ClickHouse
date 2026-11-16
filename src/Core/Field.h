@@ -72,9 +72,9 @@ struct CustomType
     struct CustomTypeImpl
     {
         virtual ~CustomTypeImpl() = default;
-        [[nodiscard]] virtual const char * getTypeName() const = 0;
-        [[nodiscard]] virtual String toString(bool show_secrets) const = 0;
-        [[nodiscard]] virtual bool isSecret() const = 0;
+        virtual const char * getTypeName() const = 0;
+        virtual String toString(bool show_secrets) const = 0;
+        virtual bool isSecret() const = 0;
 
         virtual bool operator < (const CustomTypeImpl &) const = 0;
         virtual bool operator <= (const CustomTypeImpl &) const = 0;
@@ -86,10 +86,10 @@ struct CustomType
     CustomType() = default;
     explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
 
-    [[nodiscard]] bool isSecret() const { return impl->isSecret(); }
-    [[nodiscard]] const char * getTypeName() const { return impl->getTypeName(); }
-    [[nodiscard]] String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    [[nodiscard]] const CustomTypeImpl & getImpl() const { return *impl; }
+    bool isSecret() const { return impl->isSecret(); }
+    const char * getTypeName() const { return impl->getTypeName(); }
+    String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
+    const CustomTypeImpl & getImpl() const { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -98,29 +98,6 @@ struct CustomType
     bool operator == (const CustomType & rhs) const { return *impl == *rhs.impl; }
 
     std::shared_ptr<const CustomTypeImpl> impl;
-};
-
-/// Holds the unparsed string representation of a numeric literal.
-/// Used when the literal doesn't fit in Int64/UInt64 (e.g. big integers).
-/// The actual parsing to a concrete numeric type is deferred until the target type is known.
-struct NumberLiteral
-{
-    String value;
-
-    NumberLiteral() = default;
-    explicit NumberLiteral(String s) : value(std::move(s)) {}
-
-    /// Parse the literal text as Float64. This is the single place that turns a numeric literal
-    /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
-    /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
-    /// which the reader can't parse, fall back to strtod.
-    [[nodiscard]] Float64 toFloat64() const;
-
-    bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
-    bool operator < (const NumberLiteral &) const;
-    bool operator <= (const NumberLiteral &) const;
-    bool operator > (const NumberLiteral &) const;
-    bool operator >= (const NumberLiteral &) const;
 };
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -137,9 +114,9 @@ public:
     {}
 
     operator T() const { return dec; } /// NOLINT
-    [[nodiscard]] T getValue() const { return dec; }
-    [[nodiscard]] T getScaleMultiplier() const;
-    [[nodiscard]] UInt32 getScale() const { return scale; }
+    T getValue() const { return dec; }
+    T getScaleMultiplier() const;
+    UInt32 getScale() const { return scale; }
 
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
@@ -251,7 +228,6 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 template <> struct NearestFieldTypeImpl<CustomType> { using Type = CustomType; };
-template <> struct NearestFieldTypeImpl<NumberLiteral> { using Type = NumberLiteral; };
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
@@ -325,7 +301,6 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
-            Number = 33,
         };
     };
 
@@ -374,8 +349,6 @@ public:
             case Types::Object:
             case Types::CustomType:
             case Types::AggregateFunctionState:
-            /// A NumberLiteral holds unparsed literal text and throws on comparison.
-            case Types::Number:
                 return false;
         }
         UNREACHABLE();
@@ -475,16 +448,16 @@ public:
     }
 
 
-    [[nodiscard]] Types::Which getType() const { return which; }
+    Types::Which getType() const { return which; }
 
-    [[nodiscard]] std::string_view getTypeName() const;
+    std::string_view getTypeName() const;
 
-    [[nodiscard]] bool isNull() const { return which == Types::Null; }
-    [[nodiscard]] bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    [[nodiscard]] bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
+    bool isNull() const { return which == Types::Null; }
+    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
+    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
-    [[nodiscard]] bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
-    [[nodiscard]] bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
+    bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
+    bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
     template <typename T> bool tryGet(T & result)
     {
@@ -504,11 +477,11 @@ public:
         return true;
     }
 
-    template <typename T> [[nodiscard]] const NearestFieldType<std::decay_t<T>> & safeGet() const &
+    template <typename T> const NearestFieldType<std::decay_t<T>> & safeGet() const &
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
-    template <typename T> [[nodiscard]] NearestFieldType<std::decay_t<T>> safeGet() const &&
+    template <typename T> NearestFieldType<std::decay_t<T>> safeGet() const &&
     {
         return std::move(const_cast<Field *>(this)->safeGet<T>());
     }
@@ -576,23 +549,17 @@ public:
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
-            case Types::Number: return f(field.template get<NumberLiteral>());
         }
     }
 
-    [[nodiscard]] String dump() const;
+    String dump() const;
     static Field restoreFromDump(std::string_view dump_);
-
-    /// If this Field is a NumberLiteral, resolve it to a concrete numeric type
-    /// (Float64 for decimal-looking strings, UInt128/Int128/etc for big integers).
-    /// Returns *this unchanged if it's not a NumberLiteral.
-    [[nodiscard]] Field resolveNumberLiteral() const;
 
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType, NumberLiteral
+        AggregateFunctionStateData, CustomType
         > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
     Types::Which which{};
@@ -612,7 +579,7 @@ private:
     }
 
     template <typename T>
-    [[nodiscard]] NearestFieldType<std::decay_t<T>> & get() const
+    NearestFieldType<std::decay_t<T>> & get() const
     {
         return const_cast<Field *>(this)->get<T>();
     }
@@ -741,9 +708,6 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            case Types::Number:
-                destroy<NumberLiteral>();
-                break;
             default: [[likely]]
                  break;
         }
@@ -795,7 +759,6 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr
 template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
-template <> struct Field::TypeToEnum<NumberLiteral>{ static constexpr Types::Which value = Types::Number; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
@@ -820,7 +783,6 @@ template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = De
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
-template <> struct Field::EnumToType<Field::Types::Number> { using Type = NumberLiteral; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 /// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
@@ -963,14 +925,6 @@ void normalizeBoolFields(Field & field);
 inline bool isNaNField(const Field & f)
 {
     return f.isNaN();
-}
-
-/// Check if a Field holds a floating-point zero of either sign. `-0.0` and `+0.0` compare equal, although
-/// a function can tell the two representations apart: `toString(-0.0)` is `'-0'`.
-/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
-inline bool isFloatZeroField(const Field & f)
-{
-    return f.getType() == Field::Types::Float64 && f.safeGet<Float64>() == 0.0;
 }
 
 /// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.

@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SELECT tupleHammingDistance(tuple(1), tuple(1));
 SELECT tupleHammingDistance((1, 3), (1, 2));
 

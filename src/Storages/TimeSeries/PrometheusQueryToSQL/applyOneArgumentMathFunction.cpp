@@ -109,13 +109,13 @@ SQLQueryPiece applyOneArgumentMathFunction(
 
         if (function_name == "sgn")
         {
-            ASTPtr zero = timeSeriesScalarToAST(0);
+            ASTPtr zero = timeSeriesScalarToAST(0, context.scalar_data_type);
             return makeASTFunction(
                 "multiIf",
                 makeASTFunction("less", x->clone(), zero->clone()),
-                timeSeriesScalarToAST(-1),
+                timeSeriesScalarToAST(-1, context.scalar_data_type),
                 makeASTFunction("greater", x->clone(), zero->clone()),
-                timeSeriesScalarToAST(1),
+                timeSeriesScalarToAST(1, context.scalar_data_type),
                 std::move(x));
         }
 

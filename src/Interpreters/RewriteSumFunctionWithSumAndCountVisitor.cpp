@@ -56,7 +56,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         return;
 
     ///all the types listed are numbers and supported by 'plus' and 'minus'.
-    /// A `Decimal` literal is not: see the check of the column type below.
     Field::Types::Which literal_type = literal->value.getType();
     if (literal_type != Field::Types::UInt64 &&
         literal_type != Field::Types::Int64 &&
@@ -64,7 +63,11 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         literal_type != Field::Types::Int128 &&
         literal_type != Field::Types::UInt256 &&
         literal_type != Field::Types::Int256 &&
-        literal_type != Field::Types::Float64)
+        literal_type != Field::Types::Float64 &&
+        literal_type != Field::Types::Decimal32 &&
+        literal_type != Field::Types::Decimal64 &&
+        literal_type != Field::Types::Decimal128 &&
+        literal_type != Field::Types::Decimal256)
         return;
 
     const auto * column = func_plus_minus->arguments->children[column_id]->as<ASTIdentifier>();
@@ -86,12 +89,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     const auto column_type = column_type_name->type;
     if (!column_type || !isNumber(*column_type))
-        return;
-
-    /// `Decimal` addition computes in the native width of the decimal with an overflow check on every row:
-    /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, and `sum(a + 1200000000)` throws
-    /// `DECIMAL_OVERFLOW` for a row `999999999`. `sum(a) + 1200000000 * count(a)` does neither.
-    if (isDecimal(column_type))
         return;
 
     const String & column_name = column_type_name->name;

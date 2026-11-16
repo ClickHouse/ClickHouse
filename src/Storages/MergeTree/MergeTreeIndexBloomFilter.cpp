@@ -14,8 +14,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -252,6 +250,16 @@ struct MapIndexInfo
     Field key_field;
 };
 
+const ActionsDAG::Node * getWithoutAlias(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(node->children.size() == 1);
+        node = node->children.front();
+    }
+    return node;
+}
+
 /// Compares expressions by structure: index expressions come from the old analyzer, so names differ and lambdas may be folded.
 class ExpressionMatcher
 {
@@ -291,7 +299,7 @@ private:
     {
         while (operand.node)
         {
-            operand.node = operand.node->getWithoutAlias();
+            operand.node = getWithoutAlias(operand.node);
             if (operand.node->type != ActionsDAG::ActionType::INPUT || !operand.scope)
                 break;
 
@@ -466,12 +474,12 @@ Names collectJSONIndexColumns(const Block & header, const ActionsDAG::NodeRawCon
     Names names(header.columns());
     for (size_t position = 0; position < names.size(); ++position)
     {
-        const auto * index_node = index_nodes[position]->getWithoutAlias();
+        const auto * index_node = getWithoutAlias(index_nodes[position]);
         if (index_node->type != ActionsDAG::ActionType::FUNCTION || index_node->function_base->getName() != "JSONAllPaths"
             || index_node->children.size() != 1)
             continue;
 
-        const auto * argument = index_node->children.front()->getWithoutAlias();
+        const auto * argument = getWithoutAlias(index_node->children.front());
         const auto & name = header.getByPosition(position).name;
         if (argument->type == ActionsDAG::ActionType::INPUT && name == fmt::format("JSONAllPaths({})", argument->result_name))
             names[position] = name;
@@ -491,12 +499,12 @@ std::optional<size_t> findMapIndexPosition(
     if (!position)
         return std::nullopt;
 
-    const auto * index_node = index_nodes[*position]->getWithoutAlias();
+    const auto * index_node = getWithoutAlias(index_nodes[*position]);
     if (index_node->type != ActionsDAG::ActionType::FUNCTION || !index_node->function_base
         || index_node->function_base->getName() != function_name || index_node->children.size() != 1)
         return std::nullopt;
 
-    const auto * argument = index_node->children.front()->getWithoutAlias();
+    const auto * argument = getWithoutAlias(index_node->children.front());
     if (!isMap(argument->result_type))
         return std::nullopt;
 
@@ -510,13 +518,11 @@ std::optional<size_t> findMapIndexPosition(
 }
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
-/// and the key as a Field. `map_key_type` is the key type of the map column, when it is known
-/// independently of the index header. Returns std::nullopt if neither `mapKeys(<col>)` nor
-/// `mapValues(<col>)` is present in the index, or if the key is not representable in the key type.
+/// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
+/// is present in the index.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(
     const String & map_column_name,
     const Field & key_field,
-    const DataTypePtr & map_key_type,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
     const ActionsDAG::Node * map_node)
@@ -529,32 +535,6 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 
     MapIndexInfo info;
     info.key_field = key_field;
-
-    /// The key is hashed as a value of the key type of the map, while the constant in the query can have
-    /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
-    /// `String`. Convert the key to the key type; if it is not representable in that type, decline the
-    /// whole predicate: the key cannot be present in the map, but the index cannot be used to prove it
-    /// either, because `arrayElement` returns the default value for a missing key, and for an `Enum` key
-    /// it throws `UNKNOWN_ELEMENT_OF_ENUM` instead. Probing the `mapValues` index alone would be unsound
-    /// as well: it could prune the granules before `arrayElement` runs and silently replace that
-    /// exception by an empty result. This is why the check is not done only when `mapKeys` is indexed.
-    DataTypePtr key_type = map_key_type;
-    if (keys_position)
-    {
-        const auto & index_type = header.getByPosition(*keys_position).type;
-        key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
-    }
-
-    if (key_type)
-    {
-        Field converted_key_field = tryConvertFieldToType(key_field, *key_type, nullptr, {}, /* strict */ true);
-
-        if (converted_key_field.isNull())
-            return std::nullopt;
-
-        info.key_field = converted_key_field;
-    }
-
     if (keys_position)
     {
         info.has_keys_index = true;
@@ -565,7 +545,6 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
         info.has_values_index = true;
         info.values_index_position = *values_position;
     }
-
     return info;
 }
 
@@ -576,9 +555,9 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const NameSet & shadowing_columns)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
+    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
     if (!parsed)
         return std::nullopt;
 
@@ -586,7 +565,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, nullptr);
     if (!keys_position)
-        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header, index_nodes, nullptr);
+        return tryResolveMapIndexInfo(map_column_name, {}, header, index_nodes, nullptr);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     const DataTypePtr & index_type = header.getByPosition(*keys_position).type;
@@ -600,7 +579,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header, index_nodes, nullptr);
+    return tryResolveMapIndexInfo(map_column_name, key_field, header, index_nodes, nullptr);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -609,7 +588,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const RPNBuilderTreeNode & key_node,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const NameSet & shadowing_columns)
 {
     if (key_node.isFunction())
     {
@@ -624,19 +603,12 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            /// The key type of the map is needed even when only `mapValues` is indexed, to tell a key that
-            /// cannot be represented in it, see `tryResolveMapIndexInfo`.
-            DataTypePtr map_key_type;
-            if (const auto * dag_node = first_argument.getDAGNode())
-                if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
-                    map_key_type = map_type->getKeyType();
-
             return tryResolveMapIndexInfo(
-                first_argument.getColumnName(), constant_value, map_key_type, header, index_nodes, first_argument.getDAGNode());
+                first_argument.getColumnName(), constant_value, header, index_nodes, first_argument.getDAGNode());
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, shadowing_columns);
 }
 
 }
@@ -646,15 +618,13 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     ContextPtr context_,
     const Block & header_,
     size_t hash_functions_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_,
+    NameSet columns_shadowing_map_subcolumns_,
     IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
     ActionsDAG::NodeRawConstPtrs index_nodes_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
-    , json_argument_types(std::move(json_argument_types_))
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(std::move(index_nodes_))
     , json_index_columns(collectJSONIndexColumns(header, index_nodes))
@@ -838,7 +808,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     if (function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
-        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", is_shadowing_json_subcolumn))
         {
             auto arg_type = arg.getDAGNode()->result_type;
             /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -849,14 +819,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             out.function = RPNElement::FUNCTION_HAS;
             return true;
         }
-    }
-
-    /// `empty(s)` of a string is the same as `s = ''`: `ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former.
-    if (function_name == "empty" && arguments_size == 1 && parent == nullptr)
-    {
-        auto arg = function.getArgumentAt(0);
-        if (isString(removeNullable(removeLowCardinality(arg.getDAGNode()->result_type))))
-            return traverseTreeEquals("equals", arg, std::make_shared<DataTypeString>(), Field(String()), out, nullptr);
     }
 
     if (arguments_size != 2)
@@ -879,7 +841,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getContext()); prepared_set)
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
             {
                 if (prepared_set->hasExplicitSetElements())
                 {
@@ -938,18 +900,6 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
-static std::optional<size_t> findArrayJoinIndexPosition(
-    const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
-{
-    if (auto position = findIndexPosition(header, index_nodes, node))
-        return position;
-    if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
-        return std::nullopt;
-    padded = true;
-    return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
-}
-
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & wrapped_key_node,
@@ -1000,7 +950,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
     /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", is_shadowing_json_subcolumn))
     {
         if (function_name != "in" && function_name != "globalIn")
             return false;
@@ -1057,7 +1007,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, columns_shadowing_map_subcolumns))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1076,21 +1026,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
         if (set_contain_default_value)
             return false;
-
-        /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
-        /// which is not necessarily the default value of the `Enum` (its first value), so check it as well.
-        /// Over `Nullable(Enum)` map values a missing key gives `NULL` rather than the zero, so this is not needed.
-        if (const auto * dag_node = key_node.getDAGNode(); dag_node && isEnum(removeLowCardinality(dag_node->result_type)))
-        {
-            if (!isEnum(removeLowCardinalityAndNullable(type)))
-                return false;
-
-            auto zero_column = type->createColumn();
-            zero_column->insert(Field(Int64(0)));
-            auto set_contains_zero_column = prepared_set->execute({ColumnWithTypeAndName{std::move(zero_column), type, ""}}, false /*negative*/);
-            if (assert_cast<const ColumnUInt8 &>(*set_contains_zero_column).getData()[0])
-                return false;
-        }
 
         if (map_info->has_keys_index)
         {
@@ -1134,8 +1069,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     if (!array_join_argument)
         return false;
 
-    bool padded = false;
-    auto array_position = findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded);
+    auto array_position = findIndexPosition(header, index_nodes, *array_join_argument);
     if (!array_position)
         return false;
 
@@ -1149,9 +1083,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    if (padded && converted_column->getNumberOfDefaultRows() != 0)
-        return false;
-
     out.predicate.emplace_back(
         std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
     out.function = RPNElement::FUNCTION_HAS_ANY;
@@ -1217,31 +1148,9 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 /// the constant's raw padded bytes (arrayIndex.h `executeString`), so the padded form is the value
 /// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
 /// elements do coerce.
-/// Over `Enum` values a `String` or `FixedString` constant is compared by the name of the enum value,
-/// after the cast of both arguments to their common type `String`, which strips the padding of a
-/// `FixedString` (arrayIndex.h `executeGeneric`, hasAllAny.h). Do the same, and return the value of the
-/// enum to hash. A name that is not in the `Enum` does not throw there, it does not match, so return a
-/// null `Field` for it: the caller declines the index instead of throwing `UNKNOWN_ELEMENT_OF_ENUM`
-/// while it is prepared. Returns `std::nullopt` when the constant is not a name of an enum value.
-static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type)
-{
-    if (!isEnum(enum_type) || value_field.getType() != Field::Types::String || !value_type
-        || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
-        return std::nullopt;
-
-    String name = value_field.safeGet<String>();
-    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-        name.resize(name.find_last_not_of('\0') + 1);
-
-    return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
-}
-
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
-    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type))
-        return std::move(*enum_value);
-
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
@@ -1273,31 +1182,21 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `has`, `hasAny` and `hasAll` compare a `String` or `FixedString` constant with an `Enum` by the name
-        /// of the enum value, see `tryConvertEnumNameConstant`.
-        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
-
-        Field converted;
-        if (enum_value)
-            converted = std::move(*enum_value);
-        else if (coerce)
-            converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
-        else
-            converted = convertFieldToType(f, *actual_type, element_type.get());
-        if (converted.isNull())
-            return nullptr;
-
-        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast, and an
-        /// `Enum` element is converted to its name, which can be wider than the indexed
-        /// `FixedString(N)` - the name is not truncated to it. Such a value cannot match a narrower
-        /// `FixedString` scalar, but `ColumnFixedString::insert` would throw `TOO_LARGE_STRING_SIZE`
-        /// while preparing the index. Decline the index and let the function evaluate normally
-        /// instead. The `coerce` branch rejects an over-wide value on its own.
-        if (fixed_string_type && converted.getType() == Field::Types::String
-            && converted.safeGet<String>().size() > fixed_string_type->getN())
+        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
+        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
+        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
+        /// index and let the function evaluate normally instead.
+        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
+            && f.safeGet<String>().size() > fixed_string_type->getN())
         {
             return nullptr;
         }
+
+        Field converted = coerce
+            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
+            : convertFieldToType(f, *actual_type, element_type.get());
+        if (converted.isNull())
+            return nullptr;
 
         mutable_column->insert(converted);
     }
@@ -1401,8 +1300,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     {
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
-            bool padded = false;
-            if (auto array_position = findArrayJoinIndexPosition(*array_join_argument, header, index_nodes, padded))
+            if (auto array_position = findIndexPosition(header, index_nodes, *array_join_argument))
             {
                 size_t position = *array_position;
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
@@ -1417,9 +1315,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
-                        return false;
-
-                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
@@ -1448,8 +1343,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     out.function = RPNElement::FUNCTION_HAS;
                     /// The function coerces the constant by the element type it sees, which may differ in `LowCardinality`.
                     DataTypePtr nested_type = array_type->getNestedType();
-                    if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_key_node.getDAGNode()->result_type.get()))
-                        nested_type = wrapped_array_type->getNestedType();
+
+                    if (const auto * wrapped_dag_node = wrapped_key_node.getDAGNode())
+                    {
+                        if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_dag_node->result_type.get()))
+                            nested_type = wrapped_array_type->getNestedType();
+                    }
 
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
@@ -1462,8 +1361,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (function_name == "has")
             {
                 /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
-                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion;
-                /// a string searched for an `Enum` is compared by its name.
+                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
                 ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
 
@@ -1539,7 +1437,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions
     /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", is_shadowing_json_subcolumn))
     {
         if (function_name != "equals")
             return false;
@@ -1634,7 +1532,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, columns_shadowing_map_subcolumns))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1644,27 +1542,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
               */
             if (value_field == value_type->getDefault())
                 return false;
-
-            /// Over `Enum` map values the constant can be the name of the enum value, a `String`, which has
-            /// to be converted to the value of the enum before it is hashed and compared with the default.
-            /// The default value of an `Enum` is not the default value of the type of the constant. For a
-            /// missing key `arrayElement` returns the zero of the underlying integer, which is not necessarily
-            /// the default value of the `Enum` (its first value), so decline the index for both.
-            Field map_value_field = value_field;
-            if (const auto * dag_node = key_node.getDAGNode())
-            {
-                const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
-                if (isEnum(map_value_type))
-                {
-                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
-                        map_value_field = std::move(*enum_value);
-                    else
-                        map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
-
-                    if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
-                        return false;
-                }
-            }
 
             size_t position = 0;
             Field const_value;
@@ -1677,7 +1554,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
-                const_value = map_value_field;
+                const_value = value_field;
             }
             else
             {
@@ -1772,8 +1649,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
-        getJSONSubcolumnShadowingCheck(),
+        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns(), getJSONSubcolumnShadowingCheck(),
         index.expression->getActionsDAG().getOutputs());
 }
 

@@ -140,7 +140,7 @@ struct PreparedStatementInfo
     /// When this prepared statement expires (std::nullopt means no expiration).
     std::optional<Timestamp> expiration_time;
 
-    [[nodiscard]] size_t numParams() const { return query_parts.empty() ? 0 : query_parts.size() - 1; }
+    size_t numParams() const { return query_parts.empty() ? 0 : query_parts.size() - 1; }
 };
 
 /// Keeps information about calls - e.g. blocks extracted from query pipelines, flight tickets, poll descriptors.

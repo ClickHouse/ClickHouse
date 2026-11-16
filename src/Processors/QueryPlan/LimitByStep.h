@@ -13,26 +13,24 @@ public:
             const SharedHeader & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
 
-    [[nodiscard]] String getName() const override { return "LimitBy"; }
+    String getName() const override { return "LimitBy"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
-
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
-    [[nodiscard]] size_t getGroupLength() const { return group_length; }
-    [[nodiscard]] size_t getGroupOffset() const { return group_offset; }
-    [[nodiscard]] const Names & getColumns() const { return columns; }
-    [[nodiscard]] bool alwaysReadTillEnd() const { return always_read_till_end; }
+    size_t getGroupLength() const { return group_length; }
+    size_t getGroupOffset() const { return group_offset; }
+    const Names & getColumns() const { return columns; }
+    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void applyOrder(const SortDescription & sort_description);
 

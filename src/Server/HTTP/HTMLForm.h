@@ -115,7 +115,7 @@ public:
     /// Returns false if last boundary found.
     bool skipToNextBoundary();
 
-    [[nodiscard]] bool isActualEOF() const { return found_last_boundary; }
+    bool isActualEOF() const { return found_last_boundary; }
 
 private:
     PeekableReadBuffer in;
