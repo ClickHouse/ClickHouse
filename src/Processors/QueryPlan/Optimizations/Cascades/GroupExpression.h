@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
@@ -49,20 +51,20 @@ public:
         , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
-    String getName() const;
-    String getDescription() const;
-    const IQueryPlanStep * getQueryPlanStep() const;
-    bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
+    [[nodiscard]] String getName() const;
+    [[nodiscard]] String getDescription() const;
+    [[nodiscard]] const IQueryPlanStep * getQueryPlanStep() const;
+    [[nodiscard]] bool isApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties) const;
     void setApplied(const IOptimizationRule & rule, const ExpressionProperties & required_properties);
 
     void dump(WriteBuffer & out, const CostConfig & cost_config) const;
-    String dump(const CostConfig & cost_config) const;
-    size_t fingerprint() const;
+    [[nodiscard]] String dump(const CostConfig & cost_config) const;
+    [[nodiscard]] size_t fingerprint() const;
 
     /// Structural identity used to deduplicate physical expressions. Compares the same
     /// components the fingerprint hashes, so a fingerprint hash collision does not
     /// silently drop a distinct alternative.
-    bool structurallyEqualTo(const GroupExpression & other) const;
+    [[nodiscard]] bool structurallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;
@@ -75,7 +77,7 @@ public:
         ExpressionProperties required_properties;
     };
 
-    std::vector<Input> inputs;
+    VectorWithMemoryTracking<Input> inputs;
 
     ExpressionProperties properties;
 
@@ -89,7 +91,7 @@ public:
     /// only a single instance keeps that promise (see `AggregationImplementation`).
     bool is_partial_of_two_stage_aggregation = false;
 
-    std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
+    UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
 

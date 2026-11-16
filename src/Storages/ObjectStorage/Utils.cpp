@@ -24,6 +24,9 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 
 namespace DB
 {
@@ -56,7 +59,10 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
     if (settings.create_new_file_on_insert)
     {
-        auto pos = key.find_first_of('.');
+        /// Insert the sequence number before the first dot of the file name (the last path component),
+        /// so that a dot in a directory name does not move the new file into another directory.
+        auto last_slash = key.find_last_of('/');
+        auto pos = key.find_first_of('.', last_slash == std::string::npos ? 0 : last_slash + 1);
         String new_key;
         do
         {
@@ -428,6 +434,10 @@ void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & ob
     if (object_storage.getType() == ObjectStorageType::Azure)
         object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
             context->shouldRestrictUserQueryS3Credentials());
+#endif
+#if USE_AWS_S3
+    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+        s3_object_storage->checkSessionMayUseServerCredentials(context);
 #endif
 }
 
