@@ -98,7 +98,14 @@ void MessageQueueSink::onFinish()
 
 void MessageQueueSink::onException(std::exception_ptr /* exception */)
 {
-    onFinish();
+    try
+    {
+        onFinish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MessageQueueSink"), "Failed to finish the producer after an exception");
+    }
 }
 
 Columns MessageQueueSink::extractFormatColumns(const Columns & columns) const

@@ -56,6 +56,8 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
 echo "missing topic: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_missing_topic VALUES (1)" 2>&1 | grep -m1 -c "Failed to deliver 1 message(s) to Kafka topic '${missing_topic}'.*Unknown topic")"
 echo "no broker: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker VALUES (1)" 2>&1 | grep -m1 -c 'Failed to deliver 1 message(s).*Message timed out')"
 echo "no broker, offsets in Keeper: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker_keeper VALUES (1)" 2>&1 | grep -m1 -c 'Failed to deliver 1 message(s).*Message timed out')"
+# The INSERT reports the error of its SELECT, not the failed delivery of the rows produced before it.
+echo "select error: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker SELECT throwIf(number = 3) FROM numbers(10) SETTINGS max_block_size = 1" 2>&1 | grep -m1 -c 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO')"
 
 # Message 1 waits for the broker, message 2 waits for room in the one-message queue.
 $CLICKHOUSE_CLIENT --query_id "$insert_id" -q "INSERT INTO ${name}_kill VALUES (1), (2)" > "${CLICKHOUSE_TMP}/${name}_kill.out" 2>&1 &
@@ -71,3 +73,7 @@ done
 echo "killed: $($CLICKHOUSE_CLIENT -q "SELECT count() = 0 FROM system.processes WHERE query_id = '$insert_id'")"
 wait
 echo "cancelled: $(grep -m1 -c QUERY_WAS_CANCELLED "${CLICKHOUSE_TMP}/${name}_kill.out")"
+
+SECONDS=0
+timeout_out=$($CLICKHOUSE_CLIENT --max_execution_time 1 --timeout_overflow_mode throw -q "INSERT INTO ${name}_kill VALUES (1), (2)" 2>&1)
+echo "timeout: $(grep -m1 -c TIMEOUT_EXCEEDED <<< "$timeout_out"), within 15 s: $((SECONDS < 15))"
