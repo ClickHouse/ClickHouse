@@ -1012,6 +1012,9 @@ DataTypes getWrittenTypesOfVariantMembers(const DataTypeVariant & type, std::str
                 "The type {} cannot be stored in the Parquet variant column '{}': its member {} cannot be read back. "
                 "Use `Dynamic` instead",
                 type.getName(), column_name, members[i]->getName());
+        /// TODO: Support members whose values are written the same way, such as `UInt8` and `Int16`, or `UInt32` and
+        /// `Int64`, for example by writing one of them as a wider variant type, so that a reader with the same
+        /// `Variant` type can tell them apart.
         auto [it, inserted] = member_of_written_type.try_emplace(name, i);
         if (!inserted)
             throw Exception(
