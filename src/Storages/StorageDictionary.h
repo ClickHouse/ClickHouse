@@ -83,7 +83,7 @@ public:
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
     /// Loads the dictionary after checking that the user of `query_context` may read it, see `checkDictionaryAccess`.
-    std::shared_ptr<const IDictionary> getDictionary(const ContextPtr & query_context) const;
+    [[nodiscard]] std::shared_ptr<const IDictionary> getDictionary(const ContextPtr & query_context) const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 

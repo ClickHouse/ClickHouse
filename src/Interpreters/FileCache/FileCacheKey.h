@@ -10,7 +10,7 @@ struct FileCacheKey
     using KeyHash = UInt128;
     KeyHash key;
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     FileCacheKey() = default;
 

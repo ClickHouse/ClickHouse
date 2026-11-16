@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Test that a soft cancellation - a `max_execution_time` timeout with the `break` overflow mode,
 # after which the query must succeed with what it has already read - is honored the same way when
 # the data is read by the background tasks of the native `Parquet` reader. Those tasks read the

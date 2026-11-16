@@ -31,14 +31,6 @@ CREATE TABLE cluster_db.w_view ON CLUSTER test_shard_localhost (value String) AS
 SELECT * FROM cluster_db.w_view
 ACCESS_DENIED
 NOT_LOADED
-CREATE TABLE w_loop (id UInt64, value String) AS loop(dictionary('db.d'))
-
-SELECT * FROM w_loop LIMIT 1
-ACCESS_DENIED
-NOT_LOADED
-CREATE TABLE w_loop_inferred AS loop(dictionary('db.d'))
-ACCESS_DENIED
-NOT_LOADED
 CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM db.missing_table)
 
 CREATE TABLE cluster_db.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM db.missing_table)

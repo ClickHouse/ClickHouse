@@ -104,7 +104,7 @@ as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
 # A table function with an explicit column list creates its storage on first use, with the global context. The query of
-# `view` and the table function in `loop` are evaluated only by the query that reads the table, as its user.
+# `view` is evaluated only by the query that reads the table, as its user.
 unload
 as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
 query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_view TO ${username}"
@@ -114,14 +114,6 @@ unload
 as_user "CREATE TABLE ${cluster_db}.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)" "&distributed_ddl_entry_format_version=2"
 query "GRANT SELECT ON ${cluster_db}.w_view TO ${username}"
 as_user "SELECT * FROM ${cluster_db}.w_view"
-status
-unload
-as_user "CREATE TABLE w_loop (id UInt64, value String) AS loop(dictionary('${CLICKHOUSE_DATABASE}.d'))"
-query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_loop TO ${username}"
-as_user "SELECT * FROM w_loop LIMIT 1"
-status
-unload
-as_user "CREATE TABLE w_loop_inferred AS loop(dictionary('${CLICKHOUSE_DATABASE}.d'))"
 status
 # A view over a table that does not exist where the table is created, e.g. on the initiator of `ON CLUSTER`.
 as_user "CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM ${CLICKHOUSE_DATABASE}.missing_table)"

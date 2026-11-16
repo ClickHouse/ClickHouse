@@ -10,7 +10,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from '/snippets/components/Image.jsx';
 
 <Info>
 **TL;DR**
@@ -45,7 +44,15 @@ The demo ships in two variants:
 <Step title="Open the Getting Started page" id="open-getting-started">
 Open your ClickHouse Observability service. Until data arrives, it shows the **Start sending telemetry** page with three ways to connect.
 
-<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+
+</Frame>
+
+</div>
 
 This guide uses **Instrument with AI** to let a coding agent do the work, or **View connection details** if you prefer to make the edits yourself. Keep this page open. You will come back to it to confirm data is arriving.
 </Step>
@@ -83,7 +90,15 @@ Pick one path. All three end at the same instrumented demo.
 
 On the **Start sending telemetry** page, select **Copy prompt** under **Instrument with AI**. The **Set it up with an AI agent** dialog opens with a prompt for your coding agent and the two secrets the instrumented app needs.
 
-<Image img="/images/clickstack/getting-started/observability-ai-agent-prompt.png" alt="Set it up with an AI agent dialog showing the instrumentation prompt and the masked CLICKSTACK_OTLP_ENDPOINT and CLICKSTACK_API_KEY values" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set it up with an AI agent dialog showing the instrumentation prompt and the masked CLICKSTACK_OTLP_ENDPOINT and CLICKSTACK_API_KEY values](/images/clickstack/getting-started/observability-ai-agent-prompt.png)
+
+</Frame>
+
+</div>
 
 First, copy the two secrets into the `.env` file in the `hn-news-analyzer` directory. Select **Reveal key** to show the full API key, then use the copy button next to it:
 
@@ -107,7 +122,15 @@ The browser SDK embeds the endpoint and API key in the browser bundle, where any
 
 On the **Start sending telemetry** page, select **View connection details** under **Use an existing OpenTelemetry setup**, then open the **Env vars** tab. It shows your OTLP endpoint and API key as the environment variables the demo expects.
 
-<Image img="/images/clickstack/getting-started/observability-connection-details.png" alt="Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with URL, Collector config, and Env vars options and masked connection details](/images/clickstack/getting-started/observability-connection-details.png)
+
+</Frame>
+
+</div>
 
 ### Point the demo at your service {#configure-environment}
 
@@ -215,7 +238,15 @@ If you used the manual path or the pre-instrumented branch, the startup banner p
 
 Return to the **Start sending telemetry** page in your service and select **Check for data**. Once your telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
 
-<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled](/images/clickstack/getting-started/observability-data-received.png)
+
+</Frame>
+
+</div>
 
 Select **Start exploring** to open **Search**.
 </Step>

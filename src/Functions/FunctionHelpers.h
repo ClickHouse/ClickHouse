@@ -136,7 +136,7 @@ struct FunctionArgumentDescriptor
     std::string_view type_name;
 
     /// Validate argument type and column.
-    int isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
+    [[nodiscard]] int isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
 };
 
 using FunctionArgumentDescriptors = VectorWithMemoryTracking<FunctionArgumentDescriptor>;

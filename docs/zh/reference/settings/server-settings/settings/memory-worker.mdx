@@ -16,7 +16,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-控制后台内存工作线程是否在每个 tick 根据进程实际内存使用量的外部测量值来校正全局内存跟踪器：当 cgroups 可用时 (参见 `memory_worker_use_cgroup`) 使用 cgroup 的内存使用量，否则使用 jemalloc 的 `stats.resident`。
+控制后台内存工作线程是否在每个 tick 根据进程实际内存使用量的外部测量值来校正全局内存跟踪器：当 cgroups 可用时 (参见 `memory_worker_use_cgroup`) 使用 cgroup 的内存使用量，否则使用 jemalloc 的 `stats.resident`。跟踪器会被设为该测量值与 jemalloc 的 `stats.allocated` 二者中的最大值。这样，已分配但尚未被访问 (因而尚未驻留) 的内存仍会被计入，并发查询也就无法在其数据页被实际访问之前突破 `max_server_memory_usage` 的限制而获准执行。
 
 全局内存跟踪器是一个计数器：内存分配使其增加，内存释放使其减少。由于没有其他机制能够降低它，任何记账上的不对称都会在进程的整个生命周期内一直保留；向上的漂移也永远不会被抵消，因为它所对应的内存早已被释放。一旦仅漂移量就超过 `max_server_memory_usage`，所有内存分配都会失败，甚至连建立连接时的零字节检查也无法通过，此时服务器实际只用了其内存限制的一小部分，却会拒绝所有查询。基于测量值进行校正，可将此类漂移的存续时间限制在工作线程的一个 tick 以内 (由 `memory_worker_period_ms` 指定，从 cgroups 读取时默认为 50 ms，从 jemalloc 读取时默认为 100 ms) 。
 
