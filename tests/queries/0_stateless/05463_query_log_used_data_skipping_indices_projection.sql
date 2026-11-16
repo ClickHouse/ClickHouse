@@ -62,6 +62,9 @@ SELECT k FROM t_skip_index_projection WHERE a = 5 SETTINGS optimize_use_projecti
 SELECT k FROM t_skip_index_projection WHERE a = 5
 SETTINGS optimize_use_projections = 1, distributed_index_analysis = 1, distributed_index_analysis_for_non_shared_merge_tree = 1,
     cluster_for_parallel_replicas = 'test_shard_localhost', log_comment = 'skip_index_projection_11';
+-- the implicit count projection excludes every part, is rejected, and the read counts the drops once
+SELECT count() FROM t_skip_index_projection WHERE intDiv(k, 32) = 10 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, log_comment = 'skip_index_projection_12';
+SELECT count() FROM t_skip_index_projection WHERE intDiv(k, 32) = 10 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 0, log_comment = 'skip_index_projection_13';
 
 SYSTEM FLUSH LOGS query_log;
 

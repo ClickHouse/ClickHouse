@@ -9,6 +9,8 @@
 1
 5
 5
+0
+0
 skip_index_projection_1	['t_skip_index_projection.p_a']	['t_skip_index_projection.idx_a']	0	3	6
 skip_index_projection_2	[]	['t_skip_index_projection.idx_a']	0	0	6
 skip_index_projection_3	['t_skip_index_projection.p_a']	[]	0	7	0
@@ -20,3 +22,5 @@ skip_index_projection_8	['t_skip_index_projection.p_a']	[]	0	7	0
 skip_index_projection_9	['t_skip_index_aggregate_projection.p_count']	[]	0	7	0
 skip_index_projection_10	[]	['t_skip_index_projection.idx_a']	0	0	0
 skip_index_projection_11	['t_skip_index_projection.p_a']	['t_skip_index_projection.idx_a']	0	3	6
+skip_index_projection_12	[]	[]	8	0	0
+skip_index_projection_13	[]	[]	8	0	0
