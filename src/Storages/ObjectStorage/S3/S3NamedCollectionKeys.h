@@ -38,6 +38,7 @@ inline const std::unordered_set<std::string_view> s3_named_collection_optional_k
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "delete_checksum_algorithm",
     "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
@@ -50,6 +51,7 @@ inline const std::unordered_set<std::string_view> s3_named_collection_optional_k
     "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
     "google_adc_client_secret", /// For GCP
     "google_adc_refresh_token", /// For GCP
+    "google_service_account_key", /// For GCP (a service account JSON key, an alternative to the ADC triple)
 };
 
 inline bool isS3NamedCollectionKey(std::string_view key)
