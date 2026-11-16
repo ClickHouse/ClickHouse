@@ -188,28 +188,38 @@ def sendQuery(s, query, stage):
     s.sendall(ba)
 
 
-def serializeNode(plan_version, node, body):
-    """A node is `(step_name, payload, children)`: the children go first, then the step itself."""
-    step_name, payload, children = node
-    writeVarUInt(len(children), body)  # num_children
+def buildNode(plan_version, step_name, payload, children):
+    """Serializes a plan node: its children first, then the step itself with an empty output header."""
+    node = bytearray()
+    writeVarUInt(len(children), node)  # num_children
     for child in children:
-        serializeNode(plan_version, child, body)
-    writeStringBinary(step_name, body)
+        node += child
+    writeStringBinary(step_name, node)
     if plan_version >= WITH_STEP_VERSIONS:
-        writeVarUInt(0, body)      # step_version
-    writeStringBinary("", body)    # step_description
-    writeVarUInt(0, body)          # output header: 0 columns
-    writeVarUInt(0, body)          # settings: 0 changed
-    body += payload
+        writeVarUInt(0, node)      # step_version
+    writeStringBinary("", node)    # step_description
+    writeVarUInt(0, node)          # output header: 0 columns
+    writeVarUInt(0, node)          # settings: 0 changed
+    node += payload
+    return bytes(node)
 
 
-def buildQueryPlanPacket(plan_version, root):
+def buildTree(plan_version, tree):
+    """Serializes a plan subtree given as `(step_name, payload, [subtrees of the children])`."""
+    step_name, payload, children = tree
+    return buildNode(plan_version, step_name, payload, [buildTree(plan_version, child) for child in children])
+
+
+def buildQueryPlanPacket(plan_version, step_name, payload, num_children, children):
     body = bytearray()
     writeVarUInt(plan_version, body)
     if plan_version >= WITH_EXECUTION_LIMITS:
         writeVarUInt(0, body)      # max_threads
         body.append(0)             # concurrency_control
-    serializeNode(plan_version, root, body)
+    # Node tree: a root step with the given children, or with the given number of `ReadNothing` children.
+    if children is None:
+        children = [("ReadNothing", b"", [])] * num_children
+    body += buildTree(plan_version, (step_name, payload, children))
 
     packet = bytearray()
     writeVarUInt(13, packet)       # Client::QueryPlan
@@ -226,8 +236,8 @@ def readException(s):
     return code, text
 
 
-def sendPlan(root):
-    """Sends a `QueryPlan` packet with the given tree of steps and returns the exception code, or None if the query is not rejected."""
+def sendPlan(step_name, payload, num_children=0, children=None):
+    """Sends a `QueryPlan` packet with a step having `children` (or `num_children` `ReadNothing` children) and returns the exception code, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -236,7 +246,7 @@ def sendPlan(root):
         sendAddendum(s)
         # Stage 7 == QueryProcessingStage::QueryPlan: the server then expects a QueryPlan packet.
         sendQuery(s, "SELECT 1", 7)
-        s.sendall(buildQueryPlanPacket(plan_version, root))
+        s.sendall(buildQueryPlanPacket(plan_version, step_name, payload, num_children, children))
 
         # Only the first packet matters: either the exception or the start of the query result.
         packet_type = readVarUInt(s)
@@ -247,14 +257,14 @@ def sendPlan(root):
 
 def main():
     # 117 == INCORRECT_DATA
-    # Steps lacking their children.
-    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00")]:
-        print(step_name, sendPlan((step_name, payload, [])))
-
+    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00"), ("BlocksMarshalling", b"")]:
+        print(step_name, sendPlan(step_name, payload))
+    # A step with more children than it has inputs.
+    print("Extremes with two children", sendPlan("Extremes", b"", num_children=2))
     # A sink has no output stream, so it cannot be a child of another step.
     # `GatherSend` payload: exchange ID and no sort description.
     gather_send = ("GatherSend", strbin("x") + b"\x00", [("ReadNothing", b"", [])])
-    print("Extremes over GatherSend", sendPlan(("Extremes", b"", [gather_send])))
+    print("Extremes over GatherSend", sendPlan("Extremes", b"", children=[gather_send]))
 
 
 main()

@@ -346,6 +346,13 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             max_type_complexity, flags.version, step_version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
 
+        /// The plan tree assumes that a step has exactly one input per child, e.g. optimizations iterate
+        /// over the children and access the input header of each of them.
+        if (step->getInputHeaders().size() != frame.children.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized step {} has {} input(s), but the serialized query plan has {} child(ren) of it",
+                step_name, step->getInputHeaders().size(), frame.children.size());
+
         if (step->hasOutputHeader())
         {
             /// Headers encoding to the same bytes are indistinguishable to this serializer, so their
