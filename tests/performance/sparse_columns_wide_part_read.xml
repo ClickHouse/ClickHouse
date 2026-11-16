@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- 1600 columns: 1200 UInt32 and 400 String, sparse unless ratio_of_defaults_for_sparse_serialization = 1. -->
     <substitutions>
         <substitution>
