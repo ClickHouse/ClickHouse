@@ -124,6 +124,12 @@ if [ "$locks" -lt "$PARTITIONS" ]; then
 fi
 echo "--- Full coverage reached ---"
 
+# Freeze the healthy replica with its locks held: SYSTEM PAUSE blocks further streaming
+# cycles without touching the consumers, so no refresh releases temporary locks while the
+# one-shot read below runs, and the read cannot catch a rotation window.
+$CLICKHOUSE_CLIENT -q "SYSTEM PAUSE ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
+sleep 5
+
 # A single direct SELECT on the viewless replica: its consumer tries to take partitions,
 # finds none and publishes demand; the query finishes and nothing retries, while the
 # replica's session and is_active stay alive.
@@ -143,6 +149,10 @@ if [ "$demand_seen" -lt 1 ]; then
     exit 1
 fi
 echo "--- Demand published by a replica that stopped trying ---"
+
+# Resume the healthy replica: it must see the demand, hold a partition reserved for the
+# demanding (but not retrying) replica, and lift the reservation once the demand retires.
+$CLICKHOUSE_CLIENT -q "SYSTEM START ${CLICKHOUSE_TEST_UNIQUE_NAME}_kafka"
 
 # The fresh demand must hold the reservation: the healthy replica leaves one free
 # partition for the demanding (but not retrying) replica.
