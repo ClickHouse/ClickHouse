@@ -40,5 +40,8 @@ SELECT * FROM format(CSV, '`T.A` String, t Tuple(a String)', $$t.a,t$$);
 SELECT * FROM format(CSV, '`T.A` String, t Tuple(a String)', $$t.a,T.A$$);
 SELECT * FROM format(CSV, 'Ta Tuple(a String), tA Tuple(a String)', $$ta.a,Ta,tA
 x,y,z$$);
+SELECT * FROM format(CSV, 't Tuple(a String)', $$T.A$$) SETTINGS input_format_csv_detect_header = 1;
+SELECT * FROM format(CSV, 'x String, t Tuple(a String)', $$x,T.A$$) SETTINGS input_format_csv_detect_header = 1;
+SELECT * FROM format(CSV, 't Tuple(a String)', $$T.A$$) SETTINGS input_format_csv_detect_header = 1, input_format_column_name_matching_mode = 'ignore_case';
 
 DROP TABLE tr;

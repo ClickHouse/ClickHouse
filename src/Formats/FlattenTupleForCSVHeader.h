@@ -31,8 +31,8 @@ bool csvHeaderNamesMayProduceRawBytes(const Block & sample, bool flatten, bool w
 /// by that column's name, so the column is read from the whole run. `type_names`, when it has the same size,
 /// is collapsed in step to the column's type name; with `check_types` a different element type throws.
 /// Names are compared like column names, with `input_format_column_name_matching_mode`.
-/// With `header_detection` (a header detected in a row that may be data) a name any column matches is a column, and a
-/// run two Tuple columns can claim is left as is, so the names never throw.
+/// With `header_detection` (a header detected in a row that may be data) names are compared exactly, as the detection
+/// does, a name any column matches is a column, and a run two Tuple columns can claim is left as is, so it never throws.
 void collapseCSVHeaderTupleNames(
     const Block & header,
     const CaseAwareBlockNameMap & column_indexes_by_names,

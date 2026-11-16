@@ -173,6 +173,9 @@ void collapseCSVHeaderTupleNames(
 
     auto match_at = [&](size_t pos) -> const Candidate *
     {
+        /// Header detection compares names exactly.
+        if (header_detection)
+            return find_candidate(pos, false);
         /// Like a column name: an exact match first, then a case-insensitive one.
         const Candidate * match = matching_mode == MatchingMode::IGNORE_CASE ? nullptr : find_candidate(pos, false);
         if (!match && matching_mode != MatchingMode::MATCH_CASE)
