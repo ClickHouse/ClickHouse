@@ -919,26 +919,8 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
                 mut_column->insertFrom(*default_row, 0);
         }
     }
-    else if (inverse_filter)
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertDefault();
-            else
-                mut_column->insertFrom(*column, row);
-        }
-    }
     else
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertDefault();
-        }
-    }
+        mut_column->insertFromOrDefaults(*column, filter, inverse_filter);
 
     return mut_column;
 }

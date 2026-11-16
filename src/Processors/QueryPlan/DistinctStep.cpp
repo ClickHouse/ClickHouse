@@ -366,15 +366,16 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_setti
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Let's not serialize limit_hint.
-    /// Ideally, we can get if from a query plan optimization on the follower.
-
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         ctx.writeColumnName(column);
 
     if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);
+
+    /// A shipped plan fragment may not contain the LIMIT the hint comes from, so it cannot be derived there again.
+    if (ctx.step_version >= 2 && !ctx.for_cache_key)
+        writeVarUInt(limit_hint, ctx.out);
 }
 
 QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
@@ -392,8 +393,12 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     if (ctx.step_version >= 1)
         readBinary(preserve_input_order, ctx.in);
 
+    UInt64 limit_hint = 0;
+    if (ctx.step_version >= 2)
+        readVarUInt(limit_hint, ctx.in);
+
     auto step = std::make_unique<DistinctStep>(
-        ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+        ctx.input_headers.front(), Settings(ctx.settings), limit_hint, column_names, pre_distinct_);
     if (preserve_input_order)
         step->preserveInputOrder();
     return step;
@@ -418,7 +423,10 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
-    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0},
+        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT},
+        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT}};
     registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }
