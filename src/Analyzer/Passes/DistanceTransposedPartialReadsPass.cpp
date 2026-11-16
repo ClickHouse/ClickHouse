@@ -2,7 +2,10 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/CorrelatedColumnsStack.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,6 +43,18 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            correlated_columns.enter(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_qbit_distance_function_reads])
             return;
 
@@ -110,6 +125,10 @@ public:
         auto column_source = qbit_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
         if (!table_node)
+            return;
+
+        /// A column of an outer query read by a correlated subquery is passed to it whole, see `CorrelatedColumnsStack`.
+        if (correlated_columns.contains(makeColumnInSource(column_source, qbit_node->getColumnName())))
             return;
 
         const auto & storage = table_node->getStorage();
@@ -286,6 +305,15 @@ public:
                 original_result_type->getName(),
                 function_node->getResultType()->getName());
     }
+
+    void leaveImpl(const QueryTreeNodePtr & node)
+    {
+        if (node->as<QueryNode>() || node->as<UnionNode>())
+            correlated_columns.leave();
+    }
+
+private:
+    CorrelatedColumnsStack correlated_columns;
 };
 
 }
