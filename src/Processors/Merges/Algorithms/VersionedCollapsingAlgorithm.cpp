@@ -152,7 +152,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
 
         bool inserted_rows = false;
 
-        /// No row read before the buffered ones can still be emitted.
+        /// With the queue empty, every row read before the buffered ones is already resolved.
         if (current_keys.empty() && !invalid_sign_block_sizes.empty())
         {
             insertGap(current_keys.frontGap());

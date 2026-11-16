@@ -42,8 +42,7 @@ private:
 
     QueueWithMemoryTracking<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
-    /// Rows whose sign is neither 1 nor -1 that a vertical merge keeps, copied by value (a `RowRef` would pin a
-    /// shared chunk) until the rows read before them are emitted.
+    /// Invalid-sign rows kept by a vertical merge, held by value until the rows read before them are emitted.
     MutableColumns invalid_sign_columns;
     VectorWithMemoryTracking<size_t> invalid_sign_block_sizes;
     size_t next_invalid_sign_row = 0;
