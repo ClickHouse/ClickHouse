@@ -694,7 +694,7 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
 
 ALWAYS_INLINE void Aggregator::discardAdaptiveSourceState(AggregateDataPtr & place) const
 {
-    if (!is_simple_count && !all_aggregates_has_trivial_destructor)
+    if (adaptiveSourceStatesHaveDestructors())
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->destroy(place + offsets_of_aggregate_states[i]);
     place = nullptr;
@@ -1130,29 +1130,39 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         bucket_records += partition_records[sub];
     }
 
-    size_t source_cells = 0;
-    for (size_t i = 1; i < data.size(); ++i)
-        source_cells += sourceBucketSize<Method>(*data[i], layout, bucket);
-
-    /// A unit is a run of partitions; the bucket splits into as many as give each unit about
-    /// `adaptive_merge_unit_records` records and source cells, at most one per partition.
-    const size_t units = std::min(
-        partitions_per_bucket, std::bit_ceil(std::max<size_t>(1, (bucket_records + source_cells) / adaptive_merge_unit_records)));
-    const size_t partitions_per_unit = partitions_per_bucket / units;
-    const AdaptiveUnitSourceCells<Method> unit_source_cells(data, layout, bucket, units);
-
     /// The threshold of the top-K that the aggregation feeds, which every conversion of the merge reads and
     /// tightens (see `AdaptiveTopKThreshold`). Only the external merge of a top-K goes without it, and that
     /// merge outputs partial states.
     AdaptiveTopKThreshold * const threshold = session.top_k_threshold.get();
     chassert(threshold || !final || !params.bucket_top_k);
+    AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
+    chassert(!pruning || threshold);
+
+    /// A bucket bounded below the threshold holds no group of the top (see `AdaptiveTopKPruning::bucketBound`), so the
+    /// merge skips it whole. That spares the bucket the bounds of its bins, which sum 1,024 bins of every producer.
+    /// The merge takes the buckets with the largest bounds first, so once the threshold has passed the bound of a
+    /// bucket, it is above the bounds of the buckets that follow.
+    const bool skips_bucket = pruning && pruning->bucketBound(bucket) < threshold->current();
+
+    /// A unit is a run of partitions; the bucket splits into as many as give each unit about
+    /// `adaptive_merge_unit_records` records and source cells, at most one per partition. A bucket that is skipped
+    /// is one unit.
+    size_t units = 1;
+    if (!skips_bucket)
+    {
+        size_t source_cells = 0;
+        for (size_t i = 1; i < data.size(); ++i)
+            source_cells += sourceBucketSize<Method>(*data[i], layout, bucket);
+        units = std::min(
+            partitions_per_bucket, std::bit_ceil(std::max<size_t>(1, (bucket_records + source_cells) / adaptive_merge_unit_records)));
+    }
+    const size_t partitions_per_unit = partitions_per_bucket / units;
+    const AdaptiveUnitSourceCells<Method> unit_source_cells(data, layout, bucket, units);
 
     /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`), completed with the
     /// groups of the tables of the producers that never froze.
-    AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
-    chassert(!pruning || threshold);
     AdaptiveTopKPruning::BucketBounds bin_bounds{};
-    if (pruning)
+    if (pruning && !skips_bucket)
     {
         bin_bounds = pruning->boundsForBucket(bucket);
         addMergeCountedTablesToBounds<Method>(data, layout, bucket, *pruning, bin_bounds, arena);
@@ -1193,12 +1203,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             continue;
         const auto for_each_cell = [&](auto && callback) { unit_source_cells.forEach(unit, callback); };
 
-        /// A settled threshold skips every unit left (see `AdaptiveTopKThreshold`). Otherwise the pruning
-        /// keeps the unit's bins that can still hold a group of the top, at the threshold of the moment (see
-        /// `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped, its source cells dropped and its records freed
-        /// unread; a unit with some drains only theirs.
+        /// A settled threshold skips every unit left (see `AdaptiveTopKThreshold`), and a bucket below the threshold
+        /// is skipped as its one unit. Otherwise the pruning keeps the unit's bins that can still hold a group of the
+        /// top, at the threshold of the moment (see `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped,
+        /// its source cells dropped and its records freed unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
-        bool skip = threshold && threshold->settled();
+        bool skip = skips_bucket || (threshold && threshold->settled());
         if (pruning && !skip)
         {
             const auto selection = pruning->selectUnit(bin_bounds, unit, units, threshold->current(), alive);
@@ -1208,8 +1218,12 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         }
         if (skip)
         {
+            /// States without destructors leave nothing to do in the source cells, which no one reads again.
             if constexpr (MapAggregationMethod<Method>)
-                for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
+            {
+                if (adaptiveSourceStatesHaveDestructors())
+                    for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
+            }
             for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
                 staged.release(sub);
             pruned_records += unit_records;
@@ -1355,9 +1369,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     if (pruned_records)
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedRecords, pruned_records);
 
-    /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the bucket tables
-    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which its destruction
-    /// frees after the last bucket of the merge stopped the source owning states (see `AdaptiveBucketMergingSource`).
+    /// Every source cell of the bucket was adopted, merged or discarded, or left by a skipped unit with states that need
+    /// no destructor, so the bucket tables of two-level sources only release their buffers. A single-level source keeps
+    /// its one buffer, which its destruction frees after the last bucket of the merge stopped the source owning states
+    /// (see `AdaptiveBucketMergingSource`).
     for (size_t i = 1; i < data.size(); ++i)
         if (data[i]->isTwoLevel())
             getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();

@@ -1213,6 +1213,10 @@ private:
         const Filter & filter,
         const UpdateCandidates & update_candidates) const;
 
+    /// Whether the states of a source cell have destructors to run. Where they have none, the cells of a unit that
+    /// goes unread need no visit.
+    bool adaptiveSourceStatesHaveDestructors() const { return !is_simple_count && !all_aggregates_has_trivial_destructor; }
+
     /// Destroys the states of a source cell whose group cannot reach the top, and clears the cell's slot.
     void discardAdaptiveSourceState(AggregateDataPtr & place) const;
 
