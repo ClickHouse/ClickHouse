@@ -385,11 +385,6 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     /// By default compression is disabled if address looks like localhost.
 
     /// Avoid DNS request if the host is "localhost".
-    /// If ClickHouse is run under QEMU-user with a binary for a different architecture,
-    /// and there are all listed startup dependency shared libraries available, but not the runtime dependencies of glibc,
-    /// the glibc cannot open "plugins" for DNS resolving, and the DNS resolution does not work.
-    /// At the same time, I want clickhouse-local to always work, regardless.
-    /// TODO: get rid of glibc, or replace getaddrinfo to c-ares.
 
     compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;

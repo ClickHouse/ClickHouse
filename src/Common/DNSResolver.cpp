@@ -147,7 +147,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
         throw DB::NetException(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }
 
-    /// `getaddrinfo` returns duplicate addresses with different socket types, but useless for `Poco::Net::IPAddress`
+    /// `/etc/hosts` can list the same address more than once.
     addresses.erase(std::unique(addresses.begin(), addresses.end()), addresses.end());
 
     return addresses;
@@ -565,7 +565,7 @@ void DNSResolver::updateCache(UInt32 max_consecutive_failures)
         impl->new_addresses.clear();
     }
 
-    /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
+    /// Updating may take a long time: every lookup is bounded only by the timeouts and attempts of `/etc/resolv.conf`.
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
 

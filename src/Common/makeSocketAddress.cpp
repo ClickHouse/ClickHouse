@@ -38,8 +38,8 @@ bool isIPAddressLiteral(const std::string & host)
 Poco::Net::SocketAddress makeBindAddress(const std::string & host, uint16_t port)
 {
     /// A literal is handed to Poco exactly as before, rather than parsed here. For `::` Poco falls
-    /// back to `getaddrinfo` (see above), which refuses it on a host with no IPv6 address configured
-    /// (`EAI_ADDRFAMILY`, because of `AI_ADDRCONFIG`). `listen_try` relies on that: with
+    /// back to `DNS::hostByName` (see above), which refuses it on a host with no IPv6 address configured
+    /// (`EAI_ADDRFAMILY`, because of `AI_ADDRCONFIG`, as `getaddrinfo` of the glibc does). `listen_try` relies on that: with
     /// `<listen_host>::</listen_host>` and `<listen_host>0.0.0.0</listen_host>` such a host listens on
     /// the IPv4 wildcard only, and clients keep arriving with IPv4 addresses rather than IPv4-mapped
     /// IPv6 ones (which `host_regexp` cannot reverse resolve through `/etc/hosts`).
