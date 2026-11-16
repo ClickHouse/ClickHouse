@@ -16,5 +16,7 @@ ILLEGAL_STREAM
 --- unbounded, with cursor
 t1 4
 t2 40
---- incremental refresh is not supported
-NOT_IMPLEMENTED
+--- incremental refresh
+round1	8	110
+round2	10	165
+round3	10	165

@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <cmath>
 #include <functional>
 #include <iterator>
@@ -1412,7 +1414,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
 
             if (query_info.isStream())
-                setStreamForChild(modified_query_info, table);
+                setStreamForChild(modified_query_info, modified_context, table);
 
             /// Filter DAGs can be modified by optimizations, so each child must own its own copy:
             /// otherwise optimizing one child's plan invalidates the sibling headers that were
@@ -1711,7 +1713,10 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
 }
 
-void ReadFromMerge::setStreamForChild(SelectQueryInfo & modified_query_info, const StorageWithLockAndName & storage_with_lock_and_name) const
+void ReadFromMerge::setStreamForChild(
+    SelectQueryInfo & modified_query_info,
+    const ContextMutablePtr & modified_context,
+    const StorageWithLockAndName & storage_with_lock_and_name) const
 {
     const auto & [database_name, storage, _, table_name, metadata_snapshot] = storage_with_lock_and_name;
 
@@ -1726,14 +1731,19 @@ void ReadFromMerge::setStreamForChild(SelectQueryInfo & modified_query_info, con
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine Merge");
 
     /// The cursor of a `Merge` table is a map: database -> table -> the cursor of the table.
-    /// A table without an entry is read from the beginning.
-    CursorTreeNodePtr table_cursor;
-    if (stream_settings.cursor && stream_settings.cursor->hasSubtree(database_name))
+    /// A table without an entry is read from the beginning. The keys of the cursor tree of a query are split by dots,
+    /// so the subtree of a name with dots is found by its parts.
+    Strings path;
+    for (const auto & part_name : {database_name, table_name})
     {
-        const auto & database_cursor = stream_settings.cursor->getSubtree(database_name);
-        if (database_cursor->hasSubtree(table_name))
-            table_cursor = database_cursor->getSubtree(table_name);
+        Strings parts;
+        boost::split(parts, part_name, boost::is_any_of("."));
+        path.insert(path.end(), parts.begin(), parts.end());
     }
+
+    CursorTreeNodePtr table_cursor = stream_settings.cursor;
+    for (const auto & key : path)
+        table_cursor = table_cursor && table_cursor->hasSubtree(key) ? table_cursor->getSubtree(key) : nullptr;
     stream_settings.cursor = std::move(table_cursor);
 
     TableExpressionModifiers child_modifiers(
@@ -1742,6 +1752,17 @@ void ReadFromMerge::setStreamForChild(SelectQueryInfo & modified_query_info, con
 
     if (auto * table_node = modified_query_info.table_expression ? modified_query_info.table_expression->as<TableNode>() : nullptr)
         table_node->setTableExpressionModifiers(child_modifiers);
+
+    /// An incremental refresh of a materialized view: the bounded read of every table reports its cursor under the
+    /// database and the table. The tables matching the `Merge` table may change, so they are checked on every refresh.
+    if (auto streaming_cursor = modified_context->getStreamingCursor())
+    {
+        if (!storage->reportsStreamingCursor())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} of {} has engine {}, which does not report the cursor of a streaming read for an incremental refresh",
+                storage->getStorageID().getNameForLogs(), storage_merge->getStorageID().getNameForLogs(), storage->getName());
+        modified_context->setStreamingCursor(StreamingCursor::createChild(std::move(streaming_cursor), path));
+    }
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
@@ -3477,7 +3498,7 @@ SELECT _table, _block_number, _block_offset, * FROM merge_table
 STREAM CURSOR {'db': {'t1': {'all': {'block_number': 5, 'block_offset': 99}}}}
 ```
 
-A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. `WATERMARK` is not supported.
+A table without an entry in the cursor is read from the beginning. The set of tables is determined at the start of the query. If all the tables support it, a `Merge` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`); a table that starts matching later is read from the beginning by the next refresh. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 

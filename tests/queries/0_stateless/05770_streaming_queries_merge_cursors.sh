@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: atomic-database
 
 # STREAM from a `Merge` table reads every table with STREAM. Its cursor is {database: {table: <cursor of the table>}}.
 
@@ -43,8 +44,20 @@ $STREAMING_CLIENT -q "INSERT INTO t2 VALUES (40)"
 read_until "$fifo" "40"
 cleanup "$fifo" "$pid" > /dev/null
 
-echo "--- incremental refresh is not supported"
+echo "--- incremental refresh"
 $STREAMING_CLIENT -q "
     CREATE TABLE tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO tgt EMPTY AS SELECT a FROM m;
-" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+    SYSTEM REFRESH VIEW mv;
+    SYSTEM WAIT VIEW mv;
+    SELECT 'round1', count(), sum(a) FROM tgt;
+    INSERT INTO t1 VALUES (5);
+    INSERT INTO t2 VALUES (50);
+    SYSTEM REFRESH VIEW mv;
+    SYSTEM WAIT VIEW mv;
+    SELECT 'round2', count(), sum(a) FROM tgt;
+    SYSTEM REFRESH VIEW mv;
+    SYSTEM WAIT VIEW mv;
+    SELECT 'round3', count(), sum(a) FROM tgt;
+    DROP TABLE mv;
+"

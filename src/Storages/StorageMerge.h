@@ -59,6 +59,8 @@ public:
     bool supportsFinal() const override { return true; }
     /// Every table is read with STREAM; it is checked when reading.
     bool supportsStreaming() const override { return true; }
+    /// Every table reports its cursor; it is checked when reading.
+    bool reportsStreamingCursor() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     /// Fails closed: a Merge over a child that opts out (e.g. Distributed) must not let the
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
@@ -295,8 +297,11 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    /// Give a child of a streaming read its part of the cursor.
-    void setStreamForChild(SelectQueryInfo & modified_query_info, const StorageWithLockAndName & storage_with_lock_and_name) const;
+    /// Give a child of a streaming read its part of the cursor (and of the holder of the final cursor of an incremental refresh).
+    void setStreamForChild(
+        SelectQueryInfo & modified_query_info,
+        const ContextMutablePtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name) const;
 
     SelectQueryInfo getModifiedQueryInfo(const ContextMutablePtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
