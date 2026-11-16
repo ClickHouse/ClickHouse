@@ -31,7 +31,6 @@ public:
     /// the buffer is reached only through pointers to arena or heap memory, never through pointers into itself.
     static constexpr bool is_position_independent = true;
 
-    /// The buffer is allocated in the arena passed to `add`, `addMany`, `merge` and `deserialize`.
     static constexpr bool allocates_memory_in_arena = true;
 
     void add(TimestampType timestamp, ValueType value, Arena * arena)
