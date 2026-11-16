@@ -27,12 +27,12 @@ public:
         const std::optional<String> & already_emitted_flag_column,
         size_t max_block_size_rows_);
 
-    const char * getName() const override { return "DistinctSortedAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "DistinctSortedAlgorithm"; }
     void addInput(SharedHeader header);
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
 private:
     /// Copies the boundary key before its input is replaced or forwarded to the output.
@@ -40,10 +40,10 @@ private:
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
     /// Without the already-emitted flag, no row is a suppression row.
-    bool isSuppressionRow(const SortCursorImpl & cursor, size_t row) const;
+    [[nodiscard]] bool isSuppressionRow(const SortCursorImpl & cursor, size_t row) const;
 
     /// Selects output columns while retaining chunk information and ownership of their values.
-    Chunk projectOutput(Chunk chunk, size_t source_num) const;
+    [[nodiscard]] Chunk projectOutput(Chunk chunk, size_t source_num) const;
 
     struct Source
     {
