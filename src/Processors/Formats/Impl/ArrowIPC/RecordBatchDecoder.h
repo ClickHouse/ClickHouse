@@ -36,6 +36,10 @@ struct DictionaryUse
 {
     FieldPosition position;
     DataTypePtr hint;
+    /// The field is decoded for several requested columns that can read its raw bytes differently (see
+    /// `RecordBatchDecoder::rawByteTarget`), so the values are registered unconverted: each requested
+    /// column taken from the field is converted by its own type after decoding.
+    bool keep_raw_bytes = false;
 };
 
 using DictionaryUses = VectorWithMemoryTracking<DictionaryUse>;
@@ -334,9 +338,12 @@ private:
         const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
         const String & path, size_t list_depth);
     [[nodiscard]] ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
-    /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
-    /// requested. The reader applies the destination nullability after converting visible rows.
-    [[nodiscard]] bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
+    /// Nullable structs retain their null maps when tuples are nullable, a tuple conversion is requested, or
+    /// the struct (at the dotted `path`) is decoded for a requested column and a requested subcolumn of it:
+    /// the subcolumn is taken from the decoded struct and converted after decoding, which needs the null map
+    /// to tell the hidden rows. The reader applies the destination nullability after converting visible rows.
+    [[nodiscard]] bool wrapsInNullable(
+        const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(

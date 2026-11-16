@@ -244,6 +244,42 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
     return nullptr;
 }
 
+/// Whether the field at the dotted `path` is decoded for more than one requested column: its own name and
+/// those of the enclosing fields (`t` and `t.s` for the field `t.s`). The entries of a map are decoded at
+/// `key` / `value` but requested as the subcolumns `keys` / `values`, so both names count.
+bool isDecodedForSeveralRequests(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+{
+    if (!types || path.empty())
+        return false;
+    auto is_requested = [&](const String & name)
+    {
+        if (types->contains(name))
+            return true;
+        const size_t last_dot = name.rfind('.');
+        const std::string_view last = std::string_view(name).substr(last_dot == String::npos ? 0 : last_dot + 1);
+        return (last == "key" || last == "value") && types->contains(name + "s");
+    };
+    size_t requests = is_requested(path) ? 1 : 0;
+    for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
+        requests += is_requested(path.substr(0, pos));
+    return requests >= 2;
+}
+
+/// Whether the field at the dotted `path` is decoded for a requested column (its own name or that of an
+/// enclosing field) and for a requested subcolumn of it (e.g. `t` and `t.s` for the struct `t`).
+bool isDecodedWithRequestedSubcolumn(const String & path, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+{
+    if (!types || path.empty())
+        return false;
+    bool requested = types->contains(path);
+    for (size_t pos = path.find('.'); pos != String::npos && !requested; pos = path.find('.', pos + 1))
+        requested = types->contains(path.substr(0, pos));
+    if (!requested)
+        return false;
+    const String prefix = path + ".";
+    return std::ranges::any_of(*types, [&](const auto & entry) { return entry.first.starts_with(prefix); });
+}
+
 }
 
 String DictionaryRegistry::positionKey(const FieldPosition & position)
@@ -1674,7 +1710,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
     /// Every row is valid: the same wrapper decision as `decodeField`, with an all-zero null map.
-    if (wrapsInNullable(field, *inner, effective_hint))
+    if (wrapsInNullable(field, *inner, effective_hint, path))
         return ColumnNullable::create(inner, ColumnUInt8::create(rows, UInt8{0}));
     return inner;
 }
@@ -2038,7 +2074,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
         return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
-    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
+    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth), path))
     {
         ColumnUInt8::Ptr null_map = own_null_map ? own_null_map : buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -2142,15 +2178,20 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     return values->index(*indexes, 0);
 }
 
-bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const
+bool RecordBatchDecoder::wrapsInNullable(
+    const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const
 {
-    const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
-        || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
-            || isTuple(stripHint(effective_hint))));
+    if (!field.nullable || !inner.canBeInsideNullable())
+        return false;
     /// A DAY_TIME or MONTH_DAY_NANO interval is also a `Tuple` (see `fieldToCHType`), with the same rule.
     const bool is_tuple = field.type.kind == TypeKind::Struct
         || (field.type.kind == TypeKind::Interval && field.type.unit != flatbuf::IntervalUnit_YEAR_MONTH);
-    return field.nullable && inner.canBeInsideNullable() && (!is_tuple || preserve_struct_nulls);
+    if (!is_tuple || settings.schema_inference_allow_nullable_tuple_type)
+        return true;
+    if (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
+            || isTuple(stripHint(effective_hint))))
+        return true;
+    return field.type.kind == TypeKind::Struct && isDecodedWithRequestedSubcolumn(path, target_types);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -2853,15 +2894,9 @@ DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hin
 DataTypePtr RecordBatchDecoder::rawByteTarget(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
     DataTypePtr raw_target = rawByteTargetType(resolveTargetHint(parent_hint, path, list_depth));
-    if (!raw_target || !target_types)
-        return raw_target;
-
-    /// The requested columns this field is decoded for: its own dotted name and those of the enclosing
-    /// fields (`t` and `t.s` for the field `t.s`). With more than one, the hint follows only some of them.
-    size_t requests = target_types->contains(path) ? 1 : 0;
-    for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
-        requests += target_types->contains(path.substr(0, pos));
-    return requests < 2 ? raw_target : nullptr;
+    if (!raw_target || isDecodedForSeveralRequests(path, target_types))
+        return nullptr;
+    return raw_target;
 }
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
@@ -2893,7 +2928,9 @@ void RecordBatchDecoder::collectDictionaryUses(
         const FieldPosition position{path, list_depth};
         DictionaryUses & id_uses = uses[field.dictionary->id];
         if (std::ranges::none_of(id_uses, [&](const DictionaryUse & use) { return use.position == position; }))
-            id_uses.push_back(DictionaryUse{position, effective_hint});
+            id_uses.push_back(DictionaryUse{
+                position, effective_hint,
+                /*keep_raw_bytes=*/rawByteTargetType(effective_hint) && isDecodedForSeveralRequests(path, lookup_types)});
     }
 
     const ArrowType & type = field.type;

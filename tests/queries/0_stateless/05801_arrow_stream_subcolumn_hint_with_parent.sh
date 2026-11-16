@@ -38,4 +38,24 @@ $CLICKHOUSE_LOCAL -q "SELECT CAST(tuple(false, toDate32('1969-12-31')) AS Tuple(
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(c0 Bool), \`t.d\` Date') SETTINGS date_time_overflow_behavior = 'throw'" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(c0 Bool), \`t.d\` Date') SETTINGS date_time_overflow_behavior = 'saturate'"
 
+echo "dictionary of 16-byte values only"
+# Written by PyArrow: a struct child encoded with a dictionary that holds only `abcdefghijklmnop`, so the
+# dictionary-wide width check does not decline the conversion (the ClickHouse writer adds an empty entry).
+echo "//////AAAAAQAAAAAAAKAAwABgAFAAgACgAAAAABBAAEAAAAkP///wQAAAABAAAABAAAAHj///8AAAENGAAAABwAAAAEAAAAAgAAAIAAAAAgAAAAAQAAAHQAAABw////EAAYAAgABgAHAAwAEAAUABAAAAAAAAEEFAAAADwAAAAcAAAABAAAAAAAAAABAAAAcwAAAAgACAAAAAQACAAAAAwAAAAIAAwACAAHAAgAAAAAAAABIAAAAMz///8QABQACAAGAAcADAAAABAAEAAAAAAAAQYQAAAAGAAAAAQAAAAAAAAAAgAAAGMwAAAEAAQABAAAAAAAAAD/////qAAAABQAAAAAAAAADAAUAAYABQAIAAwADAAAAAACBAAUAAAAGAAAAAAAAAAIAAoAAAAEAAgAAAAQAAAAAAAKABgADAAEAAgACgAAAEwAAAAQAAAAAQAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAACAAAAAAAAAAQAAAAAAAAAAAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAYWJjZGVmZ2hpamtsbW5vcP/////YAAAAFAAAAAAAAAAMABYABgAFAAgADAAMAAAAAAMEABgAAAAYAAAAAAAAAAAACgAYAAwABAAIAAoAAABsAAAAEAAAAAMAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAIAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAAAAAAAAAAADAAAAAwAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////wAAAAA=" | base64 -d > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(c0 Bool, s IPv6), \`t.s\` String') LIMIT 1"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, \`t.s\` IPv6') LIMIT 1"
+
+echo "map keys and values"
+$CLICKHOUSE_LOCAL -q "SELECT map('abcdefghijklmnop', 1) AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(IPv6, UInt8), \`t.keys\` Array(String)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(String, UInt8), \`t.keys\` Array(IPv6)')"
+$CLICKHOUSE_LOCAL -q "SELECT map(1, 'abcdefghijklmnop') AS t FORMAT ArrowStream" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, IPv6), \`t.values\` Array(String)')"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Map(UInt8, String), \`t.values\` Array(IPv6)')"
+
+echo "null struct row"
+$CLICKHOUSE_LOCAL -q "SELECT CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(s String))) AS t FROM numbers(2) FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1" > "$file"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't String, \`t.s\` IPv6') SETTINGS enable_nullable_tuple_type = 0"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file', 'ArrowStream', 't Tuple(s IPv6), \`t.s\` String') SETTINGS enable_nullable_tuple_type = 0"
+
 rm -f "$file"

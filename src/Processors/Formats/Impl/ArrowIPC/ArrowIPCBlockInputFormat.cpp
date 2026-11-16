@@ -595,7 +595,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         /// No field: a dictionary is how a `LowCardinality` is written, and that wraps only numbers, strings,
         /// `Date` and `DateTime`, each of which has an Arrow type of its own. So a dictionary's values are
         /// never an opaque column, and the rewrite has no field metadata to act on here.
-        if (use.hint)
+        if (use.hint && !use.keep_raw_bytes)
             reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`

@@ -20,3 +20,16 @@ nested
 date range of a subcolumn
 VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
 (false)	1970-01-01
+dictionary of 16-byte values only
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+map keys and values
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':1}	['abcdefghijklmnop']
+{'abcdefghijklmnop':1}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	['abcdefghijklmnop']
+{1:'abcdefghijklmnop'}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+null struct row
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('::')	
