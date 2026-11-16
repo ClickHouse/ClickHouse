@@ -1267,3 +1267,64 @@ def test_killed_iceberg_insert_removes_its_data_files_in_shared_backoff(cluster,
         if insert is not None:
             insert.get_answer_and_error()
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_killed_iceberg_commit_keeps_the_table_readable_in_shared_backoff(cluster, broken_s3):
+    """A commit killed while it retries its metadata upload must leave a readable table.
+
+    The upload of the new `vN.metadata.json` is stored, but its response is lost, so the client
+    retries the conditional upload in the shared backoff. Killed there, the commit still makes that
+    retry: its precondition fails on the file of the first attempt, and the idempotency id proves the
+    file to be its own. Without the retry the commit counts as lost, and its rollback deletes the
+    manifest list that the published version references.
+    """
+    node = cluster.instances["node"]
+    table = "t_backoff_iceberg_commit"
+    # The prefix gets the backoff step of 10 s from `configs/storage_conf.xml`.
+    prefix = f"iceberg_backoff_commit_{uuid.uuid4().hex}/"
+    insert_query_id = f"backoff_iceberg_commit_{uuid.uuid4().hex}"
+    retries_query = (
+        "SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') FROM system.events"
+    )
+    insert_running = (
+        f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
+    )
+    insert = None
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
+        f"'http://resolver:8087/root/{prefix}', 'minio', '{minio_secret_key}')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    try:
+        # Only the first upload of a metadata file is stored with its response lost.
+        broken_s3.setup_at_object_upload(
+            key="metadata.json", count=1, action="forward_then_reset"
+        )
+        retries_before = int(node.query(retries_query))
+        insert = node.get_query_request(
+            f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
+            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0",
+            query_id=insert_query_id,
+        )
+        assert wait_for(
+            node, retries_query, lambda v: int(v) > retries_before
+        ), "the upload of the metadata file did not retry in the shared backoff"
+
+        node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+        assert wait_for(
+            node, insert_running, lambda v: int(v) == 0
+        ), "the killed INSERT did not end"
+
+        answer, select_error = node.query_and_get_answer_with_error(
+            f"SELECT count() FROM {table}"
+        )
+        assert not select_error, f"the table is not readable: {select_error[:2000]}"
+        assert int(answer) == 20, f"the table holds {answer.strip()} rows instead of 20"
+    finally:
+        broken_s3.reset()
+        if insert is not None:
+            insert.get_answer_and_error()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")

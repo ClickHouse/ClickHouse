@@ -214,6 +214,17 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+/// A write with a precondition. After a lost response only its next attempt tells the outcome: the precondition
+/// fails on the object of the earlier attempt, and the idempotency id proves that object to be its own.
+template <typename RequestType>
+bool isConditionalWrite(const RequestType & request)
+{
+    if constexpr (std::is_same_v<RequestType, PutObjectRequest> || std::is_same_v<RequestType, CompleteMultipartUploadRequest>)
+        return request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
+    else
+        return false;
+}
+
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const NormalizedHTTPHeaderEntries & extra_headers
@@ -823,7 +834,10 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (result.IsSuccess())
             return result;
 
-        CurrentThread::checkIfNotCancelled();
+        /// A failed precondition of a conditional write can come from its own earlier attempt, which only the caller
+        /// can tell from a lost race, so the cancellation must not replace that outcome.
+        if (!isConditionalWrite(request) || result.GetError().GetExceptionName() != "PreconditionFailed")
+            CurrentThread::checkIfNotCancelled();
 
         const auto & error = result.GetError();
 
@@ -973,12 +987,22 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
-            /// Slowing down due to a previously encountered retryable error, possibly from another thread.
-            slowDownAfterRetryableError();
+            /// The retry of a conditional write tells whether its earlier attempt landed, so it does not see the cancellation.
+            /// The decision to retry it again does.
+            auto attempt = [&]
+            {
+                std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+                if (attempt_no > 1 && isConditionalWrite(request_))
+                    cancellation_blocker.emplace();
+
+                /// Slowing down due to a previously encountered retryable error, possibly from another thread.
+                slowDownAfterRetryableError();
+                return request_fn_(request_);
+            };
 
             try
             {
-                outcome = request_fn_(request_);
+                outcome = attempt();
 
                 if (outcome.IsSuccess())
                     break;

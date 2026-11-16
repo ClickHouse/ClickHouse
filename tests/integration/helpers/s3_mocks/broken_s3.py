@@ -62,7 +62,8 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        # Only `at_object_get` reads it: the rule then applies to the requests for that object key.
+        # Only `at_object_get` and `at_object_upload` read it: the rule then applies to the requests
+        # whose object path contains the key.
         if key is not None:
             url += f"&key={urllib.parse.quote(key, safe='')}"
 
@@ -526,6 +527,7 @@ class _ServerRuntime:
         self.at_create_multi_part_upload = None
         self.at_object_get = None
         self.at_object_get_by_key = {}
+        self.at_object_upload_by_key = {}
         self.at_complete_multi_part_upload = None
         self.at_abort_multi_part_upload = None
 
@@ -554,6 +556,7 @@ class _ServerRuntime:
             self.at_listing = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
+            self.at_object_upload_by_key = {}
 
 
 _runtime = _ServerRuntime()
@@ -710,10 +713,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "at_object_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_object_upload = _ServerRuntime.CountAfter.from_cgi_params(
-                _runtime.lock, params
-            )
-            self.log_message("set at_object_upload %s", _runtime.at_object_upload)
+            rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            key = params.get("key", [None])[0]
+            if key is None:
+                _runtime.at_object_upload = rule
+            else:
+                _runtime.at_object_upload_by_key[key] = rule
+            self.log_message("set at_object_upload %s for key %s", rule, key)
             return self._ok()
 
         if path[1] == "fake_puts":
@@ -874,6 +880,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if _runtime.is_fake_upload(upload_id, parts.path):
                     return self._fake_put_ok()
         else:
+            # `has_effect` takes `_runtime.lock` itself, so the lock must not be held here.
+            for key, rule in list(_runtime.at_object_upload_by_key.items()):
+                if key in parts.path and rule.has_effect():
+                    self.log_message("put at_object_upload %s for key %s", rule, key)
+                    return rule.inject_error(self)
             if _runtime.at_object_upload is not None:
                 if _runtime.at_object_upload.has_effect():
                     self.log_message(

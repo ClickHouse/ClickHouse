@@ -567,14 +567,22 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    (void)tryWriteVersionHintFile(
-        resolver,
-        metadata_file_info,
-        version_hint_path,
-        object_storage,
-        context,
-        /* create */ try_write_version_hint,
-        /* assert_version_exactly */ false);
+    /// The metadata file is published: a failed update of the optional hint, a cancellation included, must not undo the commit.
+    try
+    {
+        (void)tryWriteVersionHintFile(
+            resolver,
+            metadata_file_info,
+            version_hint_path,
+            object_storage,
+            context,
+            /* create */ try_write_version_hint,
+            /* assert_version_exactly */ false);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
     return true;
 }
 
