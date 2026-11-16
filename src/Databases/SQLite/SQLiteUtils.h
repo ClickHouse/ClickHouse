@@ -33,6 +33,10 @@ enum class SQLiteOpenMode : uint8_t
     ReadWriteCreate,
 };
 
+/// `sqlite3_open_v2` under the mutex shared by every SQLite open: the first open runs SQLite's lazy global
+/// initialization, which is not safe to run from two threads at once.
+int openSQLiteHandle(const String & path, int flags, sqlite3 ** db);
+
 SQLitePtr openSQLiteDB(const String & database_path, ContextPtr context, bool throw_on_error, SQLiteOpenMode mode);
 
 }

@@ -19,6 +19,12 @@ namespace ErrorCodes
 
 static std::mutex init_sqlite_db_mutex;
 
+int openSQLiteHandle(const String & path, int flags, sqlite3 ** db)
+{
+    std::lock_guard lock(init_sqlite_db_mutex);
+    return sqlite3_open_v2(path.c_str(), db, flags, nullptr);
+}
+
 String quoteSQLiteIdentifier(std::string_view identifier)
 {
     return backQuoteSQLite(identifier);
@@ -83,11 +89,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
     }
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status = 0;
-    {
-        std::lock_guard lock(init_sqlite_db_mutex);
-        status = sqlite3_open_v2(database_path.c_str(), &tmp_sqlite_db, open_flags, nullptr);
-    }
+    int status = openSQLiteHandle(database_path, open_flags, &tmp_sqlite_db);
 
     if (status != SQLITE_OK)
     {
