@@ -61,19 +61,6 @@ namespace DB::Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// A predicate evaluated once per branch rather than once above a row-dropping step must be
-/// deterministic within the query, or each branch selects different rows.
-static bool filterIsDeterministicInScopeOfQuery(const FilterStep & filter)
-{
-    for (const auto & node : filter.getExpression().getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
-            && !node.function_base->isDeterministicInScopeOfQuery())
-            return false;
-    }
-    return true;
-}
-
 /// The branch input column this DAG output carries through, renamed through alias nodes only, or null
 /// if the output is a computed value rather than an input.
 static const ActionsDAG::Node * resolvePassThroughInput(const ActionsDAG::Node * node)
@@ -1531,7 +1518,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///
         /// TODO(#117559): a pushed-down filter also runs on branch rows the set operation removes,
         /// so a predicate that throws on some values raises there instead of returning rows.
-        if (!filterIsDeterministicInScopeOfQuery(*filter))
+        if (isSensitiveToEvaluationCount(filter->getExpression()))
             return 0;
 
         /// A pushed-down filter can leave a branch main port constant-folded while its totals port

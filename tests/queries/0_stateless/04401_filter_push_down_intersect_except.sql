@@ -44,6 +44,11 @@ SELECT 'top filter EXCEPT ALL off', countIf(explain LIKE 'Filter%') FROM
 SELECT 'nondeterministic top filter', countIf(explain LIKE 'Filter%') FROM
 (EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE rand64() % 2 = 0);
 
+-- The same for a predicate with observable side effects: cloned, it would also run on the rows the set
+-- operation drops.
+SELECT 'side effect top filter', countIf(explain LIKE 'Filter%') FROM
+(EXPLAIN SELECT a FROM (SELECT a FROM t_intex_l EXCEPT ALL SELECT a FROM t_intex_r) WHERE sleepEachRow(0) = 0);
+
 -- Propagating the condition is not enough: with more than one granule per part, both branches must
 -- actually prune down to a single granule, which is the point of the optimization.
 DROP TABLE IF EXISTS t_intex_g_l;
