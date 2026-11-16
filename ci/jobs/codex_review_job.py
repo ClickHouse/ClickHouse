@@ -8,7 +8,10 @@ the app the job requires to be authenticated up front (`enable_gh_auth=True`).
 The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
 then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
 so the top-level comment is always authored by the pre-authenticated app, not
-the agent's account.
+the agent's account. When the summary's Final Verdict is `✅ Approve`, the job also
+submits an `APPROVE` review on the reviewed commit, so the approval is recorded
+on GitHub (needed for compliance); any other verdict dismisses the app's earlier
+approvals of the PR.
 
 The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
@@ -19,6 +22,7 @@ non-zero exit code and a missing/empty review file — so both are checked here.
 """
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -28,6 +32,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
@@ -51,6 +56,7 @@ MODEL = "gpt-6.1-sol"
 FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
+REVIEW_HEADER = "#### AI Review"
 
 
 def _join_prompt(*sections):
@@ -74,6 +80,10 @@ Review instructions:
 - Follow the Review Instructions in .claude/skills/review/SKILL.md.
 - Repo is checked out at PR head.
 - Post findings as individual inline review comments on specific lines.
+- Start the body of every new inline comment with its severity tag: `[Blocker]` for a `❌ Blockers`
+  finding, `[Major]` for a `⚠️ Majors` finding. The CI review-threads gate holds the full test suite
+  and the merge only on unresolved threads that are not tagged as non-blocking (`[Major]`, `[P2]`,
+  `[P3]`, `[Nit]`), see `ci/jobs/scripts/workflow_hooks/review_threads.py`.
 """
 
 
@@ -181,8 +191,9 @@ Output:
 Write a self-contained summary of ALL findings, regardless of previous summaries, as plain Markdown
 to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
 start with `---
-#### AI Review`, then use ##### for section headers.
+{REVIEW_HEADER}`, then use ##### for section headers.
 Do NOT post the summary yourself: the job script will post it after you finish.
+A Final Verdict of `✅ Approve` makes the job submit a GitHub approval of the PR on your behalf.
 """
 
 
@@ -206,6 +217,118 @@ def _post_review():
         ],
         check=True,
     )
+
+
+_APPROVED_REVIEWS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      viewerDidAuthor
+      headRefOid
+      reviews(states: [APPROVED], first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { databaseId viewerDidAuthor commit { oid } }
+      }
+    }
+  }
+}
+"""
+
+
+def _review_approves():
+    """True if the `Status:` line of the last `Final Verdict` section in REVIEW_FILE is `✅ Approve`,
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. A summary without a status line,
+    or with the template's list of all statuses, is not an approval."""
+    with open(REVIEW_FILE, encoding="utf-8") as f:
+        _, found, verdict = f.read().rpartition("Final Verdict")
+    status = re.search(r"Status:(.*)", verdict) if found else None
+    if not status:
+        print(f"WARNING: No Final Verdict status in {REVIEW_FILE}")
+        return False
+    status = status.group(1)
+    return "✅ Approve" in status and not re.search(r"Request changes|Block", status)
+
+
+def _update_approval(info):
+    """Record the verdict as a GitHub review of the app: approve the reviewed commit on `✅ Approve`,
+    otherwise dismiss the app's approvals left by earlier runs, so that a PR which needs changes does not
+    keep an approval. A run for a commit that is no longer the PR head changes nothing: overlapping runs
+    for different commits may finish in any order, and only the head commit's verdict is current.
+    Raises on failure, failing the job."""
+    repo = _pr_repository(info)
+    owner, name = repo.split("/")
+    variables = {"owner": owner, "name": name, "number": int(info.pr_number)}
+    own_approvals = []
+    while True:
+        pr = GH._gh_graphql_json(_APPROVED_REVIEWS_QUERY, variables)["data"]["repository"]["pullRequest"]
+        if pr["viewerDidAuthor"]:
+            print("The PR is authored by the reviewing app, which cannot approve its own PR")
+            return
+        own_approvals += [r for r in pr["reviews"]["nodes"] if r["viewerDidAuthor"]]
+        page = pr["reviews"]["pageInfo"]
+        if not page["hasNextPage"]:
+            break
+        variables["after"] = page["endCursor"]
+
+    # The last fetched page has the latest head, closest to the update below.
+    if pr["headRefOid"] != info.sha:
+        print(f"Commit {info.sha} is superseded by the PR head {pr['headRefOid']}, keeping the approval state")
+        return
+
+    if _review_approves():
+        if any((r.get("commit") or {}).get("oid") == info.sha for r in own_approvals):
+            print(f"Commit {info.sha} is already approved")
+            return
+        print(f"Approving commit {info.sha}")
+        GH.api(
+            f"/repos/{repo}/pulls/{info.pr_number}/reviews",
+            method="POST",
+            payload={
+                "commit_id": info.sha,
+                "event": "APPROVE",
+                "body": "AI review approves this commit, see the `AI Review` comment.",
+            },
+            strict=True,
+        )
+        return
+
+    for r in own_approvals:
+        print(f"Dismissing approval {r['databaseId']}: the review no longer approves the PR")
+        GH.api(
+            f"/repos/{repo}/pulls/{info.pr_number}/reviews/{r['databaseId']}/dismissals",
+            method="PUT",
+            payload={
+                "event": "DISMISS",
+                "message": "AI review of a later commit does not approve the PR, see the `AI Review` comment.",
+            },
+            strict=True,
+        )
+
+
+def _add_cyber_risk_note(flagged_sessions, review_model):
+    """Put the sessions that the provider stopped as a cybersecurity risk at the top of `REVIEW_FILE`.
+
+    A session is typically stopped when it reaches a memory-safety finding, which is then missing from
+    the posted summary. Only the attempt and the model are listed: the partial output can describe an
+    unfixed vulnerability, and the PR may be public.
+    """
+    sessions = "\n".join(f"- attempt {attempt}: `{model}`" for attempt, model in flagged_sessions)
+    note = f"""\
+##### ⚠️ Review sessions stopped as a cybersecurity risk
+The model provider stopped these review sessions as a possible cybersecurity risk:
+{sessions}
+
+This summary comes from a session with `{review_model}`. A session is typically stopped when it reaches \
+a memory-safety finding, and the finding is lost with it, so this review can miss a real defect. \
+Please review the change in detail, and run the review internally with a model that has cyber access.
+
+"""
+    with open(REVIEW_FILE, encoding="utf-8") as f:
+        lines = f.readlines()
+    position = next((i + 1 for i, line in enumerate(lines) if line.startswith(REVIEW_HEADER)), 0)
+    lines.insert(position, note)
+    with open(REVIEW_FILE, "w", encoding="utf-8") as f:
+        f.writelines(lines)
 
 
 def _drop_stale_review_file():
@@ -277,12 +400,18 @@ def _run(prompt):
     """
     last_error = None
     model = MODEL
+    review_model = model
+    flagged_sessions = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
+            review_model = model
             result = _run_codex_once(prompt, model)
-            if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
-                print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
-                model = FALLBACK_MODEL
+            if CYBER_RISK_FLAG in result.info:
+                flagged_sessions.append((attempt, model))
+                print(f"WARNING: {model} flagged the review as a cybersecurity risk")
+                if model != FALLBACK_MODEL:
+                    print(f"Switching to {FALLBACK_MODEL}")
+                    model = FALLBACK_MODEL
             elif model != FALLBACK_MODEL and attempt == MAX_ATTEMPTS - 1 and MODEL_AT_CAPACITY in result.info:
                 print(f"WARNING: {model} is at capacity, the last attempt uses {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
@@ -315,6 +444,9 @@ def _run(prompt):
             f"Codex review failed after {MAX_ATTEMPTS} attempts: {last_error}"
         )
 
+    if flagged_sessions:
+        _add_cyber_risk_note(flagged_sessions, review_model)
+
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()
 
@@ -328,6 +460,7 @@ def review():
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
     _run(prompt)
+    _update_approval(info)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
@@ -82,7 +83,7 @@ struct WriteBufferFromS3::PartData
         return buffer;
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         return data_size == 0;
     }
@@ -484,6 +485,9 @@ void WriteBufferFromS3::abortMultipartUpload()
         }
         return;
     }
+
+    /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     LOG_INFO(log, "Abort multipart upload. {}", getVerboseLogDetails());
 
