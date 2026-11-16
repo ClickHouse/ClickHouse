@@ -62,7 +62,11 @@ void INATSProducer::cancel() noexcept
 void INATSProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
     if (!payloads.push(message))
+    {
+        /// The producing task has failed and closed the queue: rethrows its exception.
+        finish();
         throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
+    }
 }
 
 void INATSProducer::publish()
