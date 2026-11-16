@@ -782,8 +782,14 @@ private:
                             return;
                         }
                         for (size_t i = 0; i < candidate->keys.size(); ++i)
+                        {
                             if (isColumnOf(*column, *candidate->outer_keys[i]))
+                            {
+                                /// The assignment destroys the node `column` points to.
                                 current = std::make_shared<ColumnNode>(column_by_name.at(candidate->keys[i]), target);
+                                return;
+                            }
+                        }
                     },
                     [](QueryTreeNodePtr &) {});
                 return copy;

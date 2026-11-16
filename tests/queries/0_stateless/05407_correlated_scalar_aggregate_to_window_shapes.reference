@@ -14,6 +14,11 @@
 === two subqueries in one WHERE: rewritten 1 ===
 101	30
 200	1e308
+=== outer key argument with two keys: rewritten 1 ===
+1	100	1
+1	101	1
+2	200	2
+4	400	4
 === correlated to the same table: rewritten 1 ===
 2	5	2
 2	1e308	2
