@@ -192,12 +192,18 @@ bool isIdle(const StoragePtr & table, const ContextPtr & context)
     return DatabaseCatalog::instance().tryGetDDLGuardForStorage(table, probe_timeout) != nullptr;
 }
 
-void executeInternal(const String & query, const ContextPtr & context)
+void executeInternal(const String & query, const ContextPtr & context, const ContextPtr & query_context)
 {
-    /// A copy of the global context has full access and the server's default settings,
-    /// so the result does not depend on the user and the settings of the outer query.
+    /// A copy of the global context has full access, so the result does not depend on the user
+    /// (it is checked in `isGrantedToReattach` that the user could run the query).
+    /// But use the settings of the outer query: `ATTACH` of some engines still depends on them
+    /// (e.g. `Elasticsearch` requires `enable_elasticsearch`), and the user would `ATTACH` the table with these settings.
     auto internal_context = Context::createCopy(context->getGlobalContext());
     internal_context->makeQueryContext();
+    Settings settings = query_context->getSettingsCopy();
+    settings[Setting::reattach_tables_before_query_execution_probability] = 0;
+    settings[Setting::implicit_transaction] = false;
+    internal_context->setSettings(settings);
     internal_context->setCurrentQueryId({});
 
     /// Use a separate thread group, so that the work of the internal query is not accounted to the outer query:
@@ -230,7 +236,7 @@ void reattachTables(const DatabasePtr & database, const std::vector<String> & ta
         /// A failed `DETACH` leaves the table as it was (e.g. it was dropped concurrently), so skip it.
         try
         {
-            executeInternal("DETACH TABLE " + quoted_name + " SYNC", context);
+            executeInternal("DETACH TABLE " + quoted_name + " SYNC", context, query_context);
         }
         catch (...)
         {
@@ -241,7 +247,7 @@ void reattachTables(const DatabasePtr & database, const std::vector<String> & ta
         /// A failed `ATTACH` after a successful `DETACH` is what we are looking for, so let it fail the query.
         try
         {
-            executeInternal("ATTACH TABLE " + quoted_name, context);
+            executeInternal("ATTACH TABLE " + quoted_name, context, query_context);
         }
         catch (Exception & e)
         {
