@@ -31,5 +31,10 @@ SELECT * FROM format(CSVWithNames, 'Ta Tuple(a UInt8), tA Tuple(a UInt8)', $$"Ta
 1,2$$);
 SELECT * FROM format(CSVWithNames, 'Ta Tuple(a UInt8), tA Tuple(a UInt8)', $$"ta.a"
 1$$); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(CSVWithNames, '`t.a` Tuple(b UInt8), t Tuple(a Tuple(b UInt8, c UInt8))', $$"t.a.b","t.a.b","t.a.c"
+1,2,3$$) SETTINGS input_format_with_names_use_header = 0;
+SELECT * FROM format(CSV, 'Ta Tuple(a String), tA Tuple(a String)', $$ta.a,x$$);
+SELECT * FROM format(CSV, '`t.a` Tuple(b String), t Tuple(a Tuple(b String))', $$t.a.b,x$$);
+SELECT * FROM format(CSV, '`T.a` String, `t.A` String, t Tuple(a String)', $$t.a,x,y$$);
 
 DROP TABLE tr;

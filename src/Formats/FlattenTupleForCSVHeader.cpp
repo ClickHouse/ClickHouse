@@ -95,7 +95,8 @@ void collapseCSVHeaderTupleNames(
     const FormatSettings & format_settings,
     VectorWithMemoryTracking<String> & names,
     VectorWithMemoryTracking<String> & type_names,
-    bool check_types)
+    bool check_types,
+    bool header_detection)
 {
     struct Candidate
     {
@@ -137,8 +138,11 @@ void collapseCSVHeaderTupleNames(
     auto names_a_column = [&](const Candidate & candidate, size_t pos)
     {
         for (size_t k = 0; k < candidate.num_leaves; ++k)
-            if (column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND)
+        {
+            const auto & name = names[pos + k];
+            if (header_detection ? header.has(name) : column_indexes_by_names.get(name) != CaseAwareBlockNameMap::NOT_FOUND)
                 return true;
+        }
         return false;
     };
 
@@ -150,10 +154,14 @@ void collapseCSVHeaderTupleNames(
             if (!spells(candidate, pos, ignore_case) || names_a_column(candidate, pos))
                 continue;
             if (found)
+            {
+                if (header_detection)
+                    return nullptr;
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Ambiguous field (`{}`) in format header: it can be an element of Tuple column `{}` or `{}`",
                     names[pos], found->column->name, candidate.column->name);
+            }
             found = &candidate;
         }
         return found;
