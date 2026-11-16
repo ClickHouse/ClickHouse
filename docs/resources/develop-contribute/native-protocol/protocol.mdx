@@ -140,7 +140,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | SERVER_LOGS                     | 54406   | Log                    | Server emits Log packets when `send_logs_level` is set. |
 | COLUMN_DEFAULTS_METADATA        | 54410   | TableColumns           | Server may send the [`TableColumns`](#tablecolumns) packet (type 11) with column-default metadata before the INSERT/input schema block. Sent only when negotiated version ≥ 54410 **and** `input_format_defaults_for_omitted_fields` is enabled. Below this version the packet is never sent; clients must not wait for it. |
 | WRITE_CLIENT_INFO               | 54420   | Progress               | Adds `wrote_rows` and `wrote_bytes` to Progress. (Despite the name, this does **not** gate the ClientInfo block — that is `CLIENT_INFO` (v54032).) |
-| SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query (settings encoding) | Changes **how** the always-present settings list is encoded; does **not** gate whether settings are sent. v54429+ writes each setting as `(name, flags, value-as-string)`; older peers write `(name, type-specific-binary-value)` with no flags. See [Setting](#setting). |
+| SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query (settings encoding) | Changes **how** the always-present settings list is encoded; does **not** gate whether settings are sent. v54429+ writes each setting as `(name, flags, value-as-string)`; older peers wrote `(name, type-specific-binary-value)` with no flags, which current servers and clients no longer support: below this revision only an empty settings list can be exchanged. See [Setting](#setting). |
 | INTERSERVER_SECRET              | 54441   | Query                  | Adds the inter-server `auth_hash` field to Query — a salted SHA-256 over the cluster secret, not the raw secret. External clients send an empty string. See [Inter-server authentication](#inter-server-authentication). |
 | OPEN_TELEMETRY                  | 54442   | ClientInfo             | Adds the OpenTelemetry trace context to ClientInfo. |
 | DISTRIBUTED_DEPTH               | 54448   | ClientInfo             | Adds the `distributed_depth` field to ClientInfo. |
@@ -582,7 +582,7 @@ Client → Server.
 |---|----------------|-------------|--------------|------------------------------------------|-------------|
 | 1 | query_id       | String      | universal    | always                                   | Unique query identifier (UUID) |
 | 2 | client_info    | ClientInfo  | universal    | CLIENT_INFO (v54032)                     | See [ClientInfo](#clientinfo) |
-| 3 | settings       | Setting[]   | universal    | always                                   | See [Setting](#setting). **Always present** (terminated by an empty key); only the per-setting *encoding* is version-gated — see the encoding note in [Setting](#setting). A client must not omit this field for negotiated versions below `54429`. |
+| 3 | settings       | Setting[]   | universal    | always                                   | See [Setting](#setting). **Always present** (terminated by an empty key); only the per-setting *encoding* is version-gated — see the encoding note in [Setting](#setting). A client must not omit this field for negotiated versions below `54429`, where it has to be empty. |
 | 3a | external_roles | String     | universal    | INTERSERVER_EXTERNALLY_GRANTED_ROLES (v54472) | Serialized list of externally-granted role names. Empty list = byte `0x00` (VarUInt 0) wrapped in a String envelope (`[VarUInt 1][0x00]` on the wire). External clients always send empty. |
 | 4 | auth_hash      | String      | inter-server | INTERSERVER_SECRET (v54441)              | Inter-server authentication hash — **not** the raw cluster secret. See [Inter-server authentication](#inter-server-authentication) below. External clients (and any `InitialQuery`) send an empty string. |
 | 5 | stage          | VarUInt     | universal    | always                                   | Query processing stage. `0` = FetchColumns, `1` = WithMergeableState, `2` = Complete, `3` = WithMergeableStateAfterAggregation, `4` = WithMergeableStateAfterAggregationAndLimit, `7` = QueryPlan. Values `3`/`4` appear in distributed queries; `7` accompanies a serialized query plan. External clients normally send `2`. |
@@ -662,7 +662,7 @@ External (non-inter-server) clients never enter this mode and always send an emp
 
 Encoded inline in the Query body's settings list (the [Query](#query) packet, field 3). The list is **always present**, regardless of negotiated version, and is terminated by a Setting with an empty key — a single `VarUInt 0`, with no flags or value following. Only the per-setting encoding depends on the negotiated version, gated by `SETTINGS_SERIALIZED_AS_STRINGS` (v54429).
 
-**v54429+ (`STRINGS_WITH_FLAGS`)** — each setting is the triple shown here:
+**v54429+** — each setting is the triple shown here:
 
 | # | Field | Type    | Role      | Description |
 |---|-------|---------|-----------|-------------|
@@ -672,7 +672,7 @@ Encoded inline in the Query body's settings list (the [Query](#query) packet, fi
 
 Fields 2 and 3 are absent when `key` is empty.
 
-**Pre-54429 (`BINARY`)** — each setting is `[String key][type-specific binary value]`: the `flags` field is **not** written, and the value is encoded in the setting's native binary form (for example a fixed-width integer or a length-prefixed string) rather than as a decimal/text string. The list is still terminated by an empty `key`. A client that targets a negotiated version below `54429` must read and write this binary form, not the triple above. (Custom user-defined settings are the exception: they always carry `flags` and a string value, in both encodings.)
+**Pre-54429** — peers below this revision encoded each setting as `[String key][type-specific binary value]`, without `flags`. This encoding is no longer supported: for a negotiated version below `54429` the settings list must be empty (a single `VarUInt 0`, which is the same in both encodings). The server throws an exception (`NOT_IMPLEMENTED`) for a non-empty list from such a client, and `clickhouse-client` refuses to send changed settings to such a server.
 
 The `flags` field packs:
 
