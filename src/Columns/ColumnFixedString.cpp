@@ -612,17 +612,18 @@ ColumnPtr ColumnFixedString::createWithOffsets(const Offsets & offsets, const Co
     if (default_column.getN() != n)
         throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
+    const size_t total_bytes = fixedStringBytes(n, total_rows);
     auto res = ColumnFixedString::create(n);
     auto & res_chars = res->getChars();
-    res_chars.reserve_exact(total_rows * n);
+    res_chars.reserve_exact(total_bytes);
 
     if (default_column.isDefaultAt(0))
     {
-        res_chars.resize_fill(total_rows * n);
+        res_chars.resize_fill(total_bytes);
     }
     else
     {
-        res_chars.resize(total_rows * n);
+        res_chars.resize(total_bytes);
         for (size_t pos = 0; pos < res_chars.size(); pos += n)
             memcpySmallAllowReadWriteOverflow15(&res_chars[pos], default_column.chars.data(), n);
     }
