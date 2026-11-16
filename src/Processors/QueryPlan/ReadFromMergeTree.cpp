@@ -4593,6 +4593,27 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription
             if (part.data_part->hasLightweightDelete())
                 return 0;
 
+    /// The reader computes the default of a column a part does not have (e.g. one added by `ALTER ADD COLUMN` after
+    /// the part was written) on the blocks it reads, and a default like `rowNumberInBlock()` would give other values
+    /// for the trimmed ranges. Such a default is in no step above the read, so the optimization does not see it.
+    const auto & metadata_columns = metadata->getColumns();
+    if (metadata_columns.hasDefaults())
+    {
+        for (const auto & column_name : all_column_names)
+        {
+            /// An `ALIAS` column is computed in a step above the read, which the optimization checks itself.
+            const auto column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+            if (!column)
+                continue;
+            const auto column_default = metadata_columns.getDefault(column->getNameInStorage());
+            if (!column_default || column_default->kind == ColumnDefaultKind::Alias)
+                continue;
+            for (const auto & part : result.parts_with_ranges)
+                if (!part.data_part->tryGetColumn(column->getNameInStorage()))
+                    return 0;
+        }
+    }
+
     const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, prefix_size, /*in_reverse_order=*/false, log);
     offset_rows_skipped = skipped_rows;
     if (skipped_rows == 0)

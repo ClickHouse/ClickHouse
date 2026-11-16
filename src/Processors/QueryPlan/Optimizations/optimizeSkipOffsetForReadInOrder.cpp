@@ -7,8 +7,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Storages/StorageSnapshot.h>
 
 #include <limits>
 #include <optional>
@@ -37,41 +35,6 @@ static std::optional<String> resolveThroughRenames(const String & name, const st
         current = node->result_name;
     }
     return current;
-}
-
-/// Whether a default the read evaluates for its columns depends on how many rows or which blocks it is evaluated on.
-/// The reader computes the default of a column a part does not have (e.g. one added by `ALTER ADD COLUMN` after the
-/// part was written) on the blocks it reads, so such a default is not in any step above the read. Every read column
-/// with a default is taken as missing, as any part may miss it.
-static bool readDefaultsAreSensitiveToEvaluationCount(const ReadFromMergeTree & reading)
-{
-    const auto & columns = reading.getStorageSnapshot()->metadata->getColumns();
-    if (!columns.hasDefaults())
-        return false;
-
-    NamesAndTypesList columns_with_defaults;
-    NameSet added;
-    for (const auto & name : reading.getAllColumnNames())
-    {
-        /// A virtual column is not in the description and has no default.
-        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        if (!column)
-            continue;
-        const auto name_in_storage = column->getNameInStorage();
-        if (columns.hasDefault(name_in_storage) && added.insert(name_in_storage).second)
-            columns_with_defaults.emplace_back(name_in_storage, column->getTypeInStorage());
-    }
-    if (columns_with_defaults.empty())
-        return false;
-
-    /// The other physical columns are what the defaults may read.
-    Block header;
-    for (const auto & column : columns.getAllPhysical())
-        if (!added.contains(column.name))
-            header.insert({column.type->createColumn(), column.type, column.name});
-
-    auto dag = evaluateMissingDefaults(header, columns_with_defaults, columns, reading.getContext());
-    return dag && isSensitiveToEvaluationCount(*dag);
 }
 
 /// Pattern: Limit(offset>0)|Offset -> [Expression|Sorting|Limit(offset==0)]* -> ReadFromMergeTree (forward
@@ -111,9 +74,6 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
                 return;
         }
     }
-
-    if (readDefaultsAreSensitiveToEvaluationCount(*reading))
-        return;
 
     /// The order the offset counts rows in, resolved into the read's own column names.
     SortDescription offset_order;

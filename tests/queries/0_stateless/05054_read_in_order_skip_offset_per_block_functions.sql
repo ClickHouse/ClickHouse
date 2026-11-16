@@ -58,4 +58,13 @@ SELECT 'missing default, enabled';
 SELECT k, n FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
 SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
 
+-- A default that reads another missing column with such a default.
+ALTER TABLE t_skip_offset_missing_default ADD COLUMN m UInt64 DEFAULT n + 1;
+SELECT 'transitive missing default, disabled';
+SELECT k, m FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+SELECT 'transitive missing default, enabled';
+SELECT k, m FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+
 DROP TABLE t_skip_offset_missing_default;
