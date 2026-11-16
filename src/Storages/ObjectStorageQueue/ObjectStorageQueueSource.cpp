@@ -769,6 +769,9 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                     {
                         tryLogCurrentException(log, fmt::format("Failed to release the processing of {}", object_info->getPath()));
                     }
+                    /// Ordered mode must list this key again before later keys move the pointer past it.
+                    if (mode == ObjectStorageQueueMode::ORDERED)
+                        iterator_invalidated = true;
                     throw;
                 }
                 if (selected)
