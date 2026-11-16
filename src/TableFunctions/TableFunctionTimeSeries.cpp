@@ -208,6 +208,9 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
+This function is used internally by ClickHouse to evaluate PromQL queries and is not part of the public interface.
+It should not be used directly and may change or be removed at any time.
+
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
 This function is similar to [range selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors) but it's used to implement [instant selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors) too.
 
@@ -226,7 +229,7 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, ret
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
 - `min_time` - Start timestamp, inclusive.
 - `max_time` - End timestamp, inclusive.
-- `return_columns` - The columns returning the samples: `'samples'` or `'timestamp_and_value'`, see below.
+- `return_columns` - The names of the columns returning the samples: `'samples'`, `'histograms'`, `'samples_and_histograms'` or `'timestamp_and_value'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
 the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
@@ -234,19 +237,22 @@ the function selects the samples with `min_time <= timestamp <= max_time` exactl
 ## Returned value {#returned-value}
 
 The function returns the column `id` with the identifiers of the time series matching the specified selector, and the samples
-in the columns chosen by the argument `return_columns`:
+in the columns named by the argument `return_columns`:
 
-- `'samples'` - the column `samples` with the samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
+- `'samples'` - the column `samples` with the float samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
-  For a table of version 12 or later, which stores native histogram samples, also the column `histograms` with the histogram samples
-  of the same rows: an array of the tuples of the `histograms` column of the samples table
+- `'histograms'` - the column `histograms` with the native histogram samples of a time series, for a table of version 12 or later,
+  which stores them: an array of the tuples of the `histograms` column of the samples table
   (see the [TimeSeries engine](/reference/engines/table-engines/integrations/time-series#samples-table)), sorted by timestamp and cut to
-  the time range. A row has an empty `histograms` array when the series has no histogram samples in its bucket, and an empty `samples`
-  array when it has no float samples there. Use the same aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
-  Only the requested columns are read from the samples table, except the timestamps of a column which isn't requested: they tell the
-  rows with samples of either kind in the time range, so the rows returned don't depend on the requested columns.
-- `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row; the histogram samples are not returned.
+  the time range, in rows like `samples`. Use the same aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
+- `'samples_and_histograms'` - both columns `samples` and `histograms` of the same rows, for a table of version 12 or later. A row has
+  an empty `histograms` array when the series has no histogram samples in its bucket in the time range, and an empty `samples` array
+  when it has no float samples there.
+- `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row.
+
+A row is returned when it has samples of a returned kind in the time range. The columns named by `return_columns` are read
+whichever of them the query requests, so the rows returned don't depend on the requested columns.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
@@ -271,10 +277,10 @@ The float samples and the native histogram samples of each time series of a tabl
 
 ```sql
 SELECT id, timeSeriesGroupArray(samples) AS samples, timeSeriesGroupArray(histograms) AS histograms
-FROM timeSeriesSelector(mytable, 'http_request_duration_seconds{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples')
+FROM timeSeriesSelector(mytable, 'http_request_duration_seconds{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples_and_histograms')
 GROUP BY id
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::Internal}, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(

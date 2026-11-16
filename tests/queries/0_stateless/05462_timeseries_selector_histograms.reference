@@ -1,4 +1,8 @@
--- the returned columns: histograms with return_columns = samples on a table storing them, the float samples only otherwise
+-- the returned columns are named by return_columns; a table of an earlier version has no histograms to return
+id	Tuple(UInt64, LowCardinality(UUID))					
+samples	Array(Tuple(DateTime64(3), Float64))					
+id	Tuple(UInt64, LowCardinality(UUID))					
+histograms	Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))					
 id	Tuple(UInt64, LowCardinality(UUID))					
 samples	Array(Tuple(DateTime64(3), Float64))					
 histograms	Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))					
@@ -14,7 +18,7 @@ samples	Array(Tuple(DateTime64(3), Float64))
 -53	[0.1,0.5,1]	[(0,1),(1,2),(2,4),(3,8)]
 9007199254740993	[(0,9007199254740993)]
 7FF0000000000002	0
--- the time range cuts both arrays; a row with nothing of either kind in the range is dropped
+-- the time range cuts both arrays; a row with nothing of the returned kinds in the range is dropped
 0	1
 0	1
 1	1
@@ -22,15 +26,21 @@ samples	Array(Tuple(DateTime64(3), Float64))
 0	1
 0
 1
+0
+2
 -- the rows of a series are merged with timeSeriesGroupArray
 [('1970-01-01 00:01:05.000',1)]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:03:20.000',3)]
--- the same rows are returned regardless of which arrays are requested
-1	0
+-- return_columns decides the rows: the rows with samples of the returned kinds
+0	0
 1	2
+1	0	2
+0	0
+1	2	0
+-- the requested columns do not change the rows
 1
 1	0
-1	2
-[]
+1
+1
 1
 1
 1

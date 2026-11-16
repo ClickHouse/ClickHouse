@@ -31,14 +31,14 @@ FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_uint32) AS s ORDER BY
 
 SELECT '-- the outer columns and the selector';
 SELECT histograms.timestamp, histograms.count_int FROM ts_uint32 ORDER BY histograms.timestamp;
-SELECT samples, arrayMap(h -> (h.timestamp, h.count_int), histograms) AS h FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 75, 126, 'samples') ORDER BY h;
+SELECT samples, arrayMap(h -> (h.timestamp, h.count_int), histograms) AS h FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 75, 126, 'samples_and_histograms') ORDER BY h;
 SELECT timestamp, value FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 0, 1000, 'timestamp_and_value');
 
 SELECT '-- the rows of a bucket are merged by timestamp';
 INSERT INTO ts_uint32 (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [140], [4], [2], [[(0, 4)]]);
 SELECT histograms.timestamp, histograms.count_int FROM ts_uint32 FINAL ORDER BY histograms.timestamp;
-SELECT arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms)) FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 0, 1000, 'samples');
+SELECT arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms)) FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_uint32, 'm', 0, 1000, 'histograms');
 
 SELECT '-- DateTime timestamps';
 INSERT INTO ts_datetime (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
@@ -46,7 +46,7 @@ INSERT INTO ts_datetime (metric_name, tags, samples, histograms.timestamp, histo
 
 SELECT s.bucket, s.min_time, s.max_time, s.samples, s.histograms.timestamp, s.histograms.count_int
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_datetime) AS s ORDER BY s.bucket;
-SELECT arrayMap(h -> (h.timestamp, h.count_int), histograms) AS h FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_datetime, 'm', toDateTime(75), toDateTime(135), 'samples') ORDER BY h;
+SELECT arrayMap(h -> (h.timestamp, h.count_int), histograms) AS h FROM timeSeriesSelector({CLICKHOUSE_DATABASE:Identifier}.ts_datetime, 'm', toDateTime(75), toDateTime(135), 'histograms') ORDER BY h;
 
 DROP TABLE ts_datetime;
 DROP TABLE ts_uint32;

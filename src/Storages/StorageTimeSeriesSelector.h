@@ -24,13 +24,13 @@ public:
         DataTypePtr table_timestamp_type;
         DataTypePtr table_value_type;
 
-        /// The type of the column `samples` the table function returns with `return_columns = 'samples'`:
+        /// The type of the column `samples` the table function returns (see `ReturnColumns`):
         /// `Array(Tuple(table_timestamp_type, table_value_type))` with unnamed elements.
         DataTypePtr table_samples_type;
 
         /// Set for a table storing histogram samples (see `TimeSeriesSettings::hasHistogramsInSamples`): the type of the `histograms`
-        /// column of its samples table (see TimeSeriesHistogramsColumns::makeHistogramsArrayType), which the table function returns too
-        /// with `return_columns = 'samples'`, sliced to the time range. Null for a table of an earlier version.
+        /// column of its samples table (see TimeSeriesHistogramsColumns::makeHistogramsArrayType), which the table function returns
+        /// sliced to the time range (see `ReturnColumns`). Null for a table of an earlier version.
         DataTypePtr table_histograms_type;
 
         /// Whether the samples table stores buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`):
@@ -45,12 +45,15 @@ public:
         DateTime64 min_time{};
         DateTime64 max_time{};
 
-        /// The columns the table function timeSeriesSelector() returns besides `id`:
-        /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`) and, for a table storing histogram samples,
-        /// `histograms` (of type `table_histograms_type`); or `timestamp` and `value` with one sample per row (the float samples only).
+        /// The columns the table function timeSeriesSelector() returns besides `id`, named by its argument `return_columns`:
+        /// `samples` (of type `table_samples_type`), `histograms` (of type `table_histograms_type`, for a table storing histogram
+        /// samples only) or both; or `timestamp` and `value` with one float sample per row. The returned rows are those with
+        /// samples of the returned kinds in the time range, whatever columns a query requests.
         enum class ReturnColumns
         {
             Samples,
+            Histograms,
+            SamplesAndHistograms,
             TimestampAndValue,
         };
         ReturnColumns return_columns = ReturnColumns::Samples;

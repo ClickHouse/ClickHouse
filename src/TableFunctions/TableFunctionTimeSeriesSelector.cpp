@@ -27,26 +27,40 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
-    if (config.return_columns == StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples)
+    using ReturnColumns = StorageTimeSeriesSelector::Configuration::ReturnColumns;
+    switch (config.return_columns)
     {
-        /// The column `samples`: an array of samples per row. For a table storing histogram samples also the column `histograms`
-        /// with the histogram samples of the same series within the same bucket (an empty array for a bucket without them, and
-        /// vice versa).
-        ColumnsDescription columns({
-            {TimeSeriesColumnNames::ID, config.table_id_type},
-            {TimeSeriesColumnNames::Samples, config.table_samples_type}
-        });
-        if (config.table_histograms_type)
-            columns.add(ColumnDescription{TimeSeriesColumnNames::Histograms, config.table_histograms_type});
-        return columns;
-    }
+        /// The column `samples`: an array of float samples per row.
+        case ReturnColumns::Samples:
+            return ColumnsDescription({
+                {TimeSeriesColumnNames::ID, config.table_id_type},
+                {TimeSeriesColumnNames::Samples, config.table_samples_type}
+            });
 
-    /// The columns `timestamp` and `value`: one sample per row.
-    return ColumnsDescription({
-        {TimeSeriesColumnNames::ID, config.table_id_type},
-        {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},
-        {TimeSeriesColumnNames::Value, config.table_value_type}
-    });
+        /// The column `histograms`: an array of histogram samples per row.
+        case ReturnColumns::Histograms:
+            return ColumnsDescription({
+                {TimeSeriesColumnNames::ID, config.table_id_type},
+                {TimeSeriesColumnNames::Histograms, config.table_histograms_type}
+            });
+
+        /// Both arrays of the same series within the same bucket: an empty array for a kind without samples there.
+        case ReturnColumns::SamplesAndHistograms:
+            return ColumnsDescription({
+                {TimeSeriesColumnNames::ID, config.table_id_type},
+                {TimeSeriesColumnNames::Samples, config.table_samples_type},
+                {TimeSeriesColumnNames::Histograms, config.table_histograms_type}
+            });
+
+        /// The columns `timestamp` and `value`: one float sample per row.
+        case ReturnColumns::TimestampAndValue:
+            return ColumnsDescription({
+                {TimeSeriesColumnNames::ID, config.table_id_type},
+                {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},
+                {TimeSeriesColumnNames::Value, config.table_value_type}
+            });
+    }
+    UNREACHABLE();
 }
 
 StoragePtr TableFunctionTimeSeriesSelector::executeImpl(

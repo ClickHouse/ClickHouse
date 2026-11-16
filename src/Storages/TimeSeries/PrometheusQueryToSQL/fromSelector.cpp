@@ -48,9 +48,9 @@ namespace
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
         ///
-        /// The PromQL functions evaluate the float samples only: the `histograms` column of a table storing native histogram samples
-        /// (version MIN_WITH_NATIVE_HISTOGRAMS or later) isn't requested, so the table function doesn't read the histograms, and the
-        /// rows of a series with histograms only come with empty `samples` arrays, which the functions evaluate to nothing.
+        /// The PromQL functions evaluate the float samples only, so a table storing native histogram samples (version
+        /// MIN_WITH_NATIVE_HISTOGRAMS or later) is read with 'samples' too: the table function doesn't read its histograms and
+        /// returns only the rows with float samples in the range.
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));

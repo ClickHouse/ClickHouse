@@ -1,10 +1,11 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: `timeSeriesSelector` parses the selector with the PromQL parser, which needs ANTLR4, disabled in the fast-test build.
 
--- `timeSeriesSelector` over a TimeSeries table storing native histogram samples returns them in the column `histograms` next to
--- `samples` with `return_columns = 'samples'`: the stored tuples of a row of the samples table cut to the time range, one row per
--- series and bucket. Both arrays are read, and a row is returned when either array has samples in the range, regardless of projection.
--- `'timestamp_and_value'` returns the float samples only. PromQL over such a table is covered by 05493_timeseries_selector_histogram_presence.
+-- `timeSeriesSelector` over a TimeSeries table storing native histogram samples: `return_columns` names the returned columns,
+-- 'samples' (the float samples), 'histograms' (the histogram samples, the stored tuples of a row of the samples table cut to the
+-- time range) or 'samples_and_histograms' (both, of the same rows), one row per series and bucket. The named columns are read and
+-- decide the rows, whatever columns a query requests. 'timestamp_and_value' returns the float samples only. PromQL over such a
+-- table is covered by 05493_timeseries_selector_histogram_presence.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -18,10 +19,15 @@ DROP TABLE IF EXISTS ts_recent;
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0;
 CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11, recent_samples_ttl_seconds = 0;
 
-SELECT '-- the returned columns: histograms with return_columns = samples on a table storing them, the float samples only otherwise';
+SELECT '-- the returned columns are named by return_columns; a table of an earlier version has no histograms to return';
 DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'samples');
+DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'histograms');
+DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'samples_and_histograms');
 DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'timestamp_and_value');
 DESCRIBE timeSeriesSelector(ts_v11, 'm', 0, 1, 'samples');
+DESCRIBE timeSeriesSelector(ts_v11, 'm', 0, 1, 'histograms'); -- { serverError BAD_ARGUMENTS }
+DESCRIBE timeSeriesSelector(ts_v11, 'm', 0, 1, 'samples_and_histograms'); -- { serverError BAD_ARGUMENTS }
+DESCRIBE timeSeriesSelector(ts, 'm', 0, 1, 'floats'); -- { serverError BAD_ARGUMENTS }
 
 -- A float-only series.
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m_float', map('job', 'api'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]);
@@ -49,41 +55,50 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.sum)
     VALUES ('m_stale', map('job', 'api'), [toDateTime64(100, 3)], [reinterpretAsFloat64(toUInt64(9218868437227405314))]);
 
 SELECT '-- the histogram samples are returned as stored next to the float samples of the row';
-SELECT samples, histograms FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
-SELECT samples, length(histograms), arrayMap(h -> h.count_int, histograms) FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples');
+SELECT samples, histograms FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
+SELECT samples, length(histograms), arrayMap(h -> h.count_int, histograms) FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples_and_histograms');
 
 SELECT '-- custom buckets, exact integer counts, the stale marker bit-exact';
-SELECT h.schema, h.custom_values, h.positive_int FROM timeSeriesSelector(ts, 'm_nhcb', 0, 1000, 'samples') ARRAY JOIN histograms AS h;
-SELECT h.count_int, h.positive_int FROM timeSeriesSelector(ts, 'm_big', 0, 1000, 'samples') ARRAY JOIN histograms AS h;
-SELECT hex(reinterpretAsUInt64(h.sum)), h.count_int FROM timeSeriesSelector(ts, 'm_stale', 0, 1000, 'samples') ARRAY JOIN histograms AS h;
+SELECT h.schema, h.custom_values, h.positive_int FROM timeSeriesSelector(ts, 'm_nhcb', 0, 1000, 'histograms') ARRAY JOIN histograms AS h;
+SELECT h.count_int, h.positive_int FROM timeSeriesSelector(ts, 'm_big', 0, 1000, 'histograms') ARRAY JOIN histograms AS h;
+SELECT hex(reinterpretAsUInt64(h.sum)), h.count_int FROM timeSeriesSelector(ts, 'm_stale', 0, 1000, 'histograms') ARRAY JOIN histograms AS h;
 
-SELECT '-- the time range cuts both arrays; a row with nothing of either kind in the range is dropped';
-SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples') ORDER BY ALL;
-SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'samples') ORDER BY ALL;
+SELECT '-- the time range cuts both arrays; a row with nothing of the returned kinds in the range is dropped';
+SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples_and_histograms') ORDER BY ALL;
+SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'samples_and_histograms') ORDER BY ALL;
 -- The bucket 60 has the samples 65 and 100, so its row matches [70, 90] by `min_time` and `max_time` but has nothing in it.
-SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 90, 'samples');
-SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 100, 'samples');
+SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 90, 'samples_and_histograms');
+SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 100, 'samples_and_histograms');
+-- The float sample 65 is out of [70, 150]: no row has float samples there, the buckets 60 and 120 have histogram samples.
+SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'samples');
+SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'histograms');
 
 SELECT '-- the rows of a series are merged with timeSeriesGroupArray';
 SELECT timeSeriesGroupArray(samples), arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms))
-FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples') GROUP BY id;
+FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples_and_histograms') GROUP BY id;
 
-SELECT '-- the same rows are returned regardless of which arrays are requested';
+SELECT '-- return_columns decides the rows: the rows with samples of the returned kinds';
 SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
-SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
-SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
-SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
-SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
-SELECT histograms FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
+SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'histograms');
+SELECT count(), sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
+SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'histograms');
+SELECT count(), sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples_and_histograms');
 
--- A kind which isn't requested is read through its `timestamp` subcolumn for the row filter only, so histogram-only rows are
--- preserved without reading the histogram payload (the type of the payload names `count_int`, the timestamps don't).
-SELECT plan LIKE '%histograms.timestamp%' AND plan NOT LIKE '%count_int%'
+SELECT '-- the requested columns do not change the rows';
+SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
+SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
+-- The outer count() uses no column of the subquery, so the analyzer keeps only the first one.
+SELECT count() FROM (SELECT id, samples FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms'));
+SELECT count() FROM (SELECT samples, id FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms'));
+
+-- The named columns are read whatever is requested: 'samples' reads no histograms, 'histograms' no float samples (cast to
+-- `Array(Tuple(DateTime64(3), Float64))`), 'samples_and_histograms' both (the type of the histograms names `count_int`).
+SELECT plan NOT LIKE '%histograms%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
-SELECT plan LIKE '%samples.timestamp%' AND plan LIKE '%count_int%'
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
-SELECT plan NOT LIKE '%.timestamp%' AND plan LIKE '%count_int%' AND plan LIKE '%timeSeriesSliceSortedArray%'
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
+SELECT plan LIKE '%count_int%' AND plan NOT LIKE '%Array(Tuple(DateTime64(3), Float64))%'
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'histograms')));
+SELECT plan LIKE '%count_int%' AND plan LIKE '%Array(Tuple(DateTime64(3), Float64))%'
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples_and_histograms')));
 
 SELECT '-- timestamp_and_value returns the float samples only';
 SELECT timestamp, value FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'timestamp_and_value');
@@ -96,7 +111,7 @@ CREATE TABLE ts_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds =
 INSERT INTO ts_recent (metric_name, tags, samples, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES ('m', map('job', 'api'), [(now64(3) - INTERVAL 3 MINUTE, 1.)], [now64(3) - INTERVAL 2 MINUTE, now64(3) - INTERVAL 1 MINUTE], [1, 2], [0, 0], [[(0, 1)], [(0, 2)]]);
 SET time_series_prefer_recent_samples_table = 1;
-SELECT sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts_recent, 'm', now() - INTERVAL 10 MINUTE, now(), 'samples');
+SELECT sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts_recent, 'm', now() - INTERVAL 10 MINUTE, now(), 'samples_and_histograms');
 
 DROP TABLE ts_recent;
 DROP TABLE ts_v11;

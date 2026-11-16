@@ -10,12 +10,11 @@ namespace DB
 /// Table function timeSeriesSelector('mydb', 'my_ts_table', 'instant_selector', min_time, max_time, return_columns) reads the time
 /// series of a TimeSeries table matching an instant selector in PromQL syntax, e.g. 'http_requests{job="prometheus"}', with timestamps
 /// in [min_time, max_time]. The table is given as 'mydb', 'my_ts_table', or mydb.my_ts_table, or just 'my_ts_table'.
-/// `return_columns` chooses the columns besides `id`: 'samples' returns the column `samples` (an array of (timestamp, value) sorted by
-/// timestamp; a series can come in several rows, e.g. one per bucket of the samples table) and, for a table storing native histograms
-/// (see `TimeSeriesSettings::hasHistogramsInSamples`), the column `histograms` of the same rows (the tuples of the `histograms` column,
-/// sorted by timestamp and cut to the time range; see TimeSeriesHistogramsColumns); 'timestamp_and_value' returns the columns
-/// `timestamp` and `value` with one float sample per row and no histograms. The samples are converted when the table stores them the
-/// other way (see `TimeSeriesSettings::hasBucketedSamples`).
+/// `return_columns` names the columns besides `id`: 'samples' returns the column `samples` (an array of (timestamp, value) sorted by
+/// timestamp; a series can come in several rows, e.g. one per bucket of the samples table), 'histograms' the column `histograms` of
+/// a table storing native histograms (the stored tuples, see TimeSeriesHistogramsColumns), 'samples_and_histograms' both of the same
+/// rows, 'timestamp_and_value' the columns `timestamp` and `value` with one float sample per row. A row is returned when it has
+/// samples of a returned kind in the time range. The samples are converted when the table stores them the other way.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

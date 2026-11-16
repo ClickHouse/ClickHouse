@@ -92,7 +92,8 @@ namespace
     /// The table function returns the columns `timestamp` and `value` instead of `samples` for a table storing one sample per row
     /// (see `TimeSeriesSettings::hasBucketedSamples`), then the samples are merged with timeSeriesGroupArray(timestamp, value).
     /// For a table storing histogram samples (`table_has_histograms`, see `TimeSeriesSettings::hasHistogramsInSamples`) the table
-    /// function returns the column `histograms` too, merged with timeSeriesGroupArray(histograms).
+    /// function is called with 'samples_and_histograms' and returns the column `histograms` too, merged with
+    /// timeSeriesGroupArray(histograms).
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         bool table_has_bucketed_samples,
@@ -146,7 +147,8 @@ namespace
                 make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
-                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+                make_intrusive<ASTLiteral>(String{table_has_histograms
+                    ? "samples_and_histograms" : (table_has_bucketed_samples ? "samples" : "timestamp_and_value")}));
 
             table_exp->children.emplace_back(table_exp->table_function);
 
