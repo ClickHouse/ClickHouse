@@ -1685,6 +1685,10 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} was dropped from database {}, UNDROP into a different database is not supported",
                 table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
+        if (it_dropped_table->table_id.table_name != table_id.table_name)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {} was dropped as {}, UNDROP under a different name is not supported",
+                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.table_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))

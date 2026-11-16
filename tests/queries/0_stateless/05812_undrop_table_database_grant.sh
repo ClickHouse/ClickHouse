@@ -25,8 +25,11 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM t2"
 
 $CLICKHOUSE_CLIENT -q "REVOKE UNDROP TABLE ON ${CLICKHOUSE_DATABASE}.* FROM $user"
 $CLICKHOUSE_CLIENT -q "GRANT UNDROP TABLE ON ${CLICKHOUSE_DATABASE}.t2 TO $user"
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't1'")
 $CLICKHOUSE_CLIENT -q "DROP TABLE t1 SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t2 SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0"
 $CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE t1" 2>&1 | grep -Fq "ACCESS_DENIED" && echo OK
+$CLICKHOUSE_CLIENT --user "$user" -q "UNDROP TABLE t2 UUID '$uuid'" 2>&1 | grep -Fq "UNKNOWN_TABLE" && echo OK
 $CLICKHOUSE_CLIENT -q "UNDROP TABLE t1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t1"
 
