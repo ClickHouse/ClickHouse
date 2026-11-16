@@ -24,8 +24,12 @@ struct BuiltSetsByHash;
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
+class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
+
+/// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
+using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -45,7 +49,8 @@ struct PlanWithParallelReplicas
     SkipReason skip_reason = SkipReason::None;
 };
 
-using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
+using QueryPlanWithParallelReplicasBuilder
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -74,6 +79,9 @@ struct QueryPlanOptimizationSettings
 
     /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool remove_redundant_sorting;
+
+    /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep` (at the end of the second pass).
+    bool use_shuffle_for_order_by_rand;
 
     /// --- First-pass optimizations
     bool lift_up_array_join;
@@ -138,6 +146,8 @@ struct QueryPlanOptimizationSettings
     /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
     /// and complete.
     JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
+    /// DPsub chooses between hash and sort-merge joins using the sort order of the inputs.
+    bool query_plan_join_order_use_interesting_orders = true;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only
@@ -254,6 +264,8 @@ struct QueryPlanOptimizationSettings
     bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
+    /// `use_skip_indexes_on_data_read` of the query as it runs: `EXPLAIN` turns the setting off for its own planning.
+    bool use_skip_indexes_on_data_read_at_execution;
     size_t max_limit_for_top_k_optimization = 0;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
@@ -294,7 +306,7 @@ struct QueryPlanOptimizationSettings
     ///
     /// We should not have the number of threads in query plan.
     /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
+    /// Currently, it is used by HashJoin: it requires the number of threads in ctor.
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
@@ -303,6 +315,7 @@ struct QueryPlanOptimizationSettings
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
@@ -319,8 +332,15 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    /// of re-running the same subqueries, the reads of the single-node plan, and the logger to say why
+    /// it could not build a plan on.
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
+
+    /// Set only while the probe plan of automatic parallel replicas is optimized. That plan is optimized without
+    /// `query_plan_optimize_primary_key`, so its reads have no index conditions, and direct read from a text
+    /// index takes them from the single-node read instead: building them would execute the `IN` subqueries
+    /// the probe plan could not adopt.
+    FindSingleNodeRead find_single_node_read;
 
     bool enable_parallel_replicas = false;
 };

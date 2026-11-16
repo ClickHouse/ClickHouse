@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Regression test for estimateAverageStringLengthPerRow() in the Parquet V3 reader.
 # It used to multiply avg_dictionary_entry_size by num_values (including nulls),

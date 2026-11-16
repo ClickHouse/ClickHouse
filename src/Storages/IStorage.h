@@ -222,6 +222,9 @@ public:
     /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
     /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
     virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
+    /// Returns true if the storage writes `Map` columns with the bucketed serialization, where a single key
+    /// can be read without reading the whole column. Gates the `m['key']` -> `m.key_<key>` rewrite.
+    virtual bool hasBucketedMapSerialization() const { return false; }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -271,8 +274,9 @@ public:
     /// The default implementation falls back to the parameterless version.
     virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
-    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
-    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
+    /// and covers only the data visible to the user of `query_context`.
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
@@ -298,6 +302,12 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+    }
+
+    /// Same as above, but publishes an already built object instead of deep-copying it.
+    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
+    {
+        metadata.set(std::move(metadata_));
     }
 
     void setInMemoryMetadataComment(const String & comment)
@@ -759,7 +769,7 @@ public:
     {
         /// Number of entries left to check.
         /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
+        [[nodiscard]] virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
     };
 
