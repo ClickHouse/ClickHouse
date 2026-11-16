@@ -28,7 +28,7 @@ struct ReplicatedMergeTreeAddress
 
     void readText(ReadBuffer & in);
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     void fromString(const String & str);
 };

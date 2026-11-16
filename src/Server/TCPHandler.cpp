@@ -594,9 +594,7 @@ void TCPHandler::runImpl()
             /// If we need to shut down, or client disconnects.
             if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), in->isCanceled(),
-                    !in->isCanceled() && in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {})", tcp_server.isOpen(), in->isCanceled());
                 return;
             }
         }
