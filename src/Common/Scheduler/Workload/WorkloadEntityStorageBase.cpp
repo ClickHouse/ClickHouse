@@ -202,12 +202,12 @@ struct EntityChange
     ASTPtr after; /// Entity after change (DROP if not set)
 
     /// True if the change drops the entity and creates a new one of another type
-    bool changesType() const
+    [[nodiscard]] bool changesType() const
     {
         return before && after && getEntityType(before) != getEntityType(after);
     }
 
-    std::vector<IWorkloadEntityStorage::Event> toEvents() const
+    [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{getEntityType(before), name, {}}};

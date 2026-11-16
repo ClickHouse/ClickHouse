@@ -79,10 +79,10 @@ struct PathSet
 
     /// If the set is a literal list with exactly one path, returns it.
     /// Only meaningful before `finalize`.
-    std::optional<std::string> singleStagedPath() const;
+    [[nodiscard]] std::optional<std::string> singleStagedPath() const;
 
     /// Current size of the calling thread's shard. Thread-safe.
-    size_t shardSize(size_t thread_idx) const;
+    [[nodiscard]] size_t shardSize(size_t thread_idx) const;
 
     /// Estimate of the whole set's size as seen from the calling thread: the
     /// thread's shard size (read without locking, so possibly slightly stale
@@ -91,11 +91,11 @@ struct PathSet
     /// from several of them, so that a per-thread sharded dynamic set is not
     /// underweighted against an unsharded one. Returns 0 if the thread's shard
     /// is empty.
-    size_t approximateSize(size_t thread_idx) const;
+    [[nodiscard]] size_t approximateSize(size_t thread_idx) const;
 
-    size_t totalSize() const;
+    [[nodiscard]] size_t totalSize() const;
 
-    size_t shardFor(size_t thread_idx) const { return is_dynamic ? thread_idx % shards.size() : 0; }
+    [[nodiscard]] size_t shardFor(size_t thread_idx) const { return is_dynamic ? thread_idx % shards.size() : 0; }
 
 private:
     /// Paths added before `finalize` allocated the shards (e.g. literal path lists

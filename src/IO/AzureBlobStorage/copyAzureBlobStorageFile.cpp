@@ -154,7 +154,7 @@ namespace
     public:
         void performCopy()
         {
-            if (total_size < max_single_part_upload_size)
+            if (total_size <= max_single_part_upload_size)
             {
                 performSinglepartUpload();
             }

@@ -15,7 +15,7 @@ public:
     void allowOnCluster(bool allow = true) { allow_on_cluster = allow; }
 
 protected:
-    const char * getName() const override { return "RowPolicyName"; }
+    [[nodiscard]] const char * getName() const override { return "RowPolicyName"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
@@ -36,7 +36,7 @@ public:
     void allowOnCluster(bool allow = true) { allow_on_cluster = allow; }
 
 protected:
-    const char * getName() const override { return "SettingsProfileElements"; }
+    [[nodiscard]] const char * getName() const override { return "SettingsProfileElements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

@@ -31,9 +31,9 @@ public:
 
     bool readHit(MutableColumns & columns);
 
-    size_t hitsRead() const { return hits_read; }
-    const String & pitId() const { return pit_id; }
-    const String & lastSort() const { return last_sort; }
+    [[nodiscard]] size_t hitsRead() const { return hits_read; }
+    [[nodiscard]] const String & pitId() const { return pit_id; }
+    [[nodiscard]] const String & lastSort() const { return last_sort; }
 
 private:
     void readHeader();
