@@ -1,5 +1,6 @@
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/checkStackSize.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -11,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -262,7 +264,14 @@ DecimalField<T> decodeDecimal(ReadBuffer & buf)
 {
     UInt32 scale;
     readVarUInt(scale, buf);
-    T value;
+    /// The scale is attacker-controlled wire data (a `Dynamic` value or an `AggregateFunction` type
+    /// parameter carries its own binary-encoded Field); an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary, matching
+    /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    if (scale > DecimalUtils::max_precision<T>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})", scale, DecimalUtils::max_precision<T>);
+
+    T value{};
     readBinaryLittleEndian(value, buf);
     return DecimalField<T>(value, scale);
 }

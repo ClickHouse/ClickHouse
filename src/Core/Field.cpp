@@ -1,10 +1,11 @@
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
+#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <Core/CompareHelper.h>
 #include <IO/ReadBuffer.h>
@@ -33,6 +34,7 @@ extern const int INCORRECT_DATA;
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 void Field::initEmptyContainer(Types::Which w)
@@ -368,11 +370,26 @@ bool Field::operator== (const Field & rhs) const
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
 }
 
+template <typename T>
+static DecimalField<T> readDecimalFieldBinary(ReadBuffer & buf)
+{
+    T value{};
+    readBinary(value, buf);
+    UInt32 scale = 0;
+    readBinary(scale, buf);
+    /// The scale is attacker-controlled wire data; an out-of-range value later overruns a
+    /// fixed-size buffer in the decimal text writer, so reject it at the boundary.
+    if (scale > DecimalUtils::max_precision<T>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                        scale, DecimalUtils::max_precision<T>);
+    return DecimalField<T>(value, scale);
+}
+
 Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    /// Containers are read recursively, and the nesting depth comes from the data.
+    /// Container fields recurse through readFieldBinary; the nesting depth is a property of the
+    /// wire data, so bound it here as the write side (FieldVisitorWriteBinary) already does.
     checkStackSize();
-
     switch (static_cast<Field::Types::Which>(type))
     {
         case Field::Types::Null:
@@ -483,37 +500,13 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             return bool(value);
         }
         case Field::Types::Decimal32:
-        {
-            Decimal<Int32> value;
-            readBinary(value, buf);
-            UInt32 scale = 0 ;
-            readBinary(scale, buf);
-            return DecimalField<Decimal32>(value, scale);
-        }
+            return readDecimalFieldBinary<Decimal32>(buf);
         case Field::Types::Decimal64:
-        {
-            Decimal<Int64> value;
-            readBinary(value, buf);
-            UInt32 scale = 0;
-            readBinary(scale, buf);
-            return DecimalField<Decimal64>(value, scale);
-        }
+            return readDecimalFieldBinary<Decimal64>(buf);
         case Field::Types::Decimal128:
-        {
-            Decimal<Int128> value;
-            readBinary(value, buf);
-            UInt32 scale = 0;
-            readBinary(scale, buf);
-            return DecimalField<Decimal128>(value, scale);
-        }
+            return readDecimalFieldBinary<Decimal128>(buf);
         case Field::Types::Decimal256:
-        {
-            Decimal<Int256> value;
-            readBinary(value, buf);
-            UInt32 scale = 0;
-            readBinary(scale, buf);
-            return DecimalField<Decimal256>(value, scale);
-        }
+            return readDecimalFieldBinary<Decimal256>(buf);
         case Field::Types::CustomType:
             return Field();
     }
@@ -652,6 +645,14 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     }
     else
         scale = -exponent;
+    /// The scale comes from untrusted text: `restoreFromDump` is reached from the pre-auth native
+    /// settings reader for a `CUSTOM`-flagged setting (`SettingFieldCustom::parseFromString`), and an
+    /// exponent-form value such as `Decimal64_'1e-1000'` builds a scale that bypasses the binary
+    /// reader's check. An out-of-range scale later overruns a fixed-size buffer in the decimal text
+    /// writer, so reject it here, matching `readDecimalFieldBinary` and `DataTypeDecimalBase`.
+    if (scale > DecimalUtils::max_precision<T>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
+                        scale, DecimalUtils::max_precision<T>);
     assertChar('\'', buf);
     x = DecimalField<T>{value, scale};
 }

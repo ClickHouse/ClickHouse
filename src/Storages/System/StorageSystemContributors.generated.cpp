@@ -259,6 +259,7 @@ const char * auto_contributors[] {
     "Ash Vardanian",
     "Ashwath",
     "AsiaKorushkina",
+    "Asya Shneerson",
     "Atri Sharma",
     "Austin Bonander",
     "Austin Bruch",
