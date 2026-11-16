@@ -244,7 +244,8 @@ public:
         /// server's native TCP ports and any address the host resolves to is a loopback or unspecified
         /// address, or an address of this machine. Unlike `isLocal`, it treats `127.0.0.{2..255}` as this
         /// server, so it decides only whether access checks for local execution apply, never routing.
-        /// If the host does not resolve, it returns true: the stricter access check is applied.
+        /// If the host does not resolve, it returns false: no connection can reach this server, and the connection
+        /// reports the DNS error.
         [[nodiscard]] bool routesToThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const;
 
         [[nodiscard]] auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }

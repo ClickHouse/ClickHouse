@@ -65,6 +65,15 @@ as_bob "INSERT INTO ${proxy_db}.secret VALUES (4, 'forged')"
 echo "--- an unrelated table function target is allowed"
 as_bob "SELECT * FROM remote('127.0.0.2:${port}', numbers(3), '${svc}', '')"
 
+echo "--- an unresolvable host reports the DNS error, not ACCESS_DENIED"
+for query in \
+    "SELECT s FROM remote('nonexistent.invalid:${port}', ${db}, secret, '${svc}', '')" \
+    "INSERT INTO FUNCTION remote('nonexistent.invalid:${port}', ${db}, secret, '${svc}', '') VALUES (5, 'unresolved')" \
+    "DESC remote('nonexistent.invalid:${port}', ${db}, secret, '${svc}', '')"
+do
+    as_bob "${query}" | grep -q "DNS_ERROR" && echo "DNS_ERROR" || echo "no DNS_ERROR"
+done
+
 echo "--- with grants"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${db}.secret TO ${bob}"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${db}.proxy TO ${bob}"

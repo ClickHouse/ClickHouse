@@ -43,6 +43,10 @@ ACCESS_DENIED
 0
 1
 2
+--- an unresolvable host reports the DNS error, not ACCESS_DENIED
+DNS_ERROR
+DNS_ERROR
+DNS_ERROR
 --- with grants
 secret
 

@@ -107,9 +107,9 @@ bool Cluster::Address::routesToThisServer(UInt16 tcp_port, std::optional<UInt16>
     }
     catch (...)
     {
-        /// The connection will fail as well, unless the name starts to resolve later, maybe to this server.
-        /// Apply the stricter access check: it takes no other action than checking the caller's grants.
-        return true;
+        /// It's Ok to ignore the error: the connection resolves the name the same way (`Connection::connect`)
+        /// and reports the DNS error to the user.
+        return false;
     }
 
     for (const auto & socket_address : resolved)
