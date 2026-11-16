@@ -113,8 +113,8 @@ public:
 
     ~GuardedPage() { munmap(base, 3 * page_size); }
 
-    char * begin() const { return base + page_size; }
-    char * end() const { return base + 2 * page_size; }
+    [[nodiscard]] char * begin() const { return base + page_size; }
+    [[nodiscard]] char * end() const { return base + 2 * page_size; }
     void fill(char c) const { memset(begin(), c, page_size); }
 
     const size_t page_size;
