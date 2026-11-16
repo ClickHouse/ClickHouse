@@ -47,6 +47,8 @@ SELECT number FROM (SELECT k AS number FROM d_k) WHERE number = 3 SETTINGS prefe
 SELECT number FROM (SELECT k + 1 AS number FROM d_k) WHERE number = 4 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
 SELECT k FROM (SELECT k, max(k) AS number FROM d_k GROUP BY k) WHERE number = 3 AND k > 1
 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, distributed_group_by_no_merge = 1;
+ALTER TABLE t ADD COLUMN __filter_exp_1 UInt64;
+SELECT x FROM (SELECT k + 1 AS x FROM d_k) WHERE x = 4 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0;
 -- The expression inside the filter would exceed the limit on the shards.
 SELECT number FROM (SELECT k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 AS number FROM d_k) WHERE number + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 19
 SETTINGS prefer_column_name_to_alias = 1, prefer_localhost_replica = 0, max_ast_depth = 32;

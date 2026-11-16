@@ -45,6 +45,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
@@ -684,7 +685,8 @@ static bool addFilters(
         {
             if (std::ranges::contains(filter_inputs, name) && can_copy_to_with(i))
             {
-                it->second = make_intrusive<ASTIdentifier>(fmt::format("__filter_exp_{}", i + 1));
+                /// The name is random, so that the remote table has no column with it.
+                it->second = make_intrusive<ASTIdentifier>("__filter_exp_" + getRandomASCIIString(32));
                 with_expressions.emplace_back(select_list[i]->clone())->setAlias(it->second->getColumnName());
             }
         }
