@@ -67,7 +67,14 @@ std::vector<size_t> classifyS3Arguments(
                 String key;
                 if (f->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
-                    if (isS3SecretKey(key))
+                    if (mask_rejected_keys && !isS3NamedCollectionKey(key))
+                    {
+                        /// The parser rejects the key, but only after the query is formatted for logging. The value
+                        /// can be a secret under a misspelled key (`secret_acces_key`), and the key itself can be the
+                        /// secret (`'secret' = 'x'`), so fail closed and hide the argument whole, whatever its value.
+                        finder.markSecretArgument(i);
+                    }
+                    else if (isS3SecretKey(key))
                     {
                         finder.markSecretArgument(i, /* argument_is_named= */ true);
                     }
@@ -95,13 +102,6 @@ std::vector<size_t> classifyS3Arguments(
                         /// e.g. `format = headers('Authorization' = '...')`, formatted verbatim before
                         /// the parser rejects the non-literal value. Fail closed and hide the value.
                         finder.markSecretArgument(i, /* argument_is_named= */ true);
-                    }
-                    else if (mask_rejected_keys && !isS3NamedCollectionKey(key))
-                    {
-                        /// The parser rejects the key, but only after the query is formatted for logging. The value
-                        /// can be a secret under a misspelled key (`secret_acces_key`), and the key itself can be the
-                        /// secret (`'secret' = 'x'`), so fail closed and hide the argument whole.
-                        finder.markSecretArgument(i);
                     }
                 }
                 else

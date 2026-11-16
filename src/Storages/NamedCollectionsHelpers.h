@@ -190,6 +190,14 @@ void validateNamedCollection(
 
         if (!match)
         {
+            /// A key given in the query can be a secret typed in the wrong place (`'secret' = 'x'`). The query is logged
+            /// with that argument hidden (`SecretArgumentsSpec::accepted_keys`), so the message does not repeat it.
+            if (collection.isQueryOverridden(key))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected key in the arguments of the named collection. Required keys: {}, optional keys: {}",
+                    fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
+
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
                  "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",

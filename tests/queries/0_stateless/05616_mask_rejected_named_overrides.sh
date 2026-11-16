@@ -52,6 +52,8 @@ format "Remote database engine" \
 # The secret typed into the key.
 format "secret as the key" \
     "SELECT * FROM s3(nc, format = 'CSV', '${SECRET}' = 'x')"
+format "secret as the key, value that is an expression" \
+    "SELECT * FROM s3(nc, format = 'CSV', '${SECRET}' = concat('x', 'y'))"
 format "secret appended to the key" \
     "SELECT * FROM mysql(nc, table = 't', password_${SECRET} = 1)"
 format "key that is an expression" \
@@ -65,7 +67,7 @@ format "aliases and case" \
 format "s3 table function, explicit url" \
     "SELECT * FROM s3('http://127.0.0.1:1/x', 'CSV', secret_access_key = '${SECRET}')"
 
-# The rejected queries are logged with the argument hidden.
+# The rejected queries are logged with the argument hidden, and the exception does not name the key.
 DB="$CLICKHOUSE_DATABASE"
 NC_S3="nc_s3_${DB}"
 NC_MYSQL="nc_mysql_${DB}"
@@ -82,6 +84,9 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE t_s3 (x Int32) ENGINE = S3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_acces_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM mysql(${NC_MYSQL}, passwd = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM postgresql(${NC_PG}, pass = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM s3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_access_key_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM mysql(${NC_MYSQL}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM postgresql(${NC_PG}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
 
     -- A valid table: the accepted non-secret override stays visible, the secret one is hidden.
     CREATE TABLE t_s3_valid (x Int32) ENGINE = S3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_access_key = '${SECRET}');
@@ -91,7 +96,8 @@ $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE t_s3_valid FORMAT LineAsString" | sed -
 
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS query_log;
-    SELECT replaceAll(query, '_${DB}', ''), position(query, '${SECRET}') = 0
+    -- Neither the query nor the exception message keeps the secret.
+    SELECT replaceAll(query, '_${DB}', ''), position(query, '${SECRET}') = 0, position(exception, '${SECRET}') = 0
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart'
     ORDER BY event_time_microseconds;

@@ -24,6 +24,8 @@ CREATE DATABASE d ENGINE = MaterializedPostgreSQL(nc, schema = 's', password = '
 CREATE DATABASE d ENGINE = Remote(nc, port = 9000, password = '[HIDDEN]', '[HIDDEN]')
 --- secret as the key
 SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
+--- secret as the key, value that is an expression
+SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
 --- secret appended to the key
 SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
 --- key that is an expression
@@ -37,7 +39,10 @@ CREATE TABLE db.t_s3_valid
     `x` Int32
 )
 ENGINE = S3(nc_s3, filename = 'data.csv', format = 'CSV', secret_access_key = '[HIDDEN]')
-SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1
-CREATE TABLE t_s3 (`x` Int32) ENGINE = S3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1
-SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1
-SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1
+SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
+CREATE TABLE t_s3 (`x` Int32) ENGINE = S3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
