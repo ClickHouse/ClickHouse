@@ -511,7 +511,8 @@ public:
     /// `merged_group_count` receives the number of groups that the merge builds over all the bucket's units, before any
     /// top-K truncation. The groups that the top-K pruning skips, with their unit or with their count bin, add none, and
     /// so do the units that a settled ascending top-K skips. `parallel_merge` tells when the source states of one group
-    /// merge together on the pool (see `mergeSourceStates`).
+    /// merge together on the pool (see `mergeSourceStates`). A final merge returns the chunks of the bucket's units
+    /// joined into one, and a partial one returns a chunk per unit.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,

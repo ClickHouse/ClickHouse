@@ -18,6 +18,7 @@
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
+#include <Interpreters/Squashing.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace ProfileEvents
@@ -479,6 +480,23 @@ namespace
         const size_t first_partition;
         std::vector<std::vector<RoutedCell>> routed;
     };
+
+    /// Joins the chunks of the units of a bucket into one. The merge sources hand their chunks to one processor, which
+    /// forwards them one at a time, and a source takes its next bucket only after its chunks are gone. So a chunk per
+    /// unit, thousands of them in a large aggregation, makes the merge tasks wait for that processor, and the chunks of
+    /// a top-K hold only a few rows each. The values are final, so the rows are copied. The chunks carry no
+    /// `ChunkInfo` yet: the merge source adds it from the bucket number when it hands a chunk out.
+    void joinUnitChunks(DB::Aggregator::AggregatedChunks & chunks)
+    {
+        if (chunks.size() <= 1)
+            return;
+        Chunks unit_chunks;
+        unit_chunks.reserve(chunks.size());
+        for (auto & unit : chunks)
+            unit_chunks.push_back(std::move(unit.chunk));
+        chunks.resize(1);
+        chunks.front().chunk = Squashing::squashWithoutChunkInfo(std::move(unit_chunks));
+    }
 
     /// Decodes the variable-size arguments of argument records of `format` into one column per variable field of
     /// `layout`, in the order of the records. The values of a record follow its key: a `String` as `writeStagedString`
@@ -1351,6 +1369,9 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     /// destination.
     arena_slot.reset();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
+    /// Partial results keep a chunk per unit: joining aggregate states would copy them one by one.
+    if (final)
+        joinUnitChunks(chunks);
     return chunks;
 }
 
