@@ -55,9 +55,13 @@ public:
         }
         else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
+            /// `exists` is not registered in `FunctionFactory`, because the analyzer rewrites it.
+            /// Its argument is always a subquery, which may be nondeterministic.
+            if (function->name == "exists")
+                data.result.subquery = true;
             /// Property of being deterministic for lambda expression is completely determined
             /// by the contents of its definition, so we just proceed to it.
-            if (function->name != "lambda")
+            else if (function->name != "lambda")
             {
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.

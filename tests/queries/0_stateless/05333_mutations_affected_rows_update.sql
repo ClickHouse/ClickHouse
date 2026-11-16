@@ -148,3 +148,12 @@ INSERT INTO t_materialized (id) SELECT number FROM numbers(10);
 ALTER TABLE t_materialized UPDATE v = 1 WHERE id < 3 SETTINGS mutations_sync = 1;
 SELECT affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_materialized';
 DROP TABLE t_materialized;
+
+-- 15. A condition with `exists`
+SELECT '-- subquery exists';
+DROP TABLE IF EXISTS t_exists;
+CREATE TABLE t_exists (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_exists (id) SELECT number FROM numbers(10);
+ALTER TABLE t_exists UPDATE v = 1 WHERE id < 3 AND exists((SELECT * FROM system.one)) SETTINGS mutations_sync = 1;
+SELECT affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_exists';
+DROP TABLE t_exists;

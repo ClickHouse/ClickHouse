@@ -63,3 +63,8 @@ empty part	1
 (DELETE WHERE 0)	0
 -- nondeterministic
 2	1
+-- subquery exists
+(DELETE WHERE id < 3)	3
+(DELETE WHERE exists((SELECT * FROM system.one)))	7
+(DELETE WHERE 0)	0
+0

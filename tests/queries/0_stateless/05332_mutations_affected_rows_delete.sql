@@ -227,3 +227,17 @@ INSERT INTO t_nondeterministic VALUES (0), (1);
 ALTER TABLE t_nondeterministic DELETE WHERE rand() % 2 = 0, DELETE WHERE rand() % 2 = 0, DELETE WHERE 1 SETTINGS mutations_sync = 1;
 SELECT sum(affected_rows), max(affected_rows) <= 2 FROM system.mutations WHERE database = currentDatabase() AND table = 't_nondeterministic';
 DROP TABLE t_nondeterministic;
+
+-- 20. A condition with `exists` is a subquery, so it is treated as nondeterministic: the rows are counted in the evaluation that deletes them
+SELECT '-- subquery exists';
+DROP TABLE IF EXISTS t_exists;
+CREATE TABLE t_exists (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_exists SELECT number FROM numbers(10);
+SYSTEM STOP MERGES t_exists;
+ALTER TABLE t_exists DELETE WHERE id < 3;
+ALTER TABLE t_exists DELETE WHERE exists((SELECT * FROM system.one));
+SYSTEM START MERGES t_exists;
+ALTER TABLE t_exists DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_exists' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
+SELECT count() FROM t_exists;
+DROP TABLE t_exists;
