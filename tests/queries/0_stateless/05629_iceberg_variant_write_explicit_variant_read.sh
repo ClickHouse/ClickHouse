@@ -18,7 +18,7 @@ function round_trip()
     ${CLICKHOUSE_CLIENT} --query "
         INSERT INTO FUNCTION file('${PARQUET_FILE}', Parquet, '${structure}') ${values}
         SETTINGS engine_file_truncate_on_insert = 1;
-        SELECT v, toTypeName(v) FROM file('${PARQUET_FILE}', Parquet, '${structure}') ORDER BY toString(v);
+        SELECT v, toTypeName(v) FROM file('${PARQUET_FILE}', Parquet, '${structure}') ORDER BY isNull(v), toString(v);
     "
 }
 
@@ -32,7 +32,7 @@ round_trip 'v Array(Variant(UInt16, String))' "SELECT [1::UInt16, 'x', NULL]::Ar
 
 function write_fails()
 {
-    ${CLICKHOUSE_CLIENT} --query "
+    ${CLICKHOUSE_CLIENT} --allow_suspicious_variant_types 1 --query "
         INSERT INTO FUNCTION file('${PARQUET_FILE}', Parquet, '$1') SELECT $2
         SETTINGS engine_file_truncate_on_insert = 1
     " 2>&1 | grep -o -m1 "$3"
