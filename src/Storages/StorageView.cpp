@@ -56,6 +56,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -80,6 +81,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool final;
+    extern const SettingsBool prefer_column_name_to_alias;
 }
 
 namespace ErrorCodes
@@ -157,6 +160,28 @@ bool hasSubquery(const ASTPtr & expr)
         }
     }
     return false;
+}
+
+/// Counts the definitions of each alias in the expression.
+void countAliases(const ASTPtr & expr, std::unordered_map<String, size_t> & aliases)
+{
+    if (!expr)
+        return;
+    if (auto alias = expr->tryGetAlias(); !alias.empty())
+        ++aliases[alias];
+    for (const auto & child : expr->children)
+        countAliases(child, aliases);
+}
+
+/// A stateful function, such as `rowNumberInAllBlocks`, depends on the rows that were read before.
+bool hasStatefulFunction(const ASTPtr & expr, const ContextPtr & context)
+{
+    if (!expr)
+        return false;
+    if (const auto * function = expr->as<ASTFunction>())
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isStateful())
+            return true;
+    return std::ranges::any_of(expr->children, [&](const ASTPtr & child) { return hasStatefulFunction(child, context); });
 }
 
 /// Returns true if the expression contains an aggregate function anywhere in its tree.
@@ -752,6 +777,84 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
         return nullptr;
     }
     return underlying;
+}
+
+NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, const ContextPtr & context) const
+{
+    const auto & metadata = *snapshot->metadata;
+
+    /// The condition would be evaluated on the rows that the view, or a row policy on it, hides.
+    if (is_parameterized_view || (isSealed(metadata, context) && !isReadByDefiner(metadata, context))
+        || getEffectiveRowPolicyFilter(*this, context))
+        return {};
+
+    /// The condition names the columns of the view, which bind to the aliases of its query before the columns of the table.
+    /// With `final` the query of the view reads the table with `FINAL`, which has to see the rows the condition drops.
+    const auto view_context = metadata.getSQLSecurityOverriddenContext(context);
+    if (context->getSettingsRef()[Setting::prefer_column_name_to_alias] || view_context->getSettingsRef()[Setting::prefer_column_name_to_alias]
+        || view_context->getSettingsRef()[Setting::final])
+        return {};
+
+    const auto & inner_query = metadata.getSelectQuery().inner_query;
+    auto table = tryGetTrivialViewUnderlyingStorage(inner_query, context);
+    if (!table || table->isRemote() || !table->supportsPrewhere())
+        return {};
+
+    const auto & select = inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
+
+    /// The condition would change the rows that a stateful function of the view has seen.
+    if (hasStatefulFunction(select.select(), view_context) || hasStatefulFunction(select.where(), view_context))
+        return {};
+
+    /// The stored column of the table behind each column that the query lists, empty for any other expression.
+    struct ListedColumn
+    {
+        String table_column;
+        bool has_alias = false;
+    };
+    std::unordered_map<String, ListedColumn> listed_columns;
+    bool has_asterisk = false;
+    for (const auto & expr : select.select()->children)
+    {
+        if (expr->as<ASTAsterisk>() || expr->as<ASTQualifiedAsterisk>())
+            has_asterisk = true;
+        else if (const auto * identifier = expr->as<ASTIdentifier>())
+            listed_columns[expr->getAliasOrColumnName()] = {identifier->name(), !expr->tryGetAlias().empty()};
+        else
+            listed_columns[expr->getAliasOrColumnName()] = {};
+    }
+
+    std::unordered_map<String, size_t> aliases;
+    countAliases(select.select(), aliases);
+    countAliases(select.where(), aliases);
+
+    const auto table_metadata = table->getInMemoryMetadataPtr(context, false);
+    const auto & table_columns = table_metadata->getColumns();
+    const auto table_prewhere_columns = table->supportedPrewhereColumns();
+
+    NameSet result;
+    for (const auto & column : metadata.getColumns())
+    {
+        ListedColumn listed{column.name, false};
+        if (auto it = listed_columns.find(column.name); it != listed_columns.end())
+            listed = it->second;
+        else if (!has_asterisk)
+            continue;
+
+        /// Another alias of the name would take the place of the column in the condition,
+        /// and an alias of the name of the table column is what the query of the view selects instead of it.
+        auto count_aliases = [&](const String & name) { auto it = aliases.find(name); return it == aliases.end() ? 0 : it->second; };
+        if (count_aliases(column.name) != listed.has_alias || (listed.table_column != column.name && count_aliases(listed.table_column)))
+            continue;
+
+        const auto table_column = table_columns.tryGetPhysical(listed.table_column);
+        if (!table_column || !table_column->type->equals(*column.type))
+            continue;
+
+        if (!table_prewhere_columns || table_prewhere_columns->contains(listed.table_column))
+            result.insert(column.name);
+    }
+    return result;
 }
 
 void StorageView::readImpl(

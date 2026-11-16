@@ -54,6 +54,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/SortNode.h>
@@ -1666,6 +1667,47 @@ void pushOrderByIntoView(
     table_expression_query_info.view_query = modified;
 }
 
+/// The query of a view with the `PREWHERE` of the outer query moved into it, where the table of the view executes it.
+/// `collectTableExpressionData` has checked that the view allows it, see `StorageView::getPrewhereColumns`.
+ASTPtr getViewQueryWithPrewhere(
+    const StorageView & view,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & select_query_info,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & query_context)
+{
+    const auto & prewhere = select_query_info.query_tree->as<QueryNode &>().getPrewhere();
+    const auto prewhere_columns = view.getPrewhereColumns(storage_snapshot, query_context);
+
+    /// The condition is analyzed again in the query of the view, by the names of the columns. A subquery would see
+    /// the names of that query, and an argument of a lambda would take the place of a column of the same name.
+    std::function<bool(const QueryTreeNodePtr &)> can_be_moved = [&](const QueryTreeNodePtr & node)
+    {
+        if (!node)
+            return true;
+        if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            return false;
+        if (const auto * lambda = node->as<LambdaNode>();
+            lambda && std::ranges::any_of(lambda->getArguments().getNames(), [&](const auto & name) { return prewhere_columns.contains(name); }))
+            return false;
+        if (const auto * column = node->as<ColumnNode>(); column && column->getColumnSourceOrNull().get() == table_expression.get())
+            return prewhere_columns.contains(column->getColumnName());
+        return std::ranges::all_of(node->getChildren(), can_be_moved);
+    };
+
+    /// `FINAL` and `SAMPLE` of the outer query apply to the rows of the view, after its query.
+    if (table_expression->as<TableNode &>().getTableExpressionModifiers() || !can_be_moved(prewhere))
+        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+            "PREWHERE {} cannot be moved into the query of the view {}",
+            prewhere->formatASTForErrorMessage(),
+            view.getStorageID().getNameForLogs());
+
+    auto view_query = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
+    auto & select = view_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
+    select.setExpression(ASTSelectQuery::Expression::PREWHERE, prewhere->toAST({.fully_qualified_identifiers = false}));
+    return view_query;
+}
+
 /// Storage-level eligibility check: is this storage on its own a candidate for
 /// reading via parallel replicas?  Strips View / MaterializedView wrappers down
 /// to the underlying MergeTree and applies the MergeTree / replication gates.
@@ -2163,6 +2205,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
 
+                /// A view does not execute `PREWHERE` itself. A logical plan cannot carry the query of the view,
+                /// so it keeps the condition as a filter step, like for any other storage.
+                const auto * prewhere_view = prewhere_actions ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
+                if (prewhere_view)
+                {
+                    auto view_query = getViewQueryWithPrewhere(*prewhere_view, storage_snapshot, select_query_info, table_expression, query_context);
+                    if (!select_query_options.build_logical_plan)
+                        table_expression_query_info.view_query = std::move(view_query);
+                }
+
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
                     /// Collect columns needed by row policy and additional filters
@@ -2210,7 +2262,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             remove_prewhere_column},
                         makeDescription("Prewhere"));
                 }
-                else if (prewhere_actions)
+                else if (prewhere_actions && !prewhere_view)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();

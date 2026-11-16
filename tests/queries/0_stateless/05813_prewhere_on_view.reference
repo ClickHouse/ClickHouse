@@ -1,0 +1,14 @@
+the same rows as with WHERE
+10	45
+10	45
+40	2810
+40	2810
+45	4500
+45	4500
+1
+1
+10
+10
+100
+the table executes it as its own PREWHERE
+1
