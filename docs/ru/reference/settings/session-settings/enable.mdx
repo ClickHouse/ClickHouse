@@ -32,9 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Новая настройка. Включает адаптивную выгрузку данных из памяти во внешнее хранилище."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Новая настройка. Включает адаптивный сброс данных на диск из памяти во внешнее хранилище."}]}]} />
 
-Включает адаптивную выгрузку данных из памяти во внешнее хранилище. На данный момент поддерживаются hash join, способные выгружать данные на диск: как `grace_hash`, так и адаптивный путь `hash` / `parallel_hash`.
+Включает адаптивный сброс данных на диск во внешнее хранилище для подходящих процессоров агрегации, сортировки, `DISTINCT` и хеш-соединения при нехватке памяти для запроса.
+Из хеш-соединений поддерживаются `grace_hash` и адаптивный путь `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -87,6 +88,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает оптимизацию запроса: анализируются результаты функций и подзапросов, и при наличии в них констант запрос переписывается
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка, управляющая доступностью экспериментальной интеграции с Elasticsearch (движок таблицы `Elasticsearch` и табличная функция `elasticsearch`)."}]}]} />
+
+Включает экспериментальную интеграцию с Elasticsearch: движок таблицы `Elasticsearch` и табличную функцию `elasticsearch`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -159,6 +170,23 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 Распространяет операторы WITH на запросы UNION и все подзапросы
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка: `GROUP BY key [ORDER BY key] LIMIT n` передаёт границу кучи top-K на шаг чтения `MergeTree`, который по ней фильтрует строки и пропускает гранулы. Значение `compatibility` ниже 26.10 отключает её."}]}]} />
+
+Дополняет [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ru/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): если первый ключ ранжирования `GROUP BY` — это столбец, читаемый из таблицы `MergeTree`, агрегация передаёт границу своей кучи top-K на шаг чтения, как только в куче накапливается `LIMIT` ключей. После этого шаг чтения отбрасывает строки, ключ которых выходит за границу, ещё до чтения остальных столбцов (`PREWHERE`), а также пропускает целые гранулы за пределами границы, используя первичный ключ или индекс пропуска данных `minmax` по этому столбцу.
+
+Это относится к `GROUP BY key ORDER BY key LIMIT n`, а также к `GROUP BY key LIMIT n` без `ORDER BY`, когда допустимым ответом являются любые `n` групп.
+
+Не применяется при чтении с `FINAL` или с параллельными репликами: `FINAL` должен видеть все версии строки, а граница не передаётся операциям чтения на удалённых репликах.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -216,6 +244,16 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Новая настройка для управления кэшем разрешения идентификаторов в анализаторе запросов"}]}]} />
 
 Включает кэш разрешения идентификаторов в анализаторе запросов. Кэш повторно использует уже разрешённые узлы псевдонимов, чтобы предотвратить разрастание AST, когда на один и тот же псевдоним ссылаются несколько раз. Установите `false`, чтобы отключить кэширование, если есть подозрение на некорректные результаты.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка, включающая экспериментальные функции шифрования IP-адресов."}]}]} />
+
+Включает экспериментальные функции шифрования IP-адресов (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -417,6 +455,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 Если значение равно true, данные можно напрямую разбирать в столбцы с пользовательской сериализацией (например, Sparse) в соответствии с подсказками по сериализации, полученными из таблицы.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка для включения кодека сжатия `PCO` в статусе бета."}]}]} />
+
+Включает кодек сжатия `PCO`.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -544,6 +592,19 @@ WHERE (_part, _part_offset) IN (
 возможности стриминг-запросов; дополнительные возможности могут управляться
 собственными настройками.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка, позволяющая объявлять кодеки для подстолбцов."}]}]} />
+
+Позволяет объявлять кодеки сжатия для подстолбцов столбца, например для элементов `Tuple` или ключей и значений `Map`,
+с помощью записей `CODEC name (...)` в `CREATE TABLE`, а также с помощью `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Таблицы, в которых такие объявления уже есть, работают независимо от этой настройки, а сами объявления можно удалить в любой момент.
+Сервер более старой версии не сможет подключить таблицу с кодеками подстолбцов.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -593,11 +654,11 @@ WHERE (_part, _part_offset) IN (
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, включающая значение `trino` для настройки `dialect`, которое транслирует SQL-синтаксис Trino и сопоставляет имена функций Trino с эквивалентами ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, включающая значение `trino` для настройки `dialect`, которое транслирует SQL-синтаксис Trino и сопоставляет имена функций Trino с эквивалентами ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Диалект `trino` переведён в статус бета."}]}]} />
 
 Включает значение `trino` для настройки `dialect`.
 
@@ -609,7 +670,7 @@ WHERE (_part, _part_offset) IN (
 
 Диалект также приводит семантику запросов в соответствие с Trino: `join_use_nulls` включается,
 `use_variant_as_common_type` отключается, а анализатор запросов включается.
-Явно указанное в запросе предложение `SETTINGS` по-прежнему имеет приоритет.
+Явно указанная в запросе секция `SETTINGS` по-прежнему имеет приоритет.
 
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
@@ -680,6 +741,16 @@ WHERE (_part, _part_offset) IN (
 
 * 0 — отключено
 * 1 — включено
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка, управляющая доступом к экспериментальной интеграции с XGBoost (структуре словаря `XGBOOST` и функции `predictXGBoost`)."}]}]} />
+
+Включает экспериментальную интеграцию с XGBoost: структуру словаря `XGBOOST` и функцию `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

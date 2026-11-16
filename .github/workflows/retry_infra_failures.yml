@@ -195,7 +195,8 @@ jobs:
             # Several open PRs can share the head commit of a run, so `.pull_requests[0]`
             # may name another PR; match the candidates against the run's own head branch
             # and repository instead. `.pull_requests` is empty for fork PRs, so then look
-            # the PRs up through the head commit. An ambiguous or unresolved run gets no PR
+            # the PRs up through the head branch (`commits/<sha>/pulls` is empty for fork
+            # commits). An ambiguous or unresolved run gets no PR
             # number and is skipped below, so no PR-scoped artifact or marker is read for it.
             pr_candidates=$(echo "$run_data" | jq -c \
               --arg ref "$run_head_branch" --arg repo_id "$run_head_repo_id" '
@@ -206,8 +207,8 @@ jobs:
             if [ "$(echo "$pr_candidates" | jq 'length')" -eq 0 ]; then
               # Failing closed: without the PR lookup the run cannot be attributed, so
               # do not rerun it on this tick; the next one re-examines it.
-              if ! commit_pulls=$(gh api "repos/$GH_REPO/commits/$run_sha/pulls"); then
-                echo "::warning::Skipping run $run_id: the PRs of commit $run_sha could not be listed."
+              if ! commit_pulls=$(gh api "repos/$GH_REPO/pulls?state=open&head=${run_head_repo%%/*}:$run_head_branch&per_page=100"); then
+                echo "::warning::Skipping run $run_id: the PRs of branch $run_head_repo:$run_head_branch could not be listed."
                 continue
               fi
               pr_candidates=$(echo "$commit_pulls" | jq -c \
@@ -354,8 +355,12 @@ jobs:
               # And it must come from this PR: another open PR can share the
               # commit, so the marker is posted with the Praktika report URL of
               # its PR (`?PR=<n>&`).
-              finish_window=$(echo "$jobs_raw" | jq -r '
-                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
+              # `jobs_raw` holds one JSON document per page (a PR run has more
+              # than 100 jobs), so slurp the pages: a per-page filter would
+              # print an empty window for every page without the job, and the
+              # extra line would break the time comparison below.
+              finish_window=$(echo "$jobs_raw" | jq -s -r '
+                [.[].jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
               ')
               finish_started_at=$(echo "$finish_window" | cut -f1)

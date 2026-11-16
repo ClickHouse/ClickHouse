@@ -109,6 +109,7 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         return;
     }
 
+    options.explicit_request_settings = getExplicitRequestSettings();
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 

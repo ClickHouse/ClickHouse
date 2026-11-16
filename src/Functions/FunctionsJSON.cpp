@@ -160,6 +160,7 @@ public:
             }
 
             String error;
+            const bool trivial_default = result_type->isDefaultInsertTrivial();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
@@ -180,9 +181,14 @@ public:
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
                 }
 
-                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
+                /// We add the default of the result type if something goes wrong, we don't throw exceptions in these JSON functions.
                 if (!added_to_column)
-                    to->insertDefault();
+                {
+                    if (trivial_default)
+                        to->insertDefault();
+                    else
+                        result_type->insertDefaultInto(*to);
+                }
             }
             return to;
         }

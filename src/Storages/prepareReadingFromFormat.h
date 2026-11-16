@@ -4,10 +4,12 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
 {
+    struct QueryPlanStepSerialization;
+    struct QueryPlanStepDeserialization;
+
     struct PrewhereInfo;
     using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
@@ -36,12 +38,15 @@ namespace DB
         NamesAndTypesList requested_columns;
         /// The list of requested virtual columns.
         NamesAndTypesList requested_virtual_columns;
+        /// Columns of `source_header` that the format reads under other names (the physical names of a Delta
+        /// Lake table with column mapping). `format_header` can have another column under such a name.
+        NameSet columns_read_under_other_names;
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
 
-        void serialize(IQueryPlanStep::Serialization & ctx) const;
-        static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+        void serialize(QueryPlanStepSerialization & ctx) const;
+        static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;

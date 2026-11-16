@@ -205,7 +205,8 @@ The `count` is the full stack length **including the leading `DEFAULT` entry** t
 
 Note that this order is not the order of the kind byte values above. Any other stack describes a column layout no writer builds and that no materialization step unwraps back to a full column of the declared type — a `ColumnSparse` whose values column is itself sparse or replicated, for instance, stays wrapped.
 
-**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse or replicated still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
+**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
+An element's stack never contains `REPLICATED` or `DETACHED`: both wrap a whole top-level column only, and a decoder rejects either of them in an element stack with `INCORRECT_DATA`.
 
 **Sparse wire format.** When `kind_stack = 0x01`, the column `data` is two streams written back-to-back in the single shared TCP stream:
 
@@ -239,7 +240,10 @@ A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for ea
 
 If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
 
-`DETACHED` is directional: it may appear only in result blocks sent by a server, and only for a whole top-level column — never as one of the element kinds of a `Tuple`. Unlike the other kinds, it makes the runtime column a `ColumnBLOB` instead of the column of the declared type, so a receiver accepts it only when its own pipeline converts the blob back. A server therefore rejects `DETACHED` in any block a client sends — external table data, scalars and insert data alike — with `INCORRECT_DATA`.
+`DETACHED` is directional: it may appear only in result blocks sent by a server, and only for a whole top-level column — never as one of the element kinds of a `Tuple`. Unlike the other kinds, it makes the runtime column a `ColumnBLOB` instead of the column of the declared type, so a receiver accepts it only when its own pipeline converts the blob back.
+
+**Kinds in blocks sent to a server.** Every non-default kind is directional: it appears only in result blocks sent by a server.
+A block sent to a server — insert data, the data of the `input` table function, external table data and scalars, whether it comes from a client or from another server — carries only `DEFAULT` stacks: senders convert the columns to full ones before sending, and a server rejects any other kind in such a block with `INCORRECT_DATA`.
 
 ### Block variants {#block-variants}
 
@@ -565,7 +569,7 @@ F0 B0 00 00              Int32 LE = 45296
 ```
 
 <Note>
-`Time` and `Time64` are experimental and require `allow_experimental_time_time64_type = 1` on the server.
+`Time` and `Time64` are enabled by default since version 25.12. On servers from 25.6 to 25.11, they require the `enable_time_time64_type = 1` setting.
 </Note>
 
 #### Interval {#interval}
