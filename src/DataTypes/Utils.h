@@ -6,8 +6,7 @@
 namespace DB
 {
 
-/// The default of `type` as a value of its column `ColumnType` (a `ColumnVector` or `ColumnDecimal`).
-/// It differs from the column zero for an `Enum`, whose default is its first value.
+/// The default of `type` as a `ColumnType::ValueType`; for an `Enum` it is the first value, not zero.
 template <typename ColumnType>
 typename ColumnType::ValueType getTypeDefaultValue(const IDataType & type)
 {
