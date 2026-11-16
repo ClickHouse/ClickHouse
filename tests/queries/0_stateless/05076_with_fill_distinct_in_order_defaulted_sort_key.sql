@@ -137,3 +137,23 @@ SELECT o, number FROM (
     ORDER BY o ASC, number ASC WITH FILL
 ) ORDER BY o ASC, number ASC
 SETTINGS use_with_fill_by_sorting_prefix = 0, optimize_sorting_by_input_stream_properties = 1;
+
+-- J: a `Float32` fill key. Fill values are computed in `Float64`, so the generated `0.3` rounds onto the original one and
+-- the keys after it lose their order, whether filled or not. An outer `ORDER BY` must still sort them.
+SELECT x, s FROM (
+    SELECT * FROM values('x Float32, s String', (0, 'a'), (0.3, 'a'))
+    ORDER BY x ASC WITH FILL STEP 0.1, s DESC
+) ORDER BY x ASC, s DESC
+SETTINGS optimize_sorting_by_input_stream_properties = 1;
+SELECT x, d FROM (
+    SELECT * FROM values('x Float32, d Int64', (0, 1), (0.3, 1))
+    ORDER BY x ASC WITH FILL STEP 0.1, d DESC WITH FILL FROM -5
+) ORDER BY x ASC, d DESC
+SETTINGS optimize_sorting_by_input_stream_properties = 1;
+
+-- K: a `BFloat16` fill key, where the generated values round down onto the original `1`.
+SELECT x, s FROM (
+    SELECT * FROM values('x BFloat16, s String', (1, 'a'), (1.0078125, 'a'))
+    ORDER BY x ASC WITH FILL STEP 0.001, s ASC
+) ORDER BY x ASC, s ASC
+SETTINGS optimize_sorting_by_input_stream_properties = 1;

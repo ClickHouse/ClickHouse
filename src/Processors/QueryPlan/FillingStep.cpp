@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -14,9 +15,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Fill values are computed in `Float64`, so a generated value of a narrower float key can round onto an original one.
+static bool fillValueMayRound(const Block & header, const String & column_name)
+{
+    const auto * column = header.findByName(column_name);
+    if (!column)
+        return true;
+    WhichDataType which(removeNullable(column->type));
+    return which.isFloat32() || which.isBFloat16();
+}
+
 /// A generated row defaults every key that is neither filled nor in the filling sorting prefix. Only such a key ahead of a
 /// filled key loses its order: past the last filled key, a generated row already differs from its neighbours on a filled key.
-static size_t preservedSortPrefixSize(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+/// A filled key whose generated value may round onto an original one does not separate the rows, so the prefix ends at it.
+static size_t preservedSortPrefixSize(
+    const Block & header, const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
 {
     size_t begin = 0;
     if (use_with_fill_by_sorting_prefix)
@@ -28,16 +41,23 @@ static size_t preservedSortPrefixSize(const SortDescription & sort_description, 
         if (sort_description[i].with_fill)
             last_with_fill = i;
 
-    for (size_t i = begin; i < last_with_fill; ++i)
+    for (size_t i = begin; i < sort_description.size(); ++i)
+    {
         if (!sort_description[i].with_fill)
-            return i;
+        {
+            if (i < last_with_fill)
+                return i;
+        }
+        else if (fillValueMayRound(header, sort_description[i].column_name))
+            return i + 1;
+    }
 
     return sort_description.size();
 }
 
-static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
+static bool sortingIsPreserved(const Block & header, const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
 {
-    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix) == sort_description.size();
+    return preservedSortPrefixSize(header, sort_description, use_with_fill_by_sorting_prefix) == sort_description.size();
 }
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
@@ -64,7 +84,7 @@ FillingStep::FillingStep(
     : ITransformingStep(
           input_header_,
           std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)),
-          getTraits(sortingIsPreserved(sort_description_, use_with_fill_by_sorting_prefix_)))
+          getTraits(sortingIsPreserved(*input_header_, sort_description_, use_with_fill_by_sorting_prefix_)))
     , sort_description(std::move(sort_description_))
     , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
@@ -74,7 +94,7 @@ FillingStep::FillingStep(
 
 size_t FillingStep::getPreservedSortPrefixSize() const
 {
-    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix);
+    return preservedSortPrefixSize(*input_headers.front(), sort_description, use_with_fill_by_sorting_prefix);
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
