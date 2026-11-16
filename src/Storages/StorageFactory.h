@@ -200,7 +200,7 @@ public:
 
     /// Null for an unregistered engine, so a caller that only wants to inspect an engine named in a
     /// `CREATE` query does not have to handle `UNKNOWN_STORAGE` itself.
-    const StorageFeatures * tryGetStorageFeatures(const String & storage_name) const;
+    [[nodiscard]] const StorageFeatures * tryGetStorageFeatures(const String & storage_name) const;
 
     /// Throws if storage cannot be temporary
     void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;

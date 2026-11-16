@@ -12,7 +12,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.nonempty VALUES (7);
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT name, is_loaded FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} ORDER BY name;
+SELECT name, is_loaded FROM system.tables WHERE database = currentDatabase() || '_1' ORDER BY name;
 
 DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE_1:Identifier}.nonempty SYNC; -- { serverError TABLE_NOT_EMPTY }
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.nonempty;
