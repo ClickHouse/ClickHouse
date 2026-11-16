@@ -17,6 +17,8 @@ SELECT tokens('a, 10.0.0.1, b c', 'regexpMasked(splitByString(['', '', '' '']))'
 SELECT tokens('', 'regexpMasked');
 -- A long needle whose every token starts a would-be path: tokenizing it must stay linear.
 SELECT hasAllTokens('a', repeat('a.', 100000), 'regexpMasked'), hasAnyTokens('b', repeat('a.', 100000) || '/b/', 'regexpMasked');
+-- Separators inside a run of hexadecimal digits: every token starts a `hex` candidate that is rejected for lack of a digit.
+SELECT length(tokens(repeat('bbbbbbbba', 32000), 'regexpMasked(splitByString([''a'']))'));
 
 SELECT 'Rejected definitions';
 

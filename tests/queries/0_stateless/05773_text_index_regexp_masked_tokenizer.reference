@@ -8,6 +8,7 @@ tokens
 ['a','10.0.0.1','b','c']
 []
 1	1
+32000
 Rejected definitions
 Index with all built-in masks
 [1,9]

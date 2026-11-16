@@ -576,4 +576,27 @@ TEST(RegexpMaskedTokenizer, LinearTime)
         tokenizer_interface.stringToBloomFilter(input.data(), input.size(), bloom_filter);
         EXPECT_TRUE(bloom_filter.find("a", 1));
     }
+
+    /// Separators of `splitByString` inside a run of hexadecimal digits without a decimal digit: every base token starts
+    /// a `hex` candidate that spans the rest of the run and is rejected.
+    String hex_run;
+    for (size_t i = 0; i < n / 4; ++i)
+        hex_run += "bbbbbbbba";
+
+    for (std::string_view definition : {"regexpMasked(splitByString(['a']))", "regexpMasked(splitByString(['a']), masks = ['hex'])"})
+    {
+        auto hex_tokenizer = makeTokenizer(definition);
+        size_t count = 0;
+        asMasked(*hex_tokenizer).forEachSpan(hex_run.data(), hex_run.size(), [&](const TokenSpan & span)
+        {
+            EXPECT_FALSE(span.masked);
+            ++count;
+            return false;
+        });
+        EXPECT_EQ(count, n / 4) << definition;
+
+        VectorWithMemoryTracking<String> tokens;
+        hex_tokenizer->stringToTokens(hex_run.data(), hex_run.size(), tokens);
+        EXPECT_EQ(tokens.size(), n / 4) << definition;
+    }
 }

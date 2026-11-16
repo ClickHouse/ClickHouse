@@ -70,18 +70,6 @@ bool precheckHexWithPrefix(const char * data, size_t length)
     return length >= 3 && (data[1] == 'x' || data[1] == 'X') && isHexDigit(data[2]);
 }
 
-bool precheckHex(const char * data, size_t length)
-{
-    if (length < 8)
-        return false;
-    for (size_t i = 0; i < 8; ++i)
-    {
-        if (!isHexDigit(data[i]))
-            return false;
-    }
-    return true;
-}
-
 constexpr ByteSetLookup path_segment_chars = ByteSetLookup::fromPredicate([](char c)
 {
     return isAlphaNumericASCII(c) || c == '.' || c == '_' || c == '-' || c == '~' || c == '%' || c == '+' || c == '@';
@@ -202,6 +190,26 @@ size_t matchNumber(const re2::RE2 * /*re*/, const char * data, size_t length, co
     return pos;
 }
 
+constexpr ByteSetLookup hex_digit_chars = ByteSetLookup::fromPredicate([](char c)
+{
+    return isNumericASCII(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+});
+
+constexpr ByteSetLookup decimal_digit_chars = ByteSetLookup::fromPredicate([](char c) { return isNumericASCII(c); });
+
+/// `[0-9a-f]{8,}`, accepted only if it contains a decimal digit. The match is the whole run of hexadecimal digits. A later
+/// start within a rejected run sees a shorter run without digits, so it is rejected too. Without this, separators of
+/// `splitByString` that are hexadecimal digits would make each base token rescan the rest of the run.
+size_t matchHex(const re2::RE2 * /*re*/, const char * data, size_t length, const char *& no_match_until)
+{
+    const size_t run_end = skipBytes(hex_digit_chars, data, length, 0);
+    if (run_end >= 8 && decimal_digit_chars.find<true>(data, data + run_end) != data + run_end)
+        return run_end;
+
+    no_match_until = data + run_end;
+    return 0;
+}
+
 bool containsDigit(std::string_view text)
 {
     return std::ranges::any_of(text, [](char c) { return isNumericASCII(c); });
@@ -254,7 +262,7 @@ constexpr BuiltinPatternDefinition builtin_pattern_definitions[] = {
     {"ip", R"((?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})", matchRegexp<precheckIPv6, true>, true},
     {"uuid", R"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", matchRegexp<precheckUUID, false>, false},
     {"hex", R"(0x[0-9a-f]+)", matchRegexp<precheckHexWithPrefix, false>, false},
-    {"hex", R"([0-9a-f]{8,})", matchRegexp<precheckHex, true>, true},
+    {"hex", R"([0-9a-f]{8,})", matchHex, true},
     /// No sign: a sign is a separator.
     {"number", R"(\d+(?:\.\d+)?(?:e[-+]?\d+)?(?:[a-z]+|%)?)", matchNumber, false},
     /// Segments joined by two or more slashes, from the first segment.
