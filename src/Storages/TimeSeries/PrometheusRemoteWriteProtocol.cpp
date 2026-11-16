@@ -225,6 +225,21 @@ void checkTableDeclaresOuterColumnTypes(
                 declared_type->getName(),
                 expected_type);
     }
+
+    /// A Distributed table also sends the default of each column the write leaves out, converted on the shard.
+    /// The caller may hold no grant on such a column, so the refusal does not name it.
+    for (const auto * column_name :
+         {TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::MetricFamily,
+          TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit, TimeSeriesColumnNames::Help})
+    {
+        const auto * declared = metadata.columns.tryGet(column_name);
+        if (declared && declared->type->getName() != timeSeriesOuterColumnType(column_name))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares an outer column of a TimeSeries table with another type: a Distributed table taking "
+                "remote write must declare the outer columns of a TimeSeries table",
+                storage_id.getNameForLogs());
+    }
 }
 
 Block makeMetricsMetadataBlock(

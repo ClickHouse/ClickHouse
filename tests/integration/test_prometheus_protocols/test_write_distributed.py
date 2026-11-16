@@ -867,6 +867,25 @@ def test_remote_write_refuses_a_wrapper_retyping_a_metadata_column():
     assert stored == f"gauge\t{METADATA_HELP}\t{METADATA_UNIT}\n", stored
 
 
+def test_remote_write_refuses_a_retyped_column_the_write_leaves_out():
+    """A samples-only write fills no metadata column, but the Distributed table sends the default of each:
+    the `0` of the retyped `type` would reach a shard as the type `'0'` of a family with no name."""
+    before = rows_on_the_retyped_shards()
+    response = write("/retyped_metadata/write", "retyped_omitted_metric")
+    assert response.status_code >= 500, response.text
+    assert "INCOMPATIBLE_SCHEMA" in response.text
+    assert "prom_retyped_metadata" in response.text
+    node.query("SYSTEM FLUSH DISTRIBUTED prom_retyped_metadata")
+    assert rows_on_the_retyped_shards() == before
+
+    # Not vacuous: the same request through the wrapper declaring the shards as they are.
+    assert write("/retyped_ok/write", "retyped_omitted_metric").status_code == 204
+    on_the_shards = count_on_the_shards(
+        "prom_retyped_ok", "retyped_omitted_metric", table="ts_retyped"
+    )
+    assert on_the_shards == 1
+
+
 def test_remote_write_refuses_a_wrapper_without_the_metric_name():
     """A samples-only write names `metric_name`, so a wrapper not declaring it is refused first."""
     before = rows_on_the_retyped_shards()
