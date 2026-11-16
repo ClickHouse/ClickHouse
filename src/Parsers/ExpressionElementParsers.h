@@ -76,7 +76,7 @@ class ParserCompoundIdentifier : public IParserBase
 public:
     struct Options
     {
-        bool table_name = false;             /// build `ASTTableIdentifier`, fold `db.ns.t` into (`db`, `ns.t`); implies no JSON subcolumns
+        bool table_name = false;             /// build `ASTTableIdentifier`, `db.ns.t` is read as (`db`, `ns.t`); implies no JSON subcolumns
         bool allow_uuid_clause = false;      /// accept a trailing `UUID '...'`; requires `table_name`
         bool allow_query_parameter = false;
         bool allow_json_subcolumns = true;   /// `.:Type`, `.^path`, `.@path` and `[]` sugar for JSON subcolumns

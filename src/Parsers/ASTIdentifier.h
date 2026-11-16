@@ -83,6 +83,7 @@ public:
     explicit ASTTableIdentifier(const String & table_name, ASTs && name_params = {});
     explicit ASTTableIdentifier(const StorageID & table_id, ASTs && name_params = {});
     ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params = {});
+    explicit ASTTableIdentifier(std::vector<String> && name_parts_, ASTs && name_params = {});
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;
@@ -97,6 +98,11 @@ public:
 
     StorageID getTableId() const;
     String getDatabaseName() const;
+    /// The only part of a 1-part name, otherwise the parts after the database joined with dots.
+    String getTableName() const;
+
+    /// Turns `{db, ns, t}` into `{db, "ns.t"}`; `full_name` and `children` stay the same.
+    void foldTablePath();
 
     ASTPtr getTable() const;
     ASTPtr getDatabase() const;
@@ -105,6 +111,12 @@ public:
     void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+protected:
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+/// Calls `foldTablePath` on every `ASTTableIdentifier` in `ast`, including `ast` itself.
+void foldTablePaths(IAST & ast);
 
 }

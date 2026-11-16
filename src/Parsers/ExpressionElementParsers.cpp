@@ -582,15 +582,11 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     {
         if (parts.size() > 2)
         {
-            /// fold db.ns1.ns2.table into (db, `ns1.ns2.table`); a quoted dotted component spells the same name
-            /// as its separate parts, as for column identifiers; a parameter cannot be folded before substitution
+            /// the parts are kept, `ASTTableIdentifier` folds them; a parameter is allowed only as the first part
             for (size_t i = 1; i < parts.size(); ++i)
                 if (parts[i].empty())
                     return false;
-            String table_name = parts[1];
-            for (size_t i = 2; i < parts.size(); ++i)
-                table_name += "." + parts[i];
-            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(table_name), std::move(params));
+            node = make_intrusive<ASTTableIdentifier>(std::move(parts), std::move(params));
         }
         else if (parts.size() == 1)
             node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));

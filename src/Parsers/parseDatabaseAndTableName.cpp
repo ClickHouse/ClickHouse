@@ -60,7 +60,7 @@ bool parseTableNameWithOptionalFromDatabase(IParser::Pos & pos, Expected & expec
     if (!ParserCompoundIdentifier({.table_name = true}).parse(pos, table_identifier, expected))
         return false;
     const auto & identifier = table_identifier->as<ASTTableIdentifier &>();
-    table_str = identifier.shortName();
+    table_str = identifier.getTableName();
     if (identifier.compound())
     {
         database_str = identifier.getDatabaseName();
