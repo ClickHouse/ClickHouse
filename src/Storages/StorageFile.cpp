@@ -81,6 +81,7 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -872,7 +873,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -884,7 +885,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1155,12 +1156,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1649,13 +1650,15 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(std::move(format_settings_))
     , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
@@ -1681,7 +1684,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 filter_sources,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
@@ -1725,7 +1728,7 @@ String StorageFileSource::FilesIterator::next()
                 filtered_files,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
@@ -1763,8 +1766,7 @@ StorageFileSource::StorageFileSource(
     LazyFileRegistryPtr lazy_row_index_registry_,
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
     const UUID & query_condition_cache_table_id_,
-    SplitFilePtr split_file_,
-    size_t split_file_bucket_)
+    SplitFilePtr split_file_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1775,7 +1777,6 @@ StorageFileSource::StorageFileSource(
     , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , split_file(std::move(split_file_))
-    , split_file_bucket(split_file_bucket_)
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -2099,10 +2100,21 @@ Chunk StorageFileSource::generate()
                 }
                 else
                 {
-                    current_path = files_iterator->next();
+                    if (split_file)
+                    {
+                        split_file_bucket = split_file->next_bucket.fetch_add(1);
+                        current_path = split_file_bucket < split_file->buckets.size() ? split_file->path : String{};
+                    }
+                    else
+                    {
+                        current_path = files_iterator->next();
+                    }
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
+                    {
+                        read_buf.reset();
                         return {};
+                    }
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
@@ -2133,7 +2145,8 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            if (!read_buf)
+            /// The source of a split file keeps its buffer between buckets but checks the file version for each.
+            if (!read_buf || split_file)
             {
                 struct stat file_stat{};
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
@@ -2185,7 +2198,7 @@ Chunk StorageFileSource::generate()
                     /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
-                else
+                else if (!read_buf)
                 {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
@@ -2642,7 +2655,8 @@ Chunk StorageFileSource::generate()
             }
         }
 
-        read_buf.reset();
+        if (!split_file)
+            read_buf.reset();
         archive_entry_read_buf.reset();
     }
 
@@ -2651,8 +2665,8 @@ Chunk StorageFileSource::generate()
 
 void StorageFileSource::finishReadingSplitFileBucket()
 {
-    /// The other row groups of the file belong to the buckets of other sources, so they must not be
-    /// recorded as having no matching rows until those sources have read them too. A row group that was
+    /// The other row groups of the file belong to the other buckets, so they must not be recorded as
+    /// having no matching rows until those buckets are read too. A row group that was
     /// not assigned to any bucket was skipped by the query condition cache entry for the same condition.
     bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
         && query_condition_cache_table_id != UUIDHelpers::Nil;
@@ -3001,7 +3015,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->format_settings);
 }
 
 StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const
@@ -3146,8 +3161,9 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
     object_metadata.etag = split_file->file_cache_version;
     std::optional<RelativePathWithMetadata> object_with_metadata(std::in_place, path, std::move(object_metadata));
 
+    static constexpr size_t split_file_buckets_per_stream = 4;
     split_file->buckets = FormatFactory::instance().getSplitter(storage->format_name)->splitForParallelReading(
-        max_num_streams,
+        max_num_streams * split_file_buckets_per_stream,
         *read_buf,
         storage->format_settings ? *storage->format_settings : getFormatSettings(context),
         object_with_metadata,
@@ -3271,7 +3287,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     RWLockImpl::LockHolder split_file_read_lock;
     auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
     if (split_file)
-        num_streams = split_file->buckets.size();
+        num_streams = std::min(split_file->buckets.size(), max_num_streams);
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -3293,23 +3309,12 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
             read_buffer = std::move(storage->peekable_read_buffer_from_fd);
 
-        /// Every source reading a bucket of the split file opens the file itself.
-        auto source_files_iterator = files_iterator;
-        if (split_file)
-            source_files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
-                Strings{split_file->path},
-                std::nullopt,
-                /*predicate=*/ nullptr,
-                storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-                info.hive_partition_columns_to_read_from_file_path,
-                ctx);
-
         auto source = std::make_shared<StorageFileSource>(
             info,
             storage,
             ctx,
             max_block_size,
-            std::move(source_files_iterator),
+            files_iterator,
             std::move(read_buffer),
             need_only_count,
             parser_shared_resources,
@@ -3317,8 +3322,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             lazy_row_index_registry,
             top_k_query_condition_cache_key,
             query_condition_cache_table_id,
-            split_file,
-            i);
+            split_file);
 
         pipes.emplace_back(std::move(source));
     }
@@ -3330,6 +3334,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
+    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && split_file && output_ports > 1)
+    {
+        /// The setting's default (24) splits only from 48 streams, but one `Resize` over 16 or 32 streams already slows short queries.
+        static constexpr UInt64 split_file_min_streams_per_resize = 8;
+        pipe.resize(
+            resize_to,
+            /*strict=*/ false,
+            std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, split_file_min_streams_per_resize));
+    }
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -3352,7 +3366,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -3522,7 +3536,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -3539,7 +3553,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
@@ -3667,6 +3681,17 @@ public:
             return;
 
         finalizeBuffers();
+        releaseBuffers();
+    }
+
+    void onPipelineFinished() override
+    {
+        /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+        if (isCancelled() && stage != Stage::Exception)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
 private:
@@ -3772,6 +3797,12 @@ public:
             format_name,
             context,
             flags);
+    }
+
+    void onPipelineFinished() override
+    {
+        if (isCancelled() && stage != Stage::Exception)
+            PartitionedSink::onFinish();
     }
 
 private:
@@ -4010,6 +4041,8 @@ void registerStorageFile(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage(
