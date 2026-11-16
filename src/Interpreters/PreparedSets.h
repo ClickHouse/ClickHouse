@@ -165,8 +165,8 @@ public:
     /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
     /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
     size_t getInputRowCount() const;
-    bool isSourceEmpty() const { return source_is_empty; }
-    bool sourceHasNull() const { return source_has_null; }
+    [[nodiscard]] bool isSourceEmpty() const { return source_is_empty; }
+    [[nodiscard]] bool sourceHasNull() const { return source_has_null; }
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;
@@ -257,7 +257,7 @@ public:
 
     [[nodiscard]] const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
-    bool sourceStateRequired() const { return set_settings.in_null_as_unknown; }
+    [[nodiscard]] bool sourceStateRequired() const { return set_settings.in_null_as_unknown; }
 
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
     /// set that fills that table or through the table stored next to the set itself.

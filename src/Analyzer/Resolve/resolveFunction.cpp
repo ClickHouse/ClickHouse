@@ -3256,6 +3256,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        if (scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+            && in_second_argument->as<ConstantNode>())
+        {
+            const auto * left_array = typeid_cast<const DataTypeArray *>(
+                removeNullable(removeLowCardinality(in_first_argument->getResultType())).get());
+            const auto * right_array = typeid_cast<const DataTypeArray *>(
+                removeNullable(removeLowCardinality(in_second_argument->getResultType())).get());
+            if (left_array && right_array
+                && left_array->getNumberOfDimensions() == right_array->getNumberOfDimensions()
+                && hasNestedCalendarDateInComparison(in_first_argument->getResultType(), in_second_argument->getResultType()))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support nested calendar comparison between {} and {}",
+                    in_first_argument->getResultType()->getName(), in_second_argument->getResultType()->getName());
+        }
+
         /// Replace storage with values storage of insertion block.
         /// The inner query of an ordinary view referenced by the view query reads the table itself.
         if (StoragePtr storage = getViewSourceIfRead(scope.context, view_source_in_subqueries);
