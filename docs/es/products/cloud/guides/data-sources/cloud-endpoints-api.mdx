@@ -7,8 +7,6 @@ doc_type: 'referencia'
 keywords: ['ClickHouse Cloud', 'direcciones IP estáticas', 'endpoints de Cloud', 'API', 'seguridad', 'IPs de salida', 'IPs de Ingreso', 'firewall']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="static-ips-api">
   ## API de IPs estáticas
 </div>
@@ -52,8 +50,24 @@ Por ejemplo, para permitir el acceso desde un servicio de ClickHouse Cloud aloja
 
 Por ejemplo, una instancia de AWS RDS que se ejecuta en `us-east-2` y necesita conectarse a un servicio de ClickHouse Cloud debe tener las siguientes reglas de entrada en el grupo de seguridad:
 
-<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="Reglas del grupo de seguridad de AWS" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Reglas del grupo de seguridad de AWS](/images/_snippets/aws-rds-mysql.webp)
+
+</Frame>
+
+</div>
 
 Para el mismo servicio de ClickHouse Cloud que se ejecuta en `us-east-2`, pero esta vez conectado a una base de datos MySQL en GCP, las `Authorized networks` deberían verse así:
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="Redes autorizadas de GCP" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Redes autorizadas de GCP](/images/_snippets/gcp-authorized-network.webp)
+
+</Frame>
+
+</div>

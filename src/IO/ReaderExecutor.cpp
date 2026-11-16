@@ -273,7 +273,7 @@ size_t ReaderExecutor::requestRunEnd(size_t block_bytes) const
     const size_t file_end = offset_map.hasUnknownSize() ? std::numeric_limits<size_t>::max() : offset_map.totalSize();
     if (!request_runs)
         return file_end;
-    const std::optional<size_t> run_end = request_runs->contiguousEnd(position, min_bytes_for_seek);
+    const std::optional<size_t> run_end = request_runs->intervalEndAhead(position, min_bytes_for_seek);
     /// Outside the map, serve one block at a time.
     const size_t end = run_end ? toPhysical(*run_end) : toPhysical(position) + block_bytes;
     return std::min(end, file_end);

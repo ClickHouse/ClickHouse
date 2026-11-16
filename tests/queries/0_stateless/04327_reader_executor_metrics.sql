@@ -9,8 +9,8 @@
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the
 -- per-query ProfileEvents in `system.query_log`, that the live counters moved and
--- the KPI inputs hold their invariants. Long connections and hole read-through are off
--- here so the base-executor metrics stay deterministic (no over-read, no held
+-- the KPI inputs hold their invariants. Long connections are off here so the
+-- base-executor metrics stay deterministic (no gap-bridging over-read, no held
 -- connections to drop) under randomized settings like `max_threads`; the reuse
 -- path is covered by 04341/04342 and the gtests. The exact modeled-cost formula
 -- and the KPI ratio are checked deterministically in the gtest (single executor);
@@ -26,7 +26,9 @@ CREATE TABLE t_reader_executor_metrics
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192;
+-- Wide part, one file per column. In a Compact part on object storage the multi-buffer reader reads each column
+-- with its own stream, and its request map spans the chunks of the other columns, so the stream reads them too.
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_reader_executor_metrics
 SELECT number, number * 2, concat('row_', toString(number))
@@ -36,9 +38,6 @@ SET use_reader_executor = 1;
 -- Base-executor metrics only: long-connection reuse (covered by 04341/04342) would add
 -- gap-bridging over-read and incomplete-connection counts that swing with max_threads.
 SET reader_executor_use_long_connections = 0;
--- A fetch reads through holes shorter than this. One stream per column of a Compact part on object storage
--- (the multi-buffer reader) would then read the chunks of the other columns.
-SET reader_executor_min_bytes_for_seek = 0;
 -- Disable the stages the executor does not implement so it actually runs on
 -- object storage too (no-ops on local disk).
 SET remote_filesystem_read_method = 'read';
