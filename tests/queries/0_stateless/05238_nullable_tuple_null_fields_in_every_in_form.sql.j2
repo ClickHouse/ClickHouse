@@ -50,6 +50,18 @@ SELECT {{ mode }}, 'all-NULL tuple literal on the right',
     CAST((1, NULL), 'Nullable(Tuple(UInt8, Nullable(UInt8)))') IN (NULL, NULL) AS not_representable
 SETTINGS transform_null_in = {{ mode }};
 
+-- A right-hand tuple of materialized NULLs is not constant, so it takes the row-wise rewrite, which reads
+-- it like the literal in both analyzers.
+{% for analyzer in [0, 1] %}
+SELECT {{ mode }}, {{ analyzer }}, 'all-NULL tuple on the right, literal and row-wise',
+    k IN (NULL, NULL) AS literal_tuple,
+    k IN (materialize(NULL), materialize(NULL)) AS row_wise,
+    k NOT IN (NULL, NULL) AS not_literal_tuple,
+    k NOT IN (materialize(NULL), materialize(NULL)) AS not_row_wise
+FROM (SELECT CAST((NULL, NULL), 'Nullable(Tuple(Nullable(UInt8), Nullable(UInt8)))') AS k)
+SETTINGS transform_null_in = {{ mode }}, enable_analyzer = {{ analyzer }};
+{% endfor %}
+
 -- A member whose NULL field the key cannot hold matches nothing, and an outer NULL member follows the mode.
 SELECT {{ mode }}, 'members the key cannot hold',
     CAST(tuple(0), 'Nullable(Tuple(UInt8))') IN [tuple(NULL)] AS null_field_into_non_nullable,

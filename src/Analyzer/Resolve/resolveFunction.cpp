@@ -2806,15 +2806,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (tuple_function_is_set)
                         {
                             tuple_args = candidate_arguments;
-                            /// For a `Nullable(Tuple(...))` LHS, the constant `Set` path interprets an
-                            /// explicit all-`NULL` RHS tuple as both top-level `NULL` set elements and,
-                            /// when its elements are nullable, the tuple value itself. Preserve both
-                            /// interpretations in the row-wise rewrite.
-                            if (rhs_tuple_all_null
-                                && compare_nulls
-                                && candidate_arguments.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); }))
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            if (rhs_tuple_all_null && nullableTupleKeyCanHoldAllNullTuple(
+                                    *nullable_left_tuple_type, candidate_arguments.size()))
                                 tuple_args.push_back(fn_args[1]);
                         }
                         else

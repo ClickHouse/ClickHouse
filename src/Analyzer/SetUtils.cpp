@@ -18,6 +18,8 @@
 
 #include <Common/assert_cast.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -646,6 +648,13 @@ DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type)
     return {lhs_type};
 }
 
+bool nullableTupleKeyCanHoldAllNullTuple(const DataTypeTuple & key_tuple_type, size_t rhs_tuple_size)
+{
+    const auto & elements = key_tuple_type.getElements();
+    return elements.size() == rhs_tuple_size
+        && std::ranges::all_of(elements, [](const auto & element) { return element->isNullable(); });
+}
+
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
@@ -797,25 +806,10 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 auto res = build_from_tuple(rhs_type);
 
                 /// Additionally, for `Nullable(Tuple(...)) IN (NULL, NULL)` also treat RHS as a tuple literal `(NULL, NULL)`
-                /// when it can be cast to the LHS tuple type (so both interpretations are supported).
-                if (lhs_is_nullable && rhs_tuple_all_null && rhs_tuple.tupleSize() == lhs_tuple_type->getElements().size())
-                {
-                    /// Tuple literal `(NULL, NULL)` is representable only if all tuple elements are Nullable,
-                    /// otherwise it would require NULL -> non-nullable conversion (e.g. `Nullable(Tuple(Int64, Int64))`).
-                    /// Its NULL fields are part of the key value in either `transform_null_in` mode.
-                    bool all_tuple_elements_nullable = true;
-                    for (const auto & element_type : lhs_tuple_type->getElements())
-                    {
-                        if (!element_type->isNullable())
-                        {
-                            all_tuple_elements_nullable = false;
-                            break;
-                        }
-                    }
-
-                    if (all_tuple_elements_nullable)
-                        append_set_elements(res, build_from_single_value(rhs_type));
-                }
+                /// when the key can hold it (so both interpretations are supported).
+                if (lhs_is_nullable && rhs_tuple_all_null
+                    && nullableTupleKeyCanHoldAllNullTuple(*lhs_tuple_type, rhs_tuple.tupleSize()))
+                    append_set_elements(res, build_from_single_value(rhs_type));
 
                 return res;
             }

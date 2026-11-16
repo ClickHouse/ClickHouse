@@ -11,6 +11,7 @@ namespace DB
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
+class DataTypeTuple;
 
 struct GetSetElementParams
 {
@@ -24,6 +25,14 @@ struct GetSetElementParams
 /// single-element tuple, and a `Nullable(Tuple(...))`, because the set is built as a single
 /// `Nullable(Tuple(...))` column anyway.
 DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type);
+
+/// Whether a `Nullable(Tuple(...))` key with the tuple type `key_tuple_type` can hold the tuple value of an explicit
+/// all-NULL right-hand tuple of `rhs_tuple_size` elements: the sizes match and every element is `Nullable`. For
+/// example, `Nullable(Tuple(Nullable(UInt8), Nullable(UInt8)))` can hold `(NULL, NULL)`, and
+/// `Nullable(Tuple(UInt8, Nullable(UInt8)))` cannot. Every form of `IN` then reads such a right-hand tuple both as
+/// top-level NULL members and as that tuple value, in either `transform_null_in` mode, because the key is a single key
+/// column whose NULL fields are values (see `getInKeyColumnTypes`).
+bool nullableTupleKeyCanHoldAllNullTuple(const DataTypeTuple & key_tuple_type, size_t rhs_tuple_size);
 
 /** Get set elements for constant part of IN subquery.
   * Throws exception if parameters are not valid for IN function.

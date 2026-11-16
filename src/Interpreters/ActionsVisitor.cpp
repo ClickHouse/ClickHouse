@@ -1158,12 +1158,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (nullable_left_tuple_type && rhs_tuple_all_null)
                         {
                             right_argument_tuple_function_is_set = true;
-                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
-                            /// top-level `NULL` set elements and, when representable, the tuple value too.
-                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
-                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); });
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            include_right_argument_tuple_value = nullableTupleKeyCanHoldAllNullTuple(
+                                *nullable_left_tuple_type, right_argument_function->arguments->children.size());
                         }
                     }
                 }
