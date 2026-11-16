@@ -4,19 +4,28 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The insecure-endpoint error does not contain the endpoint of the named collection.
+# Errors about the endpoint of an AI named collection do not contain the endpoint.
 
-COLLECTION="ai_insecure_${CLICKHOUSE_DATABASE}"
+INSECURE="ai_insecure_${CLICKHOUSE_DATABASE}"
+MALFORMED="ai_malformed_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "
-    DROP NAMED COLLECTION IF EXISTS ${COLLECTION};
-    CREATE NAMED COLLECTION ${COLLECTION} AS
+    DROP NAMED COLLECTION IF EXISTS ${INSECURE};
+    DROP NAMED COLLECTION IF EXISTS ${MALFORMED};
+    CREATE NAMED COLLECTION ${INSECURE} AS
         provider = 'openai', endpoint = 'http://ai.example.com/v1/chat?access_token=ENDPOINT_TOKEN_SECRET', api_key = 'fake-key';
+    CREATE NAMED COLLECTION ${MALFORMED} AS
+        provider = 'openai', endpoint = 'https://ai.example.com/ENDPOINT_TOKEN_SECRET%', api_key = 'fake-key';
 "
 
-error=$($CLICKHOUSE_CLIENT -q "SELECT aiGenerate('ping', map('credentials', '${COLLECTION}'))" 2>&1)
+for collection in "${INSECURE}" "${MALFORMED}"
+do
+    error=$($CLICKHOUSE_CLIENT -q "SELECT aiGenerate('ping', map('credentials', '${collection}'))" 2>&1)
+    echo "$error" | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS"
+    echo "$error" | grep -q "ENDPOINT_TOKEN_SECRET" && echo "endpoint leaked"
+done
 
-echo "$error" | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS"
-echo "$error" | grep -q "ENDPOINT_TOKEN_SECRET" && echo "endpoint leaked"
-
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${COLLECTION}"
+$CLICKHOUSE_CLIENT -q "
+    DROP NAMED COLLECTION ${INSECURE};
+    DROP NAMED COLLECTION ${MALFORMED};
+"
