@@ -68,7 +68,7 @@ namespace
         /// size, so a position past the last code point saturates to the end of the query.
         std::vector<size_t> byte_offsets;
 
-        size_t byteOffset(size_t code_point) const
+        [[nodiscard]] size_t byteOffset(size_t code_point) const
         {
             return code_point < byte_offsets.size() ? byte_offsets[code_point] : byte_offsets.back();
         }

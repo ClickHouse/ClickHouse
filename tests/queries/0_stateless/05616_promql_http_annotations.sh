@@ -163,7 +163,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() AS probe_cache_entries FROM system.query_c
 instant $T 'rate(foo[5m])' 'use_query_cache=1'
 $CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS;
-SELECT query_cache_usage FROM system.query_log WHERE query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%' ORDER BY event_time_microseconds DESC LIMIT 1"
+SELECT query_cache_usage FROM system.query_log WHERE has(databases, current_database()) AND query LIKE '%timeSeriesExtractTag%' AND query LIKE '%arrayExists%' ORDER BY event_time_microseconds DESC LIMIT 1"
 
 echo "--- no annotations in an error"
 instant $T 'quantile(2, foo) + rate(foo)'
