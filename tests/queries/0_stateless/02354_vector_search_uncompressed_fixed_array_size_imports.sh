@@ -40,7 +40,9 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE tab UUID '$uuid' (id UInt32, vec Array(Float
     ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 
 echo "attach with a definition copied from another table"
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE tab UUID '$uuid' ENGINE = MergeTree ORDER BY id AS tab_template" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+# Not with `UUID`, whose `ATTACH ... AS` is formatted into a query that cannot be parsed back.
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE tab_from_path FROM '${CLICKHOUSE_TEST_UNIQUE_NAME}' ENGINE = MergeTree ORDER BY id AS tab_template" 2>&1 \
+    | grep -o -m1 "NOT_IMPLEMENTED"
 
 echo "attach with the stored definition"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE tab"
