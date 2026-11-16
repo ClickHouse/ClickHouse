@@ -350,7 +350,7 @@ public:
     const SlotToShard & getSlotToShard() const { return slot_to_shard; }
 
 private:
-    void initMisc();
+    void initMisc(bool require_slots = true);
 
     /// Namespaces of `shard_scope_identity` values. A cluster name and a `Replicated` database name share
     /// one namespace, so an identity a reader can spell is also one a user can name a database - and then
