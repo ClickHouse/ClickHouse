@@ -132,7 +132,9 @@ private:
 
     LoggerPtr log;
 
-    /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
+    /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector).
+    /// These maps are lost on restart; with `persist_ttl_merge_times`, the selection also counts the timeout from the
+    /// time of the last TTL merge that the parts store in `ttl.txt`, see `MergeTreeDataPartTTLInfos::last_delete_ttl_merge_time`.
     PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
 
     /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
