@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/122344
 -- A transposed distance over a QBit column of the outer query inside a correlated subquery must not be
--- rewritten into bit-plane subcolumns: the subquery receives the whole column (NOT_FOUND_COLUMN_IN_BLOCK).
+-- rewritten into bit-plane subcolumns: the subquery receives the whole column (`NOT_FOUND_COLUMN_IN_BLOCK`).
 
 SET allow_experimental_correlated_subqueries = 1;
 SET optimize_qbit_distance_function_reads = 1;
@@ -39,6 +39,15 @@ SELECT count() FROM t_qbit AS o WHERE EXISTS (SELECT 1 FROM t_qbit AS i WHERE i.
 SELECT 'outer and correlated use';
 SELECT o.id, L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32) FROM t_qbit AS o
 WHERE EXISTS (SELECT 1 FROM t_qbit AS i WHERE i.id = o.id AND L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32) < 2) ORDER BY o.id;
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT o.id, L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32) FROM t_qbit AS o
+    WHERE EXISTS (SELECT 1 FROM t_qbit AS i WHERE i.id = o.id AND L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32) < 2) ORDER BY o.id)
+WHERE explain ILIKE '%column_name: vec.1,%';
+SELECT count() FROM (
+    EXPLAIN QUERY TREE SELECT o.id FROM t_qbit AS o
+    WHERE EXISTS (SELECT 1 FROM t_qbit AS i WHERE i.id = o.id AND L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32) < 2)
+    ORDER BY L2DistanceTransposed(o.vec, [1., 2., 3., 4.], 32), o.id)
+WHERE explain ILIKE '%column_name: vec.1,%';
 
 SELECT 'only the inner column is rewritten';
 SELECT count() FROM (

@@ -17,5 +17,7 @@ nullable and quantized
 outer and correlated use
 1	0
 3	1
+1
+1
 only the inner column is rewritten
 1
