@@ -443,12 +443,12 @@ public:
                 result_type->getName());
     }
 
-    bool requiresGuestLinearMemory() const override { return true; }
+    [[nodiscard]] bool requiresGuestLinearMemory() const override { return true; }
 
-    bool serializesInputBlockToGuestMemory() const override { return true; }
+    [[nodiscard]] bool serializesInputBlockToGuestMemory() const override { return true; }
 
     /// Keep LowCardinality arguments as COL_LOWCARD instead of materializing them.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     MutableColumnPtr executeColumnar(
         WebAssembly::WasmCompartment * compartment,
@@ -546,7 +546,7 @@ public:
 
     /// The exact bytes a call carrying `[start_idx, start_idx + length)` puts in guest memory.
     /// `declared_positions` maps each entry of `cols` to its declared argument; empty means in order.
-    size_t measureColumnarBytes(
+    [[nodiscard]] size_t measureColumnarBytes(
         const ColumnsWithTypeAndName & cols,
         size_t start_idx,
         size_t length,

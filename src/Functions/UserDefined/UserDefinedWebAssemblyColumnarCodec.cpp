@@ -322,7 +322,7 @@ public:
         }
     }
 
-    size_t size() const { return keys->size(); }
+    [[nodiscard]] size_t size() const { return keys->size(); }
     MutableColumnPtr finish() { return std::move(keys); }
 
 private:
