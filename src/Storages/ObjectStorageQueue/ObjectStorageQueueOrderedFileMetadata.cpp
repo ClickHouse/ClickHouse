@@ -600,57 +600,6 @@ ObjectStorageQueueOrderedFileMetadata::ProcessingStateFromKeeper::ProcessingStat
 {
 }
 
-bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByPartition(
-    std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
-    const std::string & processed_node_path_,
-    LoggerPtr log_,
-    const std::string & zookeeper_name_)
-{
-    Strings partitions;
-    Coordination::Error code = {};
-    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
-    zk_retry.retryLoop([&]
-    {
-        code = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGetChildren(processed_node_path_, partitions);
-    });
-
-    if (code == Coordination::Error::ZNONODE)
-        return false;
-    else if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, processed_node_path_);
-
-    Strings partition_processed_paths;
-    for (const auto & partition : partitions)
-        partition_processed_paths.push_back(std::filesystem::path(processed_node_path_) / partition);
-
-    zkutil::ZooKeeper::MultiTryGetResponse responses;
-
-    zk_retry.resetFailures();
-    zk_retry.retryLoop([&]
-    {
-        responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(partition_processed_paths);
-    });
-
-    if (responses.size() != partitions.size())
-    {
-        throw Exception(
-            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-            "Unexpected size of Keeper response, expected {}, got {}",
-            partitions.size(), responses.size());
-    }
-
-    for (size_t i = 0; i < partitions.size(); ++i)
-    {
-        if (responses[i].error == Coordination::Error::ZOK)
-        {
-            last_processed_path_per_partition[partitions[i]] = responses[i].data;
-        }
-        else if (responses[i].error != Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException::fromPath(responses[i].error, partition_processed_paths[i]);
-    }
-    return true;
-}
-
 ObjectStorageQueueOrderedFileMetadata::Bucket
 ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
     const std::string & path_,
@@ -1138,37 +1087,88 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     const ObjectStorageQueueFilenameParser * parser,
     LoggerPtr log_)
 {
+    if (paths.empty())
+        return;
+
     const bool use_buckets_for_processing = buckets_num > 1;
     buckets_num = std::max<size_t>(buckets_num, 1);
+    const bool partitioned = hasPartitioningMode(partitioning_mode);
 
-    /// When partitioning is not used, consider PartitionKey an empty string.
+    /// Figure out which bucket and partition each file belongs to, then fetch
+    /// only those processed nodes with a single multi-get. We used to list the
+    /// processed node of every bucket here, which is O(buckets) Keeper requests
+    /// per poll, almost all of them for buckets this batch has nothing to do
+    /// with (with partition bucketing a writer always lands in the same bucket).
+    ///
+    /// Without partitioning the partition key is an empty string. A file whose
+    /// partition key can't be parsed is tracked by the bucket-level node, same
+    /// as in getProcessingStateFromKeeper.
     using PartitionKey = std::string;
-    std::map<Bucket, std::unordered_map<PartitionKey, std::string>> last_processed_file_map;
+    using WatermarkKey = std::pair<Bucket, PartitionKey>;
 
-    for (size_t i = 0; i < buckets_num; ++i)
+    std::vector<WatermarkKey> file_keys;
+    file_keys.reserve(paths.size());
+    std::map<WatermarkKey, std::string> watermark_node_paths;
+    for (const auto & path : paths)
     {
-        auto processed_node_path = use_buckets_for_processing
-            ? getProcessedPathWithBucket(zk_path_, i)
-            : getProcessedPathWithoutBucket(zk_path_);
+        const Bucket bucket = use_buckets_for_processing
+            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
+            : 0;
+        PartitionKey partition_key = partitioned ? getPartitionKey(path, partitioning_mode, parser) : "";
+        WatermarkKey key{bucket, std::move(partition_key)};
 
-        if (hasPartitioningMode(partitioning_mode))
+        if (!watermark_node_paths.contains(key))
         {
-            std::unordered_map<PartitionKey, std::string> max_processed_files;
-            if (getMaxProcessedFilesByPartition(max_processed_files, processed_node_path, log_, zookeeper_name_))
-                last_processed_file_map[i] = std::move(max_processed_files);
+            std::filesystem::path node_path = use_buckets_for_processing
+                ? getProcessedPathWithBucket(zk_path_, bucket)
+                : getProcessedPathWithoutBucket(zk_path_);
+            if (!key.second.empty())
+                node_path /= key.second;
+            watermark_node_paths.emplace(key, node_path.string());
         }
+        file_keys.push_back(std::move(key));
+    }
+
+    std::vector<WatermarkKey> watermark_keys;
+    std::vector<std::string> watermark_paths;
+    watermark_keys.reserve(watermark_node_paths.size());
+    watermark_paths.reserve(watermark_node_paths.size());
+    for (auto & [key, node_path] : watermark_node_paths)
+    {
+        watermark_keys.push_back(key);
+        watermark_paths.push_back(node_path);
+    }
+
+    zkutil::ZooKeeper::MultiTryGetResponse watermark_responses;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
+    {
+        watermark_responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(watermark_paths);
+    });
+    if (watermark_responses.size() != watermark_paths.size())
+    {
+        throw Exception(
+            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+            "Unexpected size of Keeper response, expected {}, got {}",
+            watermark_paths.size(), watermark_responses.size());
+    }
+
+    /// Partition child nodes store the last processed path as is, the
+    /// bucket-level node stores NodeMetadata.
+    std::map<WatermarkKey, std::string> last_processed_files;
+    for (size_t i = 0; i < watermark_responses.size(); ++i)
+    {
+        const auto & response = watermark_responses[i];
+        if (response.error == Coordination::Error::ZNONODE)
+            continue;
+        if (response.error != Coordination::Error::ZOK)
+            throw zkutil::KeeperException::fromPath(response.error, watermark_paths[i]);
+        if (response.data.empty())
+            continue;
+
+        if (watermark_keys[i].second.empty())
+            last_processed_files[watermark_keys[i]] = NodeMetadata::fromString(response.data).file_path;
         else
-        {
-            auto state = getProcessingStateFromKeeper(
-                processed_node_path,
-                /* file_path */"",
-                std::nullopt,
-                std::nullopt,
-                log_,
-                zookeeper_name_);
-            if (state.last_processed_path.has_value())
-                last_processed_file_map[i][""] = *state.last_processed_path;
-        }
+            last_processed_files[watermark_keys[i]] = response.data;
     }
 
     std::vector<std::string> failed_paths;
@@ -1176,30 +1176,11 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
-        const auto bucket = use_buckets_for_processing
-            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
-            : 0;
-        if (!last_processed_file_map.empty())
+        auto last_processed = last_processed_files.find(file_keys[i]);
+        if (last_processed != last_processed_files.end() && path <= last_processed->second)
         {
-            if (hasPartitioningMode(partitioning_mode))
-            {
-                auto partition_key = getPartitionKey(path, partitioning_mode, parser);
-                auto max_processed_file = last_processed_file_map[bucket].find(partition_key);
-                if (max_processed_file != last_processed_file_map[bucket].end()
-                    && path <= max_processed_file->second)
-                {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    continue;
-                }
-            }
-            else
-            {
-                if (path <= last_processed_file_map[bucket][""])
-                {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    continue;
-                }
-            }
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            continue;
         }
         failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
         check_paths_indexes.push_back(i);

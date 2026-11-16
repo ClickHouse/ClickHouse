@@ -150,12 +150,6 @@ private:
         LoggerPtr log_ = nullptr,
         const std::string & zookeeper_name_ = {});
 
-    static bool getMaxProcessedFilesByPartition(
-        std::unordered_map<std::string, std::string> & last_processed_path_per_partition,
-        const std::string & processed_node_path_,
-        LoggerPtr log_,
-        const std::string & zookeeper_name_);
-
     void doPrepareProcessedRequests(
         Coordination::Requests & requests,
         const std::string & processed_node_path_,
