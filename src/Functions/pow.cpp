@@ -3,6 +3,7 @@
 #include <Functions/IFunction.h>
 
 #include <cmath>
+#include <limits>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -53,6 +54,21 @@ Float64 integerPow(Float64 base, Int64 n)
     return acc;
 }
 
+/// The accumulated error of `integerPow` can move a result across the overflow or underflow boundary (a finite result
+/// becomes `inf`, a zero one a subnormal), so a result that is not comfortably inside the normal range, as well as
+/// NaN, is computed by `std::pow` instead, which keeps the classification of results (e.g. by `isFinite`) as in libm.
+bool isSafeIntegerPowResult(Float64 result)
+{
+    const Float64 abs_result = std::abs(result);
+    return abs_result >= 2 * std::numeric_limits<Float64>::min() && abs_result <= std::numeric_limits<Float64>::max() / 2;
+}
+
+Float64 checkedIntegerPow(Float64 base, Int64 n)
+{
+    const Float64 result = integerPow(base, n);
+    return isSafeIntegerPowResult(result) ? result : std::pow(base, static_cast<Float64>(n));
+}
+
 /// Row-wise kernel for the general case: the kernel is selected by the exponent value, so the result
 /// is bit-identical to the whole-column integer fast path below. Both specializations of the kernel
 /// promote the arguments to `Float64` first, so the `Float32` path of `FunctionMathBinaryFloat64`
@@ -67,7 +83,7 @@ struct PowGeneralImpl
     {
         const Float64 x = static_cast<Float64>(src_left[0]);
         const Float64 y = static_cast<Float64>(src_right[0]);
-        dst[0] = isFastIntegerExponent(y) ? integerPow(x, static_cast<Int64>(y)) : std::pow(x, y);
+        dst[0] = isFastIntegerExponent(y) ? checkedIntegerPow(x, static_cast<Int64>(y)) : std::pow(x, y);
     }
 };
 
@@ -129,7 +145,7 @@ private:
         auto dst = ColumnFloat64::create(rows);
         auto & res = dst->getData();
 
-        /// Produces exactly what `integerPow` does (`1 * x == x`), it just lets the loop vectorize.
+        /// For 2, produces exactly what `integerPow` does (`1 * x == x`), it just lets the loop vectorize.
         if (n == 2)
         {
             for (size_t i = 0; i < rows; ++i)
@@ -137,11 +153,17 @@ private:
                 const Float64 x = static_cast<Float64>(base[i]);
                 res[i] = x * x;
             }
-            return dst;
+        }
+        else
+        {
+            for (size_t i = 0; i < rows; ++i)
+                res[i] = integerPow(static_cast<Float64>(base[i]), n);
         }
 
+        /// A separate pass, so the one above vectorizes: recompute the rare results near the boundaries, as `checkedIntegerPow` does.
         for (size_t i = 0; i < rows; ++i)
-            res[i] = integerPow(static_cast<Float64>(base[i]), n);
+            if (!isSafeIntegerPowResult(res[i]))
+                res[i] = std::pow(static_cast<Float64>(base[i]), static_cast<Float64>(n));
         return dst;
     }
 

@@ -113,3 +113,18 @@ SELECT abs(sin(toFloat32(1e9)) - 0.5458434494486996) < 1e-15, abs(cos(toDecimal6
 -- exp2/exp10/log2/log10 run in place over Decimal and Float32 inputs converted into the result column.
 SELECT abs(exp2(toDecimal64(3, 2)) - 8) < 1e-9 AND abs(log2(toDecimal32(1024, 0)) - 10) < 1e-9 AND abs(exp10(toDecimal64(2, 3)) - 100) / 100 < 1e-9 AND abs(log10(toDecimal64(1000, 1)) - 3) / 3 < 1e-9;
 SELECT abs(log2(toFloat32(1024)) - 10) < 1e-9 AND abs(log10(toFloat32(1000)) - 3) / 3 < 1e-9 AND abs(exp10(toFloat32(2)) - 100) / 100 < 1e-9;
+
+-- Exact results that integer arithmetic relies on, as with libm.
+-- `floor(log2(x))` is the position of the highest bit: exact at the powers of two, correct just above and below them
+-- (from 2^49 - 1 on, the logarithm rounds up to k in libm as well).
+SELECT countIf(log2(p) != k), countIf(k > 0 AND floor(log2(p + 1)) != k), countIf(k > 1 AND k <= 48 AND floor(log2(p - 1)) != k - 1)
+FROM (SELECT number AS k, intExp2(number) AS p FROM numbers(63));
+-- The power of two of an integer is exact.
+SELECT countIf(toUInt64(exp2(k)) != intExp2(k)), countIf(exp2(-toFloat64(k)) * intExp2(k) != 1) FROM (SELECT number AS k FROM numbers(64));
+-- `floor(log10(x))` counts the digits: exact at the powers of ten, correct just above them.
+SELECT countIf(log10(toFloat64(p)) != k), countIf(floor(log10(toFloat64(p + 1))) != k), countIf(log10(toFloat64('1e-' || toString(k))) != -k)
+FROM (SELECT number AS k, intExp10(number) AS p FROM numbers(19));
+
+-- An integer power near the overflow or underflow boundary is classified as by libm, for every column shape.
+SELECT isFinite(pow(102701782189087.7, 22)), isFinite(pow(materialize(102701782189087.7), 22)), isFinite(pow(102701782189087.7, materialize(22)));
+SELECT pow(3.6396246857900022e-11, 31) = 0, pow(materialize(3.6396246857900022e-11), 31) = 0, pow(3.6396246857900022e-11, materialize(31)) = 0;

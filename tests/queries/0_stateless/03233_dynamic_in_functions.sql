@@ -37,7 +37,7 @@ select * from test where d > x;
 select * from test where d = x;
 select * from test where d = NULL;
 
-select round(exp2(d), 6) as res, toTypeName(res) from test;
+select exp2(d) as res, toTypeName(res) from test;
 select round(sin(d), 6) as res, toTypeName(res) from test;
 select round(cos(d), 6) as res, toTypeName(res) from test;
 select round(tan(d), 6) as res, toTypeName(res) from test;
