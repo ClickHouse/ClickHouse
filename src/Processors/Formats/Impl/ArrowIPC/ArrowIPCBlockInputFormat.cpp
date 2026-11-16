@@ -612,58 +612,6 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 namespace
 {
 
-/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
-/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
-/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
-/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
-/// letting it fall through to `castColumn` would text-parse the bytes.
-MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null)
-{
-    const WhichDataType which(to_no_null);
-    const size_t n = fixed.getN();
-    const size_t rows = fixed.size();
-
-    auto require = [&](size_t width)
-    {
-        if (n != width)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow fixed_size_binary of width {} cannot be read as {} (expected {})",
-                n, to_no_null->getName(), width);
-    };
-
-    if (which.isUUID())
-    {
-        require(16);
-        auto out = ColumnVector<UUID>::create(rows);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            auto * dst = reinterpret_cast<uint8_t *>(&out->getData()[i]);
-            memcpy(dst, &fixed.getChars()[i * 16], 16);
-            std::reverse(dst, dst + 8);
-            std::reverse(dst + 8, dst + 16);
-        }
-        return out;
-    }
-
-    const size_t width = ArrowIPC::rawByteWidth(which);
-    if (width == 0)
-        return nullptr;
-
-    require(width);
-    auto out = to_no_null->createColumn();
-    auto copy = [&](auto & data) { data.resize(rows); if (rows) memcpy(data.data(), fixed.getChars().data(), rows * width); };
-    switch (which.idx)
-    {
-        case TypeIndex::IPv6: copy(assert_cast<ColumnVector<IPv6> &>(*out).getData()); break;
-        case TypeIndex::Int128: copy(assert_cast<ColumnVector<Int128> &>(*out).getData()); break;
-        case TypeIndex::UInt128: copy(assert_cast<ColumnVector<UInt128> &>(*out).getData()); break;
-        case TypeIndex::Int256: copy(assert_cast<ColumnVector<Int256> &>(*out).getData()); break;
-        default: copy(assert_cast<ColumnVector<UInt256> &>(*out).getData()); break;
-    }
-    return out;
-}
-
 /// An integer or float alternative strictly wider than a `width`-byte decoded integer.
 bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
 {
@@ -1049,7 +997,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
-        typed = reinterpretFixedStringLeaf(*fixed, to_leaf);
+        typed = ArrowIPC::reinterpretFixedStringLeaf(*fixed, to_leaf);
     else if (const auto * str = typeid_cast<const ColumnString *>(&nested))
         typed = ArrowIPC::reinterpretStringLeaf(*str, undefined_rows(), to_leaf);
     if (!typed)

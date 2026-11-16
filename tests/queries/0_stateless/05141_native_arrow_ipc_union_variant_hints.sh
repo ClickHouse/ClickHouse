@@ -8,7 +8,8 @@
 # ClickHouse Arrow writer itself emits: it stores `IPv6` as `fixed_size_binary(16)`, so a file written from
 # `Variant(IPv6, String)` could not be read back with `Variant(IPv6, String)`. Each branch now takes the
 # alternative the request forces on it, resolved the way the native ORC reader resolves union branch hints;
-# a branch whose correspondence stays ambiguous keeps its decoded type, so no guess is ever made.
+# a branch whose correspondence stays ambiguous keeps its decoded type, so no guess is ever made. Children the
+# writer stores as one Arrow type, such as `IPv6` and `Int128`, are told apart by the child names it writes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,6 +53,28 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_date.arrow', Arrow)"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT v, toTypeName(v) FROM file('${DATA}/rt_date.arrow', Arrow, 'v Variant(Date, String)') ORDER BY toString(v)"
+
+# usage: round_trip <format> <type> <value>...; writes the values with the native writer and reads them back
+round_trip()
+{
+    local values
+    values=$(for value in "${@:3}"; do printf 'CAST(%s, $$%s$$), ' "$value" "$2"; done)
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION file('${DATA}/rt_alike.$1', $1, \$\$v $2\$\$)
+            SETTINGS engine_file_truncate_on_insert = 1
+            SELECT arrayJoin([${values%, }])"
+    ${CLICKHOUSE_CLIENT} --query "DESC file('${DATA}/rt_alike.$1', $1)"
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT v, variantType(v) FROM file('${DATA}/rt_alike.$1', $1, \$\$v $2\$\$) SETTINGS session_timezone = 'UTC'"
+}
+
+# The writer stores these alternatives as one Arrow type and names each union child after its type family.
+for FORMAT in Arrow ArrowStream; do
+    echo "--- ${FORMAT}: union children the writer stores alike are told apart by their names ---"
+    round_trip "$FORMAT" 'Variant(IPv6, Int128)' "toIPv6('::1')" 'toInt128(-7)' 'NULL' 'toInt128(42)'
+    round_trip "$FORMAT" 'Variant(FixedString(16), IPv6)' "toFixedString('abcdefghijklmnop', 16)" "toIPv6('::2')"
+    round_trip "$FORMAT" 'Variant(DateTime, IPv4)' 'toDateTime(1641600000)' "toIPv4('1.2.3.4')"
+done
 
 python3 - "${CLICKHOUSE_USER_FILES_UNIQUE}" <<'PY'
 import sys
@@ -160,6 +183,8 @@ columns = {
          pa.array(["x", "y"])], ["t", "s"]),
     # Neither branch prefers a requested alternative and both match both, so nothing is assigned.
     "binary_fsb": dense([pa.array([b"aa", b"bb"], type=pa.binary()), fsb], ["b", "f"]),
+    # Two children inferring one type whose names tell nothing apart.
+    "fsb_fsb": dense([fsb, fsb], ["a", "b"]),
     # The Arrow child order differs from the sorted `Variant` order, so the repair must map local to global.
     "utf8_int32": dense([pa.array(["x", "y"]), pa.array([1, 2], type=pa.int32())], ["s", "i"]),
     "sparse": pa.UnionArray.from_sparse(
@@ -273,6 +298,8 @@ echo "--- an ambiguous branch gets no alternative, so this stays rejected ---"
 rejected binary_fsb 'Variant(IPv6, Int128)'
 echo "--- an unassigned branch the request does not name abandons the repair, keeping the message ---"
 rejected bool_date32 'Variant(UInt8, String)'
+echo "--- children inferring one type whose names tell nothing apart stay rejected ---"
+named_error fsb_fsb 'Variant(IPv6, Int128)'
 echo "--- and where every branch is assigned, a value that cannot convert is reported as itself ---"
 named_error unparseable_binary_int32 'Variant(IPv6, UInt32)'
 

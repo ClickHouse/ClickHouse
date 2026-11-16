@@ -10,6 +10,30 @@ text	Variant(IntervalDay, String)
 v	Variant(String, UInt16)					
 2022-01-08	Variant(Date, String)
 text	Variant(Date, String)
+--- Arrow: union children the writer stores alike are told apart by their names ---
+v	Variant(IPv6, Int128)					
+::1	IPv6
+-7	Int128
+\N	None
+42	Int128
+v	Variant(FixedString(16), IPv6)					
+abcdefghijklmnop	FixedString(16)
+::2	IPv6
+v	Variant(DateTime, IPv4)					
+2022-01-08 00:00:00	DateTime
+1.2.3.4	IPv4
+--- ArrowStream: union children the writer stores alike are told apart by their names ---
+v	Variant(IPv6, Int128)					
+::1	IPv6
+-7	Int128
+\N	None
+42	Int128
+v	Variant(FixedString(16), IPv6)					
+abcdefghijklmnop	FixedString(16)
+::2	IPv6
+v	Variant(DateTime, IPv4)					
+2022-01-08 00:00:00	DateTime
+1.2.3.4	IPv4
 --- union<bool, int8> as Variant(Bool, UInt8) ---
 true	Variant(Bool, UInt8)
 7	Variant(Bool, UInt8)
@@ -153,6 +177,8 @@ Cannot convert type Variant(String, Tuple(a Nullable(Int32))) to Variant(String,
 Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
 --- an unassigned branch the request does not name abandons the repair, keeping the message ---
 Cannot convert type Variant(Bool, Date32) to Variant(String, UInt8).
+--- children inferring one type whose names tell nothing apart stay rejected ---
+(INCORRECT_DATA)
 --- and where every branch is assigned, a value that cannot convert is reported as itself ---
 (CANNOT_PARSE_IPV6)
 --- schema inference has no requested type, so it is unaffected ---
@@ -177,6 +203,7 @@ retained	Variant(Int8)
 aliased_retained	Variant(Int32, String)					
 struct_utf8	Variant(String, Tuple(\n    a Nullable(Int32)))					
 binary_fsb	Variant(FixedString(16), String)					
+fsb_fsb	Variant(FixedString(16))					
 utf8_int32	Variant(Int32, String)					
 sparse	Variant(Bool, Int8)					
 nested	Nullable(Tuple(v Variant(Bool, Int8)))					

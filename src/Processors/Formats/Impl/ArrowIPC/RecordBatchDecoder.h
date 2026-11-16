@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -108,6 +109,13 @@ size_t rawByteWidth(const WhichDataType & which);
 /// not one of those types, or when any visible row is not exactly the target width — the column is
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
+
+/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
+/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
+/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
+/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
+/// letting it fall through to `castColumn` would text-parse the bytes.
+MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null);
 
 /// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
 /// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
