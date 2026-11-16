@@ -780,20 +780,16 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
-    if (got_exception)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        /// In case of exception always reset the templates and parser type,
-        /// because they may be in the invalid state.
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            templates[i].reset();
-            parser_type_for_column[i] = ParserType::Streaming;
-        }
+        templates[i].reset();
+        parser_type_for_column[i] = ParserType::Streaming;
+        attempts_to_deduce_template[i] = 0;
+        attempts_to_deduce_template_cached[i] = 0;
+        rows_parsed_using_template[i] = 0;
     }
 
     IInputFormat::resetParser();
-    // I'm not resetting parser modes here.
-    // There is a good chance that all messages have the same format.
     total_rows = 0;
 }
 
@@ -896,7 +892,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Values", Documentation{
         .description = R"DOCS_MD(

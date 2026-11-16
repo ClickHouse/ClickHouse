@@ -39,7 +39,7 @@ protected:
 class ParserDeclarePartitionOptions : public IParserBase
 {
 protected:
-    const char * getName() const override { return "partition options declaration"; }
+    [[nodiscard]] const char * getName() const override { return "partition options declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

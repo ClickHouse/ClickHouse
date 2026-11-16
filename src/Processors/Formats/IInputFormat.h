@@ -45,7 +45,7 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 {
     explicit ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_ = std::nullopt);
 
-    Ptr clone() const override;
+    [[nodiscard]] Ptr clone() const override;
 
     const size_t row_num_offset;
     /// If nullopt, row numbers are consecutive.
@@ -67,9 +67,9 @@ struct FileBucketInfo
 
     virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
-    virtual String getIdentifier() const = 0;
-    virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
+    [[nodiscard]] virtual String getIdentifier() const = 0;
+    [[nodiscard]] virtual String getFormatName() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -133,13 +133,12 @@ public:
     virtual Chunk read() = 0;
 
     virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
-    /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
-     * The recreating of parser for each small stream takes too long, so we introduce a method
-     * resetParser() which allow to reset the state of parser to continue reading of
-     * source stream without recreating that.
-     * That should be called after current buffer was fully read.
-     */
+    /// Prepares the format to read the next input. Called only for formats registered with
+    /// `supports_reset_parser` (see `FormatFactory::registerInputFormat`), which must reset every
+    /// per-input field; other formats are created anew for each input.
     virtual void resetParser();
+    bool supportsResetParser() const { return supports_reset_parser; }
+    void setSupportsResetParser(bool value) { supports_reset_parser = value; }
 
     virtual void setReadBuffer(ReadBuffer & in_);
     virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
@@ -187,7 +186,7 @@ public:
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
     /// The format skipped row groups or pages of the file by a JOIN runtime filter (`FormatFilterInfo::join_runtime_filter_predicate`).
-    virtual bool isJoinRuntimeFilterApplied() const { return false; }
+    [[nodiscard]] virtual bool isJoinRuntimeFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
     /// Called after the file was read, if its version provably did not change during the read.
@@ -208,6 +207,8 @@ private:
     void resetOwnedBuffers();
 
     VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    bool supports_reset_parser = false;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

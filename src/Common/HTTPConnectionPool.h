@@ -51,7 +51,7 @@ public:
     {
         return getConnection(timeouts, connect_time, std::nullopt);
     }
-    virtual const Metrics & getMetrics() const = 0;
+    [[nodiscard]] virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 
     IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
@@ -96,7 +96,7 @@ public:
         std::vector<uint64_t> storage;
         std::vector<uint64_t> http;
 
-        bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
+        [[nodiscard]] bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
     };
 
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
@@ -112,9 +112,9 @@ public:
     /// Whether the group holds at least `soft_limit` connections, in use and idle together. Above
     /// the soft limit the pool economizes connections: idle ones expire sooner, and readers that
     /// consult this stop keeping a connection open between reads.
-    bool isSoftLimitReached(HTTPConnectionGroupType type) const;
+    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const;
     void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http, SocketBufferSizes amber);
-    SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
+    [[nodiscard]] SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
     void dropCache();
 
     IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);

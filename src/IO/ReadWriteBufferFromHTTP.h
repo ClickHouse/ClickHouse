@@ -219,7 +219,7 @@ private:
     bool waitBeforeRetry(size_t milliseconds) const;
 
     /// `timeouts` capped at the time left before `deadline`.
-    ConnectionTimeouts getTimeoutsForTry() const;
+    [[nodiscard]] ConnectionTimeouts getTimeoutsForTry() const;
 
     [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
 

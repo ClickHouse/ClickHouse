@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Time/ConcurrencyProfile.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
 #include <algorithm>
@@ -38,7 +39,7 @@ ConcurrencyProfile::ConcurrencyProfile(const WorkIntervalsPerThread & intervals_
     };
 
     size_t total_events = 0;
-    std::vector<Cursor> initial;
+    VectorWithMemoryTracking<Cursor> initial;
     for (size_t thread = 0; thread < intervals_per_thread.size(); ++thread)
     {
         if (intervals_per_thread[thread].empty())
@@ -48,7 +49,7 @@ ConcurrencyProfile::ConcurrencyProfile(const WorkIntervalsPerThread & intervals_
         total_events += 2 * intervals_per_thread[thread].size();
     }
 
-    std::priority_queue<Cursor, std::vector<Cursor>, decltype(later_event)> heads(later_event, std::move(initial));
+    std::priority_queue<Cursor, VectorWithMemoryTracking<Cursor>, decltype(later_event)> heads(later_event, std::move(initial));
 
     if (heads.empty())
         return;
