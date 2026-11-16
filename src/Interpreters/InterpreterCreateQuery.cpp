@@ -2373,6 +2373,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.columns_list)
         visitor.visitTableExpressions(*create.columns_list);
 
+    /// A stored definition does not depend on the reader's `allow_experimental_table_namespaces`.
+    if (create.select && create.isView())
+        foldTablePaths(*create.select);
+    if (create.columns_list)
+        foldTablePaths(*create.columns_list);
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
