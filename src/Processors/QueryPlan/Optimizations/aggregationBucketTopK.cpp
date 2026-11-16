@@ -112,14 +112,17 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         || params.keys_size == 0)
         return 0;
 
-    /// The selection reads the count from the aggregate state and handles no null-key cell, so
-    /// nullable and low-cardinality keys stay on the ordinary conversion.
+    /// The selection handles no null-key cell, so nullable keys stay on the ordinary conversion. `LowCardinality` keys get
+    /// the selection only: the threshold merge below does not serve them.
     const auto & header = node->step->getOutputHeader();
+    bool has_low_cardinality_key = false;
     for (const auto & key : params.keys)
     {
         const auto & type = header->getByName(key).type;
-        if (type->isNullable() || type->isLowCardinalityNullable() || typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        if (type->isNullable() || type->isLowCardinalityNullable())
             return 0;
+        if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            has_low_cardinality_key = true;
     }
 
     for (size_t i = 0; i < params.aggregates.size(); ++i)
@@ -135,7 +138,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// collection).
         /// The in-order aggregation never runs the threshold merge (see `AggregatingStep::applyOrder`,
         /// which also drops it when the order is applied after this pass).
-        if (!description.front().collator && !aggregating->inOrder())
+        if (!description.front().collator && !aggregating->inOrder() && !has_low_cardinality_key)
         {
             const auto bound = aggregate.function->getMergedValueBound();
             /// The `Subadditive` bound serves only the descending order. It is one-sided (see
