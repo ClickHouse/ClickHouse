@@ -2853,6 +2853,44 @@ def test_unguarded_external_move_deletes_only_the_copied_version(started_cluster
     assert read_s3_object(started_cluster, bucket, source_key) == data
 
 
+def test_external_move_writes_with_the_move_credentials(started_cluster):
+    """A move to another bucket of the same endpoint must write with the move keys. With wrong
+    move keys nothing is copied and the source stays, even though the source keys could write there."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    destination_bucket = f"sink-{token}"
+    table_name = f"move_credentials_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    data = b"1,2,3\n"
+    recreate_minio_bucket(started_cluster, destination_bucket)
+    put_s3_file_content(started_cluster, source_key, data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=destination_bucket,
+        preserve_move_path=True,
+        additional_settings={
+            "after_processing_move_access_key_id": "wrong_key",
+            "after_processing_move_secret_access_key": "wrong_secret",
+        },
+    )
+    moved_before = moved_objects(node)
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: node.contains_in_log(f"Failed to move S3 object {source_key}"))
+    assert count_minio_objects(started_cluster, destination_bucket, "") == 0
+    assert read_s3_object(started_cluster, started_cluster.minio_bucket, source_key) == data
+    assert moved_objects(node) == moved_before
+
+
 def test_unguarded_same_storage_move_deletes_only_the_copied_version(started_cluster):
     """A move inside the same bucket that preserves the path needs no destination guard, but its
     delete must still take only the version the copy consumed: a re-upload of the same bytes carries

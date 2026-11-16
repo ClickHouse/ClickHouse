@@ -881,6 +881,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             /// destination only if both clients use the same endpoint, otherwise use the buffered copy, which uploads with `dst_client`.
             if (src_client->getInitialEndpoint() != dst_client->getInitialEndpoint())
                 s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
+            /// It also signs the write with the source keys, so it is allowed only when the move keys are the same.
+            const auto src_credentials = src_client->getCredentials();
+            if (src_credentials.GetAWSAccessKeyId() != move_access_key_id
+                || src_credentials.GetAWSSecretKey() != move_secret_access_key
+                || !src_credentials.GetSessionToken().empty())
+                s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
             auto read_settings = getReadSettings();
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(

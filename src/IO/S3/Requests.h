@@ -229,7 +229,7 @@ class CopyRequest : public ExtendedRequest<BaseRequest>
 public:
     void setCopySourceVersionId(const Aws::String & version_id) { copy_source_version_id = version_id; }
 
-    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
+    [[nodiscard]] Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
     {
         auto headers = BaseRequest::GetRequestSpecificHeaders();
         auto it = headers.find("x-amz-copy-source");
