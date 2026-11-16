@@ -1568,7 +1568,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null && JoinCommon::canBecomeNullable(elem.type))
-        elem.type = makeNullable(elem.type);
+        elem.type = JoinCommon::convertTypeToNullable(elem.type);
     return elem.type;
 }
 
@@ -1638,7 +1638,7 @@ public:
         return {std::move(result.block), nullptr, !current_result};
     }
 
-    std::optional<size_t> getMatchedRightRows() const override
+    [[nodiscard]] std::optional<size_t> getMatchedRightRows() const override
     {
         return matched_right_rows;
     }
@@ -1995,12 +1995,12 @@ private:
     std::vector<GatherColumn> emit_gather;
     std::optional<size_t> emit_row_store_row_length;
 
-    bool isBucketInRange(size_t bucket) const
+    [[nodiscard]] bool isBucketInRange(size_t bucket) const
     {
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
     }
 
-    bool isBlockInRange(size_t block_no) const
+    [[nodiscard]] bool isBlockInRange(size_t block_no) const
     {
         return num_buckets <= 1 || (block_no % num_buckets) == bucket_idx;
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 
@@ -13,11 +14,11 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
 private:
-    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_);
+    SerializationTuple(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_);
 
 public:
     static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
-    static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_);
+    static SerializationPtr create(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_);
 
     /// Whether a resolved subcolumn is really this element, which its name alone cannot tell: a
     /// sibling element can flatten to the same name. `QBit` elements are the same substream.
@@ -89,6 +90,9 @@ public:
 
 private:
     ElementSerializations elems;
+    /// Used only for the defaults of missing elements. Not part of the pool key: the key of each element
+    /// serialization already determines the default of its type.
+    DataTypes elem_types;
     bool has_explicit_names;
     /// Cached result of `supportsPooling` of all elements, see `SerializationArray`.
     bool elems_support_pooling;

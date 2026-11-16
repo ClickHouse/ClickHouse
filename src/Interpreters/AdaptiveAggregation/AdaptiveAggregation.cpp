@@ -335,24 +335,20 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (froze)
         adaptive.partitions->finishAppending();
 
-    /// The merges read the cells of a table through its cell index (see `AggregatedDataVariants::indexCells`), whose
-    /// partitions are those of the layout. A unit of the adaptive merge is a run of the partitions of a bucket, and the
-    /// merge of tables that never froze merges partition by partition, so either reads its cells in place. The producer
-    /// builds the index here, in its own thread, while the table is in its cache. A table that cannot be indexed, the
-    /// string table, converts to two-level instead when it froze, and then the merge preparation converts the tables of
-    /// the producers that never froze.
-    if (local_variants.canIndexCells())
+    /// The merges read the cells of a table through its cell index (see
+    /// `AggregatedDataVariants::indexCells`), whose partitions are those of the layout. A unit of the
+    /// adaptive merge is a run of the partitions of a bucket, and the merge of tables that never froze merges
+    /// partition by partition, so either reads its cells in place. The producer indexes its table here, in
+    /// its own thread, while the table is in its cache. Every admitted method has a two-level form, so every
+    /// single-level table is indexed, and a table that went two-level on the baseline path is read by
+    /// buckets.
+    if (local_variants.isConvertibleToTwoLevel())
         local_variants.indexCells(shared.layout.numPartitions(), [&](UInt64 hash) { return shared.layout.partitionOf(hash); });
-    else if (froze && local_variants.isConvertibleToTwoLevel())
-        local_variants.convertToTwoLevel();
-
-    const bool unindexed = !local_variants.empty() && !local_variants.isTwoLevel() && !local_variants.hasCellIndex();
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
     shared.table_cells += local_variants.sizeWithoutOverflowRow();
-    shared.unindexed_tables += unindexed;
     if (froze)
     {
         ++shared.frozen_producers;
@@ -420,11 +416,11 @@ bool Aggregator::mergePrunesByTopK(
         return true;
 
     /// Without a freeze, the bucket merge has to pay for itself. It does where it skips the merge of heavy
-    /// states (see `adaptiveTopKPrunesWithoutFreeze`), where it can read every table through its cell index,
-    /// which the string table lacks, and where the top keeps a small part of the groups: the tables hold at
-    /// least as many cells per bucket as the top keeps groups, and a merge unit's worth in all.
+    /// states (see `adaptiveTopKPrunesWithoutFreeze`), and where the top keeps a small part of the groups:
+    /// the tables hold at least as many cells per bucket as the top keeps groups, and a merge unit's worth in
+    /// all.
     const size_t min_table_cells = std::max(adaptive_merge_unit_records, params.bucket_top_k * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
-    return adaptiveTopKPrunesWithoutFreeze() && shared.unindexed_tables == 0 && shared.table_cells >= min_table_cells;
+    return adaptiveTopKPrunesWithoutFreeze() && shared.table_cells >= min_table_cells;
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
