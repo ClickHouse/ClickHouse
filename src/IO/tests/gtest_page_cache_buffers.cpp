@@ -24,8 +24,8 @@ struct MissEntry { ByteRange range; CacheWriterPtr writer; };
 class CacheView
 {
 public:
-    const std::vector<HitEntry> & hits() const { return hit_entries; }
-    const std::vector<MissEntry> & misses() const { return miss_entries; }
+    [[nodiscard]] const std::vector<HitEntry> & hits() const { return hit_entries; }
+    [[nodiscard]] const std::vector<MissEntry> & misses() const { return miss_entries; }
     std::vector<HitEntry> hit_entries;
     std::vector<MissEntry> miss_entries;
 };

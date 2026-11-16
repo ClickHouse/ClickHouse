@@ -189,6 +189,7 @@
             "reference/statements/set",
             "reference/statements/show",
             "reference/statements/system",
+            "reference/statements/transactions",
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",

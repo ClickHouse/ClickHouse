@@ -50,17 +50,17 @@ public:
         : max_size(max_size_)
     {}
 
-    bool contains(const std::string & key) const
+    [[nodiscard]] bool contains(const std::string & key) const
     {
         return map.find(key) != map.end();
     }
 
-    V get(const std::string & key) const
+    [[nodiscard]] V get(const std::string & key) const
     {
         return map.at(key)->value;
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return queue.size();
     }
@@ -113,14 +113,14 @@ public:
     }
 
     iterator begin() { return queue.begin(); }
-    const_iterator begin() const { return queue.cbegin(); }
+    [[nodiscard]] const_iterator begin() const { return queue.cbegin(); }
     iterator end() { return queue.end(); }
-    const_iterator end() const { return queue.cend(); }
+    [[nodiscard]] const_iterator end() const { return queue.cend(); }
 
     reverse_iterator rbegin() { return queue.rbegin(); }
-    const_reverse_iterator rbegin() const { return queue.crbegin(); }
+    [[nodiscard]] const_reverse_iterator rbegin() const { return queue.crbegin(); }
     reverse_iterator rend() { return queue.rend(); }
-    const_reverse_iterator rend() const { return queue.crend(); }
+    [[nodiscard]] const_reverse_iterator rend() const { return queue.crend(); }
 };
 
 /// Fixed-size log for deduplication in non-replicated MergeTree.
