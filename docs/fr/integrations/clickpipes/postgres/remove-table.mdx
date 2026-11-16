@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans certains cas, il est judicieux d’exclure certaines tables d’un Postgres ClickPipe - par exemple, si une table n’est pas nécessaire à votre charge de travail analytique, l’ignorer peut réduire les coûts de stockage et de réplication dans ClickHouse.
 
 <div id="remove-tables-steps">
@@ -27,7 +25,15 @@ La première étape consiste à retirer la table du pipe. Pour ce faire, suivez 
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+
+</Frame>
+
+</div>
 
 5. Cliquez sur Update.
 6. Une fois la mise à jour effectuée avec succès, dans l’onglet **Metrics**, le statut sera **Running**. Cette table ne sera plus répliquée par ce ClickPipe.

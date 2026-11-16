@@ -6,8 +6,6 @@ keywords: ['esquema', 'design do esquema', 'otimização de consultas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Compreender um design de esquema eficiente é fundamental para otimizar o desempenho do ClickHouse e envolve escolhas que muitas vezes exigem concessões, sendo que a abordagem ideal depende das consultas executadas, bem como de fatores como a frequência de atualização dos dados, os requisitos de latência e o volume de dados. Este guia apresenta uma visão geral das boas práticas de design de esquema e das técnicas de modelagem de dados para otimizar o desempenho do ClickHouse.
 
 <div id="stack-overflow-dataset">
@@ -18,7 +16,15 @@ Para os exemplos deste guia, usamos um subconjunto do conjunto de dados do Stack
 
 > As chaves primárias e os relacionamentos indicados não são aplicados por meio de restrições (Parquet é um formato de arquivo, não de tabela) e apenas indicam como os dados se relacionam e quais chaves exclusivas eles possuem.
 
-<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Esquema do Stack Overflow" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Esquema do Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -237,7 +243,15 @@ Usuários que vêm de bancos de dados OLTP frequentemente procuram o conceito eq
 
 Na escala em que o ClickHouse costuma ser usado, a eficiência de memória e disco é primordial. Os dados são gravados nas tabelas do ClickHouse em fragmentos chamados partes, e regras de mesclagem são aplicadas a essas partes em segundo plano. No ClickHouse, cada parte tem seu próprio índice primário. Quando as partes são mescladas, os índices primários da parte resultante também são mesclados. O índice primário de uma parte tem uma entrada de índice para cada grupo de linhas — essa técnica é chamada de indexação esparsa.
 
-<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Indexação esparsa no ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Indexação esparsa no ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</Frame>
+
+</div>
 
 A chave selecionada no ClickHouse determinará não apenas o índice, mas também a ordem em que os dados são gravados em disco. Por isso, ela pode afetar drasticamente os níveis de compressão, o que, por sua vez, pode impactar o desempenho das consultas. Uma chave de ordenação que faça com que os valores da maioria das colunas sejam gravados de forma contígua permitirá que o algoritmo de compressão selecionado (e os codecs) compacte os dados com mais eficiência.
 

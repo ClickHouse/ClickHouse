@@ -52,6 +52,9 @@ struct PaimonPersistentComponents
     /// schema-0 will have a different timeMillis.
     const Int64 schema0_time_millis;
 
+    /// Controlled by paimon_incremental_read_append_overwrite setting
+    const bool incremental_read_append_overwrite;
+
     PaimonPersistentComponents(
         PaimonSchemaProcessorPtr schema_processor_,
         PaimonMetadataFilesCachePtr metadata_cache_,  /// Can be nullptr if cache is disabled
@@ -61,7 +64,8 @@ struct PaimonPersistentComponents
         String table_cache_key_prefix_,
         bool incremental_read_enabled_ = false,
         Int64 metadata_refresh_interval_sec_ = 0,
-        Int64 schema0_time_millis_ = 0)
+        Int64 schema0_time_millis_ = 0,
+        bool incremental_read_append_overwrite_ = false)
         : schema_processor(std::move(schema_processor_))
         , metadata_cache(std::move(metadata_cache_))
         , stream_state(std::move(stream_state_))
@@ -71,6 +75,7 @@ struct PaimonPersistentComponents
         , incremental_read_enabled(incremental_read_enabled_)
         , metadata_refresh_interval_sec(metadata_refresh_interval_sec_)
         , schema0_time_millis(schema0_time_millis_)
+        , incremental_read_append_overwrite(incremental_read_append_overwrite_)
     {
     }
 
@@ -79,9 +84,9 @@ struct PaimonPersistentComponents
     /// be changed via SYSTEM RELOAD CONFIG, so it is evaluated dynamically rather than latched at
     /// create time.  Read paths must use this predicate so that a zero-capacity cache neither
     /// disables the filesystem cache nor records cache misses for entries that can never be kept.
-    bool isMetadataCacheActive() const { return metadata_cache != nullptr && metadata_cache->maxSizeInBytes() > 0; }
+    [[nodiscard]] bool isMetadataCacheActive() const { return metadata_cache != nullptr && metadata_cache->maxSizeInBytes() > 0; }
 
-    bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
+    [[nodiscard]] bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
 };
 
 }

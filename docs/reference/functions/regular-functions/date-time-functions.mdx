@@ -1463,7 +1463,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
-| %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
+| %w | weekday as an integer number with Sunday as 0 (0-6) | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |
@@ -5485,6 +5485,7 @@ int32samoa: 1546300800
 Introduced in: v23.8.0
 
 Converts a date or date with time value from one time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+A local time that happens twice or does not exist because of a daylight saving time change is converted as `toDateTime` does.
     
 
 **Syntax**

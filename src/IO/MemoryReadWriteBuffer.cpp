@@ -40,7 +40,7 @@ private:
     {
         if (chunk_head != chunk_list.end())
         {
-            internalBuffer() = *chunk_head;
+            setInternalBuffer(*chunk_head);
 
             /// It is last chunk, it should be truncated
             if (std::next(chunk_head) != chunk_list.end())
@@ -52,7 +52,8 @@ private:
         }
         else
         {
-            buffer() = internalBuffer() = Buffer(nullptr, nullptr);
+            setInternalBuffer(Buffer(nullptr, nullptr));
+            buffer() = internalBuffer();
             position() = nullptr;
         }
 

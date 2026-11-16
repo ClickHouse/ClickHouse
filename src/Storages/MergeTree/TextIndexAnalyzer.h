@@ -29,9 +29,9 @@ public:
     {
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
-        std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        [[nodiscard]] std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
         PostingList clipPostings(const PostingList & postings);
-        size_t getSizeInBytes() const;
+        [[nodiscard]] size_t getSizeInBytes() const;
 
     private:
         std::vector<RowsRange> ranges;
@@ -65,7 +65,8 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken(std::string_view token);
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
+        /// `embedded_postings` are the clipped embedded postings, or nullptr if there are none.
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
@@ -81,15 +82,15 @@ public:
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    bool alwaysFalse() const { return always_false; }
-    const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
-    const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
-    const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
+    [[nodiscard]] bool alwaysFalse() const { return always_false; }
+    [[nodiscard]] const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
+    [[nodiscard]] const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
+    [[nodiscard]] const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     /// True if at least one active query still depends on this token.
-    bool isTokenNeeded(std::string_view token) const;
+    [[nodiscard]] bool isTokenNeeded(std::string_view token) const;
     /// True if this token's posting list has already been added (embdded or read from disk).
-    bool hasReadPostings(std::string_view token) const;
+    [[nodiscard]] bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
@@ -101,9 +102,9 @@ public:
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    bool canFilterTokensByLiterals() const;
-    bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    [[nodiscard]] std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    [[nodiscard]] bool canFilterTokensByLiterals() const;
+    [[nodiscard]] bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
     /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
     /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
     TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);
@@ -134,7 +135,7 @@ private:
     void markAllQueriesFailed();
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
-    double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
+    [[nodiscard]] double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
