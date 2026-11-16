@@ -25,7 +25,7 @@ SELECT count() FROM dst WHERE a = 0 AND c = 1;
 
 SELECT 'UInt32, ROLLUP, two-level';
 TRUNCATE TABLE dst;
-INSERT INTO dst SELECT a, count() FROM src GROUP BY a WITH ROLLUP SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
+INSERT INTO dst SELECT a, count() FROM src GROUP BY a WITH ROLLUP SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_bytes_before_external_group_by = 10000000000, max_bytes_ratio_before_external_group_by = 0;
 SELECT a, c FROM dst ORDER BY a, c SETTINGS optimize_read_in_order = 1;
 SELECT count() FROM dst WHERE a = 0 AND c = 1;
 
