@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -9,6 +12,49 @@
 
 namespace DB
 {
+
+/// The partition keys as distribution columns, or empty when the window cannot run per
+/// node: without `PARTITION BY` all rows form one partition, and only a single node keeps
+/// them together (empty distribution columns mean "any distribution"); a partition key
+/// that is not a column of the input header cannot be hashed by name; and a key whose
+/// hash disagrees with `compareAt` (floats, `JSON`, `Dynamic`: `-0.` and `0.` compare as
+/// one partition but hash differently) would split one logical partition across nodes
+/// and produce wrong window values.
+DistributionColumns windowPartitionKeyColumns(const WindowStep & window_step)
+{
+    const auto & partition_by = window_step.getWindowDescription().partition_by;
+    if (partition_by.empty())
+        return {};
+
+    const auto & input_header = window_step.getInputHeaders().at(0);
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
+    {
+        if (!input_header->has(partition_column.column_name))
+            return {};
+        if (QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
+    }
+    return columns;
+}
+
+/// A `DISTINCT` that keeps the order of its input stays on one node: the shares of the nodes would interleave when
+/// gathered. So does one with `max_rows_in_distinct` or `max_bytes_in_distinct`: each node would check the limit on
+/// its own share only, and a result over the limit would pass.
+bool isDistinctDistributable(const DistinctStep & step)
+{
+    const auto & size_limits = step.getSettings().set_size_limits;
+    const bool has_size_limits = size_limits.max_rows != 0 || size_limits.max_bytes != 0;
+    return !step.preservesInputOrder() && !has_size_limits && !step.getColumnNames().empty();
+}
+
+/// See `AggregationImplementation::StrategyEnumerator::addShuffleAggregation` for why each condition disables it.
+bool isAggregationShuffleApplicable(const AggregatingStep & step)
+{
+    return !step.getParams().keys.empty() && !step.isGroupingSets() && !step.getParams().overflow_row
+        && step.getParams().max_rows_to_group_by == 0;
+}
 
 bool isTopNSort(const IQueryPlanStep & step)
 {

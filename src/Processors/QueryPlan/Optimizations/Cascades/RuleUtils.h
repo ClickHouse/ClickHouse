@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -16,6 +17,20 @@ namespace ErrorCodes
 }
 
 /// Helpers shared by the optimization rules.
+
+class AggregatingStep;
+class DistinctStep;
+class WindowStep;
+
+/// The partition keys of a window as distribution columns, or empty when the window runs on one node only. The join
+/// order search asks the same, see `query_plan_join_order_distribution`.
+DistributionColumns windowPartitionKeyColumns(const WindowStep & window_step);
+
+/// Whether a final `DISTINCT` may run on several nodes, each with the rows of its own values.
+bool isDistinctDistributable(const DistinctStep & step);
+
+/// Whether a final aggregation may run on several nodes, each with the groups of its own keys.
+bool isAggregationShuffleApplicable(const AggregatingStep & step);
 
 /// A Full sort with a limit is a top-N: it reduces rows, so it stays in the memo as an operator
 /// (a limit-less Full sort is stripped into a sorting property). Only a Full sort takes unsorted

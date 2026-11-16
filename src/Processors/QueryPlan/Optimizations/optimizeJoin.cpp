@@ -31,6 +31,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
@@ -1198,8 +1199,10 @@ static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input
     }
     const auto * step = node->step.get();
 
-    /// Cascades splits a read between nodes, or reads it on every node, only when the read can be split into buckets.
-    if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(step); read_step && read_step->supportsBucketedRead())
+    /// Cascades splits a read between nodes, or reads it on every node, only when the read can be split into buckets. A
+    /// `FINAL` read splits only under conditions known when its buckets are made, so it counts as a read on one node.
+    if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(step);
+        read_step && read_step->supportsBucketedRead() && !read_step->isQueryWithFinal())
     {
         result.placement = QueryGraph::InputPlacement::Read;
         double bytes = 0;
@@ -1238,10 +1241,13 @@ static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input
             result.scanned_rows += static_cast<double>(*child_rows);
         }
     }
-    /// Cascades distributes these steps. It runs any other step on one node, see `DefaultImplementation`.
+    /// Cascades distributes these steps when its rules allow it. It runs any other step on one node, see
+    /// `DefaultImplementation`.
     const auto * aggregating = typeid_cast<const AggregatingStep *>(step);
-    if (typeid_cast<const JoinStepLogical *>(step) || typeid_cast<const DistinctStep *>(step) || typeid_cast<const WindowStep *>(step)
-        || (aggregating && !aggregating->getParams().keys.empty()))
+    const auto * distinct = typeid_cast<const DistinctStep *>(step);
+    const auto * window = typeid_cast<const WindowStep *>(step);
+    if (typeid_cast<const JoinStepLogical *>(step) || (aggregating && isAggregationShuffleApplicable(*aggregating))
+        || (distinct && isDistinctDistributable(*distinct)) || (window && !windowPartitionKeyColumns(*window).empty()))
         result.placement = QueryGraph::InputPlacement::Partitioned;
     return result;
 }
