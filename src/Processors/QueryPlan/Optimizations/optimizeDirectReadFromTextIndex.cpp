@@ -200,12 +200,23 @@ NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_st
 
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+/// A read of the probe plan of automatic parallel replicas has none of its own; it takes the conditions of the
+/// single-node read it stands for, so that both plans rewrite the same functions.
+void collectTextIndexReadInfos(
+    const ReadFromMergeTree * read_from_merge_tree_step,
+    const FindSingleNodeRead & find_single_node_read,
+    TextIndexReadInfos & text_index_read_infos)
 {
     auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
 
+    const ReadFromMergeTree * indexes_source = read_from_merge_tree_step;
+    if (!read_from_merge_tree_step->getIndexes() && find_single_node_read)
+        indexes_source = find_single_node_read(*read_from_merge_tree_step);
+    if (!indexes_source)
+        return;
+
     /// Everything below is needed only for text indexes.
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    const auto & indexes = indexes_source->getIndexes();
     if (!indexes || std::ranges::none_of(indexes->skip_indexes.useful_indices, [](const auto & index) { return index.index->isTextIndex(); }))
         return;
 
@@ -1132,7 +1143,11 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 ///
 /// See TextIndexDAGReplacer class for more details.
 void processAndOptimizeTextIndexFunctions(
-    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
+    const Stack & stack,
+    QueryPlan::Nodes & nodes,
+    bool direct_read_from_text_index,
+    const FindSingleNodeRead & find_single_node_read,
+    const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1143,7 +1158,7 @@ void processAndOptimizeTextIndexFunctions(
     /// analyzed skip indexes; the rest are filled in from the index definitions, so the rewrite also covers the
     /// SELECT list, steps above the scan, and queries that did not run skip-index analysis.
     TextIndexReadInfos text_index_infos;
-    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_infos);
+    collectTextIndexReadInfos(read_from_merge_tree_step, find_single_node_read, text_index_infos);
     collectTextIndexInjectInfos(read_from_merge_tree_step, text_index_infos);
     if (text_index_infos.empty())
         return;

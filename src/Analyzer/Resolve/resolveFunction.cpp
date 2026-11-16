@@ -2194,7 +2194,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                IdentifierResolveScope & exists_subquery_scope = createIdentifierResolveScope(new_exists_argument, &scope /*parent_scope*/);
+                exists_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, exists_subquery_scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
