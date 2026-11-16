@@ -5,6 +5,10 @@ SELECT x FROM format(RowBinary, 'x JSON(a UInt8)', unhex('02016105016100' || '01
 SELECT x FROM format(RowBinary, 'x JSON(a String)', unhex('020161013101610132' || '0101610133'));
 SELECT x FROM format(RowBinary, 'x JSON(a Variant(String, UInt8))', unhex('020161010501610101' || '0101610109'));
 SELECT x FROM format(RowBinary, 'x JSON', unhex('0201611501310161150132' || '010161150133'));
+SELECT x FROM format(RowBinary, 'x JSON', unhex('02016115013101611e2a021501010105' || '010161150133'));
+SELECT x FROM format(RowBinary, 'x JSON(max_dynamic_paths=0)', unhex('0201611501390161150131' || '010161150133'));
+SELECT x FROM format(RowBinary, 'x JSON(max_dynamic_paths=0)', unhex('020161000161150139' || '010161150133'));
+SELECT x FROM format(RowBinary, 'x JSON(max_dynamic_paths=0)', unhex('03016215013301611501320162150131' || '010161150133'));
 
 DROP TABLE IF EXISTS t_json_dup_rowbinary;
 CREATE TABLE t_json_dup_rowbinary (id UInt8, x JSON) ENGINE = MergeTree ORDER BY id;
@@ -15,3 +19,4 @@ DROP TABLE t_json_dup_rowbinary;
 SET type_json_skip_duplicated_paths = 0;
 SELECT x FROM format(RowBinary, 'x JSON(a UInt8)', unhex('02016105016100')); -- { serverError INCORRECT_DATA }
 SELECT x FROM format(RowBinary, 'x JSON', unhex('0201611501310161150132')); -- { serverError INCORRECT_DATA }
+SELECT x FROM format(RowBinary, 'x JSON(max_dynamic_paths=0)', unhex('020161000161150139')); -- { serverError INCORRECT_DATA }
