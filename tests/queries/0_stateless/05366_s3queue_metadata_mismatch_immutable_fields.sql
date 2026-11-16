@@ -138,6 +138,11 @@ SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE 
 ALTER TABLE tq_a MODIFY SETTING processing_threads_num = 2;
 ALTER TABLE tq_b MODIFY SETTING processing_threads_num = 1;
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'processing_threads_num' ORDER BY table;
+-- `parallel_inserts` is not stored in keeper, so an `ALTER` of another setting keeps it in the definition.
+CREATE TABLE tq_p (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_p/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_p', parallel_inserts = 1;
+ALTER TABLE tq_p MODIFY SETTING polling_max_timeout_ms = 2000;
+SELECT create_table_query LIKE '%parallel_inserts = 1%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_p';
+DROP TABLE tq_p;
 
 -- Set `after_processing` to `keep` directly in keeper, as another server would. The in-memory metadata of this server
 -- still has `delete`, and `tq_b` must still attach.

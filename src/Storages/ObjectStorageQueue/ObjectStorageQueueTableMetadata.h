@@ -128,7 +128,6 @@ struct ObjectStorageQueueTableMetadata
             "after_processing",
             "loading_retries",
             "processing_threads_num",
-            "parallel_inserts",
             "tracked_files_limit",
             "tracked_file_ttl_sec",
             "tracked_files_ttl_sec",
