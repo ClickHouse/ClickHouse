@@ -6,6 +6,8 @@ description: '在本指南中，我们将首先介绍 ClickHouse 如何通过分
 doc_type: '参考'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="introduction">
   ## 简介
 </div>
@@ -30,15 +32,7 @@ ClickHouse 处理查询的速度极快，但这些查询是如何
 每个分片都会执行相应的查询。被查询的分布式表所在服务器
 会对数据进行聚合，并向客户端返回响应：
 
-<div className="ch-image-md">
-
-<Frame>
-
-![分片架构](/images/deployment-guides/parallel-replicas-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="分片架构" />
 
 上图展示了客户端查询分布式表时会发生什么：
 
@@ -78,15 +72,7 @@ ClickHouse Cloud 的架构与上文介绍的架构有很大不同。
 
 下图展示了 ClickHouse Cloud 的架构：
 
-<div className="ch-image-md">
-
-<Frame>
-
-![非分片架构](/images/deployment-guides/parallel-replicas-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="非分片架构" />
 
 这种架构让我们几乎可以瞬间添加和移除副本，
 从而确保集群具备极高的可扩展性。右侧所示的 ClickHouse
@@ -99,21 +85,15 @@ Keeper 集群为元数据提供了单一事实来源。
 分片架构中，这一点很容易理解，因为每个分片实际上都可以
 在部分数据子集上执行查询。那么在没有分片的情况下，它是如何工作的呢？
 
-## 介绍并行副本 {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## 介绍并行副本
+</div>
 
 要通过多台服务器并行执行查询，首先需要能够将其中一台服务器指定为协调器。协调器负责创建待执行的任务列表，确保这些任务全部得到执行、完成聚合，并将结果返回给客户端。与大多数分布式系统一样，这一角色通常由接收初始查询的节点承担。我们还需要定义工作单元。在分片架构中，工作单元是分片，即数据的一个子集。而在并行副本中，我们将使用表中的一小部分，也就是[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)，作为工作单元。
 
 现在，让我们借助下图看看它在实际中是如何工作的：
 
-<div className="ch-image-md">
-
-<Frame>
-
-![并行副本](/images/deployment-guides/parallel-replicas-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="并行副本" />
 
 使用并行副本时：
 
@@ -162,19 +142,13 @@ Keeper 集群为元数据提供了单一事实来源。
 
 我们将在接下来的章节中说明如何克服这些因素。
 
-### 通知 {#announcements}
+<div id="announcements">
+  ### 通知
+</div>
 
 为了解决上述列表中的 (1) 和 (2)，我们引入了“通知”这一概念。下面通过下图来说明其工作方式：
 
-<div className="ch-image-md">
-
-<Frame>
-
-![通知](/images/deployment-guides/parallel-replicas-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="通知" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -203,7 +177,9 @@ Keeper 集群为元数据提供了单一事实来源。
   </li>
 </ol>
 
-### 动态协调 {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### 动态协调
+</div>
 
 为了解决长尾延迟问题，我们引入了动态协调。这意味着，
 不会在一次请求中将所有粒度都发送给某个副本，而是每个副本
@@ -215,15 +191,7 @@ Keeper 集群为元数据提供了单一事实来源。
 
 下图展示了动态协调的工作方式：
 
-<div className="ch-image-md">
-
-<Frame>
-
-![动态协调 - 第 1 部分](/images/deployment-guides/parallel-replicas-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="动态协调 - 第 1 部分" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -236,15 +204,7 @@ Keeper 集群为元数据提供了单一事实来源。
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![动态协调 - 第 2 部分](/images/deployment-guides/parallel-replicas-6.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="动态协调 - 第 2 部分" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -257,15 +217,7 @@ Keeper 集群为元数据提供了单一事实来源。
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![动态协调 - 第 3 部分](/images/deployment-guides/parallel-replicas-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="动态协调 - 第 3 部分" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -345,7 +297,9 @@ Keeper 集群为元数据提供了单一事实来源。
 “窃取”按哈希原本应分配给该副本的任务，以降低
 长尾延迟。
 
-### 限制
+<div id="limitations">
+  ### 限制
+</div>
 
 此功能存在一些已知限制，其中较为主要的限制记录在
 本节中。
@@ -375,8 +329,11 @@ Keeper 集群为元数据提供了单一事实来源。
 | `cluster_for_parallel_replicas`                    | 用于并行副本的集群名称；如果你使用的是 ClickHouse Cloud，请使用 `default`。                                                     |
 | `max_parallel_replicas`                            | 在多个副本上执行查询时可使用的最大副本数；如果指定的数值小于集群中的副本数，则会随机选择节点。该值也可以 overcommit，以适应横向扩缩容。                               |
 | `parallel_replicas_min_number_of_rows_per_replica` | 有助于根据需要处理的行数限制所使用的副本数，使用的副本数由以下公式确定：<br /> `estimated rows to read` / `min_number_of_rows_per_replica`。 |
+| `enable_analyzer`                                  | 仅在启用 analyzer 时，才支持使用并行副本执行查询                                                                           |
 
-## 排查并行副本问题
+<div id="investigating-issues-with-parallel-replicas">
+  ## 排查并行副本问题
+</div>
 
 你可以在
 [`system.query_log`](/zh/reference/system-tables/query_log) 表中查看每个查询使用了哪些设置。你还可以查看 [`system.events`](/zh/reference/system-tables/events)
@@ -538,15 +495,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![未使用 parallel_replica 的 EXPLAIN](/images/deployment-guides/parallel-replicas-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="未使用 parallel_replica 的 EXPLAIN" />
 
 现在再看启用并行副本的情况：
 
@@ -561,12 +510,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![使用 parallel_replica 的 EXPLAIN](/images/deployment-guides/parallel-replicas-9.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="使用 parallel_replica 的 EXPLAIN" />

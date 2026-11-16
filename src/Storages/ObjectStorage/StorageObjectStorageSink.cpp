@@ -61,9 +61,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     SharedHeader sample_block_,
     ContextPtr context,
     const String & format,
-    const String & compression_method,
-    FormatFilterInfoPtr format_filter_info,
-    bool fail_if_exists)
+    const String & compression_method)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
@@ -71,16 +69,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
-    auto write_settings = context->getWriteSettings();
-    /// HDFS rejects conditional writes, so it keeps writing unconditionally.
-    if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
-    {
-        write_settings.object_storage_write_if_none_match = "*";
-        write_settings.object_storage_write_if_none_match_best_effort = true;
-    }
-
     auto buffer = object_storage->writeObject(
-        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
@@ -89,8 +79,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
         settings[Setting::snappy_mode]);
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        format, *write_buf, *sample_block, context, format_settings_, std::move(format_filter_info));
+    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -196,9 +185,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
         configuration->format,
-        configuration->compression_method,
-        /* format_filter_info */ nullptr,
-        /* fail_if_exists */ query_settings.create_new_file_on_insert && !query_settings.truncate_on_insert);
+        configuration->compression_method);
 }
 
 }

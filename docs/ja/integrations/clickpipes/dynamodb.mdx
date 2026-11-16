@@ -6,10 +6,11 @@ keywords: ['DynamoDB']
 title: 'DynamoDB から ClickHouse への CDC'
 show_related_blogs: true
 doc_type: 'guide'
-hidden: true
 ---
 
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 このページでは、ClickPipes を使用して DynamoDB から ClickHouse への CDC (変更データキャプチャ) を設定する方法を説明します。このインテグレーションは、次の 2 つのコンポーネントで構成されています。
 
@@ -26,30 +27,14 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
     まず、変更をリアルタイムで取得するために、DynamoDB テーブルで Kinesis Stream を有効にします。データの取りこぼしを防ぐため、スナップショットを作成する前にこれを行います。
     AWS のガイドは[こちら](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)にあります。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
   </Step>
 
   <Step title="スナップショットを作成する" id="2-create-the-snapshot">
     次に、DynamoDB テーブルのスナップショットを作成します。これは、AWS から S3 にエクスポートすることで実行できます。AWS のガイドは[こちら](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html)にあります。
     **DynamoDB JSON フォーマットで「Full export」を実行してください。**
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB S3 Export](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="DynamoDB S3 Export" border />
   </Step>
 
   <Step title="スナップショットを ClickHouse に読み込む" id="3-load-the-snapshot-into-clickhouse">
@@ -142,15 +127,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
       * `ApproximateCreationDateTime`: `version`
       * 以下に示すように、他のフィールドを適切な宛先カラムにマッピングします
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![DynamoDB カラムのマッピング](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="DynamoDB カラムのマッピング" border />
   </Step>
 
   <Step title="クリーンアップ（任意）" id="5-cleanup-optional">

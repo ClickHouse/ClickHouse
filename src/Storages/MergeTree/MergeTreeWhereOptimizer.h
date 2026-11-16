@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -19,6 +16,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class ASTSelectQuery;
 class ASTFunction;
 class MergeTreeData;
 struct StorageInMemoryMetadata;
@@ -39,7 +37,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
-        UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes_,
+        std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageSnapshotPtr & storage_snapshot,
         ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
@@ -47,23 +45,19 @@ public:
         bool supported_columns_include_subcolumns_,
         LoggerPtr log_);
 
+    void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
+
     struct FilterActionsOptimizeResult
     {
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes;
-        ListWithMemoryTracking<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
+        std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
+        std::list<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
         bool fully_moved_to_prewhere = false;
     };
 
-    /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
-    /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
-    /// during the scan to them (see `extractStringValueFilters`).
-    /// `top_k_filter_column` is the column of the `__topKFilter` that will be prepended to PREWHERE, empty if none.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
-        bool is_final,
-        const NameSet & columns_read_before_filter = {},
-        const String & top_k_filter_column = {});
+        bool is_final);
 
 private:
     struct Condition
@@ -97,9 +91,6 @@ private:
         /// hence a column of unknown size is charged an estimated per-row size, never a row count.
         double bytes_per_rejected_row = 0;
 
-        /// Every conjunct is a join runtime filter, which is estimated to pass every row.
-        bool is_runtime_filter = false;
-
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -117,7 +108,7 @@ private:
             }
             return fmt::format(
                 "Condition(exp:{} viable: {}, expensive: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, is_runtime_filter: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
+                "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
                 expensive,
@@ -125,15 +116,13 @@ private:
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
-                is_runtime_filter,
                 bytes_per_rejected_row,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(
-                !viable, expensive, !good, -min_position_in_primary_key, is_runtime_filter, bytes_per_rejected_row, table_columns.size());
+            return std::make_tuple(!viable, expensive, !good, -min_position_in_primary_key, bytes_per_rejected_row, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -154,9 +143,6 @@ private:
         bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
-        bool apply_string_filters_during_scan = false;
-        const NameSet * columns_read_before_filter = nullptr;
-        String top_k_filter_column;
     };
 
     struct OptimizeResult
@@ -172,6 +158,11 @@ private:
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
+    /// Reconstruct AST from conditions
+    static ASTPtr reconstructAST(const Conditions & conditions);
+
+    void optimizeArbitrary(ASTSelectQuery & select) const;
+
     UInt64 getColumnsSize(const NameSet & columns) const;
 
     double approximateBytesPerRow(const NameSet & columns) const;
@@ -179,15 +170,11 @@ private:
 
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
-    bool isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const;
-
-    /// Whether the condition is a substring search on a String column that can be used as
-    /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
-    /// (see `extractStringValueFilters`). Such a condition is worth moving to PREWHERE even when
-    /// it involves all queried columns: the reader then skips copying the non-matching values.
-    bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+    bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
 
     bool isSortingKey(const String & column_name) const;
+
+    bool isConstant(const ASTPtr & expr) const;
 
     bool isSubsetOfTableColumns(const NameSet & columns) const;
 
@@ -198,6 +185,8 @@ private:
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
+
+    static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
     /// Whether the expression contains a function that reports `isExpensive`.
     static bool isExpensiveExpression(const RPNBuilderTreeNode & node);
@@ -212,13 +201,10 @@ private:
     const NameToIndexMap primary_key_names_positions;
     StorageMetadataPtr storage_metadata;
     LoggerPtr log;
-    UnorderedMapWithMemoryTracking<std::string, UInt64> column_sizes;
+    std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
     UInt64 total_rows = 0;
 };
-
-/// The sorting key columns a condition may filter by before `FINAL` without changing its result
-NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot);
 
 
 }

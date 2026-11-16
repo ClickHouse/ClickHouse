@@ -24,7 +24,6 @@ struct ServerSettingsImpl;
 #define SERVER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AsynchronousMetricsKeyValuesMode) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
     M(CLASS_NAME, Float) \
@@ -35,8 +34,6 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, SeccompMode) \
-    M(CLASS_NAME, FilesystemIsolationMode) \
 
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)

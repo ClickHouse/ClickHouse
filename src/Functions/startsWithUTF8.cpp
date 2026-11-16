@@ -27,9 +27,9 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "Usage example",
         "SELECT startsWithUTF8('приставка', 'при')",
         R"(
-┌─startsWithUTF8('приставка', 'при')─┐
-│                                  1 │
-└────────────────────────────────────┘
+┌─startsWithUT⋯ка', 'при')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };
@@ -58,9 +58,9 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "Usage example",
         "SELECT startsWithCaseInsensitiveUTF8('приставка', 'при')",
         R"(
-┌─startsWithCaseInsensitiveUTF8('приставка', 'при')─┐
-│                                                 1 │
-└───────────────────────────────────────────────────┘
+┌─startsWithUT⋯ка', 'при')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

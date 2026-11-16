@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -39,7 +38,7 @@ private:
     size_t max_bytes_to_buffer;
     size_t limit;
 
-    QueueWithMemoryTracking<Chunk> chunks;
+    std::queue<Chunk> chunks;
     size_t num_buffered_rows = 0;
     size_t num_buffered_bytes = 0;
     size_t num_processed_rows = 0;

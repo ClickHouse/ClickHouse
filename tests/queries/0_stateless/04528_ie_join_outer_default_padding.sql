@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- OUTER/SEMI/ANTI IEJoin with the default `join_use_nulls = 0`: unmatched rows are padded
 -- with the default values of the other side's types (0 for numbers, '' for strings, NULL only
 -- for columns that are Nullable themselves). The band condition `l.k > r.lo AND l.k < r.hi`

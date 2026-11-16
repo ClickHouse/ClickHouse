@@ -710,12 +710,6 @@ RegexpJITMatcher getRegexpJITMatcher(
     if (min_count_to_compile == std::numeric_limits<size_t>::max())
         return {};
 
-    /// Without a compiled-expression cache nothing outlives the call that compiled the matcher, so a hot
-    /// pattern pays a full LLVM compile on every call, serialised on one process-wide lock. Stay on RE2.
-    auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache();
-    if (!compiled_expression_cache)
-        return {};
-
     ParseFlags flags;
     flags.case_insensitive = case_insensitive;
     flags.dot_all = dot_all;
@@ -741,13 +735,21 @@ RegexpJITMatcher getRegexpJITMatcher(
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        auto [entry, _] = compiled_expression_cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
+        if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
         {
-            auto compiled = compileMatcher(*program);
+            auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
+            {
+                auto compiled = compileMatcher(*program);
+                compiled_here = true;
+                return compiled;
+            });
+            holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
+        }
+        else
+        {
+            holder = compileMatcher(*program);
             compiled_here = true;
-            return compiled;
-        });
-        holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
+        }
     }
     catch (...)
     {
