@@ -56,6 +56,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/Exception.h>
@@ -130,6 +131,7 @@ namespace Setting
     extern const SettingsBool engine_file_skip_empty_files;
     extern const SettingsBool engine_file_skip_failed_data_files;
     extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsString input_format_record_errors_file_path;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
@@ -2047,8 +2049,9 @@ namespace
     /// - it is a read or seek error that names the input file. A failure to open or to stat a file never
     ///   is: the input file is already open at this point;
     /// - or the format reads the input while it is created (`reads_input`), e.g. the footer of a `Parquet`
-    ///   file. Such formats have no external configuration of this kind. The other formats read the input
-    ///   only while the data is read, after the start of the input has been read separately.
+    ///   file. Such formats have no external configuration of this kind, and their logger of errors is
+    ///   created separately, outside of the skip handling. The other formats read the input only while
+    ///   the data is read, after the start of the input has been read separately.
     /// Errors attributed to the input file are then classified by `isBrokenFileError`.
     /// Only for the errors thrown while the format is created: the errors thrown while the pipeline is
     /// executed are copied to `Exception` by the executor, which loses the path of an `ErrnoException`.
@@ -2670,6 +2673,8 @@ Chunk StorageFileSource::generate()
             /// and fail on a broken file, so it is protected by the same skip handling as reading,
             /// except for the errors of its configuration - see `isErrorOfInputFileWhileCreatingFormat`.
             bool format_reads_input_while_created = false;
+            ContextPtr format_context = getContext();
+            InputFormatErrorsLoggerPtr errors_logger;
             if (getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
             {
                 /// Whether the format has a random-access creator, which reads the input while the format
@@ -2678,6 +2683,19 @@ Chunk StorageFileSource::generate()
                 format_settings_for_check.seekable_read = true;
                 format_reads_input_while_created
                     = FormatFactory::instance().checkIfFormatIsRandomAccessInput(storage->format_name, getContext(), format_settings_for_check);
+
+                if (format_reads_input_while_created
+                    && !getContext()->getSettingsRef()[Setting::input_format_record_errors_file_path].value.empty())
+                {
+                    /// The errors of such a format while it is created are attributed to the input file, but
+                    /// `FormatFactory::getInput` also creates the logger of `input_format_record_errors_file_path`,
+                    /// which opens its own file and creates an output format, which may run a schema query.
+                    /// So the logger is created here, where its errors propagate, and not by `getInput`.
+                    auto context_without_errors_logger = Context::createCopy(getContext());
+                    context_without_errors_logger->setSetting("input_format_record_errors_file_path", String{});
+                    format_context = context_without_errors_logger;
+                    errors_logger = std::make_shared<InputFormatErrorsLogger>(getContext());
+                }
 
                 if (!format_reads_input_while_created)
                 {
@@ -2704,7 +2722,7 @@ Chunk StorageFileSource::generate()
                         storage->format_name,
                         *read_buf,
                         block_for_format,
-                        getContext(),
+                        format_context,
                         max_block_size,
                         object_with_metadata,
                         storage->format_settings,
@@ -2724,7 +2742,7 @@ Chunk StorageFileSource::generate()
                         storage->format_name,
                         *read_buf,
                         block_for_format,
-                        getContext(),
+                        format_context,
                         max_block_size,
                         storage->format_settings,
                         parser_shared_resources,
@@ -2734,6 +2752,8 @@ Chunk StorageFileSource::generate()
                         need_only_count);
                 }
 
+                if (errors_logger)
+                    input_format->setErrorsLogger(errors_logger);
                 input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
                 input_format->setSerializationHints(serialization_hints);
 
