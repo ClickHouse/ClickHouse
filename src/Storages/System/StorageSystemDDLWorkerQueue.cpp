@@ -235,6 +235,20 @@ static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & co
     res_columns[col++]->insert(Field{});
 }
 
+static void fillStatusColumnsWithError(MutableColumns & res_columns, size_t & col, const ExecutionStatus & error)
+{
+    /// status
+    res_columns[col++]->insert(static_cast<Int8>(Status::UNKNOWN));
+    /// exception_code
+    res_columns[col++]->insert(error.code);
+    /// exception_text
+    res_columns[col++]->insert(error.message);
+    /// query_finish_time
+    res_columns[col++]->insert(Field{});
+    /// query_duration_ms
+    res_columns[col++]->insert(Field{});
+}
+
 static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
                                 Coordination::GetResponse & finished_data,
                                 UInt64 query_create_time_ms)
@@ -302,15 +316,16 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
 
         DDLTask task{ddl_task_paths[i], ddl_zookeeper_path / ddl_task_paths[i]};
+        std::optional<ExecutionStatus> parse_error;
         try
         {
             task.entry.parse(task_info.data);
         }
         catch (const Exception & e)
         {
-            /// One unreadable entry, e.g. of an unsupported format version, must not hide the rest of the queue.
-            LOG_WARNING(getLogger("StorageSystemDDLWorkerQueue"), "Skipping DDL entry {} that cannot be parsed: {}", task.entry_path, e.message());
-            continue;
+            /// Show an unreadable entry, e.g. of an unsupported format version, with what was parsed and its error.
+            LOG_WARNING(getLogger("StorageSystemDDLWorkerQueue"), "Cannot parse DDL entry {}: {}", task.entry_path, e.message());
+            parse_error.emplace(e.code(), e.message());
         }
 
         ASTPtr query = tryParseDDLQuery(context, task);
@@ -420,7 +435,10 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             res_columns[col++]->insert(Field{});
             /// port
             res_columns[col++]->insert(Field{});
-            fillStatusColumnsWithNulls(res_columns, col, Status::UNKNOWN);
+            if (parse_error)
+                fillStatusColumnsWithError(res_columns, col, *parse_error);
+            else
+                fillStatusColumnsWithNulls(res_columns, col, Status::UNKNOWN);
         }
     }
 }
