@@ -60,6 +60,7 @@ public:
 private:
     void start();
     bool hasNothingPending();
+    void reportFinalCursor() const;
 
     Params params;
     StorageSnapshotPtr storage_snapshot;

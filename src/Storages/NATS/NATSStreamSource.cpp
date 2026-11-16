@@ -142,6 +142,18 @@ bool NATSStreamSource::hasNothingPending()
     return info->NumPending == 0 && info->Delivered.Consumer <= received_messages;
 }
 
+void NATSStreamSource::reportFinalCursor() const
+{
+    /// Only an incremental refresh of a materialized view has the holder of the cursor.
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor || last_sequence == 0)
+        return;
+
+    auto cursor = std::make_shared<CursorTreeNode>();
+    cursor->setValue(params.stream_name, static_cast<Int64>(last_sequence));
+    streaming_cursor->merge(cursor);
+}
+
 std::optional<Chunk> NATSStreamSource::tryGenerate()
 {
     /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
@@ -208,6 +220,7 @@ Chunk NATSStreamSource::generate()
 
             if (bounded && hasNothingPending())
             {
+                reportFinalCursor();
                 stream_finished = true;
             }
             break;
@@ -258,6 +271,7 @@ Chunk NATSStreamSource::generate()
 
         if (bounded && caught_up)
         {
+            reportFinalCursor();
             stream_finished = true;
             break;
         }

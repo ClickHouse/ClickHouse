@@ -3033,6 +3033,24 @@ def test_nats_stream_cursor(nats_cluster):
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 3, "value": 3})]))
     assert query("SELECT key FROM test.nats STREAM CURSOR {'test_stream': 3} LIMIT 1") == "3\n"
 
+    # An incremental refresh appends only the messages published after the previous refresh.
+    instance.query("CREATE TABLE test.nats_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+    instance.query(
+        """CREATE MATERIALIZED VIEW test.nats_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO test.nats_target EMPTY AS SELECT key FROM test.nats"""
+    )
+
+    def refresh():
+        instance.query("SYSTEM REFRESH VIEW test.nats_mv")
+        instance.query("SYSTEM WAIT VIEW test.nats_mv")
+        return instance.query("SELECT count(), sum(key) FROM test.nats_target")
+
+    assert refresh() == "4\t6\n"
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 4, "value": 4})]))
+    assert refresh() == "5\t10\n"
+    assert refresh() == "5\t10\n"
+    instance.query("DROP TABLE test.nats_mv")
+
     # The core NATS has no persistence, so there is nothing to stream from.
     instance.query(
         """

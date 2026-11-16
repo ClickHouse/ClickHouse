@@ -47,6 +47,7 @@ public:
     /// A streaming query reads a JetStream stream with its own ephemeral consumer, see `NATSStreamSource`.
     /// The core NATS has no persistence, so there is nothing to stream from with a cursor.
     bool supportsStreaming() const override { return !getStreamName().empty(); }
+    bool reportsStreamingCursor() const override { return supportsStreaming(); }
 
     bool noPushingToViewsOnInserts() const override { return true; }
 

@@ -1730,7 +1730,7 @@ A streaming query (`SELECT ... FROM nats_table STREAM`, an experimental feature 
 SELECT * FROM nats_table STREAM CURSOR {'events_stream': 41}
 ```
 
-Without the cursor, the stream is read from the beginning. `STREAM BOUNDED` finishes once it has read the messages pending at its start. The core NATS keeps no messages, so a table without `nats_stream` does not support `STREAM`. `WATERMARK` is not supported.
+Without the cursor, the stream is read from the beginning. `STREAM BOUNDED` finishes once it has read the messages pending at its start, so such a table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The core NATS keeps no messages, so a table without `nats_stream` does not support `STREAM`. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
