@@ -1671,7 +1671,7 @@ BlockIO InterpreterInsertQuery::execute()
             table->getName());
 
     if (!query.table_function && !skip_target_insert_access_check)
-        checkAccessToExpectedColumns(context, query.table_id);
+        checkAccessToExpectedColumns(context, query.table_id, *table);
 
     /// The table named is checked and the requirements consumed: the writes it makes on its own, into inner tables
     /// or views, are its own. Only a Distributed table on the first hop forwards them, for each shard to check its table.
@@ -1704,13 +1704,14 @@ BlockIO InterpreterInsertQuery::execute()
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();
 
-            auto distributed = table->distributedWrite(query, context);
-            if (distributed)
-            {
-                res.pipeline = std::move(*distributed);
-            }
             /// Other nodes would insert into their own tables, which the requirements consumed here did not check.
             const bool can_insert_on_other_nodes = consumed_insert_expectations.empty();
+            if (can_insert_on_other_nodes)
+            {
+                auto distributed = table->distributedWrite(query, context);
+                if (distributed)
+                    res.pipeline = std::move(*distributed);
+            }
             if (!res.pipeline.initialized() && can_insert_on_other_nodes)
             {
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)

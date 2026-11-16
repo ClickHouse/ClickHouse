@@ -42,3 +42,35 @@ ORDER BY l.log_comment;
 SELECT * FROM insert_expected_offload_dst ORDER BY x;
 
 DROP TABLE insert_expected_offload_dst;
+
+-- An Alias table hands the INSERT SELECT to its target. A Distributed target would send it to the shards with the
+-- requirement of the alias, which no table of a shard meets.
+DROP TABLE IF EXISTS insert_expected_offload_alias;
+DROP TABLE IF EXISTS insert_expected_offload_dst_dist;
+DROP TABLE IF EXISTS insert_expected_offload_src_dist;
+DROP TABLE IF EXISTS insert_expected_offload_dst_local;
+DROP TABLE IF EXISTS insert_expected_offload_src_local;
+
+CREATE TABLE insert_expected_offload_src_local (x UInt8) ENGINE = Memory;
+CREATE TABLE insert_expected_offload_dst_local (x UInt8) ENGINE = Memory;
+CREATE TABLE insert_expected_offload_src_dist AS insert_expected_offload_src_local
+ENGINE = Distributed(test_shard_localhost, currentDatabase(), insert_expected_offload_src_local);
+CREATE TABLE insert_expected_offload_dst_dist AS insert_expected_offload_dst_local
+ENGINE = Distributed(test_shard_localhost, currentDatabase(), insert_expected_offload_dst_local);
+CREATE TABLE insert_expected_offload_alias ENGINE = Alias(currentDatabase(), insert_expected_offload_dst_dist)
+SETTINGS allow_experimental_alias_table_engine = 1;
+
+INSERT INTO insert_expected_offload_src_local VALUES (5);
+INSERT INTO insert_expected_offload_alias SELECT x FROM insert_expected_offload_src_dist
+SETTINGS insert_expected_table_engine = 'Alias', parallel_distributed_insert_select = 2, prefer_localhost_replica = 0,
+    distributed_foreground_insert = 1;
+INSERT INTO insert_expected_offload_alias SELECT x + 1 FROM insert_expected_offload_src_dist
+SETTINGS insert_expected_table_engine = 'Distributed', parallel_distributed_insert_select = 2, prefer_localhost_replica = 0,
+    distributed_foreground_insert = 1; -- { serverError UNEXPECTED_TABLE_ENGINE }
+SELECT * FROM insert_expected_offload_dst_local ORDER BY x;
+
+DROP TABLE insert_expected_offload_alias;
+DROP TABLE insert_expected_offload_dst_dist;
+DROP TABLE insert_expected_offload_src_dist;
+DROP TABLE insert_expected_offload_dst_local;
+DROP TABLE insert_expected_offload_src_local;
