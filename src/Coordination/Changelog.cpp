@@ -153,7 +153,9 @@ KeeperMoveResult moveChangelogBetweenDisks(
 /// includes a destination that existed before the move (for example, a retained recovery copy): a
 /// move that failed to synchronize its marker may still have published a marker it matches. Throws if
 /// the destination cannot be removed.
-/// Throws if the source disk is not local: appending to it is supported only for `DiskLocal`.
+/// Throws if the source disk is not local: appending to it is supported only for `DiskLocal`. Then the
+/// destination is kept: nothing is appended to the source, so it cannot lose entries, and it may be a
+/// retained recovery copy.
 void moveChangelogBetweenDisksForAppend(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,
@@ -181,19 +183,6 @@ void moveChangelogBetweenDisksForAppend(
     }
 
     chassert(description->disk != disk_to);
-    if (disk_to->existsFile(path_to))
-    {
-        LOG_WARNING(
-            getLogger("Changelog"),
-            "Removing unpublished copy {} of changelog {} from disk {} before appending to it on disk {}",
-            path_to,
-            description->path,
-            disk_to->getName(),
-            description->disk->getName());
-    }
-    /// A leftover move marker without its destination is an orphan that startup removes.
-    removeKeeperFileIfExists(disk_to, path_to);
-
     /// An append to object storage publishes its metadata only on finalization, so `sync` does not
     /// make the appended entries durable. Also, `ChangelogWriter` knows the initial size of the file
     /// only for `WriteBufferFromFile`, so the offsets of appended entries would be wrong, and reading
@@ -207,6 +196,19 @@ void moveChangelogBetweenDisksForAppend(
             description->disk->getName(),
             disk_to->getName(),
             description->disk->getName());
+
+    if (disk_to->existsFile(path_to))
+    {
+        LOG_WARNING(
+            getLogger("Changelog"),
+            "Removing unpublished copy {} of changelog {} from disk {} before appending to it on disk {}",
+            path_to,
+            description->path,
+            disk_to->getName(),
+            description->disk->getName());
+    }
+    /// A leftover move marker without its destination is an orphan that startup removes.
+    removeKeeperFileIfExists(disk_to, path_to);
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";

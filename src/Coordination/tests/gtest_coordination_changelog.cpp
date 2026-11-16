@@ -5625,4 +5625,70 @@ TYPED_TEST(CoordinationChangelogTest, StartupRejectsAppendingOnNonLocalSourceDis
     }
 }
 
+TYPED_TEST(CoordinationChangelogTest, StartupRejectingAppendOnNonLocalSourceKeepsRetainedCopy)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    ChangelogDirTest regular_meta("./logs_reject_append_retained_copy_regular_meta");
+    ChangelogDirTest regular_objects("./logs_reject_append_retained_copy_regular_objects");
+    ChangelogDirTest latest("./logs_reject_append_retained_copy_latest");
+    auto regular_disk = createLocalObjectStorageLogDisk(regular_meta.path, regular_objects.path + "/");
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    auto failing_latest_disk = std::make_shared<MarkerWriteFailingDisk>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_10.bin";
+
+    auto coordination_settings = std::make_shared<DB::CoordinationSettings>();
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    this->keeper_context = std::make_shared<DB::KeeperContext>(true, coordination_settings);
+    this->keeper_context->setLocalLogsPreprocessed();
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(
+            this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 3; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+
+    /// The latest disk holds an identical copy with a marker of an unknown version, so startup
+    /// retains that copy and selects the one on object storage.
+    regular_disk->copyFile(String(path), *latest_disk, String(path), {});
+    {
+        String marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(regular_disk, String(path)));
+        marker_contents[8] = 2;
+        auto marker = latest_disk->writeFile("tmp_" + String(path));
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
+
+    /// The move of the selected changelog to the latest disk fails, and appending to it on object
+    /// storage is not supported. Startup fails without removing the retained copy.
+    this->keeper_context->setLatestLogDisk(failing_latest_disk);
+    {
+        DB::Changelog recovered(
+            this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        EXPECT_THROW(recovered.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_EQ(failing_latest_disk->failed_marker_writes.load(), 1);
+    }
+    EXPECT_TRUE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(path)));
+
+    /// Once the move succeeds, all entries are available on the latest disk.
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog restarted(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 4);
+    EXPECT_FALSE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(path)));
+}
+
 #endif
