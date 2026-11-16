@@ -467,6 +467,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
         }
+        else
+            memset(&chars[index * n], 0, n);
 
         --index;
     }
