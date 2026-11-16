@@ -24,6 +24,10 @@ public:
 
     void visit(const ASTPtr & ast)
     {
+        /// Not a child, see ASTWithAlias::parametrised_alias.
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get()); with_alias && with_alias->parametrised_alias)
+            visitQueryParameter(*with_alias->parametrised_alias);
+
         if (const auto & query_parameter = ast->as<ASTQueryParameter>())
             visitQueryParameter(*query_parameter);
         else if (const auto * set_query = ast->as<ASTSetQuery>())

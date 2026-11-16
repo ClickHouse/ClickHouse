@@ -364,6 +364,10 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
+    {
         setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
+        /// Substituted: from now on the node formats and hashes with the concrete alias.
+        ast_with_alias->parametrised_alias.reset();
+    }
 }
 }
