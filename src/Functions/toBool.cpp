@@ -22,30 +22,30 @@ namespace
             return std::make_shared<FunctionToBool>();
         }
 
-        std::string getName() const override
+        [[nodiscard]] std::string getName() const override
         {
             return name;
         }
 
-        size_t getNumberOfArguments() const override { return 1; }
-        bool useDefaultImplementationForConstants() const override { return true; }
-        bool useDefaultImplementationForNulls() const override { return false; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
         /// A `LowCardinality` dictionary always contains the default value of its type (an empty
         /// string for `LowCardinality(String)`), which cannot be converted to `Bool`. Let the
         /// default implementation for `LowCardinality` cast only the dictionary entries referenced
         /// by the rows, so the dictionary is still converted once instead of row by row, while
         /// invalid non-`NULL` values keep throwing.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return
                 "(Nullable(Any)) -> Nullable(\"Bool\")"
                 " OR (Any) -> \"Bool\"";
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
         {
             const String target_name = result_type->getName();
             ColumnsWithTypeAndName cast_args

@@ -24,7 +24,7 @@ struct StringHashMapCell<StringKey16, TMapped> : public HashMapCell<StringKey16,
     using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
-    bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
+    [[nodiscard]] bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
 
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).
@@ -44,7 +44,7 @@ struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24,
     using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
-    bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
+    [[nodiscard]] bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
 
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).

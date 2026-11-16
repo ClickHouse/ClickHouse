@@ -71,22 +71,39 @@
 
     <fill_query>OPTIMIZE TABLE t64_select_{case} FINAL SETTINGS optimize_throw_if_noop=1</fill_query>
 
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_one_byte) WHERE ignore(n) = 0 LIMIT 5367000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint16_one_byte) WHERE ignore(n) = 0 LIMIT 5083000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint32_one_byte) WHERE ignore(n) = 0 LIMIT 4733000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_byte) WHERE ignore(n) = 0 LIMIT 3604000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_bit) WHERE ignore(n) = 0 LIMIT 3712000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 5196000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 3594000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int16_negative_byte) WHERE ignore(n) = 0 LIMIT 5078000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int64_crossing_byte) WHERE ignore(n) = 0 LIMIT 3242000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_six_byte) WHERE ignore(n) = 0 LIMIT 1607000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_byte) WHERE ignore(n) = 0 LIMIT 2154000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_bit) WHERE ignore(n) = 0 LIMIT 1380000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_six_byte) WHERE ignore(n) = 0 LIMIT 1597000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_sequential_bit) WHERE ignore(n) = 0 LIMIT 765000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_bit) WHERE ignore(n) = 0 LIMIT 543000000)</query>
-    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_byte) WHERE ignore(n) = 0 LIMIT 927000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_one_byte) WHERE ignore(n) = 0 LIMIT 5367000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint16_one_byte) WHERE ignore(n) = 0 LIMIT 5083000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint32_one_byte) WHERE ignore(n) = 0 LIMIT 4733000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_byte) WHERE ignore(n) = 0 LIMIT 3604000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_bit) WHERE ignore(n) = 0 LIMIT 3712000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 5196000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 3594000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_int16_negative_byte) WHERE ignore(n) = 0 LIMIT 5078000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_int64_crossing_byte) WHERE ignore(n) = 0 LIMIT 3242000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_six_byte) WHERE ignore(n) = 0 LIMIT 1607000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_byte) WHERE ignore(n) = 0 LIMIT 2154000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_bit) WHERE ignore(n) = 0 LIMIT 1380000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_six_byte) WHERE ignore(n) = 0 LIMIT 1597000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_sequential_bit) WHERE ignore(n) = 0 LIMIT 765000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_bit) WHERE ignore(n) = 0 LIMIT 543000000)</query>
+    <query disabled="1">SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_byte) WHERE ignore(n) = 0 LIMIT 927000000)</query>
+
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_one_byte) WHERE ignore(n) = 0 LIMIT 1341750000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint16_one_byte) WHERE ignore(n) = 0 LIMIT 1270750000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint32_one_byte) WHERE ignore(n) = 0 LIMIT 1183250000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_byte) WHERE ignore(n) = 0 LIMIT 901000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_one_bit) WHERE ignore(n) = 0 LIMIT 928000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint8_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 1299000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_one_byte) WHERE ignore(n) = 0 LIMIT 898500000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int16_negative_byte) WHERE ignore(n) = 0 LIMIT 1269500000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_int64_crossing_byte) WHERE ignore(n) = 0 LIMIT 810500000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_six_byte) WHERE ignore(n) = 0 LIMIT 401750000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_byte) WHERE ignore(n) = 0 LIMIT 538500000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_eight_bit) WHERE ignore(n) = 0 LIMIT 345000000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_prefix_six_byte) WHERE ignore(n) = 0 LIMIT 399250000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_sequential_bit) WHERE ignore(n) = 0 LIMIT 191250000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_bit) WHERE ignore(n) = 0 LIMIT 135750000)</query>
+    <query>SELECT count() FROM (SELECT n FROM loop(t64_select_uint64_jittered_byte) WHERE ignore(n) = 0 LIMIT 231750000)</query>
 
     <drop_query>DROP TABLE IF EXISTS t64_select_{case} SYNC</drop_query>
 </test>

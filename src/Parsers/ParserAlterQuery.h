@@ -33,10 +33,10 @@ namespace DB
 class ParserAlterQuery : public IParserBase
 {
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const  override{ return "ALTER query"; }
+    [[nodiscard]] const char * getName() const  override{ return "ALTER query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -44,7 +44,7 @@ protected:
 class ParserAlterCommandList : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "a list of ALTER commands"; }
+    [[nodiscard]] const char * getName() const  override{ return "a list of ALTER commands"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
@@ -58,7 +58,7 @@ public:
 class ParserAlterCommand : public IParserBase
 {
 protected:
-    const char * getName() const  override{ return "ALTER command"; }
+    [[nodiscard]] const char * getName() const  override{ return "ALTER command"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
