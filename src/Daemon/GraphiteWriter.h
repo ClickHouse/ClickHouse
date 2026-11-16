@@ -70,7 +70,7 @@ private:
     }
 
     /// Resolves `host` through the DNS cache. Defined out of line to keep `DNSResolver` out of this header.
-    Poco::Net::SocketAddress resolveAddress() const;
+    [[nodiscard]] Poco::Net::SocketAddress resolveAddress() const;
 
     std::string root_path;
 

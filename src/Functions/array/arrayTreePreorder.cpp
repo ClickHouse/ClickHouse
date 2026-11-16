@@ -49,12 +49,12 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayTreePreorder>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t i = 0; i < 2; ++i)
             if (!isArray(arguments[i]))
@@ -72,14 +72,14 @@ public:
         }
 
         /// Check that the elements are comparable.
-        getCommonNestedType(arguments);
+        (void)getCommonNestedType(arguments);
 
         auto array_uint32 = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
         return std::make_shared<DataTypeTuple>(
             DataTypes{array_uint32, array_uint32, array_uint32, array_uint32}, Names{"order", "size", "parent", "depth"});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         auto common_type = std::make_shared<DataTypeArray>(getCommonNestedType({arguments[0].type, arguments[1].type}));
 
@@ -222,7 +222,7 @@ private:
         return false;
     }
 
-    DataTypePtr getCommonNestedType(const DataTypes & arguments) const
+    [[nodiscard]] DataTypePtr getCommonNestedType(const DataTypes & arguments) const
     {
         return getLeastSupertype(DataTypes{
             assert_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),

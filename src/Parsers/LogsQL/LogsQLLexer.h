@@ -34,40 +34,40 @@ public:
     void nextToken();
 
     /// The decoded text of the current token (for quoted tokens - the unquoted and unescaped content).
-    const String & getToken() const { return token; }
+    [[nodiscard]] const String & getToken() const { return token; }
 
     /// The raw text of the current token as it appears in the query.
-    std::string_view getRawToken() const { return raw_token; }
+    [[nodiscard]] std::string_view getRawToken() const { return raw_token; }
 
     /// The raw text of the previous token.
-    const String & getPrevRawToken() const { return prev_raw_token; }
+    [[nodiscard]] const String & getPrevRawToken() const { return prev_raw_token; }
 
     /// Whether the current token was quoted. Quoted tokens are never keywords.
-    bool isQuoted() const { return quoted; }
+    [[nodiscard]] bool isQuoted() const { return quoted; }
 
     /// Whether there was whitespace (or a comment) between the previous and the current token.
-    bool skippedSpace() const { return skipped_space; }
+    [[nodiscard]] bool skippedSpace() const { return skipped_space; }
 
     /// True if there are no more tokens.
-    bool isEnd() const { return raw_token.empty() && current == end; }
+    [[nodiscard]] bool isEnd() const { return raw_token.empty() && current == end; }
 
     /// Case-insensitive comparison of the current token with the given keywords.
     /// Quoted tokens never match keywords.
-    bool isKeyword(std::string_view keyword) const;
-    bool isKeywordAny(const std::vector<std::string_view> & keywords) const;
+    [[nodiscard]] bool isKeyword(std::string_view keyword) const;
+    [[nodiscard]] bool isKeywordAny(const std::vector<std::string_view> & keywords) const;
 
     /// True if the current token finishes a query part: "|", ")", ";" or end of input.
-    bool isQueryPartTrailer() const;
+    [[nodiscard]] bool isQueryPartTrailer() const;
 
     /// Reads a compound token: the current token glued with the following adjacent tokens.
     /// Tokens from `stop_tokens` are not glued. Throws if the current token cannot start a compound token.
     String nextCompoundToken(const std::vector<std::string_view> & stop_tokens = {});
 
     /// The start of the raw text of the current token. Used to determine the consumed part of the query.
-    const char * getTokenBegin() const { return token_begin; }
+    [[nodiscard]] const char * getTokenBegin() const { return token_begin; }
 
     /// Last characters of the query before the current position, for error messages.
-    String context() const;
+    [[nodiscard]] String context() const;
 
     /// Throws SYNTAX_ERROR with the current context appended to the message.
     [[noreturn]] void throwSyntaxError(const String & message) const;
@@ -83,7 +83,7 @@ public:
         bool skipped_space;
     };
 
-    State backupState() const;
+    [[nodiscard]] State backupState() const;
     void restoreState(const State & state);
 
     /// Checks that if the previous token is adjacent (no whitespace in between), it is one of the allowed ones.
@@ -110,7 +110,7 @@ private:
     bool quoted = false;
     bool skipped_space = false;
 
-    bool isAllowedCompoundToken(const std::vector<std::string_view> & stop_tokens) const;
+    [[nodiscard]] bool isAllowedCompoundToken(const std::vector<std::string_view> & stop_tokens) const;
 
     String decodeDoubleQuoted(const char *& pos) const;
     String decodeBacktickQuoted(const char *& pos) const;

@@ -22,9 +22,9 @@ struct FixedHashMapCell
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
-    const Mapped & getMapped() const { return mapped; }
+    [[nodiscard]] const Mapped & getMapped() const { return mapped; }
 
-    bool isZero(const State &) const { return !full; }
+    [[nodiscard]] bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
@@ -41,9 +41,9 @@ struct FixedHashMapCell
         Key key;
         FixedHashMapCell * ptr;
 
-        const Key & getKey() const { return key; }
+        [[nodiscard]] const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
-        const Mapped & getMapped() const { return ptr->mapped; }
+        [[nodiscard]] const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; } /// NOLINT
     };
 };
@@ -67,9 +67,9 @@ struct FixedHashMapImplicitZeroCell
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
-    const Mapped & getMapped() const { return mapped; }
+    [[nodiscard]] const Mapped & getMapped() const { return mapped; }
 
-    bool isZero(const State &) const { return !mapped; }
+    [[nodiscard]] bool isZero(const State &) const { return !mapped; }
     void setZero() { mapped = {}; }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
@@ -86,9 +86,9 @@ struct FixedHashMapImplicitZeroCell
         Key key;
         FixedHashMapImplicitZeroCell * ptr;
 
-        const Key & getKey() const { return key; }
+        [[nodiscard]] const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
-        const Mapped & getMapped() const { return ptr->mapped; }
+        [[nodiscard]] const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; } /// NOLINT
     };
 };
