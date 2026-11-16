@@ -25,15 +25,15 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringBytes>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ResultType, UInt16>)
             return "(String) -> UInt16";
@@ -41,7 +41,7 @@ public:
             return "(String) -> Float64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(column.get());
@@ -57,13 +57,14 @@ public:
         const ColumnString::Chars & data = col_str->getChars();
         const ColumnString::Offsets & offsets = col_str->getOffsets();
 
+        Impl impl;
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * data_ptr = data.data() + prev_offset;
             const size_t size = offsets[i] - prev_offset;
 
-            vec_res[i] = Impl::process(data_ptr, size);
+            vec_res[i] = impl.process(data_ptr, size);
             prev_offset = offsets[i];
         }
 

@@ -38,11 +38,11 @@ public:
 
     bool operator==(const SSHPublicKey &) const;
 
-    bool isEqual(const SSHPublicKey & other) const;
+    [[nodiscard]] bool isEqual(const SSHPublicKey & other) const;
 
-    String getBase64Representation() const;
+    [[nodiscard]] String getBase64Representation() const;
 
-    String getType() const;
+    [[nodiscard]] String getType() const;
 
     static SSHPublicKey createFromBase64(const String & base64, const String & key_type);
 

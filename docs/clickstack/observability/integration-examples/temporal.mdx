@@ -9,7 +9,6 @@ keywords: ['Temporal', 'metrics', 'OTEL', 'ClickHouse Observability']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 
@@ -36,7 +35,15 @@ Monitor Temporal Cloud metrics in ClickHouse Observability using the OTel Promet
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -167,7 +174,15 @@ Once configured, log into ClickHouse Observability and verify metrics are flowin
 2. Filter for `ServiceName:temporal`, select **Last 15 minutes**, and search for metrics starting with `temporal` (e.g., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
 3. You should see metric data points appearing at your configured collection interval
 
-<Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Temporal Metrics" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Temporal Metrics](/images/clickstack/temporal/temporal-metrics.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -183,14 +198,30 @@ To help you get started monitoring Temporal Cloud with ClickHouse Observability,
 2. Upload `temporal-metrics-dashboard.json`.
 3. Map the charts to your **Metrics** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal Metrics dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Temporal Metrics dashboard](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

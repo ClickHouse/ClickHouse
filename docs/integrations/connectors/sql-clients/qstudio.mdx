@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -44,7 +43,15 @@ QStudio is available at https://www.timestored.com/qstudio/download/
 - When you first open QStudio click on the menu options **Server->Add Server** or on the add server button on the toolbar.
 - Then set the details:
 
-<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="QStudio database connection configuration screen showing ClickHouse connection settings" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![QStudio database connection configuration screen showing ClickHouse connection settings](/images/integrations/sql-clients/qstudio-add-connection.webp)
+
+</Frame>
+
+</div>
 
 1.   Server Type: ClickHouse.com
 2.    Note for Host you MUST include https://
@@ -65,7 +72,15 @@ If QStudio detects that you don't have the ClickHouse JDBC driver installed, it 
 
 - An example query:
 
-<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="QStudio interface showing sample SQL query execution against ClickHouse database" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![QStudio interface showing sample SQL query execution against ClickHouse database](/images/integrations/sql-clients/qstudio-running-query.webp)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>

@@ -32,7 +32,7 @@ private:
     Small small;
     Large * large = nullptr;
 
-    bool isLarge() const
+    [[nodiscard]] bool isLarge() const
     {
         return large != nullptr;
     }
@@ -106,7 +106,7 @@ public:
         }
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         return !isLarge() ? small.size() : large->size();
     }

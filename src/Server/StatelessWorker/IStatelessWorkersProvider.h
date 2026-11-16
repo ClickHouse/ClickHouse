@@ -53,10 +53,10 @@ public:
     virtual StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) = 0;
 
     /// Snapshot of all workers this provider knows about, for introspection.
-    virtual std::vector<StatelessWorkerState> getWorkersState() const = 0;
+    [[nodiscard]] virtual std::vector<StatelessWorkerState> getWorkersState() const = 0;
 
     /// Number of nodes to plan a query for, given the requested worker count.
-    virtual size_t getPlanningNodeCount(size_t requested_workers) const = 0;
+    [[nodiscard]] virtual size_t getPlanningNodeCount(size_t requested_workers) const = 0;
 
     /// Returns a provider with the workers that are usable now, if the usable workers can change
     /// while the provider lives (e.g. when a replica stops). A query takes it one time and then plans
@@ -65,7 +65,7 @@ public:
     virtual std::shared_ptr<IStatelessWorkersProvider> tryGetQuerySnapshot() { return nullptr; }
 
     /// The token to present when dialing this provider's workers; empty when there is none.
-    virtual std::string getAuthToken() const = 0;
+    [[nodiscard]] virtual std::string getAuthToken() const = 0;
 
     /// Begin/stop the provider's background work, if any.
     virtual void start() = 0;
