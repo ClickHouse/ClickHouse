@@ -208,3 +208,114 @@ FROM
     SELECT arrayJoin(CAST([0, 1, 2, 42, 255, NULL], 'Array(Nullable(UInt8))')) AS probe
 )
 ORDER BY probe NULLS LAST;
+
+-- Out-of-range whole `Decimal` probes return absent instead of throwing `DECIMAL_OVERFLOW`.
+WITH (SELECT groupBloomFilterState(toUInt8(42))) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal64('256', 0)),
+    bloomFilterContains(bf, toDecimal64('-1', 0)),
+    bloomFilterContains(bf, toDecimal64('42', 0));
+
+-- All `Decimal` widths: valid boundaries, overflow, negative, fractional, and nullable probes in one column.
+WITH
+    (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt8(0), 42, 255]) AS value)) AS bf
+SELECT
+    probe,
+    bloomFilterContains(bf, toDecimal32(probe, 1)),
+    bloomFilterContains(bf, toDecimal64(probe, 1)),
+    bloomFilterContains(bf, toDecimal128(probe, 1)),
+    bloomFilterContains(bf, toDecimal256(probe, 1))
+FROM
+(
+    SELECT arrayJoin(CAST(['-1', '0', '42', '255', '256', '42.5', NULL], 'Array(Nullable(String))')) AS probe
+)
+ORDER BY probe NULLS LAST;
+
+-- Signed destinations accept both endpoints and reject overflow on either side.
+WITH
+    (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toInt8(-128), 127]) AS value)) AS bf
+SELECT
+    probe,
+    bloomFilterContains(bf, toDecimal32(probe, 0)),
+    bloomFilterContains(bf, toDecimal64(probe, 0)),
+    bloomFilterContains(bf, toDecimal128(probe, 0)),
+    bloomFilterContains(bf, toDecimal256(probe, 0))
+FROM
+(
+    SELECT arrayJoin(['-129', '-128', '127', '128']) AS probe
+)
+ORDER BY probe;
+
+-- Decimal probes of `Bool` filters obey the same exact `0`/`1` contract.
+WITH (SELECT groupBloomFilterState(true)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal32('1', 0)),
+    bloomFilterContains(bf, toDecimal64('2', 0)),
+    bloomFilterContains(bf, toDecimal128('256', 0)),
+    bloomFilterContains(bf, toDecimal256('-1', 0));
+
+-- Wider integer bounds must be checked before narrowing the whole part.
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toInt16('-32768'), toInt16('32767')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal32('-32769', 0)),
+    bloomFilterContains(bf, toDecimal32('-32768', 0)),
+    bloomFilterContains(bf, toDecimal32('32767', 0)),
+    bloomFilterContains(bf, toDecimal32('32768', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt16('0'), toUInt16('65535')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal32('-1', 0)),
+    bloomFilterContains(bf, toDecimal32('0', 0)),
+    bloomFilterContains(bf, toDecimal32('65535', 0)),
+    bloomFilterContains(bf, toDecimal32('65536', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toInt32('-2147483648'), toInt32('2147483647')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal64('-2147483649', 0)),
+    bloomFilterContains(bf, toDecimal64('-2147483648', 0)),
+    bloomFilterContains(bf, toDecimal64('2147483647', 0)),
+    bloomFilterContains(bf, toDecimal64('2147483648', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt32('0'), toUInt32('4294967295')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal64('-1', 0)),
+    bloomFilterContains(bf, toDecimal64('0', 0)),
+    bloomFilterContains(bf, toDecimal64('4294967295', 0)),
+    bloomFilterContains(bf, toDecimal64('4294967296', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toInt64('-9223372036854775808'), toInt64('9223372036854775807')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal128('-9223372036854775809', 0)),
+    bloomFilterContains(bf, toDecimal128('-9223372036854775808', 0)),
+    bloomFilterContains(bf, toDecimal128('9223372036854775807', 0)),
+    bloomFilterContains(bf, toDecimal128('9223372036854775808', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt64('0'), toUInt64('18446744073709551615')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal128('-1', 0)),
+    bloomFilterContains(bf, toDecimal128('0', 0)),
+    bloomFilterContains(bf, toDecimal128('18446744073709551615', 0)),
+    bloomFilterContains(bf, toDecimal128('18446744073709551616', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toInt128('-170141183460469231731687303715884105728'), toInt128('170141183460469231731687303715884105727')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal256('-170141183460469231731687303715884105729', 0)),
+    bloomFilterContains(bf, toDecimal256('-170141183460469231731687303715884105728', 0)),
+    bloomFilterContains(bf, toDecimal256('170141183460469231731687303715884105727', 0)),
+    bloomFilterContains(bf, toDecimal256('170141183460469231731687303715884105728', 0));
+
+WITH (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt128('0'), toUInt128('340282366920938463463374607431768211455')]) AS value)) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal256('-1', 0)),
+    bloomFilterContains(bf, toDecimal256('0', 0)),
+    bloomFilterContains(bf, toDecimal256('340282366920938463463374607431768211455', 0)),
+    bloomFilterContains(bf, toDecimal256('340282366920938463463374607431768211456', 0));
+
+-- Every valid `Decimal256` whole part fits `Int256`; negative values still do not fit `UInt256`.
+WITH
+    (SELECT groupBloomFilterState(toInt256('-1'))) AS signed_bf,
+    (SELECT groupBloomFilterState(toUInt256('0'))) AS unsigned_bf
+SELECT
+    bloomFilterContains(signed_bf, toDecimal256('-1', 0)),
+    bloomFilterContains(unsigned_bf, toDecimal256('-1', 0)),
+    bloomFilterContains(unsigned_bf, toDecimal256('0', 0));

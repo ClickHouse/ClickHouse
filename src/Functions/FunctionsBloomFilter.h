@@ -8,7 +8,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -107,7 +109,11 @@ public:
         /// Use an accurate cast so a narrowing probe (e.g. toUInt16(300) against a UInt8 filter) does
         /// not wrap/truncate before hashing and report a false positive; non-representable values
         /// become NULL and their result is forced to 0 below.
-        ColumnPtr casted_value = castColumnAccurateOrNull(arguments[1], dispatch_value_type)->convertToFullColumnIfConst();
+        WhichDataType which(dispatch_value_type);
+        WhichDataType probe_which(dispatch_probe_type);
+        ColumnPtr casted_value = probe_which.isDecimal() && which.isInteger()
+            ? castDecimalProbeToInteger(arguments[1], dispatch_probe_type, dispatch_value_type)
+            : castColumnAccurateOrNull(arguments[1], dispatch_value_type)->convertToFullColumnIfConst();
         const auto & nullable_value = assert_cast<const ColumnNullable &>(*casted_value);
         const NullMap * null_map = &nullable_value.getNullMapData();
         NullMap adjusted_null_map;
@@ -115,9 +121,6 @@ public:
         ColumnsWithTypeAndName casted_arguments = arguments;
         casted_arguments[1].column = nullable_value.getNestedColumnPtr();
         casted_arguments[1].type = dispatch_value_type;
-
-        WhichDataType which(dispatch_value_type);
-        WhichDataType probe_which(dispatch_probe_type);
 
         /// `Decimal` to `Float` casts can lose precision without being rejected by the accurate cast.
         /// Only values which survive a round trip to the original `Decimal` type can be hashed safely.
@@ -147,29 +150,6 @@ public:
                     || restored_nested_column.compareAt(i, i, original_nested_column, 1) != 0)
                     adjusted_null_map[i] = 1;
             }
-        }
-        else if (probe_which.isDecimal() && which.isInteger())
-        {
-            /// Accurate casts to integers discard the fractional part of a `Decimal` probe.
-            /// Check the original value: an integer-to-`Decimal` round trip does not support wide integers.
-            ColumnPtr original_value = castColumnAccurateOrNull(
-                arguments[1], dispatch_probe_type)->convertToFullColumnIfConst();
-            const auto & nullable_original_value = assert_cast<const ColumnNullable &>(*original_value);
-            const IColumn & original_nested_column = nullable_original_value.getNestedColumn();
-
-            adjusted_null_map.resize(input_rows_count);
-            for (size_t i = 0; i < input_rows_count; ++i)
-                adjusted_null_map[i] = (*null_map)[i];
-            null_map = &adjusted_null_map;
-
-            if (probe_which.isDecimal32())
-                rejectFractionalDecimalProbes<Decimal32>(original_nested_column, adjusted_null_map);
-            else if (probe_which.isDecimal64())
-                rejectFractionalDecimalProbes<Decimal64>(original_nested_column, adjusted_null_map);
-            else if (probe_which.isDecimal128())
-                rejectFractionalDecimalProbes<Decimal128>(original_nested_column, adjusted_null_map);
-            else if (probe_which.isDecimal256())
-                rejectFractionalDecimalProbes<Decimal256>(original_nested_column, adjusted_null_map);
         }
 
         if (which.isUInt8())
@@ -241,16 +221,56 @@ public:
     }
 
 private:
-    template <typename T>
-    static void rejectFractionalDecimalProbes(const IColumn & column, NullMap & null_map)
+    static ColumnPtr castDecimalProbeToInteger(
+        const ColumnWithTypeAndName & probe,
+        const DataTypePtr & probe_type,
+        const DataTypePtr & value_type)
     {
-        const auto & decimal_column = assert_cast<const ColumnDecimal<T> &>(column);
-        const auto & values = decimal_column.getData();
-        const UInt32 scale = decimal_column.getScale();
+        /// The general `Decimal` to integer cast can throw on overflow even in `accurateCastOrNull`.
+        /// Convert the whole part only when it is exact and fits the destination type.
+        const auto original = castColumnAccurateOrNull(probe, probe_type)->convertToFullColumnIfConst();
+        const auto & nullable_original = assert_cast<const ColumnNullable &>(*original);
+        const size_t rows = original->size();
+        ColumnPtr result;
 
-        for (size_t i = 0; i < null_map.size(); ++i)
-            if (null_map[i] == 0 && DecimalUtils::getFractionalPart(values[i], scale) != 0)
-                null_map[i] = 1;
+        auto convert_decimal = [&](const auto & decimal_types)
+        {
+            using DecimalType = typename std::decay_t<decltype(decimal_types)>::RightType;
+            const auto & decimal_column = assert_cast<const ColumnDecimal<DecimalType> &>(nullable_original.getNestedColumn());
+            const auto & values = decimal_column.getData();
+            const UInt32 scale = decimal_column.getScale();
+
+            auto convert_integer = [&](const auto & integer_types)
+            {
+                using IntegerType = typename std::decay_t<decltype(integer_types)>::RightType;
+                auto converted = ColumnVector<IntegerType>::create(rows);
+                auto nulls = ColumnUInt8::create(rows, 0);
+                auto & converted_values = converted->getData();
+                auto & null_map = nulls->getData();
+
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (nullable_original.isNullAt(i)
+                        || DecimalUtils::getFractionalPart(values[i], scale) != 0
+                        || !accurate::convertNumeric(DecimalUtils::getWholePart(values[i], scale), converted_values[i]))
+                    {
+                        converted_values[i] = 0;
+                        null_map[i] = 1;
+                    }
+                }
+
+                result = ColumnNullable::create(std::move(converted), std::move(nulls));
+                return true;
+            };
+
+            return callOnBasicType<void, true, false, false, false>(value_type->getTypeId(), convert_integer);
+        };
+
+        if (!callOnBasicType<void, false, false, true, false>(probe_type->getTypeId(), convert_decimal))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unexpected conversion from {} to {} for function {}", probe_type->getName(), value_type->getName(), name);
+
+        return result;
     }
 
     struct BloomFilterStateInfo
