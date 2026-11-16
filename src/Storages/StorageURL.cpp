@@ -10,7 +10,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -73,6 +72,7 @@
 
 #include <algorithm>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -349,10 +349,11 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
         : max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
+        , filter_format_settings(format_settings_)
         , filter_context(context)
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
@@ -458,7 +459,7 @@ public:
 private:
     /// Not exhausted, so at least one more address exists beyond the batch; the query can never
     /// consume more than the limit anyway.
-    size_t upperBound() const TSA_REQUIRES(mutex)
+    [[nodiscard]] size_t upperBound() const TSA_REQUIRES(mutex)
     {
         /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
         const auto total = generator->totalCount();
@@ -539,8 +540,10 @@ private:
         for (const auto & uri : uris)
             paths.push_back(Poco::URI(uri).getPath());
 
-        VirtualColumnUtils::filterByPathOrFile(
-            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+        VirtualColumnUtils::filterSourcesByIndexes(
+            uris,
+            VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context, filter_format_settings));
     }
 
     std::mutex mutex;
@@ -555,6 +558,7 @@ private:
     bool filter_deferred TSA_GUARDED_BY(mutex) = false;
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
+    const std::optional<FormatSettings> filter_format_settings;
     const ContextPtr filter_context;
 
     Strings batch TSA_GUARDED_BY(mutex);
@@ -564,8 +568,8 @@ private:
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context, format_settings_)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -580,11 +584,6 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
 size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
 {
     return pimpl->sizeForStreams(requested);
-}
-
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
 }
 
 StorageURLSource::StorageURLSource(
@@ -735,7 +734,7 @@ StorageURLSource::StorageURLSource(
             if (!matching_marks)
                 break;
 
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             for (size_t i = 0; i < matching_marks->size(); ++i)
                 if ((*matching_marks)[i])
                     matching_row_groups.push_back(i);
@@ -1258,7 +1257,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
@@ -1365,12 +1365,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return std::nullopt;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -2037,7 +2043,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2149,7 +2155,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed URLs and make a source for each file. Even a URL
         /// without globs must go through this iterator: it applies a deferred `_path`
         /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context, storage->format_settings);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -2187,6 +2193,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers = VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -2293,8 +2300,7 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    if (http_method.empty())
-        http_method = Poco::Net::HTTPRequest::HTTP_POST;
+    const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -2323,7 +2329,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            http_method);
+            write_method);
     }
 
     return std::make_shared<StorageURLSink>(
@@ -2335,7 +2341,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         getHTTPTimeouts(context),
         compression_method,
         headers,
-        http_method);
+        write_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
@@ -2943,7 +2949,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3217,7 +3223,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
     }
 
     StoragePtr nested;
@@ -3339,6 +3345,11 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             engine_name, configuration.url);
 
     const String engine_name_str = engine_name;
+
+    /// The query named `URL`, which passed the temporary-table check; the engine built here must pass it too.
+    if (args.query.isTemporary())
+        StorageFactory::instance().checkTemporaryTableEngine(engine_name_str, context);
+
     StorageFactory::Arguments delegate_factory_args
     {
         .engine_name = engine_name_str,
@@ -3580,6 +3591,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
+            .supports_temporary = true,
         },
         Documentation{
             .description = R"DOCS_MD(

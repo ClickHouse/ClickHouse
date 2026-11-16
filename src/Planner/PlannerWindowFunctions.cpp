@@ -1,7 +1,6 @@
 #include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
-#include <WindowFunctions/IWindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
@@ -32,7 +31,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
     auto & window_node = node->as<WindowNode &>();
 
     WindowDescription window_description;
-    window_description.window_name = calculateWindowNodeActionName(func_node_, node, planner_context);
+    window_description.window_name = calculateWindowNodeActionName(node, planner_context);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
     {
@@ -49,9 +48,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
         window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
 
     /// WINDOW frame is validated during query analysis stage
-    auto window_frame = extractWindowFrame(func_node);
-    window_description.frame = window_frame ? *window_frame : window_node.getWindowFrame();
-    auto node_frame = window_node.getWindowFrame();
+    window_description.frame = window_node.getWindowFrame();
 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
@@ -131,7 +128,10 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
     result.reserve(window_name_to_description.size());
 
     for (auto && [_, window_description] : window_name_to_description)
+    {
+        validateWindowFunctions(window_description);
         result.push_back(std::move(window_description));
+    }
 
     return result;
 }
