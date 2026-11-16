@@ -251,34 +251,29 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
         while (offset < original_size - 3)
         {
             offset = skip_valid_schema_chars(offset);
-            if (const char c = uri[offset]; c == ':')
+            if (uri[offset] == ':' && uri[offset + 1] == '/' && uri[offset + 2] == '/')
             {
-                if (uri[offset + 1] == '/' && uri[offset + 2] == '/')
-                {
-                    return parse_userinfo_and_authority(offset + 3);
-                }
+                return parse_userinfo_and_authority(offset + 3);
+            }
+            if (uri[offset] == ':' || uri[offset] == '@')
+            {
                 break;
             }
-            else
+            if (uri[offset] == '|')
             {
-                if (!url_legal_name_chars.contains(c))
-                {
-                    if (c == '@')
-                    {
-                        return parse_userinfo_and_authority(initial_offset);
-                    }
-                    if (c =='|')
-                    {
-                        return offset + 1;
-                    }
-                    offset = skip_past_next_schema(offset + 1);
-                    if (offset < original_size)
-                    {
-                        return parse_userinfo_and_authority(offset);
-                    }
-                }
-                break;
+                return offset + 1;
             }
+            if (!url_legal_name_chars.contains(uri[offset]))
+            {
+                const size_t s = offset + 1;
+                offset = skip_past_next_schema(s);
+                if (s != offset)
+                {
+                    return parse_userinfo_and_authority(offset);
+                }
+                return original_size;
+            }
+            break;
         }
         return parse_userinfo_and_authority(initial_offset);
     };
