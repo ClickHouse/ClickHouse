@@ -121,6 +121,10 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"20.5", false, true, "Enable using header with names for formats with WithNames/WithNamesAndTypes suffixes"}) \
+    DECLARE(Bool, input_format_with_names_throw_if_no_column_matches, true, R"(
+Throw an exception if none of the column names in the header of the input data is a column of the table, instead of reading rows with only default values. Usually it means that the data is parsed with wrong settings, for example a CSV file with a different delimiter, where the whole header becomes a single unknown column. Applies to formats with the `WithNames` and `WithNamesAndTypes` suffixes when [input_format_with_names_use_header](#input_format_with_names_use_header) and [input_format_skip_unknown_fields](#input_format_skip_unknown_fields) are enabled.
+)", 0, \
+        {"26.11", false, true, "New setting. Throw an exception if no column name in the header of the input data is a column of the table, instead of reading rows with only default values."}) \
     DECLARE(Bool, input_format_with_types_use_header, true, R"(
 Controls whether format parser should check if data types from the input data match data types from the target table.
 
