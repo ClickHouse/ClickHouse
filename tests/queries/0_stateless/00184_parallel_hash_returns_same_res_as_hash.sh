@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, long
+# Tags: stateful
 
 set -e
 
@@ -50,7 +50,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', log_comment = '00184_serial';
+SETTINGS join_algorithm = 'hash';
 
 CREATE TABLE res_parallel_hash
 ENGINE = MergeTree()
@@ -62,7 +62,7 @@ FROM t1
 LEFT JOIN t2 ON (t1.UserID = t2.UserID) AND ((t1.EventDate < t2.EventDate) OR (length(t1.URL) > length(t2.URL)))
 ORDER BY ALL
 LIMIT $ROWS
-SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', log_comment = '00184_parallel';
+SETTINGS join_algorithm = 'parallel_hash';
 
 SELECT *
 FROM (
@@ -71,11 +71,4 @@ FROM (
     SELECT * FROM res_parallel_hash ORDER BY ALL
 )
 LIMIT 1;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('00184_serial', '00184_parallel')
-ORDER BY event_time_microseconds;
 "

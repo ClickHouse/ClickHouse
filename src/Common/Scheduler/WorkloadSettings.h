@@ -62,23 +62,23 @@ struct WorkloadSettings
     Int64 max_memory_before_spill = unlimited;
 
     // Throttler (time-shared resource)
-    [[nodiscard]] bool hasThrottler(CostUnit unit) const;
-    [[nodiscard]] Float64 getThrottlerMaxSpeed(CostUnit unit) const;
-    [[nodiscard]] Float64 getThrottlerMaxBurst(CostUnit unit) const;
+    bool hasThrottler(CostUnit unit) const;
+    Float64 getThrottlerMaxSpeed(CostUnit unit) const;
+    Float64 getThrottlerMaxBurst(CostUnit unit) const;
 
     // Semaphore (time-shared resource)
-    [[nodiscard]] bool hasSemaphore(CostUnit unit) const;
-    [[nodiscard]] Int64 getSemaphoreMaxRequests(CostUnit unit) const;
-    [[nodiscard]] Int64 getSemaphoreMaxCost(CostUnit unit) const;
+    bool hasSemaphore(CostUnit unit) const;
+    Int64 getSemaphoreMaxRequests(CostUnit unit) const;
+    Int64 getSemaphoreMaxCost(CostUnit unit) const;
 
     // Queue (both time-shared and space-shared resources)
-    [[nodiscard]] bool hasQueueLimit(CostUnit unit) const;
-    [[nodiscard]] Int64 getQueueLimit(CostUnit unit) const;
+    bool hasQueueLimit(CostUnit unit) const;
+    Int64 getQueueLimit(CostUnit unit) const;
 
     // Allocation Limit (space-shared resource)
-    [[nodiscard]] bool hasAllocationLimit(CostUnit unit) const;
-    [[nodiscard]] Int64 getAllocationLimit(CostUnit unit) const;
-    [[nodiscard]] Int64 getSoftAllocationLimit(CostUnit unit) const; // Soft limit (spill threshold); `unlimited` = disabled
+    bool hasAllocationLimit(CostUnit unit) const;
+    Int64 getAllocationLimit(CostUnit unit) const;
+    Int64 getSoftAllocationLimit(CostUnit unit) const; // Soft limit (spill threshold); `unlimited` = disabled
 
     // Should be called after default constructor
     void initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);

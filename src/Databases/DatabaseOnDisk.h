@@ -30,6 +30,15 @@ std::pair<String, StoragePtr> createTableFromAST(
   */
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 
+/** Repair the unqualified table names that a definition read back from metadata written before the
+  * names were qualified at CREATE time can contain, resolving them against `database_name` — the
+  * database owning the table. Applied both when the definition is attached
+  * (`createTableFromAST`) and when the dependency graphs are built out of it
+  * (`TablesLoader::buildDependencyGraph`), so that the graphs describe the very same names the
+  * attached storage will use.
+  */
+void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const String & database_name, ContextPtr context);
+
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
@@ -122,10 +131,8 @@ protected:
     virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
-    /// `table_metadata_tmp_path` is empty when nothing has been written yet: then `statement` is written to `table_metadata_path` at the commit.
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                   const String & statement, ContextPtr query_context);
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
     virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}

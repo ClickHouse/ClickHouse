@@ -6,7 +6,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -24,28 +23,25 @@ namespace
         {
         }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
         /// The captured settings decide the text produced for the same value, see `IFunctionBase::updateHash`.
         void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+        size_t getNumberOfArguments() const override { return 1; }
 
-        [[nodiscard]] String getSignatureString() const override
-        {
-            return "(Any) -> String";
-        }
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeString>(); }
 
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        bool useDefaultImplementationForConstants() const override { return true; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] ColumnPtr
+        ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             auto res = ColumnString::create();

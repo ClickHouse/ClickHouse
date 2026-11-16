@@ -1,7 +1,7 @@
 import random
 from typing import Optional
-from tests.integration.helpers.client import Client
-from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from integration.helpers.client import Client
+from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 
 class ClickHouseTable:
