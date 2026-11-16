@@ -855,6 +855,9 @@ TEST(KeeperStorage, GetCommittedNodeAfterConcurrentReaderDroppedItsCopy)
     (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 2048;
     /// The block cache keeps nothing: a block lives only as long as someone holds it.
     (*settings)[DB::CoordinationSetting::block_cache_size] = 1;
+    /// No merges: publishing a merge takes storage_mutex exclusively, which would wait for the paused
+    /// reader and block the shared lock the test takes while the reader is paused.
+    (*settings)[DB::CoordinationSetting::min_files_to_merge] = 1'000'000;
 
     auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
     keeper_context->setDataDisk(std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path));
@@ -878,19 +881,25 @@ TEST(KeeperStorage, GetCommittedNodeAfterConcurrentReaderDroppedItsCopy)
         }
     }
 
-    /// The first node is in a file once its memtable is flushed.
+    /// Wait until the first node's entry is expired, so the read below takes the slow path. That happens
+    /// once its memtable is flushed and the flush thread drops its reference to the memtable, which
+    /// may be a bit after the memtable is removed from `immutable_memtables`. Nothing re-points the
+    /// entry afterwards: there are no other readers, no writes and no merges.
     const NodePathWithHash path = NodePath("/n00000").withCalculatedHash();
-    bool flushed = false;
-    for (int attempt = 0; attempt < 4000 && !flushed; ++attempt)
+    bool expired = false;
+    for (int attempt = 0; attempt < 4000 && !expired; ++attempt)
     {
         {
             std::shared_lock lock(storage_mutex);
-            flushed = !storage.sorted_runs.empty() && storage.immutable_memtables.empty();
+            const NodeRefCache::Entry * entry = storage.node_cache.findEntry(path.hash);
+            ASSERT_NE(entry, nullptr);
+            std::lock_guard guard(entry->block);
+            expired = storage.immutable_memtables.empty() && !entry->block.get();
         }
-        if (!flushed)
+        if (!expired)
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
-    ASSERT_TRUE(flushed);
+    ASSERT_TRUE(expired);
 
     DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
     SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing); });
