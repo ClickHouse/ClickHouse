@@ -49,7 +49,7 @@ struct JoinKeyStats
 
 /// Base column statistics and relation ids are context-independent. Apply subtree row caps after
 /// reading the cache, because the same edge can join different subtrees in another candidate plan.
-using SelectivityCache = std::unordered_map<JoinActionRef, JoinKeyStats>;
+using SelectivityCache = UnorderedMapWithMemoryTracking<JoinActionRef, JoinKeyStats>;
 
 /// Number of distinct values of a join-key column.
 inline ColumnDistinctValues getColumnStats(
@@ -101,16 +101,24 @@ struct JoinSideStats
     std::optional<UInt64> rows;
 };
 
-/// Base-table NDV can exceed the rows of a multi-relation input. Apply the row bound where that
-/// input is known because DPsub does not propagate `column_stats`.
-inline ColumnDistinctValues capColumnDistinctValuesBySubtreeRows(ColumnDistinctValues stats, const JoinSideStats & side)
+/// Base-table NDV can exceed the rows of a multi-relation input, which cannot hold more distinct keys
+/// than rows. Cap it by those rows, but only while the input still has at least as many rows as the
+/// other side of the equality has distinct keys. `1 / max(NDV)` assumes that the keys of the side with
+/// fewer distinct values are contained in the other side. If the cap made the capped side the smaller
+/// one, the input, which is typically a filtered sample of a larger key domain (for example a primary
+/// key side filtered by a join with a dimension), would be assumed to match the other side completely,
+/// overestimating the join by up to the ratio of the base NDVs. DPsub does not propagate
+/// `column_stats`, so the bound is applied here, where the input is known.
+inline ColumnDistinctValues capColumnDistinctValuesBySubtreeRows(
+    ColumnDistinctValues stats, const JoinSideStats & side, const ColumnDistinctValues & other)
 {
-    if (side.multi_relation && side.rows && *side.rows > 0)
-    {
-        if (stats.ndv)
-            stats.ndv = std::min(*stats.ndv, *side.rows);
-        stats.upper_bound = std::min(stats.upper_bound, *side.rows);
-    }
+    if (!side.multi_relation || !side.rows || *side.rows == 0)
+        return stats;
+    const UInt64 rows = *side.rows;
+    if (stats.ndv && other.ndv && *other.ndv <= rows)
+        stats.ndv = std::min(*stats.ndv, rows);
+    if (other.upper_bound <= rows)
+        stats.upper_bound = std::min(stats.upper_bound, rows);
     return stats;
 }
 
@@ -148,8 +156,8 @@ inline SelectivityEstimate computeSelectivity(
         return stats.base_estimate;
 
     SelectivityEstimate estimate;
-    auto lhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.lhs, lhs_side);
-    auto rhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.rhs, rhs_side);
+    auto lhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.lhs, lhs_side, stats.rhs);
+    auto rhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.rhs, rhs_side, stats.lhs);
     applyEquiKeyDistinctValues(
         estimate,
         std::max(lhs_ndv.ndv.value_or(0), rhs_ndv.ndv.value_or(0)),
@@ -180,8 +188,10 @@ inline SelectivityEstimate computeDirectSelectivity(
     return estimate;
 }
 
-/// Cap each member by its side's rows, then apply the class maximum. This gives the minimum over
-/// all cross-side pairs because min(1 / max(l, r)) = 1 / max(all l's and r's).
+/// Takes the maximum NDV of the members on each side, caps each side by its rows against the other
+/// side's maximum, then applies the larger of the two. This gives the minimum over all cross-side
+/// pairs because min(1 / max(l, r)) = 1 / max(all l's and r's), and the pair with the other side's
+/// maximum is the one that decides whether a side is capped.
 class EquivalenceClassSelectivity
 {
 public:
@@ -189,26 +199,33 @@ public:
     {
         if (!side.present)
             return;
-        if (side.on_left)
-            has_left = true;
-        else
-            has_right = true;
-        const auto capped = capColumnDistinctValuesBySubtreeRows(stats, side);
-        max_ndv = std::max(max_ndv, capped.ndv.value_or(0));
-        max_ndv_upper_bound = std::max(max_ndv_upper_bound, capped.upper_bound);
+        auto & target = side.on_left ? left : right;
+        target.side = side;
+        if (stats.ndv)
+            target.stats.ndv = std::max(target.stats.ndv.value_or(0), *stats.ndv);
+        target.stats.upper_bound = std::max(target.stats.upper_bound, stats.upper_bound);
     }
 
     void apply(SelectivityEstimate & estimate) const
     {
-        if (has_left && has_right)
-            applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+        if (!left.side.present || !right.side.present)
+            return;
+        const auto left_ndv = capColumnDistinctValuesBySubtreeRows(left.stats, left.side, right.stats);
+        const auto right_ndv = capColumnDistinctValuesBySubtreeRows(right.stats, right.side, left.stats);
+        applyEquiKeyDistinctValues(
+            estimate,
+            std::max(left_ndv.ndv.value_or(0), right_ndv.ndv.value_or(0)),
+            std::max(left_ndv.upper_bound, right_ndv.upper_bound));
     }
 
 private:
-    UInt64 max_ndv = 0;
-    UInt64 max_ndv_upper_bound = 0;
-    bool has_left = false;
-    bool has_right = false;
+    struct Side
+    {
+        JoinSideStats side;
+        ColumnDistinctValues stats;
+    };
+    Side left;
+    Side right;
 };
 
 /// Expected number of rows an inner join of `lhs_rows` x `rhs_rows` keeps under `selectivity`.

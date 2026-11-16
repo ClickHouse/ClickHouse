@@ -8,3 +8,7 @@ greedy direct	1	1	1	1
 greedy equivalence	1	1	1	1
 cache context	1	1
 bushy both sides capped	1	1	1
+dpsub direct sampled key domain	1	1
+dpsub equivalence sampled key domain	1	1
+greedy direct sampled key domain	1	1
+greedy equivalence sampled key domain	1	1

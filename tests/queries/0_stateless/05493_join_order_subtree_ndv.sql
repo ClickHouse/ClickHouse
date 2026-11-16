@@ -175,3 +175,59 @@ DROP TABLE ndv_a;
 DROP TABLE ndv_b;
 DROP TABLE ndv_c;
 DROP TABLE ndv_d;
+
+-- The cap must not make a subtree the side with fewer distinct keys. {c, n} keeps 120 of the 1500
+-- customers, fewer than the 1000 distinct `o.custkey` values, so it is a sample of the customer key
+-- domain rather than a superset of `o.custkey`: the selectivity stays 1 / 1500, not 1 / 1000.
+DROP TABLE IF EXISTS ndv_o;
+DROP TABLE IF EXISTS ndv_c;
+DROP TABLE IF EXISTS ndv_n;
+CREATE TABLE ndv_o (custkey UInt64) ENGINE = MergeTree ORDER BY custkey SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE ndv_c (custkey UInt64, nationkey UInt64) ENGINE = MergeTree ORDER BY custkey SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE ndv_n (nationkey UInt64) ENGINE = MergeTree ORDER BY nationkey SETTINGS auto_statistics_types = 'uniq';
+INSERT INTO ndv_o SELECT number % 1000 FROM numbers(15000);
+INSERT INTO ndv_c SELECT number, number % 25 FROM numbers(1500);
+INSERT INTO ndv_n SELECT number FROM numbers(2);
+ALTER TABLE ndv_o MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
+ALTER TABLE ndv_c MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
+ALTER TABLE ndv_n MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 1;
+
+SELECT 'dpsub direct sampled key domain',
+    countIf(explain LIKE '%o[15000] ⋈ (c[1500] ⋈ n[2])%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 1.20 thousand · actual 1.20 thousand · q-error 1.00%') = 1
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_o AS o
+INNER JOIN ndv_c AS c ON o.custkey = c.custkey
+INNER JOIN ndv_n AS n ON c.nationkey = n.nationkey
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', enable_join_transitive_predicates = 0);
+
+SELECT 'dpsub equivalence sampled key domain',
+    countIf(explain LIKE '%o[15000] ⋈ (c[1500] ⋈ n[2])%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 1.20 thousand · actual 1.20 thousand · q-error 1.00%') = 1
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_o AS o
+INNER JOIN ndv_c AS c ON o.custkey = c.custkey
+INNER JOIN ndv_n AS n ON c.nationkey = n.nationkey
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', enable_join_transitive_predicates = 1);
+
+SELECT 'greedy direct sampled key domain',
+    countIf(explain LIKE '%o[15000] ⋈ (c[1500] ⋈ n[2])%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 1.20 thousand · actual 1.20 thousand · q-error 1.00%') = 1
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_o AS o
+INNER JOIN ndv_c AS c ON o.custkey = c.custkey
+INNER JOIN ndv_n AS n ON c.nationkey = n.nationkey
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_join_transitive_predicates = 0);
+
+SELECT 'greedy equivalence sampled key domain',
+    countIf(explain LIKE '%o[15000] ⋈ (c[1500] ⋈ n[2])%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 1.20 thousand · actual 1.20 thousand · q-error 1.00%') = 1
+FROM (EXPLAIN ANALYZE indexes = 0
+SELECT count() FROM ndv_o AS o
+INNER JOIN ndv_c AS c ON o.custkey = c.custkey
+INNER JOIN ndv_n AS n ON c.nationkey = n.nationkey
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_join_transitive_predicates = 1);
+
+DROP TABLE ndv_o;
+DROP TABLE ndv_c;
+DROP TABLE ndv_n;
