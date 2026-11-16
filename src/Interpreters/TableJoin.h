@@ -50,6 +50,17 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 class TableJoin
 {
 public:
+    /// Used to determine how a set-operation join passes on the totals of its arms.
+    struct SetOperationTotals
+    {
+        Names left_columns;
+        Names right_columns;
+        /// The right columns kept only for the totals. The join neither stores nor outputs them.
+        NameSet totals_only_right_columns;
+        bool prefer_left_totals = true;
+        bool output_from_left = true;
+    };
+
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
     /// Corresponds to one disjunct
@@ -194,6 +205,7 @@ private:
 
     ASTTableJoin table_join;
     std::optional<JoinOperator> join_operator;
+    std::optional<SetOperationTotals> set_operation_totals;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
@@ -385,6 +397,10 @@ public:
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
     void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    JoinSetOperation setOperation() const { return join_operator ? join_operator->set_operation : JoinSetOperation::None; }
+
+    void setSetOperationTotals(SetOperationTotals value) { set_operation_totals = std::move(value); }
+    const std::optional<SetOperationTotals> & setOperationTotals() const { return set_operation_totals; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

@@ -172,6 +172,10 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     const auto & join_operator = join->getJoinOperator();
 
+    /// An `IN` filter would keep the duplicate rows that the set-operation join removes.
+    if (join_operator.set_operation != JoinSetOperation::None)
+        return 0;
+
     /// Let's allow Strictness::All with a wrong result for now.
     if (join_operator.strictness != JoinStrictness::Any && join_operator.strictness != JoinStrictness::All)
         return 0;

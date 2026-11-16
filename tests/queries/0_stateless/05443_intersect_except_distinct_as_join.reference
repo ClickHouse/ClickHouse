@@ -1,0 +1,45 @@
+-- semantics and plan
+366	96075	16	72
+366	96075	16	72
+1	1
+3637	898860	0	423
+1	0
+3637	898860	0	423
+1	1
+-- `Dynamic` values match only with the same type.
+\N	None
+1	Int32
+a	String
+-- Values are compared after the conversion to the common type.
+0
+2
+-- Two columns with the same name in a branch stay apart.
+1	1
+-- Under another join.
+2440	669632	669632
+-- The empty probe side must not stop RIGHT ANTI from emitting the build side.
+10
+-- The empty probe side stops LEFT ANTI from reading the build side.
+0
+-- A join that spills gives the same result.
+6000
+4000
+-- limits of DISTINCT
+5
+5
+-- The totals of the first branch win.
+
+0	100000
+
+0	100000
+-- Only the second branch has totals.
+2	3
+
+0	7
+-- Join split by primary key ranges with nullable column.
+2	\N
+4	\N
+1	a
+3	c
+1	a
+3	c

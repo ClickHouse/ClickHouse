@@ -1,0 +1,39 @@
+key only
+0
+3
+6
+9
+12
+15
+18
+0
+3
+6
+9
+12
+15
+18
+right column selected
+0	r
+3	r
+6	r
+9	r
+12	r
+15	r
+18	r
+nullable key
+3
+6
+9
+15
+18
+composite key
+0	0
+3	3
+6	6
+9	9
+12	12
+15	15
+18	18
+several disjuncts
+7

@@ -89,7 +89,7 @@ InputPort & JoiningTransform::addDelayedBlocksInput()
 IProcessor::Status JoiningTransform::prepare()
 {
     /// Check if we can fully skip reading left side when right side is empty
-    if (build_finished_input && build_finished_input->isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+    if (build_finished_input && build_finished_input->isFinished() && !stream_probe_empty && !keep_reading_probe && join->alwaysReturnsEmptySet() && !on_totals)
         stop_reading = true;
 
     auto & output = outputs.front();
@@ -123,11 +123,45 @@ IProcessor::Status JoiningTransform::prepare()
 
     if (build_finished_input && !build_finished_input->isFinished())
     {
-        build_finished_input->setNeeded();
-        if (build_finished_input->hasData())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+        /// A set-operation join reads a row of its left side before it asks for the right side. INNER and LEFT output
+        /// nothing for an empty left side, so then the right side, which may be unbounded, is not read. RIGHT ANTI
+        /// outputs the right rows, so it always reads them.
+        const bool probe_first = join->getTableJoin().setOperation() != JoinSetOperation::None && !isRight(join->getTableJoin().kind())
+            && !keep_reading_build && !on_totals;
+        if (probe_first && !has_input)
+        {
+            auto & probe = inputs.front();
+            probe.setNeeded();
+            if (!probe.isFinished())
+            {
+                if (!probe.hasData())
+                    return Status::NeedData;
+                input_chunk = probe.pull(true);
+                has_virtual_row = isVirtualRow(input_chunk);
+                has_input = input_chunk.hasRows() || has_virtual_row;
+                if (!has_input)
+                    return Status::NeedData;
+            }
+            else
+            {
+                build_finished_input->close();
+                stream_probe_empty = true;
+                /// Other streams may still need the spilled buckets, until the last one tells whether all left sides were empty.
+                if (finish_counter)
+                    finish_counter->addEmptyProbeStream();
+                else if (delayed_blocks_input)
+                    delayed_blocks_input->close();
+                delayed_blocks_checked = true;
+            }
+        }
 
-        return Status::NeedData;
+        if (!stream_probe_empty)
+        {
+            build_finished_input->setNeeded();
+            if (build_finished_input->hasData())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+            return Status::NeedData;
+        }
     }
 
     if (delayed_blocks_input && !delayed_blocks_checked)
@@ -148,7 +182,7 @@ IProcessor::Status JoiningTransform::prepare()
             is_drained = true;
             if (match_counter)
                 match_counter->add(matched_right_rows);
-            if (finish_counter->isLast())
+            if (finish_counter->isLast() && !finish_counter->allProbeStreamsEmpty())
             {
                 is_last_drained = true;
                 join->onProbePhaseFinish(match_counter ? match_counter->get() : std::optional<size_t>(0));
@@ -158,8 +192,12 @@ IProcessor::Status JoiningTransform::prepare()
         /// There is a big assumption here: if join supports parallel non-joined block processing, then it is
         /// assumed the query pipeline contains the appropriate `NonJoinedBlocksTransform` processors and we can
         /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
-        if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
+        if (process_non_joined && !stream_probe_empty && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
             return Status::Ready;
+
+        /// When every stream abandoned the build, no spilled buckets will come.
+        if (delayed_blocks_input && finish_counter && finish_counter->allProbeStreamsEmpty())
+            delayed_blocks_input->close();
 
         if (delayed_blocks_input && !delayed_blocks_input->isFinished())
         {
@@ -241,7 +279,8 @@ void JoiningTransform::transform(Chunk & chunk)
 
         if (join->alwaysReturnsEmptySet() && !on_totals)
         {
-            stop_reading = true;
+            /// The totals of the left side come only after all of its rows.
+            stop_reading = !keep_reading_probe;
             chunk.clear();
             return;
         }
@@ -699,6 +738,35 @@ Chunk NonJoinedBlocksTransform::generate()
     ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
     ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
     return Chunk(block.getColumns(), rows);
+}
+
+
+SetOperationTotalsTransform::SetOperationTotalsTransform(SharedHeader input_header_, SharedHeader output_header_, NameToNameMap output_to_input_)
+    : ISimpleTransform(std::move(input_header_), std::move(output_header_), false)
+    , output_to_input(std::move(output_to_input_))
+{
+}
+
+void SetOperationTotalsTransform::transform(Chunk & chunk)
+{
+    const size_t num_rows = chunk.getNumRows();
+    const auto input = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    Columns columns;
+    for (const auto & column : getOutputPort().getHeader())
+    {
+        auto it = output_to_input.find(column.name);
+        const auto * source = it == output_to_input.end() ? nullptr : input.findByName(it->second);
+        if (source)
+        {
+            columns.push_back(source->column->convertToFullColumnIfConst());
+            continue;
+        }
+
+        auto default_column = column.type->createColumn();
+        default_column->insertManyDefaults(num_rows);
+        columns.push_back(std::move(default_column));
+    }
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

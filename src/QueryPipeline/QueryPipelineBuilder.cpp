@@ -621,6 +621,24 @@ void QueryPipelineBuilder::wireSealGatedReading(
     pending_inputs.clear();
 }
 
+QueryPipelineBuilder::DetachedTotals QueryPipelineBuilder::detachTotals()
+{
+    checkInitializedAndNotCompleted();
+    auto header = getSharedHeader();
+    return {.port = pipe.detachTotalsPort(), .header = std::move(header)};
+}
+
+void QueryPipelineBuilder::attachTotals(OutputPort * port, Processors processors)
+{
+    checkInitializedAndNotCompleted();
+    if (pipe.totals_port)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot attach totals to a pipeline that has them");
+
+    for (auto & processor : processors)
+        pipe.processors->emplace_back(std::move(processor));
+    pipe.totals_port = port;
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
@@ -633,7 +651,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     IQueryPlanStep * join_step,
     bool keep_left_pipeline_layout,
     const std::optional<String> & seal_gate,
-    Processors * collected_processors)
+    Processors * collected_processors,
+    bool keep_reading_left,
+    bool keep_reading_right)
 {
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
@@ -808,6 +828,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
+        joining->keepReadingInputs(keep_reading_left, keep_reading_right);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -948,7 +969,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     VectorWithMemoryTracking<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
-        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
+        SharedHeader right_sample_block = header;
+        if (const auto & set_operation_totals = join->getTableJoin().setOperationTotals())
+        {
+            auto filtered = std::make_shared<Block>();
+            for (const auto & column : *header)
+                if (!set_operation_totals->totals_only_right_columns.contains(column.name))
+                    filtered->insert(column);
+            right_sample_block = filtered;
+        }
+        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), right_sample_block));
         auto finish_counter = std::make_shared<FinishCounter>(1);
         return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter, JoinBuildContext::serial());
     });
