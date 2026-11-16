@@ -61,9 +61,6 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     NearestNeighbours search(const std::vector<float> & query, size_t limit, size_t probes,
         const MergeTreeReaderSettings & reader_settings, bool return_distances) const;
 
-    void searchBatch(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t probes,
-        const MergeTreeReaderSettings & reader_settings, std::vector<UInt32> & neighbours, std::vector<float> & distances) const;
-
     const String index_name;
     const IvfMetric metric;
     size_t dimensions;
