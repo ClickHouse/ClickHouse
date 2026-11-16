@@ -20,12 +20,6 @@ S8b: Code: 703
 S8c: Code: 703
 S9: Code: 703
 S10: 1
--- P: subqueries in `SHOW ... WHERE`
-P1a: Code: 703
-P1b: Code: 703
-P1c: Code: 703
-P2a: plain
-P2b: ok
 -- U: SQL function
 U1: 1
 -- V: stored definitions

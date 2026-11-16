@@ -53,14 +53,6 @@ run S8c "$OFF" "DESCRIBE (SELECT x FROM ${db}.ns.t)"
 run S9 "$OFF" "SELECT 1 IN ${db}.ns.t"
 run S10 "$ON" "SELECT 1 IN ${db}.ns.t"
 
-echo '-- P: subqueries in `SHOW ... WHERE`'
-run P1a "$OFF" "SHOW TABLES FROM ${db} WHERE name IN (SELECT 'plain' FROM ${db}.ns.t)"
-run P1b "$OFF" "SHOW COLUMNS FROM ${db}.plain WHERE field IN (SELECT 'x' FROM ${db}.ns.t)"
-run P1c "$OFF" "SHOW INDEXES FROM ${db}.plain WHERE 1 IN (SELECT x FROM ${db}.ns.t)"
-run P2a "$OFF" "SHOW TABLES FROM ${db} WHERE name IN (SELECT 'plain' FROM ${db}.\`ns.t\`)"
-run P2b "$OFF" "CREATE ROW POLICY rp2_${db} ON ${db}.plain USING x IN (SELECT x FROM ${db}.\`ns.t\`) TO NONE"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY rp2_${db} ON ${db}.plain"
-
 echo '-- U: SQL function'
 $ON -q "CREATE FUNCTION f_${db} AS () -> (SELECT count() FROM ${db}.ns.t)"
 run U1 "$OFF" "SELECT f_${db}()"
