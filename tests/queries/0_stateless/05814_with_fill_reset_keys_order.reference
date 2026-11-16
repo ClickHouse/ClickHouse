@@ -1,0 +1,25 @@
+--- later key FROM above the data
+0	0	1
+0	2	1
+1	1	2
+--- reset row placed after the original row, not duplicated
+0	0	1
+0	2	1
+1	1	2
+1	2	1
+1	3	0
+--- STALENESS
+0	0	1
+0	2	1
+1	2	1
+2	2	1
+5	1	2
+5	2	1
+6	2	1
+7	2	1
+--- DESC
+0	0	1
+1	1	2
+--- Nullable, reset row equal to the next original row
+0	\N
+1	\N

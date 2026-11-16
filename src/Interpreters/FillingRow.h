@@ -28,6 +28,10 @@ class FillingRow
     /// finds last value <= to
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
+    /// Sets the keys after `pos` to their FROM values, or to the values of `next_original_row` for keys without one, and
+    /// returns whether the row is then less than `next_original_row`: the first key in which they differ decides.
+    [[nodiscard]] bool resetKeysAfter(size_t pos, const FillingRow & next_original_row);
+
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
     void checkFillingTowardsConstraintFitsColumnType(size_t column_ind);
 

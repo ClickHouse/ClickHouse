@@ -302,6 +302,29 @@ void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
         checkGeneratedValueFitsColumnType(next_value, i);
 }
 
+bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row)
+{
+    for (size_t i = pos + 1; i < size(); ++i)
+    {
+        const auto & descr = getFillDescription(i);
+        if (!descr.fill_from.isNull())
+            row[i] = descr.fill_from;
+        else
+            row[i] = next_original_row[i];
+    }
+
+    for (size_t i = pos + 1; i < size(); ++i)
+    {
+        if (equals(row[i], next_original_row[i]))
+            continue;
+
+        return (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i)))
+            && (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)));
+    }
+
+    return false;
+}
+
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
 
@@ -427,20 +450,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
     {
-        bool is_less = false;
-        for (size_t i = pos + 1; i < row_size; ++i)
-        {
-            const auto & descr = getFillDescription(i);
-            if (!descr.fill_from.isNull())
-                row[i] = descr.fill_from;
-            else
-                row[i] = next_original_row[i];
-
-            is_less |= (
-                (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
-            );
-        }
+        bool is_less = resetKeysAfter(pos, next_original_row);
 
         value_changed = true;
         return is_less;
@@ -470,20 +480,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
 
         if (equals(row[pos], next_original_row[pos]))
         {
-            bool is_less = false;
-            for (size_t i = pos + 1; i < size(); ++i)
-            {
-                const auto & descr = getFillDescription(i);
-                if (!descr.fill_from.isNull())
-                    row[i] = descr.fill_from;
-                else
-                    row[i] = next_original_row[i];
-
-                is_less |= (
-                    (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                    (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
-                );
-            }
+            bool is_less = resetKeysAfter(pos, next_original_row);
 
             logDebug("is less: {}", is_less);
 
