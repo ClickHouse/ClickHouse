@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <!-- A horizontal merge with `merge_use_batch_sorting_queue` of a large part and three small parts whose keys
          interleave with it, so the large part contributes runs of about 10 rows and each small part runs of 5 rows. -->
     <create_query>
