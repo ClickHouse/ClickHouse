@@ -1055,10 +1055,13 @@ void throwIfEngineIsUnknownAndNotGranted(
 /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
 std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
 {
-    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`.
-    const auto table_function = TableFunctionFactory::instance().get(table_function_ast, query_context);
+    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
+    /// parsed, because parsing may change the arguments, e.g. `mysql` takes out its `SETTINGS`, which the structure
+    /// inference of the table still needs.
+    const ASTPtr parsed_ast = table_function_ast->clone();
+    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context);
     /// A definition that cannot be a table is refused the same way whatever the grants of the user.
-    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, query_context);
+    throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
     String engine_name = table_function->getEngineNameForAccessCheck();
     const auto & storages = StorageFactory::instance().getAllStorages();
     if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
