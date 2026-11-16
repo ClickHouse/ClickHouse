@@ -2022,7 +2022,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & join_expression = join_operator.expression;
 
     /// `indexHint` is always 1 and only index analysis reads its argument, which a condition still in `ON` never reaches.
-    /// It reads no column, so kept here it would be a left side condition, which e.g. `full_sorting_merge` does not support.
     std::erase_if(join_expression, [](const JoinActionRef & condition)
     {
         const auto * node = condition.getNode();
