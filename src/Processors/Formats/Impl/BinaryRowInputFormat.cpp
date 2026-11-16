@@ -1666,6 +1666,14 @@ void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
     });
+
+    for (const auto * format_name : {"RowBinaryWithNamesAndTypes", "RowBinaryWithNamesAndTypesAndDefaults"})
+    {
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            return fmt::format("rename_duplicate_columns={}", settings.with_names_rename_duplicate_columns);
+        });
+    }
 }
 
 
