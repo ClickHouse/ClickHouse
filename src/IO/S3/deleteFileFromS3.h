@@ -27,7 +27,8 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
 /// Deletes one file from S3.
 /// A non-empty `etag_to_match` pins the delete to one generation via `If-Match`; a refusal (`412`/`409`) is
-/// reported as `FILE_CHANGED_DURING_READ`, not swallowed by `if_exists`. Endpoints ignoring `If-Match` delete by key.
+/// reported as `FILE_CHANGED_DURING_READ`, not swallowed by `if_exists`. Endpoints ignoring `If-Match` delete by key,
+/// and so does GCS, where no `ETag` condition is sent.
 void deleteFileFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,

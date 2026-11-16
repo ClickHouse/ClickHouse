@@ -60,9 +60,12 @@ void deleteFileFromS3(
     const String & local_path_for_blob_storage_log,
     size_t file_size_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event,
-    const String & etag_to_match,
+    const String & etag_to_match_,
     const String & version_id)
 {
+    /// GCS supports no `ETag` condition on a delete (see `deleteFilesFromS3`), so it deletes by key there.
+    const String & etag_to_match = s3_client->isClientForGCS() ? String{} : etag_to_match_;
+
     S3::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(key);
@@ -138,8 +141,15 @@ void deleteFilesFromS3(
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event,
     Strings * successful_keys,
-    const Strings & etags_to_match)
+    const Strings & etags_to_match_)
 {
+    /// GCS rejects a whole `DeleteObjects` request that names an `ETag` for an object (HTTP 400), and its XML API
+    /// accepts `If-Match` only on retrieval: a delete there can be conditioned on `x-goog-if-generation-match`,
+    /// which needs the object generation rather than its `ETag`. So on GCS the objects are deleted by key, as
+    /// before the deletes were pinned, like on a store that ignores `If-Match` on `DELETE`.
+    const Strings no_etags;
+    const Strings & etags_to_match = s3_client->isClientForGCS() ? no_etags : etags_to_match_;
+
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
     chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
     chassert(etags_to_match.empty() || (etags_to_match.size() == keys.size()));
