@@ -2,7 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -49,7 +49,8 @@ void StorageFromMergeTreeProjection::read(
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
 
     const auto parent_storage_id = parent_storage->getStorageID();
-    auto row_policy_filter = getRowPolicyFilterForStorage(*parent_storage, context);
+    auto row_policy_filter = context->getRowPolicyFilter(
+        parent_storage_id.getDatabaseName(), parent_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
 
@@ -142,15 +143,6 @@ void StorageFromMergeTreeProjection::read(
         auto it = created_projections.find(projection->name);
         if (it != created_projections.end())
         {
-            /// likewise for pending alter and metadata mutations (e.g. `MODIFY COLUMN`, `DROP COLUMN`, `RENAME COLUMN`),
-            /// which the parent read applies on the fly via `AlterConversions` but the projection read does not.
-            /// The snapshot counters also include already finished mutations, so check the commands for this part.
-            if (has_row_policy && !snapshot_data.mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part).empty())
-                throw Exception(ErrorCodes::ACCESS_DENIED,
-                    "Cannot read from projection `{}` of table {} under a row policy while part {} has unmaterialized "
-                    "mutations, since the projection may show stale values the policy would hide",
-                    projection->name, parent_storage_id.getNameForLogs(), part.data_part->name);
-
             projection_parts.push_back(
                 RangesInDataPart(it->second, part.data_part, part.part_index_in_query, part.part_starting_offset_in_query));
         }
@@ -182,8 +174,7 @@ void StorageFromMergeTreeProjection::read(
 StorageSnapshotPtr
 StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    /// The parent's snapshot is shared by every read of the parent table in the query, so it must carry the parent's metadata.
-    auto parent_storage_snapshot = merge_tree.getStorageSnapshot(parent_metadata, query_context);
+    auto parent_storage_snapshot = merge_tree.getStorageSnapshot(metadata_snapshot, query_context);
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
 
     auto data = std::make_unique<MergeTreeData::SnapshotData>();

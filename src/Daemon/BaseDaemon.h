@@ -29,7 +29,7 @@ class SignalListener;
 ///
 /// \code
 /// # Some possible command line options:
-/// #    --config-file, -C or --config - path to configuration file. By default - config.xml, config.yaml or config.yml in the current directory.
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
 /// #    --log-file
 /// #    --errorlog-file
 /// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
@@ -135,11 +135,6 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
-    /// Called by `initialize` once the configuration is loaded, before it starts any thread (only the background
-    /// threads of jemalloc may exist, and `initialize` configures them right after), for what needs the process to
-    /// have a single thread, such as entering new namespaces.
-    virtual void beforeStartingThreads() {}
-
     /// Start the signal listener thread with the asynchronously delivered handled signals blocked in it.
     void startSignalListener();
 
@@ -158,9 +153,6 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
-    /// The name of the configuration file to use when `--config-file` is not specified. The extension is
-    /// only the preferred one: the file is looked up with every supported extension, see
-    /// `getConfigPathForAnySupportedFormat`.
     virtual std::string getDefaultConfigFileName() const;
 
     std::optional<DB::StatusFile> pid_file;

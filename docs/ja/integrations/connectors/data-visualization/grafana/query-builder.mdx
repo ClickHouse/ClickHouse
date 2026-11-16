@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -34,7 +36,9 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 *クエリタイプ*設定を変更すると、作成するクエリの種類に合わせてクエリビルダーのレイアウトが変わります。
 また、クエリタイプによって、データの可視化に使用するパネルも決まります。
 
-### Table {#table}
+<div id="table">
+  ### Table
+</div>
 
 最も柔軟なクエリタイプは、テーブルクエリです。これは、シンプルなクエリや集約クエリを扱うために設計された、ほかのクエリビルダー全般を包括するクエリタイプです。
 
@@ -48,19 +52,13 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Limit      | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると追加されません。すべてのデータを表示するには、一部の可視化でこれを `0` に設定する必要がある場合があります。 |
 | Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                            |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![集約テーブルクエリの例](/images/integrations/data-visualization/grafana/demo_table_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="集約テーブルクエリの例" border />
 
 このクエリタイプでは、データがテーブルとして表示されます。
 
-### ログ {#logs}
+<div id="logs">
+  ### ログ
+</div>
 
 ログのクエリタイプでは、ログデータのクエリに特化したクエリビルダーを利用できます。
 クエリビルダーでデフォルトのデータベース/テーブルやカラムをあらかじめ読み込めるように、デフォルト値はデータソースの[ログ設定](/ja/integrations/connectors/data-visualization/grafana/config#logs)で構成できます。
@@ -84,15 +82,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Filters        | `WHERE` 句に適用するフィルターの一覧です。                                                                                     |
 | Message Filter | `LIKE %value%` を使ってログを簡単に絞り込むためのテキスト入力です。入力が空の場合は除外されます。                                                      |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![OTel ログクエリの例](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel ログクエリの例" border />
 
 <br />
 
@@ -100,15 +90,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 クエリで選択した追加カラムは、展開したログの行で確認できます。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ログクエリの追加フィールドの例](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="ログクエリの追加フィールドの例" border />
 
 <div id="time-series">
   ### 時系列
@@ -142,19 +124,13 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Limit      | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると追加されません。可視化全体を表示するため、一部の時系列データセットではこの設定を推奨します。 |
 | Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                     |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![時系列クエリの例](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="時系列クエリの例" border />
 
 このクエリタイプでは、データが時系列パネルで表示されます。
 
-### トレース {#traces}
+<div id="traces">
+  ### トレース
+</div>
 
 トレースクエリタイプには、トレースを簡単に検索して表示できるクエリビルダーが用意されています。
 これは OpenTelemetry データ向けに設計されていますが、別のスキーマのトレースを表示するためにカラムを選択することもできます。
@@ -187,19 +163,13 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Filters               | `WHERE` 句に適用するフィルターの一覧。                                                                                         |
 | Trace ID              | フィルター対象の Trace ID。Trace ID モードの場合、および トレース ID の[データリンク](#data-links)を開く場合にのみ使用されます。                            |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![OTel トレースクエリの例](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel トレースクエリの例" border />
 
 このクエリタイプでは、Trace Search モードではデータがテーブルビューで表示され、Trace ID モードではトレースパネルで表示されます。
 
-## SQL エディタ {#sql-editor}
+<div id="sql-editor">
+  ## SQL エディタ
+</div>
 
 クエリビルダーでは対応できないような複雑なクエリには、SQL エディタを使用できます。
 プレーンな ClickHouse SQL を記述して実行できるため、クエリを完全に制御できます。
@@ -211,17 +181,11 @@ SQL エディタは、クエリエディタ上部の &quot;SQL Editor&quot; を�
 クエリに最適な可視化を表示するために、クエリタイプを切り替えることもできます。
 この切り替えはダッシュボード表示にも影響し、特に時系列データで顕著です。
 
-<div className="ch-image-md">
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="生の SQL クエリの例" border />
 
-<Frame>
-
-![生の SQL クエリの例](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
-
-</Frame>
-
+<div id="data-links">
+  ## データリンク
 </div>
-
-## データリンク {#data-links}
 
 Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 を使うと、新しいクエリへリンクできます。
@@ -230,29 +194,13 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   テーブル内のトレースリンクの例
 
-  <div className="ch-image-sm">
-
-  <Frame>
-
-  ![テーブル内のトレースリンク](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="テーブル内のトレースリンク" border />
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   ログ内のトレースリンクの例
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![ログ内のトレースリンク](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="ログ内のトレースリンク" border />
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -263,11 +211,11 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 
 [ログ](#logs) または [トレース](#traces) のクエリで OpenTelemetry が有効になっている場合、トレース ID カラムが自動的に含まれます。
 
-トレース ID カラムが存在する場合、プラグインはデータに「**View Trace**」および「**View Logs**」のリンクを追加できます。
+トレース ID カラムを含めると、データに「**View Trace**」および「**View Logs**」のリンクが追加されます。
 
-トグルはデフォルトで有効になっています。現在のクエリタイプのリンクにはデフォルトを設定する必要はありませんが、クロスシグナルリンクは、データソースにターゲットシグナル用のデフォルトが設定されている場合にのみ表示されます。データソースの[トレース](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links)および[ログ](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links)設定セクションにある **Show &quot;View trace&quot; links** と **Show &quot;View logs&quot; links** のトグルで非表示にできます。
-
-### リンク機能 {#linking-abilities}
+<div id="linking-abilities">
+  ### リンク機能
+</div>
 
 データリンクがあると、指定された トレース ID を使って トレース と ログ を開けます。
 
@@ -279,15 +227,7 @@ Explore ビューではなくダッシュボードからリンクをクリック
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   ログ クエリ (左パネル) から trace (右パネル) を表示する例
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![データリンクの例](/images/integrations/data-visualization/grafana/demo_data_links.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="データリンクの例" border />
 </div>
 
 <div id="macros">

@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
@@ -36,40 +37,16 @@ ClickHouse Managed Postgres は現在、2 種類の権限をサポートして�
 
 1. 左側のサイドバーで組織名をクリックし、**Users and roles** を選択します。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![「Users and roles」メニュー](/images/managed-postgres/rbac/usersandroles.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="「Users and roles」メニュー" size="md" border />
 
 2. **Roles** タブに切り替え、**Create role** をクリックします。
 3. ロール名を入力し、**+ Allow** をクリックして、エンティティ一覧から **Postgres Service** を選択します。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Postgres Service エンティティの選択](/images/managed-postgres/rbac/postgresentity.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Postgres Service エンティティの選択" size="md" border />
 
 4. ロールの適用対象とする Postgres サービスを選択し、付与する権限を選びます。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ロールの Postgres 権限の設定](/images/managed-postgres/rbac/newpostgresperms.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="ロールの Postgres 権限の設定" size="md" border />
 
 5. **Create role** をクリックして保存します。
 

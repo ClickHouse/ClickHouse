@@ -18,7 +18,7 @@ namespace DB
   */
 
 class QueryNode;
-class ITableExpressionNode;
+class TableNode;
 class UnionNode;
 
 struct FiltersForTableExpression
@@ -39,7 +39,7 @@ class GlobalPlannerContext
 public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
-        const ITableExpressionNode * parallel_replicas_table_,
+        const TableNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
         FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
@@ -80,8 +80,7 @@ public:
     const QueryNode * const parallel_replicas_node = nullptr;
     /// Table which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
-    /// It's either a table, or a table function that is only a reference to a table.
-    const ITableExpressionNode * const parallel_replicas_table = nullptr;
+    const TableNode * const parallel_replicas_table = nullptr;
     /// UNION node whose every child query reads from a table eligible for parallel replicas.
     /// When set, each branch retains parallel replicas reading instead of having it disabled.
     const UnionNode * const parallel_replicas_table_union = nullptr;
@@ -94,9 +93,6 @@ public:
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
-
-    /// Planner contexts that own the data `shared_table_expression_data` points to.
-    std::vector<PlannerContextPtr> shared_table_expression_data_owners;
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
@@ -204,17 +200,6 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
-    /// True when this plan, or a fragment of it, may be serialized and shipped to another node: a
-    /// logical plan built for a shard under `serialize_query_plan`, or a local plan from which
-    /// plan-based parallel replicas (`parallel_replicas_plan_based`) later cut a fragment for the
-    /// replicas. Everything materialized while planning must then survive serialization, which rules
-    /// out a JIT-compiled expression: a compiled function has no name in `FunctionFactory`, so the
-    /// receiving node cannot resolve it.
-    bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
-
-    /// See `SelectQueryOptions::view_source_in_subqueries`.
-    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
-
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -228,10 +213,6 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
-
-    bool may_be_serialized_for_remote_execution = false;
-
-    bool view_source_in_subqueries = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

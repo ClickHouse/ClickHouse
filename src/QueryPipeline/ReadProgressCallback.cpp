@@ -34,11 +34,8 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
     ///
     /// NOTE: This can be done only if progress callback already set, since
     /// otherwise total_rows_approx will lost.
-    if (!progress_callback)
-        return;
-
-    size_t rows_approx = total_rows_approx.exchange(0);
-    if (rows_approx != 0)
+    size_t rows_approx = 0;
+    if (progress_callback && (rows_approx = total_rows_approx.exchange(0)) != 0)
     {
         Progress total_rows_progress = {0, 0, rows_approx};
 

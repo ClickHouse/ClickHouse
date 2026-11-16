@@ -17,9 +17,6 @@
 namespace DB
 {
 
-/// The same alias as in DataTypes/Serializations/ISerialization.h, which this header does not otherwise need.
-using SerializationByName = std::unordered_map<String, SerializationPtr>;
-
 using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
@@ -85,6 +82,15 @@ public:
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
+
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+
+    /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
+    bool columnUsesDefaultCodec(const String & column_name) const;
+
+    /// Codec for a default-coded substream: adaptive when enabled and the type has a non-default codec, else `resolved_codec`.
+    CompressionCodecPtr
+    maybeAdaptiveDefaultCodec(bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const;
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 

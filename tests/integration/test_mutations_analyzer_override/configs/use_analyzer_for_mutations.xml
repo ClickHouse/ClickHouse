@@ -1,0 +1,3 @@
+<clickhouse>
+    <use_analyzer_for_mutations>true</use_analyzer_for_mutations>
+</clickhouse>
