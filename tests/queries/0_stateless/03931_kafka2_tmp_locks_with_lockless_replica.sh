@@ -158,7 +158,7 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
              kafka_format = 'JSONEachRow',
              kafka_max_block_size = 100,
              kafka_poll_timeout_ms = $POLL_TIMEOUT_MS,
-             kafka_consumer_reschedule_ms = 100,
+             kafka_consumer_reschedule_ms = 1000,
              kafka_keeper_path = '$KEEPER_PATH',
              kafka_replica_name = 'r4';
  "

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <mutex>
 #include <unordered_map>
@@ -127,9 +128,9 @@ public:
     /// rather than captured in the constructor because consumers are built once in
     /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
-    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
+    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls, size_t retry_interval_ms);
     /// Publishes that this replica tried and failed to take any partition this refresh round.
-    void markDemandInKeeper();
+    void markDemandInKeeper(size_t retry_interval_ms);
     /// Removes the published demand once this replica holds partitions again.
     void removeDemandInKeeper();
 
@@ -211,8 +212,15 @@ private:
     /// Whether this consumer currently keeps a demand node in Keeper.
     bool demand_published = false;
 
-    /// Demand value last seen per lockless replica and rounds since it last changed.
-    std::unordered_map<String, std::pair<String, size_t>> TSA_GUARDED_BY(topic_partition_locks_mutex) demand_state_by_replica;
+    struct DemandState
+    {
+        String last_value;
+        /// How long the reservation is held after the value last changed.
+        size_t retention_ms = 1500;
+        std::chrono::steady_clock::time_point last_change{};
+    };
+    /// Demand state per lockless replica; refreshed whenever its value changes.
+    std::unordered_map<String, DemandState> TSA_GUARDED_BY(topic_partition_locks_mutex) demand_state_by_replica;
 
     std::atomic<UInt64> last_poll_timestamp = 0;
     std::atomic<UInt64> last_commit_timestamp = 0;

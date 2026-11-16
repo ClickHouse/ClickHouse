@@ -743,6 +743,11 @@ UInt64 StorageKafka2::getLocksRefreshPolls() const
     return getContext()->getKafkaLocksRefreshPolls();
 }
 
+size_t StorageKafka2::getConsumerRescheduleMs() const
+{
+    return (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
+}
+
 size_t StorageKafka2::getSchemaRegistrySkipBytes() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
@@ -1418,7 +1423,8 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
         if (consumer->needsNewKeeper())
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
-        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls()); cannot_poll_reason.has_value())
+        const size_t consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls(), consumer_reschedule_ms); cannot_poll_reason.has_value())
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);

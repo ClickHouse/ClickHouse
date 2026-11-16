@@ -27,10 +27,28 @@ const std::string intent_file_name{"intention"};
 /// Rounds to keep free partitions reserved (up to a lockless replica's permanent quota)
 /// for a possibly restarting replica; past this window a published demand keeps them reserved.
 constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
-/// Rounds a published demand keeps the reservation after its value last changed: a replica
-/// still trying refreshes the value on every attempt, so an unchanged demand means nobody
-/// is requesting the partitions anymore.
-constexpr size_t MAX_ROUNDS_WITH_UNCHANGED_DEMAND = 8;
+
+size_t parseDemandRetentionMs(const String & value)
+{
+    /// Retention = a few declared retry intervals; an unchanged demand past it means nobody
+    /// is requesting the partitions anymore. Value format: "<retry_interval_ms>:<counter>".
+    constexpr size_t demand_retention_factor = 3;
+    constexpr size_t default_retention_ms = 1500;
+    constexpr size_t max_retention_ms = 180000;
+
+    const auto sep = value.find(':');
+    if (sep == String::npos || sep == 0 || sep + 1 == value.size())
+        return default_retention_ms;
+    try
+    {
+        const auto declared_ms = std::min<UInt64>(parse<UInt64>(value.substr(0, sep)), 60000);
+        return std::min(std::max<UInt64>(declared_ms, 1) * demand_retention_factor, max_retention_ms);
+    }
+    catch (...)
+    {
+        return default_retention_ms;
+    }
+}
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
 {
@@ -189,7 +207,8 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
     poll_count = 0;
 }
 
-std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
+std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(
+    UInt64 locks_refresh_polls, size_t retry_interval_ms)
 {
     chassert(isInUse());
     LOG_TRACE(log, "Polling consumer {} for events", idx);
@@ -281,8 +300,8 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     if (assigned_topic_partitions.empty())
     {
         /// An empty assignment after a full refresh means we tried and got nothing: publish
-        /// the demand so that neighbours keep free partitions reserved until it is removed.
-        markDemandInKeeper();
+        /// the demand (with our retry interval) so neighbours keep free partitions reserved.
+        markDemandInKeeper(retry_interval_ms);
         LOG_TRACE(log, "Consumer {} has no partitions", idx);
         return CannotPollReason::NoPartitions;
     }
@@ -290,11 +309,11 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     return std::nullopt;
 }
 
-void KeeperHandlingConsumer::markDemandInKeeper()
+void KeeperHandlingConsumer::markDemandInKeeper(size_t retry_interval_ms)
 {
     static std::atomic<UInt64> demand_counter{0};
     const auto demand_path = fs::path(keeper_path) / "replicas" / replica_name / "demand";
-    const auto value = toString(demand_counter.fetch_add(1) + 1);
+    const auto value = fmt::format("{}:{}", retry_interval_ms, demand_counter.fetch_add(1) + 1);
     const auto code = keeper->tryCreate(demand_path, value, zkutil::CreateMode::Ephemeral);
     if (code == Coordination::Error::ZNODEEXISTS)
         keeper->set(demand_path, value);
@@ -543,24 +562,24 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     });
 
     /// Reserve free partitions for the lockless replicas that may still take some: those in
-    /// their initial rounds, and those whose published demand is still being refreshed (a
-    /// still-trying replica changes its value every attempt); the rest stays covered.
+    /// their initial rounds, and those whose demand changed recently enough that its
+    /// publisher's next retry may still come (the value declares the retry interval).
+    const auto now = std::chrono::steady_clock::now();
     size_t lockless_replicas_to_reserve_for = 0;
     for (const auto & entry : lockless_rounds_by_replica)
     {
-        bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA;
+        const bool initial_window = entry.second <= MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA;
         bool demanding = false;
         if (const auto demand_it = demand_of_lockless.find(entry.first); demand_it != demand_of_lockless.end())
         {
-            auto & [last_value, rounds_unchanged] = demand_state_by_replica[entry.first];
-            if (last_value != demand_it->second)
+            auto & state = demand_state_by_replica[entry.first];
+            if (state.last_value != demand_it->second)
             {
-                last_value = demand_it->second;
-                rounds_unchanged = 0;
+                state.last_value = demand_it->second;
+                state.retention_ms = parseDemandRetentionMs(demand_it->second);
+                state.last_change = now;
             }
-            else
-                ++rounds_unchanged;
-            demanding = rounds_unchanged < MAX_ROUNDS_WITH_UNCHANGED_DEMAND;
+            demanding = now - state.last_change < std::chrono::milliseconds(state.retention_ms);
         }
         if (initial_window || demanding)
             ++lockless_replicas_to_reserve_for;
