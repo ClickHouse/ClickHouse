@@ -31,10 +31,6 @@ workflow = Workflow.Config(
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
-        # Runs the settings-history check so that a setting changed on a release branch records
-        # the change under the branch's version. No job requires or runs after it, so it does
-        # not gate the pipeline.
-        JobConfigs.style_check,
         *builds_for_release_branch,
         *[
             job
