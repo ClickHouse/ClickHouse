@@ -18,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
