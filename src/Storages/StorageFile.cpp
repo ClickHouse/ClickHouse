@@ -2046,17 +2046,22 @@ namespace
     /// a format schema, which may come from a query (`format_schema_source = 'query'`). Their errors
     /// belong to the configuration of the query, not to the input file, which must not be skipped
     /// because of them. So an error is attributed to the input file only if:
-    /// - it is a read or seek error that names the input file. A failure to open or to stat a file never
-    ///   is: the input file is already open at this point;
+    /// - it was thrown by a read of the input buffer, which `ReadBuffer::next` cancels then, whatever
+    ///   the format, e.g. a decompression error while the format peeks at the start of the input;
+    /// - or it is a read or seek error that names the input file, e.g. from a read at a position, which
+    ///   does not use `ReadBuffer::next`. A failure to open or to stat a file never is: the input file
+    ///   is already open at this point;
     /// - or the format reads the input while it is created (`reads_input`), e.g. the footer of a `Parquet`
-    ///   file. Such formats have no external configuration of this kind, and their logger of errors is
-    ///   created separately, outside of the skip handling. The other formats read the input only while
-    ///   the data is read, after the start of the input has been read separately.
+    ///   file, and fails on its contents. Such formats have no external configuration of this kind, and
+    ///   their logger of errors is created separately, outside of the skip handling.
     /// Errors attributed to the input file are then classified by `isBrokenFileError`.
     /// Only for the errors thrown while the format is created: the errors thrown while the pipeline is
     /// executed are copied to `Exception` by the executor, which loses the path of an `ErrnoException`.
     bool isErrorOfInputFileWhileCreatingFormat(const Exception & e, const ReadBuffer & input, bool reads_input)
     {
+        if (input.isCanceled())
+            return true;
+
         const int code = e.code();
         if (code == ErrorCodes::FILE_DOESNT_EXIST
             || code == ErrorCodes::CANNOT_OPEN_FILE
@@ -2695,22 +2700,6 @@ Chunk StorageFileSource::generate()
                     context_without_errors_logger->setSetting("input_format_record_errors_file_path", String{});
                     format_context = context_without_errors_logger;
                     errors_logger = std::make_shared<InputFormatErrorsLogger>(getContext());
-                }
-
-                if (!format_reads_input_while_created)
-                {
-                    /// Other formats may only peek at the start of the input while they are created, so read
-                    /// it in advance: a broken start of the file, e.g. a corrupted compressed stream, is
-                    /// skipped here.
-                    try
-                    {
-                        read_buf->eof();
-                    }
-                    catch (const Exception & e)
-                    {
-                        skip_or_rethrow(e.code(), /*while_reading_data=*/ false);
-                        continue;
-                    }
                 }
             }
 
