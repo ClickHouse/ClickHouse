@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -83,6 +84,24 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
 
 }
 
+String toString(FragmentExchange::Kind kind)
+{
+    switch (kind)
+    {
+        case FragmentExchange::Kind::Hash:
+            return "hash";
+        case FragmentExchange::Kind::Broadcast:
+            return "broadcast";
+        case FragmentExchange::Kind::Gather:
+            return "gather";
+        case FragmentExchange::Kind::Any:
+            return "any";
+        case FragmentExchange::Kind::SetValues:
+            return "set values";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", static_cast<int>(kind));
+}
+
 const QueryFragment & FragmentGraph::getFragment(UInt32 id) const
 {
     auto it = std::lower_bound(fragments.begin(), fragments.end(), id, [](const QueryFragment & f, UInt32 value) { return f.id < value; });
@@ -105,9 +124,9 @@ namespace
 /// The indexes of the fragments of a valid graph in a topological order, producers first, and the producers of each.
 struct TopologicalOrder
 {
-    std::vector<size_t> order;
+    VectorWithMemoryTracking<size_t> order;
     /// Fragment index -> the indexes of the fragments it reads from.
-    std::vector<std::vector<size_t>> producers;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> producers;
 };
 
 /// The index of the fragment with the given id in `fragments`, which is sorted by id; nullopt when absent.
@@ -139,8 +158,8 @@ TopologicalOrder sortTopologically(const FragmentGraph & graph)
 
     TopologicalOrder result;
     result.producers.resize(num_fragments);
-    std::vector<size_t> in_degree(num_fragments, 0);
-    std::vector<std::vector<size_t>> consumers(num_fragments);
+    VectorWithMemoryTracking<size_t> in_degree(num_fragments, 0);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> consumers(num_fragments);
     for (const auto & exchange : graph.exchanges)
     {
         auto producer = findFragmentIndex(graph, exchange.from);
@@ -179,12 +198,12 @@ void validateFragmentGraph(const FragmentGraph & graph)
     sortTopologically(graph);
 }
 
-std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph)
+VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> computeLevels(const FragmentGraph & graph)
 {
     const auto sorted = sortTopologically(graph);
 
     /// A fragment is one level above its deepest producer.
-    std::vector<size_t> level_of(graph.fragments.size(), 0);
+    VectorWithMemoryTracking<size_t> level_of(graph.fragments.size(), 0);
     size_t max_level = 0;
     for (size_t i : sorted.order)
     {
@@ -194,7 +213,7 @@ std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph)
     }
 
     /// The fragments are sorted by id, so every level comes out ascending.
-    std::vector<std::vector<UInt32>> levels(max_level + 1);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> levels(max_level + 1);
     for (size_t i = 0; i < graph.fragments.size(); ++i)
         levels[level_of[i]].push_back(graph.fragments[i].id);
     return levels;

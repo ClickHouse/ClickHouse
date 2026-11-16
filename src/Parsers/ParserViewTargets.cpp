@@ -86,7 +86,7 @@ namespace
 
         if (!res || !res->getTableID(kind))
         {
-            ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
+            ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ false);
             if (table_name_p.parse(pos, ast, expected))
             {
                 auto table_id = ast->as<ASTTableIdentifier>()->getTableId();

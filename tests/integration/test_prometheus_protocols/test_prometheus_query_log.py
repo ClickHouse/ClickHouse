@@ -2,6 +2,7 @@
 Integration tests that assert Prometheus HTTP handler operations are reflected in
 system.query_log: Query API requests (/api/v1/query and /api/v1/query_range) with
 read_rows/read_bytes and remote-write requests (/write) with written_rows/written_bytes.
+Also checks that a traced Query API request is reflected in system.opentelemetry_span_log.
 """
 
 import urllib.parse
@@ -57,6 +58,41 @@ def timeseries_data_has_metric_sql(table, metric_name):
     )
 
 
+def span_log_trace_filter_sql(trace_id):
+    return f"trace_id = UUIDNumToString(toFixedString(unhex('{trace_id}'), 16))"
+
+
+def span_log_handler_span_sql(trace_id):
+    return (
+        "SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        "SELECT count(), any(kind), any(hex(parent_span_id)), any(attribute['http.method']), "
+        "any(startsWith(attribute['clickhouse.uri'], '/api/v1/query')) "
+        f"FROM system.opentelemetry_span_log WHERE {span_log_trace_filter_sql(trace_id)} "
+        "AND operation_name = 'PrometheusRequestHandler'"
+    )
+
+
+def span_log_query_span_under_handler_sql(trace_id):
+    return (
+        "SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        "SELECT count() >= 1, any(attribute['clickhouse.tracestate']), any(attribute['db.statement'] != '') "
+        f"FROM system.opentelemetry_span_log WHERE {span_log_trace_filter_sql(trace_id)} "
+        "AND operation_name = 'query' AND parent_span_id IN ("
+        f"SELECT span_id FROM system.opentelemetry_span_log WHERE {span_log_trace_filter_sql(trace_id)} "
+        "AND operation_name = 'PrometheusRequestHandler')"
+    )
+
+
+def span_log_handler_span_uri_sql(trace_id, secret):
+    return (
+        "SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        f"SELECT count(), any(position(attribute['clickhouse.uri'], '{secret}') > 0), "
+        "any(position(attribute['clickhouse.uri'], '[HIDDEN]') > 0), any(attribute['clickhouse.http_status'] = '200') "
+        f"FROM system.opentelemetry_span_log WHERE {span_log_trace_filter_sql(trace_id)} "
+        "AND operation_name = 'PrometheusRequestHandler'"
+    )
+
+
 def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_time=1):
     """Assert the Prometheus request produced at least one correlated QueryFinish row."""
     node.query("SYSTEM FLUSH LOGS query_log")
@@ -91,6 +127,7 @@ node = cluster.add_instance(
         "configs/prometheus.xml",
         "configs/config.d/query_log.xml",
         "configs/config.d/query_masking_rules.xml",
+        "configs/config.d/opentelemetry_span_log.xml",
     ],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_write=(9093, "/write"),
@@ -133,6 +170,81 @@ def test_query_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def test_query_api_traced_request_appears_in_span_log():
+    """
+    A Prometheus Query API request carrying W3C trace context headers produces a
+    `PrometheusRequestHandler` server span with the given parent, and the `query` span
+    of the SQL translated from PromQL is its child and carries the tracestate.
+    """
+    trace_id = uuid.uuid4().hex
+    parent_span_id = "5150000000000515"
+    tracestate = "some custom state"
+
+    escaped_query = urllib.parse.quote_plus("up", safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?query={escaped_query}&time=1753176757.89"
+    response = get_response_to_http_api(
+        url,
+        headers={
+            "traceparent": f"00-{trace_id}-{parent_span_id}-01",
+            "tracestate": tracestate,
+        },
+    )
+    extract_data_from_http_api_response(response)
+
+    # The handler span is written after the response has been sent, so retry.
+    assert_eq_with_retry(
+        node,
+        span_log_handler_span_sql(trace_id),
+        f"1\tSERVER\t{parent_span_id}\tGET\t1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+    assert_eq_with_retry(
+        node,
+        span_log_query_span_under_handler_sql(trace_id),
+        f"1\t{tracestate}\t1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
+# The dedicated `query` handler and the combined `api_v1` handler, which selects the implementation after the URI is recorded.
+@pytest.mark.parametrize("path_prefix", ["", "/combined"])
+@pytest.mark.parametrize(
+    "endpoint, query_param_name, promql, expect_ok",
+    [
+        ("/api/v1/query", "query", 'up{job="prometheus_masking_secret"}', True),
+        # A percent-encoded parameter name is decoded to `query` by the server, so it must be hidden too.
+        ("/api/v1/query", "%71uery", 'up{job="prometheus_masking_secret"}', True),
+        # The URI is recorded before the query is parsed, so an error response must hide it as well.
+        ("/api/v1/query", "query", 'up{job="prometheus_masking_secret"', False),
+        ("/api/v1/series", "match[]", 'up{job="prometheus_masking_secret"}', True),
+    ],
+)
+def test_query_api_traced_request_hides_promql_in_span_log(path_prefix, endpoint, query_param_name, promql, expect_ok):
+    """
+    The PromQL text is a query parameter of the request URI, which `query_masking_rules` do not cover,
+    so the handler span must record the URI with the PromQL parameters hidden.
+    """
+    secret = "prometheus_masking_secret"
+    trace_id = uuid.uuid4().hex
+
+    escaped_query = urllib.parse.quote_plus(promql, safe="")
+    url = f"http://{node.ip_address}:9093{path_prefix}{endpoint}?{query_param_name}={escaped_query}&time=1753176757.89"
+    response = get_response_to_http_api(
+        url, headers={"traceparent": f"00-{trace_id}-5150000000000515-01"}
+    )
+    assert (response.status_code == requests.codes.ok) == expect_ok, response.text
+
+    assert_eq_with_retry(
+        node,
+        span_log_handler_span_uri_sql(trace_id, secret),
+        f"1\t0\t1\t{int(expect_ok)}\n",
+        retry_count=30,
+        sleep_time=1,
+    )
 
 
 def test_remote_write_appears_in_query_log_with_written_rows():

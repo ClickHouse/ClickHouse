@@ -501,12 +501,13 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (buckets_num > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` settings "
-                    "when it is already set to a non-zero value");
+                    "It is not allowed to modify `buckets` setting when the table already uses {} buckets "
+                    "(`buckets` is {}, `processing_threads_num` is {})",
+                    buckets_num, table_metadata.buckets.load(), table_metadata.processing_threads_num.load());
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -725,7 +726,7 @@ namespace
             return self;
         }
 
-        UInt128 hash() const
+        [[nodiscard]] UInt128 hash() const
         {
             SipHash hash;
             hash.update(hostname);
@@ -734,7 +735,7 @@ namespace
             return hash.get128();
         }
 
-        std::string serialize() const
+        [[nodiscard]] std::string serialize() const
         {
             WriteBufferFromOwnString buf;
             buf << version << "\n";
@@ -1152,7 +1153,7 @@ public:
         nodes_num = servers.size();
     }
 
-    std::string chooseServer(const UInt128 & hash) const
+    [[nodiscard]] std::string chooseServer(const UInt128 & hash) const
     {
         if (virtual_nodes.empty())
             return {};
@@ -1162,7 +1163,7 @@ public:
         return it->second;
     }
 
-    size_t size() const { return nodes_num; }
+    [[nodiscard]] size_t size() const { return nodes_num; }
 
     template<typename... Args>
     static UInt128 hash(Args... args)
