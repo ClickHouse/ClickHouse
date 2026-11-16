@@ -136,7 +136,12 @@ def test_commit_retry_reuses_manifests(started_cluster_iceberg_with_spark, stora
     assert manifests_of_paused_insert <= manifests_before_conflict, "the retry wrote new manifests instead of reusing them"
     assert manifests_after == manifest_list.keys(), "a manifest from a failed attempt was left in storage"
 
-    # 7. The reused manifests are consistent with the committed snapshot.
+    # 7. The retried commit lists every earlier metadata file once, including the winner's.
+    metadata, version = latest_metadata(table_path)
+    logged = [os.path.basename(entry["metadata-file"]) for entry in metadata["metadata-log"]]
+    assert logged == [f"v{i}.metadata.json" for i in range(1, version)]
+
+    # 8. The reused manifests are consistent with the committed snapshot.
     for name in manifests_of_paused_insert:
         # Written with the spec of the first attempt, even if the default spec changed since.
         assert manifest_list[name]["partition_spec_id"] == 0
@@ -147,7 +152,7 @@ def test_commit_retry_reuses_manifests(started_cluster_iceberg_with_spark, stora
             assert entry["sequence_number"] is None
             assert entry["file_sequence_number"] is None
 
-    # 8. After a spec change, Spark reads the table with manifests of the old spec under the new default spec.
+    # 9. After a spec change, Spark reads the table with manifests of the old spec under the new default spec.
     if conflict == "add_partition_field":
         metadata, _ = latest_metadata(table_path)
         assert metadata["default-spec-id"] == 1

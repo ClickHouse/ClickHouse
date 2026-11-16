@@ -115,3 +115,30 @@ TEST(IcebergDeriveTableRoot, EmptyTailIsNotARoot)
     check({"storage root", "", "", "//metadata/v2.metadata.json",
         "", IcebergPathResolver::RootRelation::Unknown});
 }
+
+/// `reverseResolve` returns the spelling `resolve` maps back to the same storage path. A table at a
+/// bucket root has an empty `table_root`, so its storage paths carry no leading separator.
+TEST(IcebergPathResolver, ReverseResolve)
+{
+    const Iceberg::BlobStorageDescription s3{.type_name = "s3", .namespace_name = "bkt", .allow_foreign_namespaces = false};
+    const Iceberg::BlobStorageDescription local{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false};
+    struct Case
+    {
+        String table_location;
+        String table_root;
+        Iceberg::BlobStorageDescription blob_storage;
+        String storage_path;
+        String expected;
+    };
+    for (const auto & test_case : {
+             Case{"s3://bkt/", "", s3, "metadata/v1.metadata.json", "s3://bkt/metadata/v1.metadata.json"},
+             Case{"s3://bkt/tbl", "tbl", s3, "tbl/metadata/v1.metadata.json", "s3://bkt/tbl/metadata/v1.metadata.json"},
+             Case{"/tbl", "tbl", s3, "tbl/metadata/v1.metadata.json", "/tbl/metadata/v1.metadata.json"},
+             Case{"/abs/tbl", "/abs/tbl", local, "/abs/tbl/metadata/v1.metadata.json", "/abs/tbl/metadata/v1.metadata.json"}})
+    {
+        IcebergPathResolver resolver(test_case.table_location, test_case.table_root, test_case.blob_storage);
+        auto metadata_path = resolver.reverseResolve(test_case.storage_path);
+        EXPECT_EQ(metadata_path.serialize(), test_case.expected) << test_case.table_location;
+        EXPECT_EQ(resolver.resolve(metadata_path), test_case.storage_path) << test_case.table_location;
+    }
+}
