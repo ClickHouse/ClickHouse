@@ -101,7 +101,11 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     AccessRightsElements required_access;
     const auto & undrop = query_ptr->as<const ASTUndropQuery &>();
 
-    required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+    /// Older replicas restore a table found by `UUID` under its original name, so do not trust a scoped grant there.
+    if (undrop.uuid != UUIDHelpers::Nil)
+        required_access.emplace_back(AccessType::UNDROP_TABLE);
+    else
+        required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
 }
 

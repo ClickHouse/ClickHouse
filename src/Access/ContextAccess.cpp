@@ -908,7 +908,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
-            | AccessType::TRUNCATE;
+            | AccessType::TRUNCATE | AccessType::UNDROP_TABLE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
