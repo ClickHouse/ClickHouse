@@ -77,10 +77,7 @@ namespace
 {
     ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, const String & schema, const String & table, const String & query, const String & where)
     {
-        QualifiedTableName qualified_name{schema, table};
-
-        if (qualified_name.database.empty() && !qualified_name.table.empty())
-            qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+        auto qualified_name = makeQualifiedTableName(schema, table);
 
         /// Do not need db because it is already in a connection string.
         return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotesPostgreSQL};

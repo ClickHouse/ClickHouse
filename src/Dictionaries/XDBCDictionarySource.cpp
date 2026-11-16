@@ -51,10 +51,7 @@ namespace
         QualifiedTableName qualified_name{schema_, table_};
 
         if (bridge_.isSchemaAllowed())
-        {
-            if (qualified_name.database.empty())
-                qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
-        }
+            qualified_name = makeQualifiedTableName(schema_, table_);
         else
         {
             if (!qualified_name.database.empty())
