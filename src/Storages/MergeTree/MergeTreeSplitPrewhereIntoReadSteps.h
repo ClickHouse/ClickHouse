@@ -31,8 +31,7 @@ bool tryBuildPrewhereSteps(
 /// predicate reports nothing; see `PrewhereExprStep::is_query_prewhere`.
 bool isDynamicRuntimePrewhereFilter(const ActionsDAG::Node * node);
 
-/// Whether no function of the condition can throw (`IFunctionBase::canThrow`) or is expensive, so it may be evaluated on the
-/// rows a preceding condition rejects.
+/// Whether no function in the condition can throw or is expensive, so it may run on rows a preceding condition rejects.
 bool prewhereConditionCannotThrow(const ActionsDAG::Node * condition);
 
 /// Whether every conjunct of the PREWHERE actions is a user query predicate, i.e. none is a synthesized

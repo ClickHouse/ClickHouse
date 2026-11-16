@@ -40,8 +40,8 @@ struct NodeInfo
     }
 };
 
-/// Returns the argument types of a function node with the values of its constant arguments, as expected by
-/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution and IFunctionBase::canThrow.
+/// Returns the argument types of a function node, as expected by
+/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
 DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
@@ -103,8 +103,7 @@ void fillRequiredColumns(
     /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
     /// both directions: it reports true for merely expensive functions, and false for some
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
-    /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` drops the flag for a
-    /// condition that `prewhereConditionCannotThrow` proves unable to throw.
+    /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` clears the flag with `prewhereConditionCannotThrow`.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))

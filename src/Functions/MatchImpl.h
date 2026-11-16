@@ -103,14 +103,13 @@ struct MatchImpl
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
 
-    /// See `IFunction::canThrowIfKnown`. With a constant pattern, [I]LIKE throws only while building it, see `vectorConstant`.
+    /// On a string haystack with a constant pattern, [I]LIKE throws only while building the pattern, see `vectorConstant`.
     static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments)
     {
         if constexpr (!is_like)
             return {};
         else
         {
-            /// An `Enum` haystack is converted per row and throws for an unknown value.
             if (arguments.size() != 2 || !isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0].type)))
                 return true;
 
