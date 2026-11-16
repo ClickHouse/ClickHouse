@@ -27,3 +27,19 @@ read_rows per query
 block_size_disabled	5
 block_size_enabled	5
 plain_enabled	2
+missing default, disabled
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+missing default, enabled
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9

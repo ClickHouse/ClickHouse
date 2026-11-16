@@ -43,3 +43,19 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LI
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_skip_offset_per_block;
+
+-- The default of a column added after the data was written is computed by the reader, on the blocks it reads, so
+-- it is not in any step above the read.
+DROP TABLE IF EXISTS t_skip_offset_missing_default;
+CREATE TABLE t_skip_offset_missing_default (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_skip_offset_missing_default SELECT number FROM numbers(10);
+ALTER TABLE t_skip_offset_missing_default ADD COLUMN n UInt64 DEFAULT rowNumberInBlock();
+
+SELECT 'missing default, disabled';
+SELECT k, n FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+SELECT 'missing default, enabled';
+SELECT k, n FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+
+DROP TABLE t_skip_offset_missing_default;
