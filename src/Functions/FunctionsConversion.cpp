@@ -1272,7 +1272,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         {
             auto failures = extractTupleElementConversionFailures(
                 converted_columns, to_element_types, column_tuple, source_positions, input_rows_count);
-            return ColumnNullable::create(ColumnTuple::create(converted_columns), std::move(failures));
+            return ColumnNullable::create(ColumnTuple::create(converted_columns), failures);
         }
 
         return ColumnTuple::create(converted_columns);
