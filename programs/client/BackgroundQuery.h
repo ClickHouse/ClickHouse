@@ -196,7 +196,7 @@ public:
 
     /// Wait at most `timeout` for detachment to be acknowledged or for the
     /// attached query to become terminal.
-    AttachedWaitStatus waitAttached(AttachedHandle handle, std::chrono::milliseconds timeout) const;
+    [[nodiscard]] AttachedWaitStatus waitAttached(AttachedHandle handle, std::chrono::milliseconds timeout) const;
 
     /// Requests a nonblocking redirect; waitAttached() reports its acknowledgement.
     void requestDetach(AttachedHandle handle);
@@ -217,8 +217,8 @@ public:
     /// diagnostics, and return its connection to the interactive client.
     AttachedResult collectAttached(AttachedHandle handle, WriteBuffer & output, WriteBuffer & diagnostics);
 
-    std::vector<JobInfo> list() const;
-    std::optional<JobInfo> get(JobId id) const;
+    [[nodiscard]] std::vector<JobInfo> list() const;
+    [[nodiscard]] std::optional<JobInfo> get(JobId id) const;
 
     /// Never waits for an active query. For a terminal query, replays its
     /// result and diagnostic spools and then removes it from the manager.

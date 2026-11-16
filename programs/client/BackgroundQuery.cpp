@@ -82,7 +82,7 @@ public:
     FileDescriptor(const FileDescriptor &) = delete;
     FileDescriptor & operator=(const FileDescriptor &) = delete;
 
-    int get() const { return fd; }
+    [[nodiscard]] int get() const { return fd; }
 
 private:
     int fd;
@@ -265,7 +265,7 @@ public:
     SecureTemporaryFile(const SecureTemporaryFile &) = delete;
     SecureTemporaryFile & operator=(const SecureTemporaryFile &) = delete;
 
-    int getFD() const { return fd; }
+    [[nodiscard]] int getFD() const { return fd; }
     std::ostream & stream() { return *output_stream; }
 
     void flush()
@@ -293,7 +293,7 @@ public:
         return true;
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         struct stat file_stat{};
         if (::fstat(fd, &file_stat) != 0)
