@@ -40,35 +40,35 @@ public:
 
     explicit FunctionAddressToSymbol(const ContextPtr & context) : access_check(context) {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
     void checkAccessOnBuild() const override { access_check.check(AccessType::addressToSymbol); }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
     /// Resolved against the executing node's own binary, like `buildId`.
-    bool isDeterministic() const override { return false; }
-    bool isServerConstant() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(UInt64) -> String";
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());

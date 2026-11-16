@@ -1470,7 +1470,7 @@ public:
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
-    bool transactionRunning() const { return transaction_running; }
+    [[nodiscard]] bool transactionRunning() const { return transaction_running; }
 
 private:
     bool transaction_running{false};
@@ -1708,7 +1708,7 @@ struct ConstructionSettings
     Float64 offset = 0;
     bool present = false;
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
     }
@@ -3482,7 +3482,7 @@ static BlockIO executeQueryImpl(
 
                         /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
                         /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
-                        reader->hasCacheEntryForKey();
+                        (void)reader->hasCacheEntryForKey();
                         QueryResultCacheReader::recordProbeResult(true);
 
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();

@@ -155,7 +155,7 @@ private:
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;
 
-    bool sortingKeyIsComputableFromSourceHeader() const;
+    [[nodiscard]] bool sortingKeyIsComputableFromSourceHeader() const;
     Pipe buildInOrderPipe(
         const ContextPtr & local_context,
         const FormatFilterInfoPtr & format_filter_info,

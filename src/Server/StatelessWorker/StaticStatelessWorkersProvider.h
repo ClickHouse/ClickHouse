@@ -30,12 +30,12 @@ public:
     /// Returns a per-query allocation over the workers snapshotted at construction.
     StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) override;
 
-    std::vector<StatelessWorkerState> getWorkersState() const override;
+    [[nodiscard]] std::vector<StatelessWorkerState> getWorkersState() const override;
 
     /// A static cluster serves its fixed snapshot regardless of the request, so plan for that many.
-    size_t getPlanningNodeCount(size_t /*requested_workers*/) const override { return addresses.size(); }
+    [[nodiscard]] size_t getPlanningNodeCount(size_t /*requested_workers*/) const override { return addresses.size(); }
 
-    std::string getAuthToken() const override { return {}; }
+    [[nodiscard]] std::string getAuthToken() const override { return {}; }
 
     void start() override {}
     void shutdown() override {}
