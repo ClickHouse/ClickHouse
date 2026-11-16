@@ -674,6 +674,13 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                         "WHERE of secondary index '{}' cannot contain lambda functions, they cannot be matched against a query filter",
                         index.name);
 
+            /// The same holds for the indexed expression: such an index would never be used.
+            for (const auto & node : index.expression->getActionsDAG().getNodes())
+                if (typeid_cast<const FunctionCapture *>(node.function_base.get()))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Secondary index '{}' with WHERE cannot contain lambda functions, they cannot be matched against a query filter",
+                        index.name);
+
             try
             {
                 index.where_expression->assertDeterministic();

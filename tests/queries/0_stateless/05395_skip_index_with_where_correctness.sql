@@ -40,6 +40,11 @@ SELECT count() FROM t_type WHERE k = 1 AND toString(v) = 'true' SETTINGS use_ski
 
 SELECT 'lambda in the condition';
 CREATE TABLE t_lambda (a Array(UInt8), y UInt8, k UInt8, INDEX idx k TYPE minmax WHERE arrayExists(x -> x = y, a)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+-- Nor is a lambda in the indexed expression of a partial index: the index would never be used.
+CREATE TABLE t_lambda (a Array(String), k UInt8, INDEX idx arrayMap(x -> lower(x), a) TYPE bloom_filter(0.01) WHERE k = 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1; -- { serverError INCORRECT_QUERY }
+CREATE TABLE t_lambda (a Array(String), k UInt8, INDEX idx arrayMap(x -> lower(x), a) TYPE bloom_filter(0.01)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1;
+ALTER TABLE t_lambda ADD INDEX idx2 arrayMap(x -> upper(x), a) TYPE bloom_filter(0.01) WHERE k = 1; -- { serverError INCORRECT_QUERY }
+DROP TABLE t_lambda;
 
 SELECT 'function that captures a setting';
 CREATE TABLE t_json (k UInt64, j String, INDEX idx k TYPE minmax WHERE JSON_VALUE(j, '$.a') = '[1]') ENGINE = MergeTree ORDER BY tuple();
