@@ -3,7 +3,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -99,9 +98,6 @@ void collectWindowFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes & 
 
 void assertNoWindowFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_window_functions_place_message)
 {
-    if (isQueryOrUnionNode(node))
-        return;
-
     CollectWindowFunctionNodeVisitor visitor(assert_no_window_functions_place_message);
     visitor.visit(node);
 }

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings, no-fasttest
+-- Tags: no-parallel, no-random-merge-tree-settings
 
 -- Regression test: merging parts after ALTER MODIFY COLUMN changed a column
 -- from a non-Tuple type to a Tuple type used to crash with SIGSEGV because

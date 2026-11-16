@@ -119,7 +119,7 @@ void CustomSeparatedRowInputFormat::resetReadBuffer()
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_), default_csv_delimiter(format_settings_.csv.delimiter)
+    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
 {
 }
 
@@ -215,9 +215,9 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
 }
 
 template <CustomSeparatedFormatReader::ReadFieldMode mode>
-VectorWithMemoryTracking<String> CustomSeparatedFormatReader::readRowImpl()
+std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 {
-    VectorWithMemoryTracking<String> values;
+    std::vector<String> values;
     skipRowStartDelimiter();
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
@@ -312,7 +312,7 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     }
 }
 
-bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &, size_t /*column_index*/)
+bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &)
 {
     skipSpaces();
     updateFormatSettings(is_last_file_column);
@@ -398,9 +398,6 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
-    columns = 0;
-    format_settings.csv.delimiter = default_csv_delimiter;
-    format_settings.csv.custom_delimiter.clear();
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -418,7 +415,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {
@@ -464,7 +461,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
-            }, /*supports_reset_parser=*/ true);
+            });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
@@ -487,9 +484,9 @@ Similar to [Template](/reference/formats/Template/Template), but it prints or re
 - [format_custom_result_before_delimiter](/reference/settings/formats/format-custom#format_custom_result_before_delimiter)
 - [format_custom_result_after_delimiter](/reference/settings/formats/format-custom#format_custom_result_after_delimiter)
 
-<Note>
+:::note
 It does not use escaping rules settings and delimiters from format strings.
-</Note>
+:::
 
 There is also the [`CustomSeparatedIgnoreSpaces`](/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces) format, which is similar to [TemplateIgnoreSpaces](/reference/formats/Template/TemplateIgnoreSpaces).
 
@@ -731,12 +728,12 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-<Note>
+:::note
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from the input data will be mapped to the columns from the table by their names, 
 columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-</Note>
+:::
 )DOCS_MD"});
 
     factory.setDocumentation("CustomSeparatedWithNamesAndTypes", Documentation{
@@ -803,16 +800,16 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-<Note>
+:::note
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-</Note>
+:::
 
-<Note>
+:::note
 If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-</Note>
+:::
 )DOCS_MD"});
 }
 

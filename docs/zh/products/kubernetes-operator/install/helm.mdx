@@ -9,13 +9,17 @@ sidebarTitle: 'Helm'
 
 本指南介绍如何使用 Helm 图表安装 ClickHouse Operator。
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 * Kubernetes 集群 v1.28.0 或更高版本
 * Helm v3.0 或更高版本
 * 已将 kubectl 配置为与你的 Kubernetes 集群通信
 
-## 安装 Helm {#install-helm}
+<div id="install-helm">
+  ## 安装 Helm
+</div>
 
 如果您还没有安装 Helm：
 
@@ -29,7 +33,9 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
 
-## 安装 ClickHouse Operator {#install-the-operator}
+<div id="install-the-operator">
+  ## 安装 ClickHouse Operator
+</div>
 
 <Note>
   默认情况下，Helm 图表会在启用 webhooks 的情况下部署 ClickHouse Operator，并且要求已安装 cert-manager。
@@ -39,7 +45,9 @@ helm version
 helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
 ```
 
-### 通过 OCI Helm 仓库 {#from-oci-helm-repository}
+<div id="from-oci-helm-repository">
+  ### 通过 OCI Helm 仓库
+</div>
 
 安装最新版本
 
@@ -58,7 +66,9 @@ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-man
        --set manager.image.tag=<operator version>
 ```
 
-### 从本地图表安装 {#from-local-chart}
+<div id="from-local-chart">
+  ### 从本地图表安装
+</div>
 
 克隆代码仓库，并通过本地图表安装：
 
@@ -68,35 +78,8 @@ cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
 
-### 监视特定命名空间 {#watch-namespaces}
-
-默认情况下，operator 会监视所有命名空间。可通过设置 `controller.watchNamespaces` 来限制监视范围。
-其中的各个条目会作为模板进行渲染，因此 `{{ .Release.Namespace }}` 会解析为该 release 所在的命名空间，
-还可以与静态命名空间组合使用：
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-    - team-a
-```
-
-在命令行中，`--set` 会将花括号解析为列表语法，因此请改用 `--set-json` (需要 Helm v3.10 或更高版本) ：
-`--set-json 'controller.watchNamespaces=["{{ .Release.Namespace }}"]'`。
-
-如需仅监视 release 所在的命名空间，并使用命名空间级别的 RBAC：
-
-```yaml
-controller:
-  watchNamespaces:
-    - "{{ .Release.Namespace }}"
-rbac:
-  namespaced: true
-```
-
-设置 `rbac.namespaced: true` 后，manager 的权限将以 Role/RoleBinding 的形式创建在 release 所在的命名空间中，
-因此，若要监视其他命名空间，则需使用集群范围的 RBAC (即默认配置) 。
-
-### 配置选项 {#configuration-options}
+<div id="configuration-options">
+  ### 配置选项
+</div>
 
 如需了解高级配置选项，请参阅 Helm 图表中的 [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) 文件
