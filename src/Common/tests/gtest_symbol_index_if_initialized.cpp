@@ -52,7 +52,10 @@ void require(bool condition, const std::string & what)
 {
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "the index is not built at startup");
     const std::string build_id = DB::SymbolIndex::getSelfBuildIDHex();
+    /// Only ELF has a way to read the build id without the index: elsewhere `getSelfBuildIDHex` builds it.
+#if defined(__ELF__)
     require(DB::SymbolIndex::instanceIfInitialized() == nullptr, "reading the build id did not build the index");
+#endif
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     require(!build_id.empty(), "the executable has a build id");
 #endif

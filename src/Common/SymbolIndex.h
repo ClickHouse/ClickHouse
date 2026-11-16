@@ -191,6 +191,7 @@ public:
     /// The same as `instance().getBuildIDHex()`, but without building the index if it is not built yet:
     /// the build id is read from the notes of the loaded executable. Building the index takes about 0.3 s
     /// with a cold page cache (it reads the symbol table of the executable), and it is not needed to know the build id.
+    /// On non-ELF platforms there is no such shortcut, and it builds the index.
     static String getSelfBuildIDHex();
 
     struct Data
