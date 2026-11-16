@@ -77,7 +77,7 @@ struct TokenLikeMatcher
     }
 
     /// Compares the first byte before calling memcmp, because most tokens differ there.
-    ALWAYS_INLINE bool hasLiteralAt(std::string_view token, size_t pos) const
+    [[nodiscard]] ALWAYS_INLINE bool hasLiteralAt(std::string_view token, size_t pos) const
     {
         return literal.empty() || (token[pos] == literal[0] && 0 == memcmp(token.data() + pos, literal.data(), literal.size()));
     }

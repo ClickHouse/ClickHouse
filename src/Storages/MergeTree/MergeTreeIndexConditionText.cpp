@@ -42,6 +42,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -1330,8 +1331,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
-    /// The per-token pattern functions take the tokenizer of the index on their input, so they must find an index on `m['key']`
-    /// also after `optimize_functions_to_subcolumns` makes `m.key_<key>` of it. Otherwise that setting changes their result.
+    /// The per-token pattern functions take the tokenizer of the index on their input, so `m['key']` and `m.key_<key>` must
+    /// find the same index. Otherwise `optimize_functions_to_subcolumns` changes their result.
     if (!has_index_column && isPerTokenPatternFunction(function_name))
         has_index_column = hasIndexForMapElementSubcolumn(index_column_node);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
@@ -2465,30 +2466,71 @@ std::optional<String> getMapElementSubcolumnName(const String & map_column_name,
     return fmt::format("{}.{}{}", map_column_name, DataTypeMap::KEY_SUBCOLUMN_PREFIX, buf.str());
 }
 
+/// Returns the name of the subcolumn that reads `tupleElement(t, element)`, or `std::nullopt` if there is none.
+static std::optional<String> getTupleElementSubcolumnName(const String & tuple_column_name, const DataTypeTuple & tuple_type, const Field & element)
+{
+    const auto & names = tuple_type.getElementNames();
+    String name;
+    if (element.getType() == Field::Types::String && tuple_type.tryGetPositionByName(element.safeGet<String>()))
+        name = element.safeGet<String>();
+    else if (element.getType() == Field::Types::UInt64 && element.safeGet<UInt64>() >= 1 && element.safeGet<UInt64>() <= names.size())
+        name = names[element.safeGet<UInt64>() - 1];
+
+    /// A dotted element name can also be read as a nested path.
+    if (name.empty() || name.contains('.'))
+        return {};
+
+    return tuple_column_name + "." + name;
+}
+
 bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const
 {
-    if (!map_element_subcolumn_name)
-        return false;
-
     /// A physical column of that name shadows the subcolumn.
     String column_name = node.getColumnName();
-    if (column_name == map_element_subcolumn_name)
+    if (map_element_subcolumn_name && column_name == *map_element_subcolumn_name)
         return !is_column_shadowing_map_subcolumn(column_name);
 
-    /// `m[1]` and `m['k']` are the same element of a map with the key `Enum8('k' = 1)`.
     auto function = node.toFunctionNodeOrNull();
-    if (!function || function->getFunctionName() != "arrayElement" || function->getArgumentsSize() != 2)
+    if (!function || function->getArgumentsSize() != 2)
         return false;
 
-    auto map_node = function->getArgumentAt(0);
-    const auto * map_dag_node = map_node.getDAGNode();
-    const auto * map_type = map_dag_node ? typeid_cast<const DataTypeMap *>(map_dag_node->result_type.get()) : nullptr;
+    const auto function_name = function->getFunctionName();
+    if (function_name != "arrayElement" && function_name != "tupleElement")
+        return false;
+
+    auto parent_node = function->getArgumentAt(0);
+    const auto * parent_dag_node = parent_node.getDAGNode();
     Field key;
     DataTypePtr key_type;
-    if (!map_type || map_node.isConstant() || !function->getArgumentAt(1).tryGetConstant(key, key_type))
+    if (!parent_dag_node || parent_node.isConstant() || !function->getArgumentAt(1).tryGetConstant(key, key_type))
         return false;
 
-    return getMapElementSubcolumnName(map_node.getColumnName(), *map_type, key) == map_element_subcolumn_name;
+    /// An index built on the subcolumn itself serves the same element of a table column.
+    const auto * parent_column = parent_dag_node;
+    while (parent_column->type == ActionsDAG::ActionType::ALIAS)
+        parent_column = parent_column->children.front();
+    const bool is_table_column = parent_column->type == ActionsDAG::ActionType::INPUT;
+
+    if (function_name == "arrayElement")
+    {
+        /// `m[1]` and `m['k']` are the same element of a map with the key `Enum8('k' = 1)`.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(parent_dag_node->result_type.get());
+        auto subcolumn_name = map_type ? getMapElementSubcolumnName(parent_node.getColumnName(), *map_type, key) : std::nullopt;
+        if (!subcolumn_name)
+            return false;
+
+        return subcolumn_name == map_element_subcolumn_name
+            || (is_table_column && hasIndexForColumn(*subcolumn_name) && !is_column_shadowing_map_subcolumn(*subcolumn_name));
+    }
+
+    /// The subcolumn of a `Nullable` tuple keeps the values under NULL, `tupleElement` replaces them if it cannot return NULL.
+    const auto & parent_type = parent_dag_node->result_type;
+    if (!is_table_column || (parent_type->isNullable() && !canContainNull(*node.getDAGNode()->result_type)))
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(parent_type).get());
+    auto subcolumn_name = tuple_type ? getTupleElementSubcolumnName(parent_node.getColumnName(), *tuple_type, key) : std::nullopt;
+    return subcolumn_name && hasIndexForColumn(*subcolumn_name);
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(
