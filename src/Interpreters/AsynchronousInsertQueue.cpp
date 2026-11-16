@@ -1318,8 +1318,7 @@ try
         insert_context.reset();
     });
 
-    /// Failing to restore the submitting identity (an expired authentication method, a dropped user) is rethrown
-    /// at the start of the guarded block below, which logs it like any other failed flush and inserts nothing.
+    /// Rethrown first in the guarded block below, so a failed identity restore is logged and inserts nothing.
     std::exception_ptr identity_exception;
     try
     {
