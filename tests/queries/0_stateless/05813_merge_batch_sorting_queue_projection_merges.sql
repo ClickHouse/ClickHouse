@@ -1,3 +1,5 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(1048576, None); merge_max_block_size=(8192, None)
+
 -- Projection merges give the same projection parts with `merge_use_batch_sorting_queue` = 1 as with the default queue:
 -- a normal projection with another sorting key (equal keys across parts), a `_parent_part_offset` projection and a
 -- commit-order projection, in horizontal and vertical merges, and the merge of the temporary parts that
@@ -113,16 +115,16 @@ ORDER BY table;
 CREATE TABLE big_default (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS merge_use_batch_sorting_queue = 0;
 CREATE TABLE big_batch AS big_default;
 ALTER TABLE big_batch MODIFY SETTING merge_use_batch_sorting_queue = 1;
-INSERT INTO big_default SELECT number, intHash64(number) % 1000 FROM numbers(1200000);
-INSERT INTO big_batch SELECT number, intHash64(number) % 1000 FROM numbers(1200000);
-OPTIMIZE TABLE big_default FINAL;
-OPTIMIZE TABLE big_batch FINAL;
+INSERT INTO big_default SELECT number, intHash64(number) % 1000 FROM numbers(1200000)
+    SETTINGS min_insert_block_size_rows = 1200000, min_insert_block_size_bytes = 0, max_insert_block_size = 1200000;
+ALTER TABLE big_batch ATTACH PARTITION tuple() FROM big_default;
 ALTER TABLE big_default ADD PROJECTION p (SELECT * ORDER BY b);
 ALTER TABLE big_batch ADD PROJECTION p (SELECT * ORDER BY b);
 ALTER TABLE big_default MATERIALIZE PROJECTION p;
 ALTER TABLE big_batch MATERIALIZE PROJECTION p;
 
 SELECT 'temporary parts',
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'big_batch' AND active),
     (SELECT count() FROM mergeTreeProjection(currentDatabase(), 'big_batch', 'p')),
     (SELECT sum(cityHash64(a, b, _part_offset)) FROM mergeTreeProjection(currentDatabase(), 'big_default', 'p'))
         = (SELECT sum(cityHash64(a, b, _part_offset)) FROM mergeTreeProjection(currentDatabase(), 'big_batch', 'p'));
