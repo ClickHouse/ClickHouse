@@ -771,7 +771,7 @@ DistributedSink::~DistributedSink()
 {
     /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
     /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
-    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread
     std::lock_guard lock(execution_mutex);
     cancelExecutors();
 }
