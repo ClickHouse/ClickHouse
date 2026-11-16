@@ -951,6 +951,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+
+        /// The merge may drop rows, so the min/max index of the part is computed again from the merged rows.
+        /// Otherwise it may hold values of no stored row, and it is used to answer queries such as `max` of a column.
+        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        minmax_idx->update(block, minmax_columns);
     }
 
     if (expr_after_merge)
