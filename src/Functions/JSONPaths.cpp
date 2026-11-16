@@ -54,7 +54,7 @@ struct PathNullCheck
         return {.path = path, .typed_column_to_check = skip_null ? &column : nullptr};
     }
 
-    bool isNullAt(size_t row) const
+    [[nodiscard]] bool isNullAt(size_t row) const
     {
         if (dynamic_discriminators)
             return dynamic_discriminators[row] == ColumnVariant::NULL_DISCRIMINATOR;
