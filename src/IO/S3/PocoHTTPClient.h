@@ -251,7 +251,7 @@ private:
         EnumSize,
     };
 
-    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte, bool server_side_copy) const;
 
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
