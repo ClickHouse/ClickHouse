@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 -- A block of 20000 rows inserted into MergeTree is sorted by a packed key of its leading integer key columns:
 -- the part must keep the order of a column-by-column sort with a LIMIT.
 -- The keys are split between 05632_sort_by_packed_key_2 and _3.
