@@ -61,3 +61,25 @@ DROP TABLE t_dynamic_values_null_date;
 
 -- A string is still parsed as text of the destination type.
 SELECT toString(m) FROM values('m Map(String, JSON)', '{\'x\' : \'{"y" : 1}\'}');
+
+-- A typed `NULL` going into `Dynamic` stays `NULL` with `input_format_null_as_default`.
+DROP TABLE IF EXISTS t_dynamic_values_typed_null;
+CREATE TABLE t_dynamic_values_typed_null (id UInt8, t Tuple(Dynamic), a Array(Dynamic), m Map(String, Dynamic)) ENGINE = Memory;
+INSERT INTO t_dynamic_values_typed_null SETTINGS input_format_null_as_default = 1, input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (1, tuple(CAST(NULL AS Nullable(Date))), [CAST(NULL AS Nullable(Int32))], map('k', CAST(NULL AS Nullable(String))));
+SELECT id, isNull(t.1), dynamicType(t.1), isNull(a[1]), dynamicType(a[1]), isNull(m['k']), dynamicType(m['k']) FROM t_dynamic_values_typed_null;
+DROP TABLE t_dynamic_values_typed_null;
+
+-- An overflowing nullable sibling of `Dynamic` is still converted to `NULL`.
+SELECT t.1, isNull(t.1), toString(t.2), dynamicType(t.2) FROM values('t Tuple(Nullable(UInt8), Dynamic)', (256, CAST('x' AS Dynamic)));
+SELECT t.1, isNull(t.1) FROM values('t Tuple(Nullable(Int8), Dynamic)', (128, CAST(toDate('2020-01-01') AS Dynamic)));
+SELECT toString(a) FROM values('a Array(Tuple(Nullable(UInt8), Dynamic))', [(256, CAST(toDate('2020-01-01') AS Dynamic))]);
+
+-- Tuple elements are converted by position, whatever their names.
+SELECT t, dynamicType(t.b) FROM values('t Tuple(a UInt8, b Dynamic)', CAST((1, CAST('keep' AS Dynamic)), 'Tuple(a UInt8, c Dynamic)'));
+SELECT t, dynamicType(t.b) FROM values('t Tuple(a UInt8, b Dynamic)', CAST((1, CAST(toDate('2020-01-01') AS Dynamic)), 'Tuple(b UInt8, a Dynamic)'));
+SELECT t, dynamicType(t.x.d) FROM values('t Tuple(x Tuple(n UInt8, d Dynamic))', CAST(tuple((1, CAST(toDate('2020-01-01') AS Dynamic))), 'Tuple(y Tuple(m UInt8, e Dynamic))'));
+
+-- Numbers keep the type `Dynamic` stored them with before.
+SELECT toString(d), dynamicType(d) FROM values('d Dynamic', toUInt64(42));
+SELECT toString(t.2), dynamicType(t.2) FROM values('t Tuple(UInt8, Dynamic)', (1, toUInt64(5)));

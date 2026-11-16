@@ -246,6 +246,19 @@ EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node,
     return *res;
 }
 
+std::pair<EvaluateConstantExpressionResult, std::optional<EvaluateConstantExpressionColumnResult>>
+evaluateConstantExpressionWithColumn(const ASTPtr & node, const ContextPtr & context)
+{
+    std::optional<EvaluateConstantExpressionResult> literal_result;
+    auto column_result = evaluateConstantExpressionAsColumnImpl(node, context, &literal_result);
+    if (literal_result)
+        return {std::move(*literal_result), std::nullopt};
+    auto res = materializeToField(column_result);
+    if (!res)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
+    return {std::move(*res), std::move(column_result)};
+}
+
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     /// If it's already a literal.

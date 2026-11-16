@@ -73,4 +73,11 @@ ColumnPtr convertColumnToTypeOrThrow(
     bool convert_inexact_floats = false);
 ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
+/** Creates a single-row column of `type` holding `value`: the row `row` of `source`, of `source_type`, converted to `type`
+  * by `convertFieldToType`. Same as inserting `value`, except for the values going into `Dynamic` and `JSON` whose type the
+  * `Field` lost (`Date` becomes `UInt64`): they are cast from `source`, so they keep it.
+  */
+ColumnPtr createColumnFromFieldKeepingDynamicTypes(
+    const DataTypePtr & type, const Field & value, const IColumn & source, const DataTypePtr & source_type, size_t row);
+
 }

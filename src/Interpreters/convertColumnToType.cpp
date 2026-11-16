@@ -4,6 +4,9 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -31,6 +34,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <limits>
@@ -433,6 +437,147 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
     return from;
 }
 
+/// Whether `Dynamic` stores a value of `type` inserted as a `Field` with its type. It does not for the types
+/// a `Field` holds as their underlying representation, such as `Date` (a `UInt64`).
+bool isTypeKeptByField(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return isTypeKeptByField(*nullable->getNestedType());
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return isTypeKeptByField(*low_cardinality->getDictionaryType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return isTypeKeptByField(*array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return isTypeKeptByField(*map->getKeyType()) && isTypeKeptByField(*map->getValueType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::all_of(tuple->getElements(), [](const DataTypePtr & element) { return isTypeKeptByField(*element); });
+
+    const WhichDataType which(type);
+    return which.isInteger() || which.isFloat() || which.isDecimal() || which.isStringOrFixedString() || which.isUUID()
+        || which.isIPv4() || which.isIPv6() || which.isNothing();
+}
+
+}
+
+ColumnPtr createColumnFromFieldKeepingDynamicTypes(
+    const DataTypePtr & type, const Field & value, const IColumn & source, const DataTypePtr & source_type, size_t row)
+{
+    checkStackSize();
+
+    const auto insert_value = [&]
+    {
+        auto column = type->createColumn();
+        column->insert(value);
+        return column;
+    };
+
+    if (!type->hasDynamicStructure() || value.isNull() || source.isNullAt(row))
+        return insert_value();
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&source))
+        return createColumnFromFieldKeepingDynamicTypes(
+            type, value, nullable->getNestedColumn(), assert_cast<const DataTypeNullable &>(*source_type).getNestedType(), row);
+
+    if (isDynamic(*type) || isObject(*type))
+    {
+        /// The `Field` lost the type of the source value, which the source column still has.
+        if (isDynamic(*type) ? source_type->hasDynamicStructure() || isVariant(*source_type) : isObject(*source_type))
+            return castColumn(ColumnWithTypeAndName(source.cut(row, 1), source_type, ""), type);
+
+        /// `convertFieldToType` keeps the value for `Dynamic`, so it is still a value of the source type.
+        if (isDynamic(*type) && !isTypeKeptByField(*source_type))
+        {
+            const DataTypePtr value_type = recursiveRemoveLowCardinality(source_type);
+            auto value_column = value_type->createColumn();
+            value_column->insert(value);
+            return castColumn(ColumnWithTypeAndName(std::move(value_column), value_type, ""), type);
+        }
+
+        return insert_value();
+    }
+
+    /// Composites are converted element by element by position, as `convertFieldToType` does.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto * source_tuple_type = typeid_cast<const DataTypeTuple *>(source_type.get());
+        const auto * source_tuple = typeid_cast<const ColumnTuple *>(&source);
+        const size_t size = tuple_type->getElements().size();
+        if (!source_tuple_type || !source_tuple || value.getType() != Field::Types::Tuple || value.safeGet<Tuple>().size() != size
+            || source_tuple_type->getElements().size() != size)
+            return insert_value();
+
+        const auto & tuple = value.safeGet<Tuple>();
+        Columns elements(size);
+        for (size_t i = 0; i < size; ++i)
+            elements[i] = createColumnFromFieldKeepingDynamicTypes(
+                tuple_type->getElement(i), tuple[i], source_tuple->getColumn(i), source_tuple_type->getElement(i), row);
+        return ColumnTuple::create(elements);
+    }
+
+    const auto create_elements = [&](const DataTypePtr & element_type, const Array & elements, const IColumn & source_elements,
+                                     const DataTypePtr & source_element_type, size_t source_offset)
+    {
+        auto column = element_type->createColumn();
+        for (size_t i = 0; i < elements.size(); ++i)
+            column->insertFrom(
+                *createColumnFromFieldKeepingDynamicTypes(element_type, elements[i], source_elements, source_element_type, source_offset + i), 0);
+        return column;
+    };
+
+    /// The first element and the number of elements of the row `row` of an array column.
+    const auto get_range = [row](const ColumnArray & array)
+    {
+        const auto & offsets = array.getOffsets();
+        const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+        return std::pair{begin, offsets[row] - begin};
+    };
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * source_array_type = typeid_cast<const DataTypeArray *>(source_type.get());
+        const auto * source_array = typeid_cast<const ColumnArray *>(&source);
+        if (!source_array_type || !source_array || value.getType() != Field::Types::Array
+            || value.safeGet<Array>().size() != get_range(*source_array).second)
+            return insert_value();
+
+        const auto & array = value.safeGet<Array>();
+        auto data = create_elements(
+            array_type->getNestedType(), array, source_array->getData(), source_array_type->getNestedType(), get_range(*source_array).first);
+        auto offsets = ColumnArray::ColumnOffsets::create(1, array.size());
+        return ColumnArray::create(std::move(data), std::move(offsets));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto * source_map_type = typeid_cast<const DataTypeMap *>(source_type.get());
+        const auto * source_map = typeid_cast<const ColumnMap *>(&source);
+        if (!source_map_type || !source_map || value.getType() != Field::Types::Map)
+            return insert_value();
+
+        const auto & source_entries = source_map->getNestedColumn();
+        const auto & map = value.safeGet<Map>();
+        const auto [offset, size] = get_range(source_entries);
+        if (map.size() != size)
+            return insert_value();
+
+        Array keys;
+        Array values;
+        keys.reserve(map.size());
+        values.reserve(map.size());
+        for (const auto & entry : map)
+        {
+            const auto & key_value = entry.safeGet<Tuple>();
+            keys.push_back(key_value.at(0));
+            values.push_back(key_value.at(1));
+        }
+
+        const auto & source_key_values = source_map->getNestedData();
+        auto key_column = create_elements(map_type->getKeyType(), keys, source_key_values.getColumn(0), source_map_type->getKeyType(), offset);
+        auto value_column = create_elements(map_type->getValueType(), values, source_key_values.getColumn(1), source_map_type->getValueType(), offset);
+        return ColumnMap::create(std::move(key_column), std::move(value_column), ColumnArray::ColumnOffsets::create(1, map.size()));
+    }
+
+    return insert_value();
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -510,26 +655,7 @@ ColumnPtr convertColumnToTypeOrNull(
     if (!dateTimeValueFitsStorage(converted, *to))
         return {};
 
-    /// Inserting a `Field` into `Dynamic` loses types without a `Field` tag (`Date` becomes `UInt16`), so cast a column instead.
-    if (to->hasDynamicStructure())
-    {
-        /// Built from the converted `Field` to keep a raw `Bool` byte normalized.
-        if (isDynamic(*to) && !source->hasDynamicStructure() && !isVariant(*source))
-        {
-            const DataTypePtr value_type = recursiveRemoveLowCardinality(source);
-            auto value_column = value_type->createColumn();
-            value_column->insert(converted);
-            return castColumn(ColumnWithTypeAndName(std::move(value_column), value_type, ""), to);
-        }
-
-        /// A string is parsed as text above, which `CAST` does not support for every type (e.g. `Map`).
-        if (!isStringOrFixedString(removeNullable(recursiveRemoveLowCardinality(source))))
-            return castColumn(ColumnWithTypeAndName(recursiveRemoveLowCardinality(full), recursiveRemoveLowCardinality(from), ""), to);
-    }
-
-    auto column = to->createColumn();
-    column->insert(converted);
-    return column;
+    return createColumnFromFieldKeepingDynamicTypes(to, converted, unwrapped, from, 0);
 }
 
 ColumnPtr tryConvertColumnToTypeOrNull(

@@ -27,3 +27,12 @@ abc	String
 1	0	2020-01-01	Date	[1,0]	2020-01-01 10:20:30	DateTime
 2	5	2020-01-01	Date	[1]	2020-01-01	Date
 {\'x\':\'{"y":1}\'}
+1	1	None	1	None	1	None
+\N	1	x	String
+\N	1
+[(NULL,\'2020-01-01\')]
+(1,'keep')	String
+(1,'2020-01-01')	Date
+((1,'2020-01-01'))	Date
+42	UInt8
+5	UInt8
