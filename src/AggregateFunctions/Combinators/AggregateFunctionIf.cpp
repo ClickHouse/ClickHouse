@@ -20,11 +20,11 @@ namespace ErrorCodes
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "If"; }
+    [[nodiscard]] String getName() const override { return "If"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -45,7 +45,7 @@ public:
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
@@ -108,7 +108,7 @@ public:
     /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
     constexpr static size_t minArraySizeForAddBatchSinglePlace() { return IAggregateFunction::never_add_batch_single_place_for_arrays; }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -227,7 +227,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
@@ -286,7 +286,7 @@ public:
     /// The batch path allocates a flag buffer up to `row_end`, so one call per array would allocate per row.
     constexpr static size_t minArraySizeForAddBatchSinglePlace() { return IAggregateFunction::never_add_batch_single_place_for_arrays; }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Base::getName();
     }
@@ -480,7 +480,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }

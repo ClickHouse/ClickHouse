@@ -91,12 +91,12 @@ public:
             src_scale = getDecimalScale(*argument_types_.front());
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return String(magic_enum::enum_name(kind));
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// `CorrMoments::addMany` ends by reducing five arrays of 16 partial sums, as much work as an array of a
     /// few dozen values, so for `corr` a call per array costs more than it saves.
