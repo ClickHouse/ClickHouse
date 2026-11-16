@@ -60,7 +60,7 @@ WITH (
 SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'],
     if(log_comment = 'parallel_probe_small_cache',
         toUInt64(countEqual(parallel_probes, query_id) BETWEEN 1
-            AND intDiv(ProfileEvents['PrimaryIndexCacheMisses'], ProfileEvents['SelectedParts'])),
+            AND intDiv(ProfileEvents['LoadedPrimaryIndexFiles'], ProfileEvents['SelectedParts'])),
         countEqual(parallel_probes, query_id))
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
