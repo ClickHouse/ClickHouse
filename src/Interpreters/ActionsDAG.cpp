@@ -5315,8 +5315,18 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
-            serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        ///
+        /// A set is the exception: `isConstantValueInCacheKey` leaves it out, but what `serializeConstant`
+        /// writes for it is only the set's hash, and a cache key writes no names, so without it nothing would tell
+        /// `x IN (SELECT a FROM t1)` from `x IN (SELECT a FROM t2)` - see `Node::updateHash`, which keeps
+        /// it for the same reason.
+        if (has_column)
+        {
+            const bool serialize_constant
+                = !node.is_runtime_filter_id && (isConstantValueInCacheKey(node) || WhichDataType(node.result_type).isSet());
+            if (!registry.for_cache_key || serialize_constant)
+                serializeConstant(*node.result_type, *node.column, out, registry, input_header);
+        }
 
         if (node.type == ActionType::INPUT)
         {
