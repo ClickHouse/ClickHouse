@@ -72,7 +72,7 @@ void StorageInput::setPipe(Pipe pipe_)
 class ReadFromInput : public ISourceStep
 {
 public:
-    std::string getName() const override { return "ReadFromInput"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromInput"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromInput(

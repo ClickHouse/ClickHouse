@@ -485,7 +485,7 @@ public:
     ~ProcessListEntry();
 
     QueryStatusPtr getQueryStatus() { return *it; }
-    QueryStatusPtr getQueryStatus() const { return *it; }
+    [[nodiscard]] QueryStatusPtr getQueryStatus() const { return *it; }
 
     ProcessList & getProcessList() { return parent; }
 };

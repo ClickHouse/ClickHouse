@@ -37,7 +37,7 @@ struct KeyMatcherGeneric
     const IColumn & keys_column;
     const IColumn & key;
 
-    bool match(size_t keys_row) const
+    [[nodiscard]] bool match(size_t keys_row) const
     {
         /// The direction hint must not be zero. When exactly one side is a `NaN`, or a NULL of a
         /// `Nullable` nested in the key, `compareAt` answers with the hint itself, so a zero hint
@@ -57,7 +57,7 @@ struct KeyMatcherVector
     const typename ColumnType::Container & data;
     T key_value;
 
-    bool match(size_t keys_row) const
+    [[nodiscard]] bool match(size_t keys_row) const
     {
         /// `CompareHelper` is a plain `==` for every type but the floating point ones, where it
         /// keeps the matcher in agreement with `KeyMatcherGeneric`: a `NaN` key is found by a
@@ -75,7 +75,7 @@ struct KeyMatcherString
     const char * key_data;
     size_t key_size;
 
-    bool match(size_t keys_row) const
+    [[nodiscard]] bool match(size_t keys_row) const
     {
         size_t offset = string_offsets[ssize_t(keys_row) - 1];
         size_t size = string_offsets[keys_row] - offset;
@@ -93,7 +93,7 @@ struct KeyMatcherFixedString
     size_t n;
     const UInt8 * key_data;
 
-    bool match(size_t keys_row) const
+    [[nodiscard]] bool match(size_t keys_row) const
     {
         return memcmpSmallAllowOverflow15(&chars[keys_row * n], key_data, n) == 0;
     }
@@ -107,7 +107,7 @@ struct KeyMatcherLowCardinality
     const IndexType * indexes;
     IndexType key_index;
 
-    bool match(size_t keys_row) const
+    [[nodiscard]] bool match(size_t keys_row) const
     {
         return indexes[keys_row] == key_index;
     }
