@@ -297,17 +297,4 @@ struct VectorizedFloat64Impl
     }
 };
 
-#if USE_FASTOPS
-
-/// log_b(x) = ln(x) / ln(b). `NFastOps::Log` handles all special values (0 -> -inf,
-/// negatives -> NaN, +inf -> +inf), which the finite scale factor preserves.
-inline void fastNaturalLogScaled(const double * src, size_t size, double * dst, double inv_ln_base)
-{
-    NFastOps::Log<true>(src, size, dst);
-    for (size_t i = 0; i < size; ++i)
-        dst[i] *= inv_ln_base;
-}
-
-#endif
-
 }

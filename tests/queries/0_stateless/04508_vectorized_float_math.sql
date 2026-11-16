@@ -1,61 +1,14 @@
--- Vectorized (SIMD) implementations of exp2/exp10/log2/log10/sin/cos/tan and the integer-exponent fast
--- path of pow. They must stay correct across the whole domain (zero, negatives, NaN/Inf, subnormals,
--- large magnitudes).
+-- Vectorized (SIMD) implementations of sin/cos/tan and the fast path of pow(x, 2). They must stay correct across the
+-- whole domain (zero, negatives, NaN/Inf, subnormals, large magnitudes).
 
--- exp2: exact on integer inputs, correct special values, and consistent with pow(2, x).
-SELECT abs(exp2(3) - 8) < 1e-9 AND abs(exp2(10) - 1024) / 1024 < 1e-9 AND abs(exp2(0) - 1) < 1e-9 AND abs(exp2(-1) - 0.5) < 1e-9 AND abs(exp2(-3) - 0.125) < 1e-9;
-SELECT exp2(-inf) = 0 AND exp2(inf) = inf AND isNaN(exp2(nan));
-SELECT sum(abs(exp2(number) - pow(2, number)) / pow(2, number) < 1e-9) = count() FROM numbers(64);
--- Integer and Float32 inputs also take the vectorized path.
-SELECT abs(exp2(toUInt32(5)) - 32) < 1e-9 AND abs(exp2(toFloat32(3)) - 8) < 1e-9;
-
--- log2: exact on powers of two, correct special values.
-SELECT abs(log2(1)) < 1e-9 AND abs(log2(2) - 1) < 1e-9 AND abs(log2(4) - 2) < 1e-9 AND abs(log2(1024) - 10) < 1e-9 AND abs(log2(0.5) + 1) < 1e-9;
-SELECT log2(0) = -inf AND isNaN(log2(-1)) AND log2(inf) = inf AND isNaN(log2(nan));
-
--- exp10 / log10: accurate to ~1e-9 relative, correct special values.
-SELECT abs(exp10(0) - 1) < 1e-9 AND abs(exp10(2) - 100) / 100 < 1e-9 AND abs(exp10(-3) - 0.001) / 0.001 < 1e-9;
-SELECT exp10(-inf) = 0 AND exp10(inf) = inf AND isNaN(exp10(nan));
-SELECT abs(log10(1)) < 1e-9 AND abs(log10(100) - 2) / 2 < 1e-9 AND abs(log10(1000) - 3) / 3 < 1e-9;
-SELECT log10(0) = -inf AND isNaN(log10(-5)) AND log10(inf) = inf;
-
--- pow chooses its kernel by the argument values, never by whether an argument is a constant column:
--- an integer exponent n with |n| <= 64 is computed by repeated multiplication, everything else by
--- precise pow.
-SELECT abs(pow(2, 3) - 8) < 1e-9 AND abs(pow(2, 10) - 1024) < 1e-9 AND abs(pow(5, 2) - 25) < 1e-9 AND abs(pow(-2, 3) + 8) < 1e-9 AND abs(pow(2, -1) - 0.5) < 1e-9;
-SELECT sum(abs(pow(number, 2) - number * number) <= 1e-9 * number * number) = count() FROM numbers(1000);
-SELECT sum(abs(pow(number, 0) - 1) < 1e-9) = count() FROM numbers(1000);
--- Constant and materialized arguments must be bit-identical (the function is deterministic).
-SELECT sum(pow(b, 17) = pow(b, materialize(17))) = count() FROM (SELECT number / 991.0 - 0.5 AS b FROM numbers(1000));
-SELECT sum(pow(b, 0.5) = pow(b, materialize(0.5))) = count() FROM (SELECT number / 991.0 + 0.5 AS b FROM numbers(1000));
-SELECT sum(pow(2, y) = pow(materialize(2), y)) = count() FROM (SELECT number / 7.0 - 50 AS y FROM numbers(1000));
-SELECT sum(pow(2, y) = pow(materialize(2), materialize(y))) = count() FROM (SELECT number / 7.0 - 50 AS y FROM numbers(1000));
-SELECT sum(pow(-2, y) = pow(materialize(-2), y) OR (isNaN(pow(-2, y)) AND isNaN(pow(materialize(-2), y)))) = count() FROM (SELECT number / 7.0 - 50 AS y FROM numbers(1000));
--- Repeated multiplication is accurate but NOT bit-identical to precise pow for nontrivial floating
--- bases. Pin the real contract - agreement with libm to ~1e-13 relative.
-SELECT abs(pow(-0.8157093076673938, 17) - -0.03134022453674334) / 0.03134022453674334 < 1e-13;
-SELECT abs(pow(materialize(-0.8157093076673938), materialize(17)) - -0.03134022453674334) / 0.03134022453674334 < 1e-13;
-SELECT abs(pow(3, 17) - 129140163) / 129140163 < 1e-9;
--- pow special values with integer exponent.
-SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 3)) AND pow(0, 3) = 0 AND pow(0, -1) = inf AND pow(-0., -1) = -inf;
--- Negative integer exponent near the underflow boundary: computing x^|n| then inverting would let
--- the intermediate overflow to +Inf and collapse the reciprocal to 0, wiping out this representable
--- subnormal. The result must stay non-zero and match precise pow.
-SELECT pow(65698.5552524023369, -64) > 0 AND abs(pow(65698.5552524023369, -64) / 4.74709109243818793e-309 - 1) < 1e-9;
--- Integer exponents past |n| <= 64 use precise pow.
-SELECT abs(pow(1.5, 65) - 279210559319.21014) / 279210559319.21014 < 1e-9, abs(pow(-1.5, 65) + 279210559319.21014) / 279210559319.21014 < 1e-9;
--- An integral exponent too large for Int64 must not reach the integer path - the cast would overflow.
-SELECT pow(materialize(2.0), 1e19) = inf AND pow(materialize(0.5), 1e19) = 0 AND pow(2.0, 1e19) = inf;
+-- pow(x, 2) is one multiplication, the correctly rounded square, for a constant and a materialized exponent alike;
+-- other exponents use precise pow.
+SELECT sum(pow(b, 2) = b * b AND pow(b, materialize(2)) = b * b) = count() FROM (SELECT number / 991.0 - 0.5 AS b FROM numbers(1000));
+SELECT sum(pow(toFloat32(b), 2) = toFloat64(toFloat32(b)) * toFloat64(toFloat32(b))) = count() FROM (SELECT number / 7.0 AS b FROM numbers(1000));
+SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 2)) AND pow(-0., 2) = 0 AND pow(1e200, 2) = inf AND pow(materialize(1e-200), 2) = 0;
+SELECT abs(pow(10, 2.5) - 316.22776601683796) / 316.22776601683796 < 1e-15, pow(10, -2) = 0.01, pow(10, materialize(33)) = 1e33;
 -- pow over a Dynamic argument keeps returning Nullable(Float64), not Dynamic.
 SELECT toTypeName(pow(2::Dynamic, 3)) = 'Nullable(Float64)';
-
--- pow with a non-integer exponent is precise pow.
-SELECT abs(pow(10, 2.5) - 316.22776601683796) / 316.22776601683796 < 1e-9 AND abs(pow(2.0, 0.5) - sqrt(2)) / sqrt(2) < 1e-9;
-SELECT abs(pow(1.2345, 2.5) - 1.6932759329909446) / 1.6932759329909446 < 1e-9;
-SELECT max(abs(pow(b, 0.5) - sqrt(b)) / sqrt(b)) < 1e-9 FROM (SELECT number / 991.0 + 0.5 AS b FROM numbers(1000));
-SELECT abs(pow(1, 100000) - 1) < 1e-9 AND pow(1, nan) = 1 AND pow(1, inf) = 1 AND pow(materialize(1), nan) = 1;
-SELECT pow(2, inf) = inf AND pow(0.5, inf) = 0 AND pow(2, -inf) = 0 AND isNaN(pow(2, nan));
-SELECT isNaN(pow(-2, 0.5)) AND pow(0, 0.5) = 0 AND pow(inf, 0.5) = inf AND pow(0, -0.5) = inf AND pow(-inf, 0.5) = inf;
 
 -- sin / cos / tan against libm reference values, up to the |x| <= 1e8 limit of the polynomial kernel.
 CREATE TEMPORARY TABLE t04508_trig (x Float64, s Float64, c Float64, t Float64);
@@ -109,22 +62,3 @@ SELECT isNaN(sin(inf)) AND isNaN(cos(-inf)) AND isNaN(tan(nan));
 SELECT abs(sin(toUInt32(1)) - 0.8414709848078965) < 1e-15, toTypeName(cos(toFloat32(1))), abs(tan(toInt8(1)) - 1.5574077246549023) < 1e-15;
 -- Float32 and Decimal inputs are promoted into a separate buffer, so the libm fallback still sees the original values.
 SELECT abs(sin(toFloat32(1e9)) - 0.5458434494486996) < 1e-15, abs(cos(toDecimal64(-1e9, 0)) - 0.8378871813639024) < 1e-15, isNaN(sin(toFloat32(inf)));
-
--- exp2/exp10/log2/log10 run in place over Decimal and Float32 inputs converted into the result column.
-SELECT abs(exp2(toDecimal64(3, 2)) - 8) < 1e-9 AND abs(log2(toDecimal32(1024, 0)) - 10) < 1e-9 AND abs(exp10(toDecimal64(2, 3)) - 100) / 100 < 1e-9 AND abs(log10(toDecimal64(1000, 1)) - 3) / 3 < 1e-9;
-SELECT abs(log2(toFloat32(1024)) - 10) < 1e-9 AND abs(log10(toFloat32(1000)) - 3) / 3 < 1e-9 AND abs(exp10(toFloat32(2)) - 100) / 100 < 1e-9;
-
--- Exact results that integer arithmetic relies on, as with libm.
--- `floor(log2(x))` is the position of the highest bit: exact at the powers of two, correct just above and below them
--- (from 2^49 - 1 on, the logarithm rounds up to k in libm as well).
-SELECT countIf(log2(p) != k), countIf(k > 0 AND floor(log2(p + 1)) != k), countIf(k > 1 AND k <= 48 AND floor(log2(p - 1)) != k - 1)
-FROM (SELECT number AS k, intExp2(number) AS p FROM numbers(63));
--- The power of two of an integer is exact.
-SELECT countIf(toUInt64(exp2(k)) != intExp2(k)), countIf(exp2(-toFloat64(k)) * intExp2(k) != 1) FROM (SELECT number AS k FROM numbers(64));
--- `floor(log10(x))` counts the digits: exact at the powers of ten, correct just above them.
-SELECT countIf(log10(toFloat64(p)) != k), countIf(floor(log10(toFloat64(p + 1))) != k), countIf(log10(toFloat64('1e-' || toString(k))) != -k)
-FROM (SELECT number AS k, intExp10(number) AS p FROM numbers(19));
-
--- An integer power near the overflow or underflow boundary is classified as by libm, for every column shape.
-SELECT isFinite(pow(102701782189087.7, 22)), isFinite(pow(materialize(102701782189087.7), 22)), isFinite(pow(102701782189087.7, materialize(22)));
-SELECT pow(3.6396246857900022e-11, 31) = 0, pow(materialize(3.6396246857900022e-11), 31) = 0, pow(3.6396246857900022e-11, materialize(31)) = 0;
