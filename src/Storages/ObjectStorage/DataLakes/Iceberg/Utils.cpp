@@ -40,6 +40,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -567,9 +568,10 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    /// The metadata file is published: a failed update of the optional hint, a cancellation included, must not undo the commit.
-    try
     {
+        /// Readers with `iceberg_use_version_hint` find the published metadata file through the hint, so a cancellation
+        /// must not leave the hint behind the commit.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
         (void)tryWriteVersionHintFile(
             resolver,
             metadata_file_info,
@@ -578,10 +580,6 @@ bool writeMetadataFileAndVersionHint(
             context,
             /* create */ try_write_version_hint,
             /* assert_version_exactly */ false);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
     return true;
 }

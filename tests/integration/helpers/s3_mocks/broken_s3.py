@@ -62,8 +62,8 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        # Only `at_object_get` and `at_object_upload` read it: the rule then applies to the requests
-        # whose object path contains the key.
+        # Only `at_object_get`, `at_object_upload` and `at_complete_multi_part_upload` read it: the rule
+        # then applies to the requests whose object path contains the key.
         if key is not None:
             url += f"&key={urllib.parse.quote(key, safe='')}"
 
@@ -347,6 +347,7 @@ class _ServerRuntime:
 
     class ConnectionResetByPeerAction:
         def __init__(self, with_partial_data=None):
+            self.delay = 1
             self.partial_data = ""
             if with_partial_data is not None and with_partial_data == "1":
                 self.partial_data = (
@@ -366,7 +367,7 @@ class _ServerRuntime:
                 request_handler.end_headers()
                 request_handler.wfile.write(bytes(self.partial_data, "UTF-8"))
 
-            time.sleep(1)
+            time.sleep(self.delay)
             request_handler.close_connection = True
             request_handler.connection.setsockopt(
                 socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
@@ -375,10 +376,13 @@ class _ServerRuntime:
 
     class ForwardThenResetAction(ConnectionResetByPeerAction):
         """Stores the request upstream and then loses the response: the client sees a partial body
-        and a reset, as when a request succeeds in S3 but its answer does not arrive."""
+        and a reset, as when a request succeeds in S3 but its answer does not arrive. `delay` is the time in
+        seconds the answer is held before the reset."""
 
-        def __init__(self):
+        def __init__(self, delay=None):
             super().__init__(with_partial_data="1")
+            if delay is not None:
+                self.delay = float(delay)
 
         def inject_error(self, request_handler):
             body = request_handler.rfile.read(
@@ -482,7 +486,9 @@ class _ServerRuntime:
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
             elif self.action == "forward_then_reset":
-                self.error_handler = _ServerRuntime.ForwardThenResetAction()
+                self.error_handler = _ServerRuntime.ForwardThenResetAction(
+                    *self.action_args
+                )
             elif self.action == "no_such_upload":
                 self.error_handler = _ServerRuntime.NoSuchUploadAction(
                     *self.action_args
@@ -529,6 +535,7 @@ class _ServerRuntime:
         self.at_object_get_by_key = {}
         self.at_object_upload_by_key = {}
         self.at_complete_multi_part_upload = None
+        self.at_complete_multi_part_upload_by_key = {}
         self.at_abort_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
@@ -557,6 +564,7 @@ class _ServerRuntime:
             self.at_object_get = None
             self.at_object_get_by_key = {}
             self.at_object_upload_by_key = {}
+            self.at_complete_multi_part_upload_by_key = {}
 
 
 _runtime = _ServerRuntime()
@@ -770,13 +778,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path[1] == "at_complete_multi_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_complete_multi_part_upload = (
-                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
-            )
-            self.log_message(
-                "set at_complete_multi_part_upload %s",
-                _runtime.at_complete_multi_part_upload,
-            )
+            rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            key = params.get("key", [None])[0]
+            if key is None:
+                _runtime.at_complete_multi_part_upload = rule
+            else:
+                _runtime.at_complete_multi_part_upload_by_key[key] = rule
+            self.log_message("set at_complete_multi_part_upload %s for key %s", rule, key)
             return self._ok()
 
         if path[1] == "at_abort_multi_part_upload":
@@ -925,6 +933,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         upload_id = params.get("uploadId", [None])[0]
         if upload_id is not None:
+            # `has_effect` takes `_runtime.lock` itself, so the lock must not be held here.
+            for key, rule in list(_runtime.at_complete_multi_part_upload_by_key.items()):
+                if key in parts.path and rule.has_effect():
+                    self.log_message("post at_complete_multi_part_upload %s for key %s", rule, key)
+                    return rule.inject_error(self)
             if _runtime.at_complete_multi_part_upload is not None:
                 if _runtime.at_complete_multi_part_upload.has_effect():
                     return _runtime.at_complete_multi_part_upload.inject_error(self)

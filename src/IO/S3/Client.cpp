@@ -214,7 +214,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-/// A write with a precondition. After a lost response only its next attempt tells the outcome: the precondition
+/// A write with a precondition. After a lost response only a later attempt tells whether it landed: the precondition
 /// fails on the object of the earlier attempt, and the idempotency id proves that object to be its own.
 template <typename RequestType>
 bool isConditionalWrite(const RequestType & request)
@@ -631,6 +631,11 @@ bool Client::isObjectWrittenWithIdempotencyId(
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
+    /// The outcome of a conditional write tells its caller whether a rollback may delete what the write published.
+    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+    if (isConditionalWrite(request))
+        cancellation_blocker.emplace();
+
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
@@ -691,6 +696,11 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
+    /// The outcome of a conditional write tells its caller whether a rollback may delete what the write published.
+    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+    if (isConditionalWrite(request))
+        cancellation_blocker.emplace();
+
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request,
         [this](Model::PutObjectRequest & req)
@@ -834,10 +844,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (result.IsSuccess())
             return result;
 
-        /// A failed precondition of a conditional write can come from its own earlier attempt, which only the caller
-        /// can tell from a lost race, so the cancellation must not replace that outcome.
-        if (!isConditionalWrite(request) || result.GetError().GetExceptionName() != "PreconditionFailed")
-            CurrentThread::checkIfNotCancelled();
+        CurrentThread::checkIfNotCancelled();
 
         const auto & error = result.GetError();
 
@@ -987,22 +994,12 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
-            /// The retry of a conditional write tells whether its earlier attempt landed, so it does not see the cancellation.
-            /// The decision to retry it again does.
-            auto attempt = [&]
-            {
-                std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
-                if (attempt_no > 1 && isConditionalWrite(request_))
-                    cancellation_blocker.emplace();
-
-                /// Slowing down due to a previously encountered retryable error, possibly from another thread.
-                slowDownAfterRetryableError();
-                return request_fn_(request_);
-            };
+            /// Slowing down due to a previously encountered retryable error, possibly from another thread.
+            slowDownAfterRetryableError();
 
             try
             {
-                outcome = attempt();
+                outcome = request_fn_(request_);
 
                 if (outcome.IsSuccess())
                     break;

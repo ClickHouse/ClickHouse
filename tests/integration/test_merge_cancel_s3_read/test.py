@@ -1269,19 +1269,34 @@ def test_killed_iceberg_insert_removes_its_data_files_in_shared_backoff(cluster,
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-def test_killed_iceberg_commit_keeps_the_table_readable_in_shared_backoff(cluster, broken_s3):
-    """A commit killed while it retries its metadata upload must leave a readable table.
+@pytest.mark.parametrize(
+    "upload, kill_while, version_hint",
+    [
+        pytest.param("single", "backoff", True, id="single-backoff-hint"),
+        pytest.param("single", "response", False, id="single-response"),
+        pytest.param("multipart", "response", False, id="multipart-response"),
+    ],
+)
+def test_killed_iceberg_commit_keeps_the_table_readable(
+    cluster, broken_s3, upload, kill_while, version_hint
+):
+    """A commit killed while the outcome of its metadata upload is unknown must leave a readable table.
 
-    The upload of the new `vN.metadata.json` is stored, but its response is lost, so the client
-    retries the conditional upload in the shared backoff. Killed there, the commit still makes that
-    retry: its precondition fails on the file of the first attempt, and the idempotency id proves the
-    file to be its own. Without the retry the commit counts as lost, and its rollback deletes the
+    The upload of the new `vN.metadata.json` is stored, but its response is lost. Only a later
+    attempt tells the outcome: it fails on the file of the first attempt (`412` for a single upload,
+    `NoSuchUpload` for the completion of a multipart one), and the idempotency id proves that file to
+    be its own. The query is killed while the response is held, or while the retry waits in the
+    shared backoff. Without that attempt the commit counts as lost, and its rollback deletes the
     manifest list that the published version references.
+
+    With `iceberg_use_version_hint` readers find the new version through the hint, so the update of
+    the hint after the commit must not stop at the cancellation either. Its first read fails here.
     """
     node = cluster.instances["node"]
     table = "t_backoff_iceberg_commit"
     # The prefix gets the backoff step of 10 s from `configs/storage_conf.xml`.
     prefix = f"iceberg_backoff_commit_{uuid.uuid4().hex}/"
+    url = f"http://resolver:8087/root/{prefix}"
     insert_query_id = f"backoff_iceberg_commit_{uuid.uuid4().hex}"
     retries_query = (
         "SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') FROM system.events"
@@ -1289,40 +1304,78 @@ def test_killed_iceberg_commit_keeps_the_table_readable_in_shared_backoff(cluste
     insert_running = (
         f"SELECT count() FROM system.processes WHERE query_id = '{insert_query_id}'"
     )
+    published_key = f"{prefix}metadata/v2.metadata.json"
     insert = None
 
+    def published():
+        return any(
+            obj.object_name == published_key
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, prefix=published_key
+            )
+        )
+
+    table_settings = " SETTINGS iceberg_use_version_hint = 1" if version_hint else ""
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"CREATE TABLE {table} (id Int64, s String) ENGINE = IcebergS3("
-        f"'http://resolver:8087/root/{prefix}', 'minio', '{minio_secret_key}')",
+        f"'{url}', 'minio', '{minio_secret_key}'){table_settings}",
         settings={"allow_insert_into_iceberg": 1},
     )
 
     try:
-        # Only the first upload of a metadata file is stored with its response lost.
-        broken_s3.setup_at_object_upload(
-            key="metadata.json", count=1, action="forward_then_reset"
+        # The first upload of the metadata file is stored, and its response is held for 2 s and then
+        # lost. The first attempt of a single upload waits at most 3 s for the rest of a response.
+        lost_response = dict(
+            key="metadata.json", count=1, action="forward_then_reset", action_args=["2"]
         )
+        insert_settings = "allow_insert_into_iceberg = 1, async_insert = 0"
+        if upload == "multipart":
+            broken_s3.setup_at_complete_multi_part_upload(**lost_response)
+            # Every file larger than 100 bytes, the metadata file included, is uploaded in parts.
+            insert_settings += ", s3_max_single_part_upload_size = 100"
+        else:
+            broken_s3.setup_at_object_upload(**lost_response)
+
         retries_before = int(node.query(retries_query))
         insert = node.get_query_request(
             f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(20) "
-            f"SETTINGS allow_insert_into_iceberg = 1, async_insert = 0",
+            f"SETTINGS {insert_settings}",
             query_id=insert_query_id,
         )
-        assert wait_for(
-            node, retries_query, lambda v: int(v) > retries_before
-        ), "the upload of the metadata file did not retry in the shared backoff"
+        if kill_while == "backoff":
+            # The reset escapes the SDK, so the client retries the single upload in its own loop.
+            assert wait_for(
+                node, retries_query, lambda v: int(v) > retries_before
+            ), "the upload of the metadata file did not retry in the shared backoff"
+        else:
+            for _ in range(300):
+                if published():
+                    break
+                time.sleep(0.1)
+            assert published(), "the metadata file was not stored"
+        if version_hint:
+            # The read of the hint after the commit fails once.
+            broken_s3.setup_at_object_get(
+                key="version-hint.text", count=1, action="slow_down"
+            )
 
         node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
         assert wait_for(
             node, insert_running, lambda v: int(v) == 0
         ), "the killed INSERT did not end"
+        broken_s3.reset()
 
-        answer, select_error = node.query_and_get_answer_with_error(
-            f"SELECT count() FROM {table}"
-        )
-        assert not select_error, f"the table is not readable: {select_error[:2000]}"
-        assert int(answer) == 20, f"the table holds {answer.strip()} rows instead of 20"
+        # Readers through the table, which uses the hint when it is enabled, and through the listing.
+        for reader in (
+            table,
+            f"icebergS3('{url}', 'minio', '{minio_secret_key}')",
+        ):
+            answer, select_error = node.query_and_get_answer_with_error(
+                f"SELECT count() FROM {reader}"
+            )
+            assert not select_error, f"{reader} is not readable: {select_error[:2000]}"
+            assert int(answer) == 20, f"{reader} holds {answer.strip()} rows instead of 20"
     finally:
         broken_s3.reset()
         if insert is not None:
