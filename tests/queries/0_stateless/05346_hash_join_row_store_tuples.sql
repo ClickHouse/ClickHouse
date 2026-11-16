@@ -78,14 +78,14 @@ SYSTEM FLUSH LOGS text_log, query_log;
 -- Which queries built a row store.
 SELECT replace(log_comment, 'rs_', ''), query_id IN (
     SELECT query_id FROM system.text_log
-    WHERE event_date >= yesterday() AND message_format_string = '{}Initialized Row store with {} columns')
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message_format_string = '{}Initialized Row store with {} columns')
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment LIKE 'rs\\_%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment LIKE 'rs\\_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
 
 SELECT 'hash_spilled spilled', ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = 'rs_hash_spilled' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment = 'rs_hash_spilled' AND type = 'QueryFinish';
 
 DROP TABLE right_spill;
 DROP TABLE right;
