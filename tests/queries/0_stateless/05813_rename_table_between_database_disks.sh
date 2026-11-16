@@ -33,10 +33,14 @@ CREATE TABLE ${DB}_enc_b.t (x UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO ${DB}_plain.t VALUES (1);
 INSERT INTO ${DB}_enc_a.t VALUES (2);
 INSERT INTO ${DB}_enc_b.t VALUES (3);
+CREATE DICTIONARY ${DB}_enc_a.d (x UInt32) PRIMARY KEY x SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+CREATE DICTIONARY ${DB}_enc_b.d (x UInt32) PRIMARY KEY x SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
 
 RENAME TABLE ${DB}_plain.t TO ${DB}_enc_a.t2; -- { serverError NOT_IMPLEMENTED }
 RENAME TABLE ${DB}_enc_a.t TO ${DB}_enc_b.t2; -- { serverError NOT_IMPLEMENTED }
 EXCHANGE TABLES ${DB}_enc_a.t AND ${DB}_enc_b.t; -- { serverError NOT_IMPLEMENTED }
+RENAME DICTIONARY ${DB}_enc_a.d TO ${DB}_enc_b.d2; -- { serverError NOT_IMPLEMENTED }
+EXCHANGE DICTIONARIES ${DB}_enc_a.d AND ${DB}_enc_b.d; -- { serverError NOT_IMPLEMENTED }
 
 -- ATTACH re-reads the metadata file through the database's disk.
 DETACH TABLE ${DB}_plain.t;

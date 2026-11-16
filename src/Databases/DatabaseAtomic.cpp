@@ -1057,6 +1057,8 @@ CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickho
 
 If unspecified, the disk defined in `database_disk.disk` is used by default.
 
+Tables and dictionaries cannot be moved with `RENAME` or `EXCHANGE` between databases that store metadata on different disks; such a query fails with `NOT_IMPLEMENTED`.
+
 The same `SETTINGS` clause works for `ATTACH DATABASE`, which is how a database whose metadata files
 live on another disk is attached to a server. `Atomic` requires the `UUID` of the database to be given
 explicitly in that case:
