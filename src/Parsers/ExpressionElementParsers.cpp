@@ -672,6 +672,10 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         });
     }
 
+    /// The condition becomes an argument of the aggregate, where a parametrised alias is not kept.
+    if (auto * with_alias = dynamic_cast<ASTWithAlias *>(condition->children[0].get()))
+        with_alias->parametrised_alias.reset();
+
     function.name += "If";
     function.arguments->children.push_back(condition->children[0]);
     return true;

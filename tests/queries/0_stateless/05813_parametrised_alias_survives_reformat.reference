@@ -14,7 +14,13 @@ x
 0
 1
 y
+0
+1
+y
 1
 2
 1	1
 7
+SELECT countIf(number > 0) FROM numbers(3)	1
+[]
+2

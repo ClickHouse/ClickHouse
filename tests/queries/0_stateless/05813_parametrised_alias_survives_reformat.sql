@@ -22,6 +22,7 @@ ATTACH TABLE v_alias_only;
 
 SELECT * FROM v_alias_param(a = 'x', n = 5) ORDER BY ALL FORMAT TSVWithNames;
 SELECT x FROM v_alias_param(a = 'x', n = 5) ORDER BY ALL;
+SELECT * FROM v_alias_param(a = 'y', n = 5) ORDER BY ALL FORMAT TSVWithNames;
 SELECT * FROM v_alias_only(a = 'y') ORDER BY ALL FORMAT TSVWithNames;
 
 -- A materialized view substitutes the parameter when it is created and stores the resolved alias.
@@ -36,6 +37,16 @@ DETACH TABLE mv_alias;
 ATTACH TABLE mv_alias;
 INSERT INTO src_alias VALUES (7);
 SELECT z FROM mv_alias;
+
+-- A FILTER condition becomes an argument of the aggregate, where a parametrised alias is not kept.
+SELECT formatQuerySingleLine('SELECT count() FILTER (WHERE number > 0 AS {p:Identifier}) FROM numbers(3)') AS f, formatQuerySingleLine(f) = f;
+DROP VIEW IF EXISTS v_alias_filter;
+CREATE VIEW v_alias_filter AS SELECT count() FILTER (WHERE number > 0 AS {p:Identifier}) AS c FROM numbers(3);
+SELECT parameterized_view_parameters FROM system.tables WHERE database = currentDatabase() AND name = 'v_alias_filter';
+DETACH TABLE v_alias_filter;
+ATTACH TABLE v_alias_filter;
+SELECT c FROM v_alias_filter;
+DROP VIEW v_alias_filter;
 
 DROP VIEW mv_alias;
 DROP TABLE src_alias;
