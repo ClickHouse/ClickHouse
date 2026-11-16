@@ -2,8 +2,6 @@
 
 #include <Core/Types.h>
 
-/// `fiu.h` includes `<stdatomic.h>` inside `extern "C"`, which compiles only if `<atomic>` comes first.
-#include <atomic>
 #include <mutex>
 
 #include "config.h"
@@ -20,15 +18,12 @@
 #else // USE_LIBFIU
 
 // stubs from fiu-local.h
-// The code under a failpoint is kept in a dead branch instead of being dropped, so that the variables and functions
-// used only there are not reported as unused. The extra parentheses tell the compiler that the code is dead on purpose
-// (otherwise `-Wunreachable-code` reports it).
 #define fiu_init(flags) 0
-#define fiu_fail(name) (0)
+#define fiu_fail(name) 0
 #define fiu_failinfo() NULL
-#define fiu_do_on(name, action) do { if ((false)) { action; } } while (0)
+#define fiu_do_on(name, action)
 #define fiu_exit_on(name)
-#define fiu_return_on(name, retval) do { if ((false)) { return retval; } } while (0)
+#define fiu_return_on(name, retval)
 
 #endif // USE_LIBFIU
 
@@ -96,11 +91,6 @@ public:
       */
     static void pauseFailPoint(const String & fail_point_name);
 
-    /** Fast-path check used to avoid even local failpoint guards when no failpoint
-      * is enabled.
-      */
-    static bool hasAnyFailPointBeenRegistered();
-
     /** Activate a failpoint so that subsequent hits (via fiu_do_on / pauseFailPoint)
       * will take effect. Creates a FailPointChannel in fail_point_wait_channels.
       * No-op if the failpoint is already enabled.
@@ -112,13 +102,6 @@ public:
       * No-op if the failpoint is not currently enabled.
       */
     static void disableFailPoint(const String & fail_point_name);
-
-    /** Deactivate every failpoint and resume any threads currently blocked on one.
-      * The state a `SYSTEM ENABLE FAILPOINT` leaves behind is server-wide, so this is what
-      * a test harness needs to hand the next test a server that injects nothing - without
-      * having to know which failpoints the previous test armed.
-      */
-    static void disableAllFailPoints();
 
     /** Resume all threads currently blocked on a pauseable failpoint without
       * disabling it. For Pauseable failpoints the next hit will block again;
@@ -134,7 +117,7 @@ public:
       * IMPORTANT DIFFERENCE between waitForPause() and waitForResume():
       *
       * waitForPause():
-      *   - Checks STATE (pause_epoch > resume_epoch)
+      *   - Checks STATE (pause_count > 0)
       *   - Can be called AFTER target pauses
       *   - Example: target pauses at T=1, you call waitForPause() at T=5, returns immediately
       *
@@ -151,8 +134,8 @@ public:
     /** Wait for target code to reach and pause at the failpoint.
       *
       * This function waits until at least one thread has reached the failpoint and paused.
-      * It checks the current state (pause_epoch > resume_epoch), so it can be called AFTER
-      * the target thread has already paused - it will return immediately if threads are already paused.
+      * It checks the current state (pause_count > 0), so it can be called AFTER the target
+      * thread has already paused - it will return immediately if threads are already paused.
       *
       * Typical usage pattern:
       *
@@ -168,7 +151,7 @@ public:
       *   FailPointInjection::pauseFailPoint(FailPoints::fp);  // Pauses here until notified
       *
       * Key characteristics:
-      * - Checks CURRENT STATE: returns immediately if pause_epoch > resume_epoch
+      * - Checks CURRENT STATE: returns immediately if pause_count > 0
       * - Can be called after target thread has already paused
       * - Thread-safe: multiple test threads can wait simultaneously
       */
@@ -217,7 +200,7 @@ private:
     /// Maps enabled failpoint names to their channels.
     /// A failpoint is considered enabled if and only if it has an entry here.
     /// Channels carry the condition variables used by pauseable failpoints to
-    /// block / resume threads and track pause_epoch / resume_epoch.
+    /// block / resume threads and track pause_count / resume_epoch.
     static std::unordered_map<String, std::shared_ptr<FailPointChannel>> fail_point_wait_channels;
 };
 }

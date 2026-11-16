@@ -1,4 +1,3 @@
-#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccessParams.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -23,7 +22,6 @@ ContextAccessParams::ContextAccessParams(
     bool use_default_roles_,
     const std::shared_ptr<const std::vector<UUID>> & current_roles_,
     const std::shared_ptr<const std::vector<UUID>> & external_roles_,
-    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     const Settings & settings_,
     const String & current_database_,
     const ClientInfo & client_info_,
@@ -33,7 +31,6 @@ ContextAccessParams::ContextAccessParams(
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
     , external_roles(external_roles_)
-    , authentication_grants(authentication_grants_)
     , readonly(settings_[Setting::readonly])
     , allow_ddl(settings_[Setting::allow_ddl])
     , allow_introspection(settings_[Setting::allow_introspection_functions])
@@ -44,7 +41,6 @@ ContextAccessParams::ContextAccessParams(
     , forwarded_address(client_info_.getLastForwardedForHost())
     , quota_key(client_info_.quota_key)
     , initial_user_id(initial_user_id_)
-    , initial_user_current_roles(initial_user_id_ ? client_info_.current_roles : std::nullopt)
 {
 }
 
@@ -80,8 +76,6 @@ String ContextAccessParams::toString() const
         }
         out << "]";
     }
-    if (authentication_grants && !authentication_grants->structurallyEmpty())
-        out << separator() << "authentication_grants = [" << authentication_grants->toStringWithoutOptions() << "]";
     if (readonly)
         out << separator() << "readonly = " << readonly;
     if (allow_ddl)
@@ -101,13 +95,6 @@ String ContextAccessParams::toString() const
         out << separator() << "quota_key = " << quota_key;
     if (initial_user_id)
         out << separator() << "initial_user_id = " << *initial_user_id;
-    if (initial_user_current_roles)
-    {
-        out << separator() << "initial_user_current_roles = [";
-        for (size_t i = 0; i != initial_user_current_roles->size(); ++i)
-            out << (i ? ", " : "") << (*initial_user_current_roles)[i];
-        out << "]";
-    }
     return out.str();
 }
 
@@ -138,7 +125,6 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(current_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(external_roles)
-    CONTEXT_ACCESS_PARAMS_EQUALS(authentication_grants)
     CONTEXT_ACCESS_PARAMS_EQUALS(readonly)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_EQUALS(allow_introspection)
@@ -149,7 +135,6 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
     CONTEXT_ACCESS_PARAMS_EQUALS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_EQUALS(quota_key)
     CONTEXT_ACCESS_PARAMS_EQUALS(initial_user_id)
-    CONTEXT_ACCESS_PARAMS_EQUALS(initial_user_current_roles)
 
     #undef CONTEXT_ACCESS_PARAMS_EQUALS
 
@@ -191,7 +176,6 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_LESS(current_roles)
     CONTEXT_ACCESS_PARAMS_LESS(external_roles)
-    CONTEXT_ACCESS_PARAMS_LESS(authentication_grants)
     CONTEXT_ACCESS_PARAMS_LESS(readonly)
     CONTEXT_ACCESS_PARAMS_LESS(allow_ddl)
     CONTEXT_ACCESS_PARAMS_LESS(allow_introspection)
@@ -202,7 +186,6 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
     CONTEXT_ACCESS_PARAMS_LESS(forwarded_address)
     CONTEXT_ACCESS_PARAMS_LESS(quota_key)
     CONTEXT_ACCESS_PARAMS_LESS(initial_user_id)
-    CONTEXT_ACCESS_PARAMS_LESS(initial_user_current_roles)
 
     #undef CONTEXT_ACCESS_PARAMS_LESS
 

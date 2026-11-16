@@ -1,7 +1,0 @@
-42
-read_string_binary_c1_header_name	1
-read_string_binary_c2_skipped_string	1
-read_string_binary_c3_distinct_dynamic_types	1
-read_string_binary_c4_group_array_sample	1
-read_string_binary_c5_distinct_json_paths	1
-read_string_binary_c6_quantile	1

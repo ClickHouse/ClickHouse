@@ -7,7 +7,7 @@ namespace DB
 {
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- a column name list, interchangeable with `Names`
+using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 
 class CommonSubplanReferenceStep : public ISourceStep
 {
@@ -31,9 +31,6 @@ public:
     }
 
     QueryPlan::Node * getSubplanReferenceRoot() const { return subplan_root; }
-
-    /// Used to redirect the reference to the corresponding cloned node when a subplan is cloned.
-    void setSubplanReferenceRoot(QueryPlan::Node * subplan_root_) { subplan_root = subplan_root_; }
 
     const ColumnIdentifiers & getColumnsToUse() const { return columns_to_use; }
 

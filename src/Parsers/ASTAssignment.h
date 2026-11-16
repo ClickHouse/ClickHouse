@@ -4,8 +4,6 @@
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -21,9 +19,6 @@ public:
     }
 
     String getID(char delim) const override { return "Assignment" + (delim + column_name); }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

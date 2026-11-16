@@ -1,7 +1,5 @@
 #include <Analyzer/Passes/UniqToCountPass.h>
 
-#include <DataTypes/DataTypeNullable.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -44,7 +42,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         const auto & projection_columns = query_node->getProjectionColumns();
         const auto & projection_nodes = query_node->getProjection().getNodes();
 
-        chassert(projection_columns.size() == projection_nodes.size());
+        assert(projection_columns.size() == projection_nodes.size());
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
@@ -137,7 +135,7 @@ public:
             return;
 
         /// Check that query has only single table expression which is subquery
-        auto * subquery_node = query_node->getJoinTreeNode()->as<QueryNode>();
+        auto * subquery_node = query_node->getJoinTree()->as<QueryNode>();
         if (!subquery_node)
             return;
 
@@ -158,20 +156,6 @@ public:
 
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
 
-        /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
-        /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`
-        /// would report one distinct value too many. A single argument that can carry a NULL is
-        /// rewritten to `count(x)` instead, which skips a NULL exactly like `uniq` does. A
-        /// multi-argument `uniq(x, y)` has no such counterpart - it skips a row where any of the
-        /// arguments is NULL - so there the rewrite is declined. `canContainNull` rather than
-        /// `isNullable`, because `Variant` and `Dynamic` carry a NULL through a discriminator.
-        bool any_argument_can_contain_null = false;
-        for (const auto & uniq_argument_node : uniq_arguments_nodes)
-            any_argument_can_contain_null |= canContainNull(*uniq_argument_node->getResultType());
-
-        if (any_argument_can_contain_null && uniq_arguments_nodes.size() != 1)
-            return;
-
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
         auto match_subquery_with_distinct = [&]() -> bool
         {
@@ -191,12 +175,6 @@ public:
             if (!subquery_node->hasGroupBy())
                 return false;
 
-            /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -
-            /// which `count()` would count as additional distinct values.
-            if (subquery_node->isGroupByWithRollup() || subquery_node->isGroupByWithCube()
-                || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
-                return false;
-
             /// uniq argument node list == subquery group by node list
             auto group_by_columns = extractProjectionColumnsForGroupBy(subquery_node);
 
@@ -213,9 +191,7 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
-            /// A NULL-able argument is kept, so that `count(x)` skips a NULL like `uniq` does.
-            if (!any_argument_can_contain_null)
-                function_node->getArguments().getNodes().clear();
+            function_node->getArguments().getNodes().clear();
             resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }
