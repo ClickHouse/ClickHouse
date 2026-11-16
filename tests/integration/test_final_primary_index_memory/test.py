@@ -92,6 +92,64 @@ def test_index_in_result_is_accounted():
     assert node.query(query.format("200M")) == node.query("SELECT uniqExact(k) FROM t")
 
 
+def test_index_is_not_accounted_twice_for_server():
+    # The primary index of the first part takes 200 MB.
+    node.query(
+        """
+        SET allow_suspicious_fixed_string_types = 1, max_block_size = 2000, min_insert_block_size_rows = 2000, min_insert_block_size_bytes = 0;
+        DROP TABLE IF EXISTS f SYNC;
+        CREATE TABLE f (k FixedString(100000)) ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS index_granularity = 1, use_primary_key_cache = 1, primary_key_lazy_load = 1;
+        SYSTEM STOP MERGES f;
+        INSERT INTO f SELECT toString(number) FROM numbers(2000);
+        INSERT INTO f VALUES ('5');
+        """
+    )
+    query = f"EXPLAIN PIPELINE SELECT k FROM f FINAL SETTINGS {SETTINGS}, max_memory_usage = "
+    error = node.query_and_get_error(query + "'150M'")
+    assert "Query memory limit exceeded" in error, error
+
+    def set_limit(limit):
+        config = f"<clickhouse><max_server_memory_usage>{limit}</max_server_memory_usage></clickhouse>"
+        node.replace_config("/etc/clickhouse-server/config.d/limit.xml", config)
+        node.query("SYSTEM RELOAD CONFIG")
+
+    # The index fits into the limit once, but not twice.
+    used = node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS; SELECT toInt64(value) FROM system.asynchronous_metrics WHERE metric = 'TrackedMemory'")
+    try:
+        set_limit(int(used) + 350000000)
+        assert "MergeTreeSelect" in node.query(query + "0")
+    finally:
+        set_limit(0)
+
+
+def test_materialized_view():
+    node.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS src (s String) ENGINE = Null;
+        CREATE TABLE IF NOT EXISTS buf AS src ENGINE = Buffer(currentDatabase(), src, 1, 1000, 1000, 1, 1, 1, 1);
+        CREATE MATERIALIZED VIEW IF NOT EXISTS mv ENGINE = Null AS
+        SELECT length(s) AS x, v FROM src CROSS JOIN (SELECT v FROM t FINAL LIMIT 1) AS r SETTINGS {SETTINGS};
+        """
+    )
+    query = "INSERT INTO {} SELECT number FROM numbers(10) SETTINGS max_memory_usage = '50M'"
+    error = node.query_and_get_error(query.format("src"))
+    assert "MEMORY_LIMIT_EXCEEDED" in error, error
+
+    # What a buffer writes to its destination is not accounted.
+    node.query(query.format("buf"))
+
+    # The view frees blocks of the query while it is charged for the indexes, and nothing must be left on the query.
+    drift = "SELECT sum(value) FROM system.events WHERE event = 'QueryMemoryDriftSettledBytes'"
+    before = int(node.query(drift))
+    node.query(
+        """INSERT INTO src SELECT repeat('a', 1000) FROM numbers_mt(400000)
+        SETTINGS max_block_size = 10000, min_insert_block_size_rows = 10000, min_insert_block_size_bytes = 0,
+            max_threads = 4, max_insert_threads = 4, parallel_view_processing = 1, deduplicate_blocks_in_dependent_materialized_views = 0"""
+    )
+    assert int(node.query(drift)) - before < 10000000
+
+
 CONDITIONS = [
     "s = 5",
     "s IN (5, 4999, 5000, 14999, 15000)",

@@ -5,10 +5,9 @@
 #include <base/sort.h>
 
 #include <Core/Field.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -192,17 +191,19 @@ class QueryMemoryCharge : private boost::noncopyable
 public:
     explicit QueryMemoryCharge(Int64 size_) : size(size_)
     {
-        std::ignore = CurrentMemoryTracker::alloc(size);
-
-        /// The total memory usage has it twice now.
-        MemoryTrackerBlockerInThread only_total;
-        std::ignore = CurrentMemoryTracker::free(size);
-        CurrentThread::flushUntrackedMemory();
+        if (group)
+            group->memory_tracker.takeOverFromServer(size);
     }
 
-    ~QueryMemoryCharge() { handOverCurrentQueryMemoryToServer(size); }
+    ~QueryMemoryCharge()
+    {
+        if (group)
+            group->memory_tracker.handOverToServer(size);
+    }
 
 private:
+    /// With the memory tracker blocked (for example, while a `Buffer` table is flushed), a copy is not charged either.
+    const ThreadGroupPtr group = MemoryTrackerBlockerInThread::isBlocked(VariableContext::Process) ? nullptr : CurrentThread::getGroup();
     const Int64 size;
 };
 
@@ -262,8 +263,6 @@ public:
         if (rows * 8 >= index_rows * 7 && max_columns >= index->size())
         {
             charge.emplace(PrimaryIndexWeightFunction{}(*index));
-            /// A small allocation does not check the limits on its own.
-            CurrentMemoryTracker::check();
             return;
         }
 
