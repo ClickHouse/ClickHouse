@@ -127,9 +127,9 @@ class BuzzHouseGenerator(Generator):
         if args.with_minio:
             buzz_config["minio"] = {
                 "database": cluster.minio_bucket,
-                "server_hostname": "minio",
+                "server_hostname": cluster.minio_host,
                 "client_hostname": cluster.minio_ip,
-                "port": 9000,
+                "port": cluster.minio_port,
                 "user": "minio",
                 "password": cluster.minio_access_key,
                 "secret": cluster.minio_secret_key,

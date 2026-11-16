@@ -2731,7 +2731,6 @@ class ClickHouseCluster:
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
         if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
-            assert self.s3_server == "minio", "The catalog services need s3_server='minio'"
             with_minio = True
 
         if with_minio and not self.with_minio:

@@ -445,7 +445,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -508,7 +508,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -566,7 +566,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -809,7 +809,7 @@ logger.jetty.level = warn
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",

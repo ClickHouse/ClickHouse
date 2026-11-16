@@ -24,6 +24,11 @@ services:
       - seaweedfs-data:/data
     expose:
       - ${MINIO_PORT:-9001}
+    networks:
+      default:
+        aliases:
+          # The address the catalog services use for the S3 server
+          - minio1
     # The filer waits up to 15 s for its open gRPC streams before it stops
     stop_grace_period: 30s
     cpus: 3

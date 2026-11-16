@@ -632,12 +632,7 @@ cluster = ClickHouseCluster(
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
     with_dolor=True,
-    # Spark and the Iceberg REST, Glue and Hive catalog services are set up against MinIO (`minio1`)
-    s3_server=(
-        "minio"
-        if args.with_spark or args.with_rest or args.with_glue or args.with_hms
-        else "seaweedfs"
-    ),
+    s3_server="seaweedfs",
 )
 
 # Set environment variables such as locales and timezones
