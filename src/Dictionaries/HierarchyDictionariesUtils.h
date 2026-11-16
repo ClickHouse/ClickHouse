@@ -48,7 +48,7 @@ public:
         }
     }
 
-    size_t getSizeInBytes() const
+    [[nodiscard]] size_t getSizeInBytes() const
     {
         return parent_to_children_keys_range.getBufferSizeInBytes() + (keys.size() * sizeof(UInt64));
     }

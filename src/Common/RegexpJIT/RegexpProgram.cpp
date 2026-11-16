@@ -79,7 +79,7 @@ private:
     bool dot_all = false;
     bool failed = false;
 
-    char peek(size_t ahead = 0) const { return pos + ahead < pattern.size() ? pattern[pos + ahead] : '\0'; }
+    [[nodiscard]] char peek(size_t ahead = 0) const { return pos + ahead < pattern.size() ? pattern[pos + ahead] : '\0'; }
     void bail() { failed = true; }
 
     /// Recognize a leading global flag group like `(?i)`, `(?s)`, `(?is)`.

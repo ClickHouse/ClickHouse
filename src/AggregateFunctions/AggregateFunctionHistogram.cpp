@@ -104,10 +104,10 @@ private:
 
         void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
-        T * end() const { return data_ptr + size; }
-        bool empty() const { return size == 0; }
+        [[nodiscard]] T * end() const { return data_ptr + size; }
+        [[nodiscard]] bool empty() const { return size == 0; }
         T & front() { return *data_ptr; }
-        const T & front() const { return *data_ptr; }
+        [[nodiscard]] const T & front() const { return *data_ptr; }
 
         using value_type = T;
         using reference = T&;
@@ -342,7 +342,7 @@ public:
     {
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return Data::structSize(max_bins);
     }
@@ -363,7 +363,7 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -402,7 +402,7 @@ public:
         offsets_to.push_back(to_tuple.size());
     }
 
-    String getName() const override { return "histogram"; }
+    [[nodiscard]] String getName() const override { return "histogram"; }
 };
 
 

@@ -278,7 +278,7 @@ struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
     explicit NodesReadView(const StorageState & state_) : stream(state_) {}
     ~NodesReadView() override = default;
 
-    size_t getNodeCount() const override { return stream.getNodeCount(); }
+    [[nodiscard]] size_t getNodeCount() const override { return stream.getNodeCount(); }
 
     bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override
     {

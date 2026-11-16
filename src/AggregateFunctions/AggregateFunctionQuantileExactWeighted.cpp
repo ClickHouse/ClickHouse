@@ -122,7 +122,7 @@ struct QuantileExactWeighted
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         if constexpr (interpolated)
             return getInterpolatedImpl(level);
@@ -140,7 +140,7 @@ struct QuantileExactWeighted
             getManyImpl(levels, indices, num_levels, result);
     }
 
-    Float64 getFloat(Float64 level) const
+    [[nodiscard]] Float64 getFloat(Float64 level) const
     {
         if constexpr (interpolated)
             return getFloatInterpolatedImpl(level);
@@ -158,7 +158,7 @@ struct QuantileExactWeighted
 
 private:
     /// get implementation without interpolation
-    Value getImpl(Float64 level) const
+    [[nodiscard]] Value getImpl(Float64 level) const
     requires(!interpolated)
     {
         size_t size = map.size();
@@ -271,7 +271,7 @@ private:
     }
 
     /// getFloat implementation without interpolation
-    Float64 getFloatImpl(Float64) const
+    [[nodiscard]] Float64 getFloatImpl(Float64) const
     requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
@@ -285,7 +285,7 @@ private:
     }
 
     /// get implementation with interpolation
-    Value getInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Value getInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -349,7 +349,7 @@ private:
     }
 
     /// getFloat implementation with interpolation
-    Float64 getFloatInterpolatedImpl(Float64 level) const
+    [[nodiscard]] Float64 getFloatInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -391,7 +391,7 @@ private:
         }
     }
 
-    UnderlyingType getNativeInterpolatedImpl(Float64 level) const
+    [[nodiscard]] UnderlyingType getNativeInterpolatedImpl(Float64 level) const
     requires interpolated
     {
         size_t size = map.size();
@@ -439,7 +439,7 @@ private:
         return static_cast<size_t>(position);
     }
 
-    InterpolationEndpoints interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
+    [[nodiscard]] InterpolationEndpoints interpolationEndpoints(const Pair * array, size_t size, Float64 position) const
     requires interpolated
     {
         size_t lower = rankFromPosition(std::floor(position));

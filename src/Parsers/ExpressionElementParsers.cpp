@@ -466,7 +466,7 @@ namespace
 class ParserArrayOfJSONIdentifierAddition : public IParserBase
 {
 public:
-    String getLastArrayOfJSONSubcolumnIdentifier() const
+    [[nodiscard]] String getLastArrayOfJSONSubcolumnIdentifier() const
     {
         String subcolumn = ":`";
         for (size_t i = 0; i != last_array_level; ++i)
@@ -478,7 +478,7 @@ public:
     }
 
 protected:
-    const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
+    [[nodiscard]] const char * getName() const override { return "ParserArrayOfJSONIdentifierDelimiter"; }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {

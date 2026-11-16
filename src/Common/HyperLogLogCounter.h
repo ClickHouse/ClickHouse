@@ -53,7 +53,7 @@ struct LogLUT
             log_table[i] = log(static_cast<double>(i));
     }
 
-    double getLog(size_t x) const
+    [[nodiscard]] double getLog(size_t x) const
     {
         if (x <= M)
             return log_table[x];
@@ -213,7 +213,7 @@ public:
         memcpy(rank_count, counts, size * sizeof(UInt32));
     }
 
-    DenominatorType get() const
+    [[nodiscard]] DenominatorType get() const
     {
         /// Where long double holds the whole integer sum (eg aarch64 Linux, x86 with 32-bit hashes), the loop below is exact,
         /// so the integer sum gives the same result. Elsewhere (eg x86 with 64-bit hashes, ppc64le) the loop can round, so it stays.
@@ -233,7 +233,7 @@ public:
 
     /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
     /// merging into it can make its counts wrap, so the merged state then fails this check.
-    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
+    [[nodiscard]] bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
     {
         UInt64 sum = 0;
         for (size_t i = 0; i < size; ++i)
@@ -388,7 +388,7 @@ public:
         __builtin_prefetch(rank_store.getSerializableState().data() + static_cast<size_t>(bucket) * rank_width / 8);
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
@@ -532,13 +532,13 @@ public:
 
 private:
     /// Extract subset of bits in [begin, end[ range.
-    HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
+    [[nodiscard]] HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
         return (val >> begin) & ((1ULL << (end - begin)) - 1);
     }
 
     /// Rank is number of trailing zeros.
-    UInt8 calculateRank(HashValueType val) const
+    [[nodiscard]] UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
             return max_rank;
@@ -551,7 +551,7 @@ private:
         return static_cast<UInt8>(zeros_plus_one);
     }
 
-    HashValueType getHash(Value key) const
+    [[nodiscard]] HashValueType getHash(Value key) const
     {
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
@@ -702,7 +702,7 @@ private:
         }
     }
 
-    double fixRawEstimate(double raw_estimate) const
+    [[nodiscard]] double fixRawEstimate(double raw_estimate) const
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
@@ -726,7 +726,7 @@ private:
         throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    double applyCorrection(double raw_estimate) const
+    [[nodiscard]] double applyCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 
@@ -755,7 +755,7 @@ private:
     /// Correction used in HyperLogLog++ algorithm.
     /// Source: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm"
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
-    double applyBiasCorrection(double raw_estimate) const
+    [[nodiscard]] double applyBiasCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 
@@ -770,7 +770,7 @@ private:
     /// Calculation of unique values using LinearCounting algorithm.
     /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
-    double applyLinearCorrection(double raw_estimate) const
+    [[nodiscard]] double applyLinearCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 

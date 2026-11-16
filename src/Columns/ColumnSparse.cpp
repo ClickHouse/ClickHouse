@@ -370,7 +370,7 @@ public:
     }
 
     /// The number of rows the whole filter keeps.
-    size_t countAll() const
+    [[nodiscard]] size_t countAll() const
     {
         size_t res = kept_before_word + std::popcount(bits);
         const size_t next_word_begin = (word + 1) * 64;
@@ -380,7 +380,7 @@ public:
     }
 
 private:
-    UInt64 loadWord(size_t w) const
+    [[nodiscard]] UInt64 loadWord(size_t w) const
     {
         const size_t begin = w * 64;
         if (begin + 64 <= size)
