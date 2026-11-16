@@ -2,6 +2,7 @@
 
 #if USE_BZIP2
 #    include <IO/Bzip2ReadBuffer.h>
+#    include <IO/CompressionLibraryErrors.h>
 #    include <bzlib.h>
 #    include <IO/WithFileName.h>
 
@@ -25,10 +26,7 @@ public:
         int ret = BZ2_bzDecompressInit(&stream, 0, 0);
 
         if (ret != BZ_OK)
-            throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder init failed: error code: {}",
-                ret);
+            throw Exception(ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder init failed: {}", bzip2ErrorToString(ret));
     }
 
     ~Bzip2StateWrapper()
@@ -45,19 +43,14 @@ public:
 
         if (ret != BZ_OK)
             throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder reinit decompress end failed: error code: {}",
-                ret);
+                ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder reinit decompress end failed: {}", bzip2ErrorToString(ret));
 
         memset(&stream, 0, sizeof(bz->stream));
 
         ret = BZ2_bzDecompressInit(&stream, 0, 0);
 
         if (ret != BZ_OK)
-            throw Exception(
-                ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-                "bzip2 stream encoder reinit failed: error code: {}",
-                ret);
+            throw Exception(ErrorCodes::BZIP2_STREAM_DECODER_FAILED, "bzip2 stream decoder reinit failed: {}", bzip2ErrorToString(ret));
 
         stream.avail_out = avail_out;
         stream.next_out = next_out;
@@ -128,8 +121,8 @@ bool Bzip2ReadBuffer::nextImpl()
     if (ret != BZ_OK)
         throw Exception(
             ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-            "bzip2 stream decoder failed: error code: {}{}",
-            ret,
+            "bzip2 stream decoder failed: {}{}",
+            bzip2ErrorToString(ret),
             getExceptionEntryWithFileName(*in));
 
     if (in->eof())
