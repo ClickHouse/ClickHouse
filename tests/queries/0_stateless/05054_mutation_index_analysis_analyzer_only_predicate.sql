@@ -18,8 +18,9 @@ SELECT sum(v), count() FROM t_mutation_index_analysis_alias;
 
 SYSTEM FLUSH LOGS part_log;
 
--- Both parts are proven untouched from the primary key index alone.
-SELECT sum(ProfileEvents['MutationUntouchedPartsByIndexAnalysis'])
+-- Every part is proven untouched from the primary key index alone. A background merge may have joined the two
+-- parts before the mutation, so the number of parts is not fixed.
+SELECT count() > 0, sum(ProfileEvents['MutationUntouchedPartsByIndexAnalysis']) = count()
 FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_mutation_index_analysis_alias' AND event_type = 'MutatePart';
 
