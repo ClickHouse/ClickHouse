@@ -45,6 +45,7 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
+            case StoreMethod::HISTOGRAM_GRID:
             {
                 expression.start_time += offset_value;
                 expression.end_time += offset_value;
@@ -53,6 +54,7 @@ namespace
 
             case StoreMethod::SAMPLES:
             case StoreMethod::TIMESTAMP_AND_VALUE:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
                 /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
@@ -107,18 +109,13 @@ namespace
 
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
+            case StoreMethod::HISTOGRAM_GRID:
             {
-                /// For scalar grid:
-                /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
-                /// FROM <scalar_grid>
-                ///
-                /// For vector grid:
-                /// SELECT group,
-                ///        arrayResize([], <count_of_time_steps>, values[1])) AS values
-                /// FROM <vector_grid>
+                /// SELECT [group,] arrayResize([], <count_of_time_steps>, values[1]) AS values FROM <scalar_grid | vector_grid>;
+                /// a combined grid additionally repeats histogram_values[1] and sample_kinds[1] the same way.
                 SelectQueryBuilder builder;
 
-                if (expression.store_method == StoreMethod::VECTOR_GRID)
+                if (expression.store_method == StoreMethod::VECTOR_GRID || expression.store_method == StoreMethod::HISTOGRAM_GRID)
                     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
                 auto new_values = makeASTFunction(
@@ -130,6 +127,30 @@ namespace
 
                 new_values->setAlias(ColumnNames::Values);
                 builder.select_list.push_back(std::move(new_values));
+
+                if (expression.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    auto new_histogram_values = makeASTFunction(
+                        "arrayResize",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>(
+                            stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues), make_intrusive<ASTLiteral>(1u)));
+
+                    new_histogram_values->setAlias(ColumnNames::HistogramValues);
+                    builder.select_list.push_back(std::move(new_histogram_values));
+
+                    /// The precedence oracle column of a combined grid is forwarded the same way.
+                    auto new_sample_kinds = makeASTFunction(
+                        "arrayResize",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>(
+                            stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(1u)));
+
+                    new_sample_kinds->setAlias(ColumnNames::SampleKinds);
+                    builder.select_list.push_back(std::move(new_sample_kinds));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -145,6 +166,7 @@ namespace
 
             case StoreMethod::SAMPLES:
             case StoreMethod::TIMESTAMP_AND_VALUE:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
                 /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
