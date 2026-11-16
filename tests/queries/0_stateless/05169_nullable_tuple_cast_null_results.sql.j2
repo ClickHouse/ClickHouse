@@ -163,4 +163,10 @@ SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('{{ valid }}', 
     isNull(accurateCastOrNull(materialize(tuple(toFixedString('bad', 32))), 'Tuple({{ target }})'));
 {% endfor %}
 
+-- The timestamp parser stops at the padding itself, so a padded number of seconds parses the same in the throwing
+-- and the non-throwing modes, and padding alone is not a timestamp.
+SELECT accurateCastOrNull(materialize(toFixedString('123.456', 32)), 'DateTime64(3, \'UTC\')')
+        = CAST(materialize(toFixedString('123.456', 32)), 'DateTime64(3, \'UTC\')'),
+    isNull(toDateTime64OrNull(materialize(toFixedString('', 32)), 3));
+
 DROP TABLE nullable_tuple_conversion_rows;

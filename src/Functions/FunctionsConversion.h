@@ -1431,6 +1431,7 @@ struct ConvertThroughParsing
     static constexpr bool to_datetime = std::is_same_v<ToDataType, DataTypeDateTime>;
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
 
     static bool isAllRead(ReadBuffer & in)
     {
@@ -1583,10 +1584,12 @@ struct ConvertThroughParsing
             }
 
             std::string_view text(string_begin, string_size);
-            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && IsDataTypeDecimal<ToDataType>
+            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && to_decimal
                 && exception_mode != ConvertFromStringExceptionMode::Throw)
             {
-                /// Non-throwing decimal parsers validate every byte, so exclude `FixedString` zero padding.
+                /// The non-throwing `Decimal` parser rejects any byte that is not part of the number,
+                /// including the zero padding of a `FixedString`. Every other parser stops at the padding,
+                /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
             ReadBufferFromMemory read_buffer(text);
