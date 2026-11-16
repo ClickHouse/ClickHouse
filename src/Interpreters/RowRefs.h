@@ -61,14 +61,14 @@ struct RowRef
             throwRowRefOutOfRange(block_no_, row_no_);
     }
 
-    UInt32 blockNo() const { return block_no & BLOCK_NO_MASK; }
-    UInt32 rowNo() const { return row_no; }
+    [[nodiscard]] UInt32 blockNo() const { return block_no & BLOCK_NO_MASK; }
+    [[nodiscard]] UInt32 rowNo() const { return row_no; }
 
     /// Encode this ref into the single UInt64 stored in hash map cells and `LazyOutput` entries.
     /// Built with explicit shifts (not std::bit_cast of the struct) so that the bit layout is the
     /// same on little- and big-endian systems: block_no (with INLINE_FLAG in its MSB) lands in the
     /// high half and row_no in the low half, matching the refWord* decoders below either way.
-    UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
+    [[nodiscard]] UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
@@ -159,9 +159,9 @@ struct RowRefList
         return list;
     }
 
-    bool isInline() const { return refWordIsInline(word); }
+    [[nodiscard]] bool isInline() const { return refWordIsInline(word); }
 
-    const Batch * asBatch() const
+    [[nodiscard]] const Batch * asBatch() const
     {
         chassert(word != 0 && !isInline());
         return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
@@ -178,7 +178,7 @@ struct RowRefList
 
     /// Total rows for this key, load-free unless the count saturated. Wider than the in-word
     /// counter, because past saturation it comes from `Batch::total_rows`, which is 56 bits.
-    size_t rows() const
+    [[nodiscard]] size_t rows() const
     {
         if (isInline())
             return 1;
@@ -189,7 +189,7 @@ struct RowRefList
     }
 
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
-    UInt64 firstWord() const { return isInline() ? word : asBatch()->refs[0]; }
+    [[nodiscard]] UInt64 firstWord() const { return isInline() ? word : asBatch()->refs[0]; }
 
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
@@ -356,7 +356,7 @@ struct RowRefList
                 ++range_word;
         }
 
-        bool ok() const { return cur != nullptr || range_remaining != 0; }
+        [[nodiscard]] bool ok() const { return cur != nullptr || range_remaining != 0; }
 
         /// Lets `refsOf(word)` drive a range-based for loop against a default sentinel end.
         bool operator != (std::default_sentinel_t) const { return ok(); }
@@ -373,8 +373,8 @@ struct RowRefList
         size_t range_remaining = 0;
     };
 
-    ForwardIterator begin() const { return ForwardIterator(*this); }
-    std::default_sentinel_t end() const { return {}; } /// NOLINT(readability-convert-member-functions-to-static)
+    [[nodiscard]] ForwardIterator begin() const { return ForwardIterator(*this); }
+    [[nodiscard]] std::default_sentinel_t end() const { return {}; } /// NOLINT(readability-convert-member-functions-to-static)
 
 private:
     /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is

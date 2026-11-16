@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Массив элементов типа `T`, в котором индексация начинается с 1. `T` может быть любым типом данных, включая массив.
 
-<div id="creating-an-array">
-  ## Создание массива
-</div>
+## Создание массива {#creating-an-array}
 
 Для создания массива можно использовать функцию:
 
@@ -25,6 +23,9 @@ array(T)
 ```sql
 []
 ```
+
+Также поддерживается синтаксис конструктора массива, принятый в стандарте SQL, PostgreSQL и Trino: `ARRAY[1, 2]` равнозначно `[1, 2]`.
+Тип данных также можно записать как `ARRAY(T)`.
 
 Пример создания массива:
 
@@ -48,9 +49,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-<div id="working-with-data-types">
-  ## Работа с типами данных
-</div>
+## Работа с типами данных {#working-with-data-types}
 
 При создании массива на лету ClickHouse автоматически определяет тип аргумента как наиболее узкий тип данных, в который помещаются все перечисленные аргументы. Если среди значений есть [Nullable](/ru/reference/data-types/nullable) или литеральные значения [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default), тип элементов массива также становится [Nullable](/ru/reference/data-types/nullable).
 
@@ -79,9 +78,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-<div id="array-size">
-  ## Размер массива
-</div>
+## Размер массива {#array-size}
 
 Размер массива можно определить с помощью подстолбца `size0`, не читая весь столбец. Для многомерных массивов можно использовать `sizeN-1`, где `N` — нужная размерность.
 
@@ -101,9 +98,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-<div id="reading-nested-subcolumns-from-array">
-  ## Чтение вложенных подстолбцов из Array
-</div>
+## Чтение вложенных подстолбцов из Array {#reading-nested-subcolumns-from-array}
 
 Если вложенный тип `T` внутри `Array` имеет подстолбцы (например, если это [именованный кортеж](/ru/reference/data-types/tuple)), вы можете читать их из типа `Array(T)` с теми же именами. Тип такого подстолбца будет `Array` от типа исходного подстолбца.
 

@@ -1523,6 +1523,24 @@ Possible values:
 - 1 - always enabled
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
+    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+It applies to inserts and to merges and mutations of non-replicated tables. Merges and mutations of replicated
+tables ignore it: adaptive write buffers change the offsets stored in the marks, and replicas compare the checksums
+of the parts they merge, so the buffers must not depend on the memory limit of a replica.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
+)", 0, \
+        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
@@ -2118,6 +2136,27 @@ requests and not return Ok during status check.
 Minimal absolute delay to close, stop serving requests and not
 return Ok during status check.
 )", 0) \
+    DECLARE(Bool, enable_merge_checkpoints, false, R"(
+Save checkpoints of eligible merges, so that an interrupted merge continues from them instead of starting over.
+Only vertical merges into `Wide` parts of at least `merge_checkpoints_min_bytes` are checkpointed for now.
+The first checkpoint is saved once the key columns are merged, the next ones after completed columns,
+at most once per `merge_checkpoints_min_interval_seconds`.
+A checkpoint is removed when a current part covers its result part,
+or when no merge saves it for `temporary_directories_lifetime`.
+Merges with TTL, projections, secondary indexes, patch parts, or non-adaptive marks (`index_granularity_bytes = 0`) are not checkpointed.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting for durable merge checkpoints"}) \
+    DECLARE(UInt64, merge_checkpoints_min_bytes, 10_GiB, R"(
+The minimum total size of the source parts of a merge, in bytes, to checkpoint it with `enable_merge_checkpoints`.
+Smaller merges are not checkpointed: they are cheap to repeat.
+)", EXPERIMENTAL, \
+        {"26.11", 10_GiB, 10_GiB, "New setting for durable merge checkpoints"}) \
+    DECLARE(Seconds, merge_checkpoints_min_interval_seconds, 60, R"(
+The minimum time between two checkpoints of a merge with `enable_merge_checkpoints`.
+A vertical merge always checkpoints once its key columns are merged. After that, it checkpoints after a completed column
+only when this much time has passed since its previous checkpoint.
+)", EXPERIMENTAL, \
+        {"26.11", 60, 60, "New setting for durable merge checkpoints"}) \
     DECLARE(UInt64, enable_vertical_merge_algorithm, 1, R"(
 Allows eligible background merges to use the vertical merge algorithm. Vertical merges process columns separately to reduce peak memory usage for wide tables, potentially at the cost of merge speed. Setting this to `0` forces horizontal merges; a non-zero value only permits vertical merges—the part format, table engine, `TTL` operation, and `vertical_merge_algorithm_min_*` thresholds still determine whether it is selected.
 )", 0) \
@@ -2834,6 +2873,12 @@ Possible values:
 - `rebuild`
 )", 0, \
         {"24.8", "ignore", "throw", "Do not allow to create inconsistent projection"}) \
+    DECLARE(Bool, allow_vector_similarity_index_in_specialized_merge_tree, false, R"(
+Whether a `vector_similarity` index may be created on a `MergeTree`-family engine other than `MergeTree` / `ReplicatedMergeTree`,
+e.g. `ReplacingMergeTree` or `CollapsingMergeTree`. With such engines, `SELECT ... FINAL` that uses the index may return wrong results.
+The setting is checked only when an index is created, so existing tables and `ATTACH` are not affected.
+)", 0, \
+        {"26.11", true, false, "New setting. Vector similarity indexes are no longer allowed on specialized MergeTree engines by default"}) \
     DECLARE(AlterColumnSecondaryIndexMode, alter_column_secondary_index_mode, AlterColumnSecondaryIndexMode::REBUILD, R"(
 Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
 they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
@@ -3267,11 +3312,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
     /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
     /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
     if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
