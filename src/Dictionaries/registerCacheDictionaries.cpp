@@ -87,6 +87,12 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
             layout_type);
 
     size_t write_buffer_size = config.getInt64(dictionary_layout_prefix + ".write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE_BYTES);
+    if (write_buffer_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "{}: dictionary of layout '{}' setting 'write_buffer_size' must be greater than 0",
+            full_name,
+            layout_type);
+
     if (write_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'write_buffer_size' must be a multiple of block_size",
