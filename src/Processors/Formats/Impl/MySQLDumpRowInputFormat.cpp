@@ -23,6 +23,8 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 
+#include <Common/isValidUTF8.h>
+#include <Poco/String.h>
 #include <Poco/UTF8String.h>
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
@@ -464,11 +466,22 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         return;
 
     /// MySQL column names are case-insensitive, so take the spelling from CREATE. A name not in CREATE stays as is.
+    /// Poco decodes every invalid UTF-8 sequence to the same code point, so a name that is not valid UTF-8 is compared ignoring ASCII case only.
+    auto is_valid_utf8 = [](const String & s) { return UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()); };
+    auto names_equal = [&](const String & create_name, const String & name)
+    {
+        if (is_valid_utf8(create_name) && is_valid_utf8(name))
+            return Poco::UTF8::icompare(create_name, name) == 0;
+        return Poco::icompare(create_name, name) == 0;
+    };
+
     if (!structure_from_create.empty())
     {
         for (auto & name : insert_column_names)
         {
-            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return Poco::UTF8::icompare(create_name, name) == 0; });
+            if (std::ranges::find(column_names, name) != column_names.end())
+                continue;
+            auto it = std::ranges::find_if(column_names, [&](const String & create_name) { return names_equal(create_name, name); });
             if (it != column_names.end())
                 name = *it;
         }

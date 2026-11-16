@@ -19,3 +19,5 @@ a"b	Nullable(Int64)
 c	Nullable(Int64)					
 1	100
 2	200
+\N	100
+1	100
