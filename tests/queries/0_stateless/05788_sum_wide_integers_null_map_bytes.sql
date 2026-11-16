@@ -10,5 +10,14 @@ SELECT
     sum(if(toUInt8(number * 2), NULL, toDecimal128(number + 1, 0))),
     sum(if(toUInt8(number * 2), NULL, toDecimal256(number + 1, 0))),
     sumWithOverflow(if(toUInt8(number * 2), NULL, toInt256(number + 1))),
-    avg(if(toUInt8(number * 2), NULL, toInt256(number + 1)))
+    avg(if(toUInt8(number * 2), NULL, toInt256(number + 1))),
+    avg(if(toUInt8(number * 2), NULL, toDecimal128(number + 1, 0))),
+    avg(if(toUInt8(number * 2), NULL, toDecimal256(number + 1, 0)))
+FROM numbers(2);
+
+-- For `sumIf` any nonzero condition byte means true, so the row with a condition byte of 2 must be added.
+SELECT
+    sumIf(toInt128(number + 1), toUInt8(number * 2)),
+    sumIf(toUInt256(number + 1), toUInt8(number * 2)),
+    sumIf(toDecimal128(number + 1, 0), toUInt8(number * 2))
 FROM numbers(2);
