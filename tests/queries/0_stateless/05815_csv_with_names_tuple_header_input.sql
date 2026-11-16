@@ -36,5 +36,9 @@ SELECT * FROM format(CSVWithNames, '`t.a` Tuple(b UInt8), t Tuple(a Tuple(b UInt
 SELECT * FROM format(CSV, 'Ta Tuple(a String), tA Tuple(a String)', $$ta.a,x$$);
 SELECT * FROM format(CSV, '`t.a` Tuple(b String), t Tuple(a Tuple(b String))', $$t.a.b,x$$);
 SELECT * FROM format(CSV, '`T.a` String, `t.A` String, t Tuple(a String)', $$t.a,x,y$$);
+SELECT * FROM format(CSV, '`T.A` String, t Tuple(a String)', $$t.a,t$$);
+SELECT * FROM format(CSV, '`T.A` String, t Tuple(a String)', $$t.a,T.A$$);
+SELECT * FROM format(CSV, 'Ta Tuple(a String), tA Tuple(a String)', $$ta.a,Ta,tA
+x,y,z$$);
 
 DROP TABLE tr;

@@ -134,13 +134,17 @@ void collapseCSVHeaderTupleNames(
         return true;
     };
 
+    using MatchingMode = FormatSettings::InputFormatColumnMatchingCaseSensitivity;
+    const auto matching_mode = format_settings.input_format_column_matching_case_sensitivity;
+
     /// A name that is a column keeps mapping to it, so a run holding one is not collapsed.
     auto names_a_column = [&](const Candidate & candidate, size_t pos)
     {
         for (size_t k = 0; k < candidate.num_leaves; ++k)
         {
             const auto & name = names[pos + k];
-            if (header_detection ? header.has(name) : column_indexes_by_names.get(name) != CaseAwareBlockNameMap::NOT_FOUND)
+            if (header_detection ? header.has(name, matching_mode != MatchingMode::MATCH_CASE)
+                                 : column_indexes_by_names.get(name) != CaseAwareBlockNameMap::NOT_FOUND)
                 return true;
         }
         return false;
@@ -167,8 +171,6 @@ void collapseCSVHeaderTupleNames(
         return found;
     };
 
-    using MatchingMode = FormatSettings::InputFormatColumnMatchingCaseSensitivity;
-    const auto matching_mode = format_settings.input_format_column_matching_case_sensitivity;
     auto match_at = [&](size_t pos) -> const Candidate *
     {
         /// Like a column name: an exact match first, then a case-insensitive one.

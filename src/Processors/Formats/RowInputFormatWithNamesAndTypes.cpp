@@ -116,7 +116,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!column_names.empty() && format_settings.with_names_use_header && format_reader->readsTupleFromSeparateFields())
         collapseCSVHeaderTupleNames(
             getPort().getHeader(), column_indexes_by_names, format_settings, column_names, type_names,
-            format_settings.with_types_use_header, /*header_detection=*/ false);
+            format_settings.with_types_use_header, /*header_detection=*/ is_header_detected);
 
     if (!column_names.empty())
     {
