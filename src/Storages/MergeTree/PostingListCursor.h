@@ -6,7 +6,10 @@
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
 #include <Core/SettingsEnums.h>
+#include <algorithm>
+#include <array>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 namespace DB
@@ -27,7 +30,7 @@ struct PostingsApplyWindow
     size_t begin = 0;
     size_t end = 0;
 
-    bool empty() const { return begin >= end; }
+    [[nodiscard]] bool empty() const { return begin >= end; }
 
     /// Extend the window to cover [row_begin, row_end). The scans write in ascending order, so a new range
     /// starts past the current end: only `end` moves once the window is not empty.
@@ -109,21 +112,36 @@ public:
     void next();
 
     /// True if cursor points to a valid doc_id.
-    bool valid() const { return is_valid; }
+    [[nodiscard]] bool valid() const { return is_valid; }
 
     /// Current doc_id. Undefined when `valid` returns false.
-    uint32_t value() const { return decoded_values_ptr[index]; }
+    [[nodiscard]] uint32_t value() const { return decoded_values_ptr[index]; }
 
     /// Advance to the first doc_id >= target.
     void advance(uint32_t target);
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
-    double density() const { return density_val; }
+    [[nodiscard]] double density() const { return density_val; }
 
     /// Total number of doc_ids in the posting list.
     /// Used to sort cursors by selectivity for leapfrog intersection.
-    UInt32 cardinality() const;
+    [[nodiscard]] UInt32 cardinality() const;
+
+    /// Where the current doc_id sits: its segment, its index within it, and the segment's document count.
+    /// Blocks are full except the last of a segment, so the index is `block * BLOCK_SIZE + index in block`.
+    struct Position
+    {
+        size_t segment = 0;
+        size_t index_in_segment = 0;
+        size_t segment_doc_count = 0;
+    };
+    [[nodiscard]] Position position() const
+    {
+        if (is_embedded)
+            return {0, index, decoded_count};
+        return {current_segment_idx, current_block * IPostingListBlockCodec::BLOCK_SIZE + index, current_segment->doc_count};
+    }
 
 private:
     /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
@@ -213,6 +231,84 @@ void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors);
 /// Sorts the cursors for `lazyIntersectPostingLists` by ascending cardinality,
 /// so the sparsest cursor goes first and leads the leapfrog, giving the brute force the earliest exit.
 void sortCursorsForIntersection(std::vector<PostingListCursor *> & cursors);
+
+namespace detail
+{
+
+template <size_t num_cursors, typename OnMatch>
+void leapfrogIntersectImpl(const std::vector<PostingListCursor *> & cursor_ptrs, size_t end, OnMatch & on_match)
+{
+    static_assert(num_cursors <= 8);
+    const size_t n = num_cursors ? num_cursors : cursor_ptrs.size();
+    chassert(cursor_ptrs.size() == n);
+
+    /// Plain pointers in a local array: the compiler can keep them in registers across the calls to the cursors.
+    using CursorsType = std::conditional_t<num_cursors != 0,
+        std::array<PostingListCursor *, num_cursors>,
+        std::vector<PostingListCursor *>>;
+
+    CursorsType cursors{};
+    if constexpr (num_cursors == 0)
+        cursors = cursor_ptrs;
+    else
+        std::copy_n(cursor_ptrs.begin(), num_cursors, cursors.begin());
+
+    PostingListCursor & lead = *cursors[0];
+
+    while (lead.valid() && lead.value() < end)
+    {
+        const uint32_t doc = lead.value();
+        size_t i = 1;
+
+        for (; i < n; ++i)
+        {
+            PostingListCursor & cursor = *cursors[i];
+
+            if (cursor.valid() && cursor.value() < doc)
+                cursor.advance(doc);
+
+            if (!cursor.valid())
+                return;
+
+            if (cursor.value() > doc)
+                break;
+        }
+
+        if (i == n)
+        {
+            on_match(doc);
+
+            for (size_t j = 0; j < n; ++j)
+                cursors[j]->next();
+        }
+        else
+        {
+            lead.advance(cursors[i]->value());
+        }
+    }
+}
+
+}
+
+/// Leapfrog intersection led by the sparsest cursor (`cursors` are sorted with `sortCursorsForIntersection`).
+/// The other cursors are advanced to the lead's doc_id in order, and the first one that overshoots moves the lead
+/// to its doc_id. So a denser cursor only advances to the doc_ids that all the sparser cursors contain.
+/// Calls `on_match(doc_id)` for each doc_id below `end` in every cursor, before the cursors move past it.
+template <typename OnMatch>
+void leapfrogIntersect(const std::vector<PostingListCursor *> & cursors, size_t end, OnMatch && on_match)
+{
+    switch (cursors.size())
+    {
+        case 2: return detail::leapfrogIntersectImpl<2>(cursors, end, on_match);
+        case 3: return detail::leapfrogIntersectImpl<3>(cursors, end, on_match);
+        case 4: return detail::leapfrogIntersectImpl<4>(cursors, end, on_match);
+        case 5: return detail::leapfrogIntersectImpl<5>(cursors, end, on_match);
+        case 6: return detail::leapfrogIntersectImpl<6>(cursors, end, on_match);
+        case 7: return detail::leapfrogIntersectImpl<7>(cursors, end, on_match);
+        case 8: return detail::leapfrogIntersectImpl<8>(cursors, end, on_match);
+        default: return detail::leapfrogIntersectImpl<0>(cursors, end, on_match);
+    }
+}
 
 /// Returns `BruteForce` or `Leapfrog` for these cursors.
 /// `Auto` picks leapfrog only if it can skip whole blocks of the densest list.

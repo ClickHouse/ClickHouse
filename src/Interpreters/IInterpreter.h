@@ -21,8 +21,8 @@ public:
       */
     virtual BlockIO execute() = 0;
 
-    virtual bool ignoreQuota() const { return false; }
-    virtual bool ignoreLimits() const { return false; }
+    [[nodiscard]] virtual bool ignoreQuota() const { return false; }
+    [[nodiscard]] virtual bool ignoreLimits() const { return false; }
 
     // Fill query log element with query kind, query databases, query tables and query columns.
     void extendQueryLogElem(
@@ -36,7 +36,7 @@ public:
 
     /// Returns true if transactions maybe supported for this type of query.
     /// If Interpreter returns true, than it is responsible to check that specific query with specific Storage is supported.
-    virtual bool supportsTransactions() const { return false; }
+    [[nodiscard]] virtual bool supportsTransactions() const { return false; }
 
     /// Helper function for some Interpreters.
     static void checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context, bool is_readonly_query = false);

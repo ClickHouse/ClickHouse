@@ -4,7 +4,6 @@
 #include <memory>
 #include <string_view>
 #include <Core/Field.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -113,7 +112,10 @@ public:
                         "data size larger than target_size, data size: {}, target_size: {}.",
                         data.size(),
                         target_size);
-                String result(target_size, 0);
+                /// The bytes are a big-endian two's complement integer (Java `BigInteger.toByteArray`),
+                /// so a negative value must be sign-extended with 0xFF, not padded with zeros.
+                const char pad = (!data.empty() && (static_cast<UInt8>(data[0]) & 0x80)) ? '\xFF' : '\0';
+                String result(target_size, pad);
                 size_t start_pos = target_size - data.size();
                 for (size_t i = 0; i < data.size(); ++i)
                     result[start_pos + i] = data[i];
@@ -172,15 +174,15 @@ private:
     String tmp_value;
     LoggerPtr log;
 
-    Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
-    Int32 offset() const { return ARITY_SIZE; }
-    Int32 getFieldOffset(Int32 pos) const
+    [[nodiscard]] Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
+    [[nodiscard]] Int32 offset() const { return ARITY_SIZE; }
+    [[nodiscard]] Int32 getFieldOffset(Int32 pos) const
     {
         Int32 res = offset() + calculateBitSetWidthInBytes() + pos * 8;
         LOG_TEST(log, "pos: {}, offset: {}", pos, res);
         return res;
     }
-    Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }
+    [[nodiscard]] Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }
     void seek(Int32 offset) { reader.seek(offset, SEEK_SET); }
     static bool isLittleEndian();
     template <typename T>

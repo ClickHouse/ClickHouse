@@ -78,7 +78,7 @@ struct DataTypeDecimalTrait
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
+    [[nodiscard]] T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
@@ -90,7 +90,7 @@ struct DataTypeDecimalTrait
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
-inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
 {
     T multiplied = 0;
     if (common::mulOverflow(x, multiplier, multiplied))
@@ -111,7 +111,7 @@ inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & 
 }
 
 template <typename T>
-inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+ALWAYS_INLINE inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
 {
     T res;
     multiplyAdd<T, true>(x, multiplier, delta, res);

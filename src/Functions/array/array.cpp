@@ -42,17 +42,47 @@ public:
             settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// array(..., Nothing, ...) -> Array(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// `array(x1, x2, ..., xN)` — N=0 yields `Array(Nothing)` (empty array literal);
+    /// non-empty yields `Array(leastSupertype{,OrVariant}(x1, ..., xN))`. The
+    /// `leastSupertypeOrVariant` branch is selected when `use_variant_as_common_type`
+    /// is enabled (the default).
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// The zero-arg overload can't be folded into the variadic form: with
+        /// `[T1], ...` the "skip optional" branch leaves `T1` unbound and the
+        /// return expression `leastSupertype(T1, ...)` fails as "T1 was not
+        /// captured." Keep the two alternatives separate.
+        if (use_variant_as_common_type)
+            return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
+        return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)
             return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments, allow_lossy_numeric_supertype));
@@ -60,7 +90,7 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(arguments, allow_lossy_numeric_supertype));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const size_t num_elements = arguments.size();
 
@@ -297,7 +327,7 @@ private:
     }
 
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }

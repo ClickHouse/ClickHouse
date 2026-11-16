@@ -116,7 +116,8 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
     const UUID & user_id,
     const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles,
-    const SettingsProfileElements & settings_from_user)
+    const SettingsProfileElements & settings_from_user,
+    const std::function<bool(const UUID & profile_id)> & skip_profile)
 {
     ResolvedSettingsProfileElements result;
     if (default_profile_id)
@@ -124,6 +125,8 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
 
     for (const auto & [profile_id, profile] : all_profiles)
     {
+        if (skip_profile && skip_profile(profile_id))
+            continue;
         if (profile->to_roles.match(user_id, enabled_roles))
             result.elements.emplace_back().parent_profile = profile_id;
     }
@@ -265,7 +268,7 @@ namespace
             }
         }
 
-        AccessEntityPtr get(const UUID & id) const
+        [[nodiscard]] AccessEntityPtr get(const UUID & id) const
         {
             if (auto user = getUser(id))
                 return user;
@@ -274,18 +277,18 @@ namespace
             return getProfile(id);
         }
 
-        UserPtr getUser(const UUID & id) const
+        [[nodiscard]] UserPtr getUser(const UUID & id) const
         {
             auto it = users.find(id);
             return it == users.end() ? nullptr : it->second;
         }
 
-        const UsersByID & allUsers() const { return users; }
-        const RolesByID & allRoles() const { return roles; }
-        const SettingsProfilesByID & allProfiles() const { return profiles; }
+        [[nodiscard]] const UsersByID & allUsers() const { return users; }
+        [[nodiscard]] const RolesByID & allRoles() const { return roles; }
+        [[nodiscard]] const SettingsProfilesByID & allProfiles() const { return profiles; }
 
         /// The user a login of this name resolves to, or a null entity if no storage holds that name.
-        std::pair<UUID, UserPtr> visibleUser(const String & name) const
+        [[nodiscard]] std::pair<UUID, UserPtr> visibleUser(const String & name) const
         {
             for (const auto & id : user_order)
             {
@@ -299,7 +302,7 @@ namespace
         /// An id the graph does not hold resolves as a blank entity. That is the state a user or role the
         /// statement creates is compared against, so that a setting the server already puts in effect for
         /// everybody is not read as something the statement introduced.
-        ResolvedSettings resolveForUser(const UUID & user_id) const
+        [[nodiscard]] ResolvedSettings resolveForUser(const UUID & user_id) const
         {
             auto user = getUser(user_id);
             if (!user)
@@ -307,12 +310,12 @@ namespace
             return resolve(default_profile_id, user_id, user->granted_roles.findGranted(user->default_roles), user->settings);
         }
 
-        ResolvedSettings resolveForRole(const UUID & role_id) const
+        [[nodiscard]] ResolvedSettings resolveForRole(const UUID & role_id) const
         {
             return resolve(/* default_profile= */ {}, UUIDHelpers::Nil, std::vector<UUID>{role_id}, /* own_settings= */ {});
         }
 
-        ResolvedSettings resolveForProfile(const UUID & profile_id) const
+        [[nodiscard]] ResolvedSettings resolveForProfile(const UUID & profile_id) const
         {
             SettingsProfileElements elements;
             elements.emplace_back().parent_profile = profile_id;
@@ -327,7 +330,7 @@ namespace
         /// Returns the entities whose effective settings can change after `pending`. Dependencies
         /// point from a setting carrier to the entity which uses it; profile targets point the other
         /// way, so both directions are recorded before walking the affected subgraph.
-        AccessEntityIDs findAffectedEntities(const AccessGraph & after, const PendingAccessEntities & pending) const
+        [[nodiscard]] AccessEntityIDs findAffectedEntities(const AccessGraph & after, const PendingAccessEntities & pending) const
         {
             UnorderedMultiMapWithMemoryTracking<UUID, UUID> dependents;
             AccessEntityIDs profiles_targeting_all;
@@ -408,19 +411,19 @@ namespace
         }
 
     private:
-        RolePtr getRole(const UUID & id) const
+        [[nodiscard]] RolePtr getRole(const UUID & id) const
         {
             auto it = roles.find(id);
             return it == roles.end() ? nullptr : it->second;
         }
 
-        SettingsProfilePtr getProfile(const UUID & id) const
+        [[nodiscard]] SettingsProfilePtr getProfile(const UUID & id) const
         {
             auto it = profiles.find(id);
             return it == profiles.end() ? nullptr : it->second;
         }
 
-        ResolvedSettings resolve(
+        [[nodiscard]] ResolvedSettings resolve(
             const std::optional<UUID> & default_profile,
             const UUID & user_id,
             const std::vector<UUID> & role_ids,
@@ -434,7 +437,13 @@ namespace
             return foldElements(
                 access_control,
                 resolveSettingsProfileElements(
-                    default_profile, profiles, user_id, roles_info.enabled_roles, roles_info.settings_from_enabled_roles, own_settings)
+                    default_profile,
+                    profiles,
+                    user_id,
+                    roles_info.enabled_roles,
+                    roles_info.settings_from_enabled_roles,
+                    own_settings,
+                    [&](const UUID & profile_id) { return access_control.shouldSkipSQLAccessEntityForUser(profile_id, user_id); })
                     .elements);
         }
 

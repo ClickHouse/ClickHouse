@@ -19,7 +19,7 @@ class WriteBufferFromFileDescriptor;
 
 struct ThreadEventData
 {
-    UInt64 time() const noexcept { return user_ms + system_ms; }
+    [[nodiscard]] UInt64 time() const noexcept { return user_ms + system_ms; }
 
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
@@ -127,6 +127,10 @@ private:
     /// Width of how much has been printed currently into stderr. Used to define size of progress bar and
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
+
+    /// Selects the frame of the spinning indicator. It is per instance, because several clients
+    /// (e.g. the sessions of the web terminal) can show progress concurrently in one process.
+    size_t indicator_frame = 0;
 
     /// Progress counts at which the stalled state flipped; colors the bar by history.
     /// The counts do not depend on the width of the terminal: the history is compacted to at most

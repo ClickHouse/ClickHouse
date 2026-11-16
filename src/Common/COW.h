@@ -205,7 +205,7 @@ protected:
         template <typename U>
         chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
 
-        const T * get() const { return value.get(); }
+        [[nodiscard]] const T * get() const { return value.get(); }
         T * get() { return &value->assumeMutableRef(); }
 
         const T * operator->() const { return get(); }
@@ -296,6 +296,8 @@ public:
     static MutablePtr create(std::initializer_list<T> && arg) { return MutablePtr(new Derived(std::forward<std::initializer_list<T>>(arg))); }
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
+
+    [[nodiscard]] size_t sizeOfObject() const override { return sizeof(Derived); }
 
 protected:
     MutablePtr shallowMutate() const { return MutablePtr(static_cast<Derived *>(Base::shallowMutate().get())); }

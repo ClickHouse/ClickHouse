@@ -30,10 +30,13 @@ struct GroupConcatData
     void checkAndUpdateSize(UInt64 add, Arena * arena);
     void insertChar(const char * str, UInt64 str_size, Arena * arena);
 
-    UInt64 getSize(size_t i) const;
-    UInt64 getString(size_t i) const;
+    [[nodiscard]] UInt64 getSize(size_t i) const;
+    [[nodiscard]] UInt64 getString(size_t i) const;
 
+    /// Offsets and `num_rows` are needed only to apply the limit, so they are recorded only if `has_limit`.
+    template <bool has_limit>
     void insertString(std::string_view str, Arena * arena);
+    template <bool has_limit>
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 
@@ -45,12 +48,13 @@ class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatDat
     SerializationPtr serialization;
     UInt64 limit;
     const String delimiter;
-    const DataTypePtr type;
+    const bool is_string;
+    const bool is_fixed_string;
 
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_);
 
-    String getName() const override;
+    [[nodiscard]] String getName() const override;
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
@@ -64,7 +68,7 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override;
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;
 
-    bool allocatesMemoryInArena() const override;
+    [[nodiscard]] bool allocatesMemoryInArena() const override;
 };
 
 }

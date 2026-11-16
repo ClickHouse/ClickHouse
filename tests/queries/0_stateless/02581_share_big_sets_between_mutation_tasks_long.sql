@@ -72,8 +72,8 @@ SELECT
     sum(message_format_string LIKE 'Created Set with % entries%') >= 1  AS has_parts_for_which_set_was_built,
     sum(message_format_string LIKE 'Got set from cache%') >= 1 AS has_parts_that_shared_set
 FROM system.text_log
-WHERE
-    query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
     AND (event_date >= yesterday() AND event_time >= now() - 600)
     AND (message_format_string LIKE 'Created Set with % entries%' OR message_format_string LIKE 'Got set from cache%')
 GROUP BY mutation_version ORDER BY mutation_version FORMAT TSVWithNames;

@@ -51,10 +51,10 @@ public:
     /// so the returned connection is established and checked anyway.
     virtual Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) = 0;
 
-    const std::string & getHost() const { return host; }
-    UInt16 getPort() const { return port; }
-    const String & getAddress() const { return address; }
-    Priority getConfigPriority() const { return config_priority; }
+    [[nodiscard]] const std::string & getHost() const { return host; }
+    [[nodiscard]] UInt16 getPort() const { return port; }
+    [[nodiscard]] const String & getAddress() const { return address; }
+    [[nodiscard]] Priority getConfigPriority() const { return config_priority; }
 
 protected:
     const String host;
@@ -97,7 +97,7 @@ public:
         Priority config_priority_ = Priority{1},
         Connection::SocketFactory socket_factory_ = &Connection::defaultSocketFactory)
         : IConnectionPool(host_, port_, config_priority_)
-        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"))
+        , Base(max_connections_, getLogger("ConnectionPool (" + host_ + ":" + std::to_string(port_) + ")"), /* pool_outlives_query_ = */ true)
         , default_database(default_database_)
         , user(user_)
         , password(password_)
@@ -140,6 +140,8 @@ public:
     }
 
 protected:
+    void releaseObject(Connection & connection) noexcept override { connection.releaseQueryBuffers(); }
+
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
     {

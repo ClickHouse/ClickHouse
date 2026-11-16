@@ -10,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -23,11 +22,11 @@ class ExecutableFunctionGetServerPort final : public IExecutableFunction
 public:
     explicit ExecutableFunctionGetServerPort(UInt16 port_) : port(port_) {}
 
-    String getName() const override { return "getServerPort"; }
+    [[nodiscard]] String getName() const override { return "getServerPort"; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeNumber<UInt16>().createColumnConst(input_rows_count, port);
     }
@@ -98,16 +97,9 @@ public:
     /// Read per executing node, so two nodes can disagree.
     bool isServerConstant() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    String getSignatureString() const override
     {
-        size_t number_of_arguments = data_types.size();
-        if (number_of_arguments != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(),
-                number_of_arguments);
-        return std::make_shared<DataTypeNumber<UInt16>>();
+        return "(Any) -> UInt16";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

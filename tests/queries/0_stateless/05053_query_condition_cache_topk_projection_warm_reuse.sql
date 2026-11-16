@@ -8,7 +8,6 @@
 -- before the plan is final - must derive the projection `PREWHERE` before the analysis, otherwise it
 -- probes the plain `WHERE` key only and the second run rescans everything.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_query_condition_cache_for_top_k = 1;
 -- `force_optimize_projection` only checks (and the rewrite only runs) when projections are allowed at

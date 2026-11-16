@@ -36,13 +36,13 @@ public:
     {
     public:
         explicit ArgumentTreeNode(const IQueryTreeNode * argument_) : argument(argument_) {}
-        std::unique_ptr<AbstractFunction> getFunction() const override
+        [[nodiscard]] std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (const auto * f = argument->as<FunctionNode>())
                 return std::make_unique<FunctionTreeNodeImpl<FunctionNode>>(*f);
             return nullptr;
         }
-        bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
+        [[nodiscard]] bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ConstantNode>())
@@ -83,8 +83,8 @@ public:
     {
     public:
         explicit ArgumentsTreeNode(const QueryTreeNodes * arguments_) : arguments(arguments_) {}
-        size_t size() const override { return arguments ? arguments->size() : 0; }
-        std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
+        [[nodiscard]] size_t size() const override { return arguments ? arguments->size() : 0; }
+        [[nodiscard]] std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
     private:
         const QueryTreeNodes * arguments = nullptr;
     };
@@ -94,7 +94,7 @@ public:
         if (const auto & nodes = function->getArguments().getNodes(); !nodes.empty())
             arguments = std::make_unique<ArgumentsTreeNode>(&nodes);
     }
-    String name() const override { return getFunctionNameImpl(function); }
+    [[nodiscard]] String name() const override { return getFunctionNameImpl(function); }
 private:
     const FunctionNodeType * function = nullptr;
 };
@@ -104,7 +104,8 @@ SecretArgumentsResult findSecretArguments(const FunctionNode & function);
 SecretArgumentsResult findSecretArguments(const TableFunctionNode & function);
 
 /// Visits the secret value slots selected by a finder result in a resolved argument list, for the
-/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members and the arguments
+/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members, the individually
+/// masked arguments (whole, unless masked as a named `key = value`) and the arguments
 /// with a partial replacement (for a `key = value` argument, its value; a tree dump cannot represent
 /// partial masking, so the whole value is masked: fail closed), and the values of the nested secret
 /// maps (`headers(..)` / `extra_credentials(..)`; a malformed child is visited whole). The callback

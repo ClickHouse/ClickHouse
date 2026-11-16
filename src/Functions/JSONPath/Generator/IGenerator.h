@@ -12,7 +12,7 @@ class IGenerator
 public:
     IGenerator() = default;
 
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
 
     /**
      * Used to yield next non-ignored element describes by JSONPath query.

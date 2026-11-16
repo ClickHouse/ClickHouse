@@ -94,7 +94,7 @@ public:
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
 
-    const Configuration & getConfiguration() const
+    [[nodiscard]] const Configuration & getConfiguration() const
     {
         return configuration;
     }
@@ -102,14 +102,14 @@ public:
     Pipe createPipe(
         const std::string & command,
         const VectorWithMemoryTracking<std::string> & arguments,
-        std::vector<Pipe> && input_pipes,
+        Pipes && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {});
 
     Pipe createPipe(
         const std::string & command,
-        std::vector<Pipe> && input_pipes,
+        Pipes && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {})

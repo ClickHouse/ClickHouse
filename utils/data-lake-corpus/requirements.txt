@@ -1,0 +1,5 @@
+# Environment of the orchestrator (`generate.py`). Every writer runs in its own environment with the
+# versions pinned in `WRITERS` (`generate.py`), `ICEBERG_WRITERS` (`iceberg_gen.py`), and `READERS`
+# (`roundtrip.py`), created by `uv run --with`; the Go writers are pinned in `writers/go/go.mod`.
+pyarrow==26.0.0
+zstandard==0.25.0

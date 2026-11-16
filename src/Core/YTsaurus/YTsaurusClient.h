@@ -59,6 +59,9 @@ public:
 
     explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
 
+    /// Validates the OAuth token sent in the `Authorization` header with `HTTPHeaderFilter`.
+    static void checkHeaders(const ContextPtr & context, const String & oauth_token);
+
     YTsaurusClient(const YTsaurusClient & other);
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
@@ -127,7 +130,7 @@ class YTsaurusTableLock
 {
 public:
     YTsaurusTableLock(YTsaurusClientPtr client_, const String& cypress_path_, size_t transaction_timeout_ms);
-    String getNodePath() const
+    [[nodiscard]] String getNodePath() const
     {
         return node_cypress_path;
     }

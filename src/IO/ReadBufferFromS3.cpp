@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/StdStreamBufFromReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/HTTPConnectionPool.h>
@@ -20,6 +21,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -222,7 +224,7 @@ bool ReadBufferFromS3::nextImpl()
                 else
                 {
                     /// use the buffer returned by `impl`
-                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                    setWorkingBuffer(impl->buffer(), impl->offset());
                 }
             }
 
@@ -275,7 +277,7 @@ bool ReadBufferFromS3::nextImpl()
     /// `readMetadataFile`) inherits the corrupt bounds.
     if (use_external_buffer)
         assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+    setWorkingBuffer(impl->buffer(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
@@ -327,10 +329,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         try
         {
             result = sendRequest(attempt, range_begin, range_begin + n - 1);
-            std::istream & istr = result->GetBody();
+
+            /// The body of the response is a ReadBuffer wrapped into a stream, because the AWS
+            /// SDK accepts nothing else; read from the buffer, so that the data goes into `to`
+            /// without a copy in between.
+            auto * stream_buf = dynamic_cast<StdStreamBufFromReadBuffer *>(result->GetBody().rdbuf());
+            if (!stream_buf)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The body of a GetObject response is not a ReadBuffer");
+            ReadBuffer & body = stream_buf->getReadBuffer();
 
             bool cancelled = false;
-            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
+            copyFromReadBufferWithProgressCallback(body, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
@@ -341,7 +350,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
-            istr.ignore(INT64_MAX);
+            body.tryIgnore(std::numeric_limits<size_t>::max());
         }
         catch (...)
         {
@@ -380,6 +389,9 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
+
+    /// Throws the cancellation cause, and is a no-op off-query, so an ordinary network error still retries.
+    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
@@ -523,6 +535,17 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     }
 }
 
+void ReadBufferFromS3::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
+{
+    if (impl)
+    {
+        impl->detachSession();
+        resetWorkingBuffer();
+        impl.reset();
+    }
+    read_settings.io_scheduling = io_scheduling;
+}
+
 void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)
@@ -654,6 +677,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
+    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

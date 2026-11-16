@@ -14,11 +14,11 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
 private:
-    String getRewrittenQuery() const;
+    [[nodiscard]] String getRewrittenQuery() const;
 
     ASTPtr query_ptr;
 };

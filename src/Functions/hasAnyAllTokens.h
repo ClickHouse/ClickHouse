@@ -43,9 +43,9 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     std::shared_ptr<const ITokenizer> tokenizer;
@@ -101,6 +101,17 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
+    /// `hasAnyTokens(haystack, needles[, tokenizer])` — haystack is a string
+    /// or an array of strings; needles is a const string or const array of
+    /// strings; optional const tokenizer name. Result is `UInt8`; wrapped in
+    /// `Nullable` when the haystack is `Nullable`. The runtime additionally
+    /// enforces the constancy of `needles` and `tokenizer`.
+    String getSignatureString() const override
+    {
+        return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
+               "const String | Array(String | IsNothing), [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 

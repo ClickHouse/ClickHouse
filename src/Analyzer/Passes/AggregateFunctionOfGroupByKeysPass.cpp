@@ -18,6 +18,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
 }
 
@@ -83,6 +84,12 @@ public:
         else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
         {
             /// Keep aggregator if group by is with totals/cube/rollup.
+            group_by_keys_stack.push_back({});
+        }
+        else if (query_node->isGroupByWithGroupingSets() && getSettings()[Setting::group_by_use_nulls])
+        {
+            /// With `group_by_use_nulls` the keys of grouping sets become `Nullable` in the aggregation's output,
+            /// while the argument of the aggregate function keeps its type, so the replacement would not match it.
             group_by_keys_stack.push_back({});
         }
         else

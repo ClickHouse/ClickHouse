@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 -- The plan must not depend on the randomized TopN dynamic filtering.
 SET use_top_k_dynamic_filtering = 0;

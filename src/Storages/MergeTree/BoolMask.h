@@ -19,7 +19,7 @@ struct BoolMask
 
     /// Check if mask is no longer changeable under BoolMask::combine.
     /// We use this condition to early-exit KeyConditions::checkInRange methods.
-    bool isComplete() const
+    [[nodiscard]] bool isComplete() const
     {
         return can_be_true && can_be_false;
     }
@@ -28,6 +28,13 @@ struct BoolMask
     static BoolMask combine(const BoolMask & left, const BoolMask & right)
     {
         return {left.can_be_true || right.can_be_true, left.can_be_false || right.can_be_false};
+    }
+
+    /// Combine two checks of the same condition in the same hyperrectangle. A check may report a component
+    /// as possible although it is not, but never the other way around, so only what both allow is possible.
+    static BoolMask intersect(const BoolMask & left, const BoolMask & right)
+    {
+        return {left.can_be_true && right.can_be_true, left.can_be_false && right.can_be_false};
     }
 
     /// The following two special constants are used to speed up

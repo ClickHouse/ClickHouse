@@ -7,7 +7,6 @@
 -- The same holds for `function_locate_has_mysql_compatible_argument_order`, which swaps the arguments of `locate`.
 
 -- The query condition cache is only used with the analyzer.
-SET enable_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Without a local plan the filter steps run as part of the remote queries, and this server's cache sees nothing.
 SET parallel_replicas_local_plan = 1;

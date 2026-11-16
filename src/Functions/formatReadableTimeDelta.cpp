@@ -40,39 +40,30 @@ public:
     static constexpr auto name = "formatReadableTimeDelta";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(
-                +[](const IDataType & type) { return isNumber(type) || isInterval(type); }), nullptr, "Number or Interval"},
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"maximum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-            {"minimum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeString>();
+        /// `Interval` arguments are accepted in addition to numbers (master added
+        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
+        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
+               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     enum Unit
     {
@@ -87,7 +78,7 @@ public:
         Years = 9
     };
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::string_view maximum_unit_str;
         std::string_view minimum_unit_str;
@@ -244,8 +235,9 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output)
+                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
+                if (unit_multiplier != 1 || has_output
+                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
                     return;
             }
 
@@ -307,7 +299,7 @@ private:
         return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
     }
 
-    Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
+    [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
     {
         if (unit_str.empty())
             return default_unit;

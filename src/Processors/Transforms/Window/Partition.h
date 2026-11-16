@@ -10,7 +10,9 @@ struct PartitionBounds
 {
     RowNumber start;
     RowNumber end;
-    bool fully_visible = false;
+    int64_t rows_count = 0;
+    bool start_visible = false;
+    bool end_visible = false;
 };
 
 class Partition
@@ -20,9 +22,9 @@ public:
 
     void beginAt(const SlidingBlocks & blocks, RowNumber first_row);
     void advance(const SlidingBlocks & blocks);
-    void finish(RowNumber data_end);
+    void finish();
 
-    const PartitionBounds & bounds() const;
+    [[nodiscard]] const PartitionBounds & bounds() const;
 
 private:
     PartitionBounds partition_bounds;

@@ -24,14 +24,14 @@ class IFunctionCustomWeek : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    bool canBeExecutedOnDefaultArguments() const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override
     {
         /// String default is empty (not parseable as DateTime), so avoid executing on LC default dictionary key
         if constexpr (Transform::value_may_be_string)
@@ -40,9 +40,9 @@ public:
         return true;
     }
 
-    bool hasInformationAboutMonotonicity() const override { return Transform::hasMonotonicity(); }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return Transform::hasMonotonicity(); }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         const IDataType * type_ptr = &type;
 

@@ -7,8 +7,6 @@ title: 'Mise à l’échelle verticale automatique'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Mise à l’échelle verticale automatique" />
@@ -25,7 +23,15 @@ Les membres de l’organisation disposant du rôle **Admin** peuvent configurer 
   Les services Scale à réplique unique et les services Enterprise avec des profils `1:4` standard prennent en charge la mise à l’échelle verticale automatique. Les services Enterprise avec des profils personnalisés nécessitent un redimensionnement vertical avec l’assistance du support. Les services du niveau Basic restent de taille fixe et ne peuvent pas être mis à l’échelle.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Page des paramètres de mise à l’échelle" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Page des paramètres de mise à l’échelle](/images/cloud/manage/AutoScaling.webp)
+
+</Frame>
+
+</div>
 
 Définissez la **Mémoire maximale** de vos répliques sur une valeur supérieure à la **Mémoire minimale**. Le service s’adaptera ensuite selon les besoins dans ces limites. Ces paramètres sont également disponibles lors de la création initiale du service. Chaque réplique de votre service se verra attribuer les mêmes ressources de mémoire et de CPU.
 

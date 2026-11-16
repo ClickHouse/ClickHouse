@@ -6,7 +6,6 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 
@@ -16,6 +15,7 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
+struct JoinSettings;
 
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
@@ -23,6 +23,14 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
+
+/// Whether one of the algorithms the `join_algorithm` setting enables can execute this kind and
+/// strictness. The sort-merge algorithms implement only a part of them - neither `SEMI` nor `ANTI`,
+/// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT` - so a plan rewrite that produces such
+/// a join under `join_algorithm = 'full_sorting_merge'` or `'partial_merge'` would turn a query that
+/// runs into `NOT_IMPLEMENTED`. `grace_hash` counts only where `JoinSettings::canRunGraceHash` says
+/// the join pickers would not pass it over on any node.
+bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness);
 
 /// Helper interface to work with mask from JOIN ON section
 class JoinMask
@@ -55,9 +63,9 @@ public:
 
     bool hasData() { return column != nullptr || kind != Kind::Unknown; }
 
-    size_t getSize() const { return size; }
+    [[nodiscard]] size_t getSize() const { return size; }
 
-    bool isRowFiltered(size_t row) const
+    [[nodiscard]] bool isRowFiltered(size_t row) const
     {
         chassert(!column || row < size);
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
@@ -66,13 +74,13 @@ public:
     /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
     /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
     /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
-    const UInt8 * getRawDataOrNull() const
+    [[nodiscard]] const UInt8 * getRawDataOrNull() const
     {
         chassert(kind != Kind::Unknown || column);
         return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
     }
 
-    Kind getKind() const { return kind; }
+    [[nodiscard]] Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
@@ -98,6 +106,10 @@ private:
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
+/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
+/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
   * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
@@ -108,6 +120,10 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(
   * top-level NULL is.
   */
 DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
+
+/// Whether a JOIN key of this type can match a pair for which `equals` is not true: a NaN, a NULL nested
+/// in a Tuple, or a NULL Variant or Dynamic.
+bool keyMatchesValuesEqualsRejects(const DataTypePtr & type);
 
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
@@ -131,11 +147,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 Int64 getCurrentQueryMemoryUsage();
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
-/// Throw an exception if join condition column is not UIint8
+/// Throw an exception if join condition column cannot be used in boolean context
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 
@@ -180,8 +196,9 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
+/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
+ColumnPtr filterWithBlanks(
+    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
 
 }
 

@@ -58,15 +58,33 @@ namespace DB
 
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUniqTheta>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool isVariadic() const override { return false; }
+        [[nodiscard]] bool isVariadic() const override { return false; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        size_t getNumberOfArguments() const override { return 2; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        /// Both arguments must be `AggregateFunction('uniqTheta', ...)` sketches with
+        /// identical inner-argument lists of any length; the result is the first
+        /// argument's sketch type. The DSL models neither the variadic inner-argument
+        /// list nor its equality, so the signature is documentation-only.
+        [[nodiscard]] String getSignatureString() const override
+        {
+            return "(A : AggregateFunction('uniqTheta', Any), AggregateFunction('uniqTheta', Any)) -> A";
+        }
+
+        /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative.
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+            return getReturnTypeImpl(data_types);
+        }
+
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             const auto * sketch_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
             if (!(sketch_type0 && sketch_type0->getFunctionName() == "uniqTheta"))
@@ -102,9 +120,9 @@ namespace DB
             return arguments[0];
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const ColumnAggregateFunction * column_ptrs[2];
             bool is_column_const[2];

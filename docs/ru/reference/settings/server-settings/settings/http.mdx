@@ -12,25 +12,23 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки относятся к конфигурации сервера ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="http_allow_path_requests">
-  ## http_allow_path_requests
-</div>
+## http_allow_path_requests {#http_allow_path_requests}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Разрешает HTTP-интерфейсу направлять запросы с путём в URL (например, `/my_db/my_table.csv`) обработчику запросов.
 
 Этот флаг управляет только принятием решения о маршрутизации, которое происходит до аутентификации запроса, поэтому оно не может зависеть от настройки для отдельного пользователя. После маршрутизации настройки для отдельного пользователя [`http_allow_database_as_path`](/ru/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/ru/reference/settings/session-settings#http_allow_table_as_file) и [`http_allow_filters_as_path`](/ru/reference/settings/session-settings#http_allow_filters_as_path) определяют, будет ли маршрут фактически интерпретирован для аутентифицированного пользователя. Если этот флаг отключён, неизвестные пути возвращают обычный `404`.
 
+Включён по умолчанию. Установите значение `0`, чтобы вернуть прежнее поведение, при котором любой путь, не соответствующий настроенному обработчику, возвращает `404`.
+
 **Пример**
 
 ```xml
-<http_allow_path_requests>1</http_allow_path_requests>
+<http_allow_path_requests>0</http_allow_path_requests>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 Позволяет использовать пользовательские HTTP-обработчики.
 Чтобы добавить новый HTTP-обработчик, просто добавьте новый `<rule>`.
@@ -95,9 +93,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </http_handlers>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 Используется для добавления заголовков в ответ на HTTP-запрос `OPTIONS`.
 Метод `OPTIONS` используется при выполнении предварительных CORS-запросов.
@@ -127,9 +123,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </http_options_response>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 Страница, которая по умолчанию отображается при доступе к HTTP(S)-серверу ClickHouse.
 Значение по умолчанию — &quot;Ok.&quot; (с переводом строки в конце)

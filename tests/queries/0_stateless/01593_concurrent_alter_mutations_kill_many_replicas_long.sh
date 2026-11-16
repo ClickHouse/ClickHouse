@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, replica, no-parallel
+# Tags: long, replica, no-parallel, no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,7 +69,7 @@ wait
 # with timeout alter query can be not finished yet, so to execute new alter
 # we use retries
 counter=0
-while true; do
+while clickhouse_test_time_left; do
     if $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_kill_1 MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2" 2> /dev/null ; then
         break
     fi
