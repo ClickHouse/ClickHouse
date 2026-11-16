@@ -81,6 +81,8 @@ Choose the parallelism of a query (the number of streams and threads it is plann
 
 This way, when many queries run concurrently, each of them is planned with fewer streams: it uses less memory and spends less CPU on merging the partial results of its threads (e.g. aggregation states), which increases the total throughput. A query that is planned while the server is idle uses all CPU cores as before.
 
+The fair share is taken once per query, when its plan is built, so that all parts of the query (subqueries, sets, joined tables) are planned with the same number of streams.
+
 It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
@@ -172,7 +174,7 @@ predicate for the target side.
 
 Skip Iceberg data files, and the Parquet row groups and pages of the files that are read, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the manifest files, the row group statistics and the page index. Data files requested earlier are read in full.
 
-Requires [enable_join_runtime_filters_index_analysis](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages also require [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
+Requires [enable_join_runtime_filters_index_analysis](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages require it and [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
@@ -202,6 +204,16 @@ Possible values:
 
 - 0 — Disabled. All primary key columns are processed during index analysis.
 - 1 — Enabled.
+
+## use_lz4_library_decompression {#use_lz4_library_decompression}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting: optionally use the upstream `LZ4` library decoder instead of ClickHouse's adaptive decoder."}]}]}/>
+
+Use the upstream `LZ4` library to decompress native ClickHouse blocks, including data compressed with `LZ4HC` or a codec chain containing `LZ4`.
+Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
+The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
 
 ## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
