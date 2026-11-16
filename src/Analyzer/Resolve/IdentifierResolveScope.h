@@ -145,8 +145,8 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
-    /// Projection name of the SQL UDF call whose body this lambda scope inlines, empty otherwise.
-    ProjectionName inlined_call_projection_name;
+    /// Set when this lambda scope inlines a call: the call's projection name for a SQL UDF, empty for other lambdas.
+    std::optional<ProjectionName> inlined_call_projection_name;
 
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this

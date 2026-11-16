@@ -17,6 +17,11 @@ untuple_map(lambda(tuple(x), plus(x, 1)), [1]).1	untuple_map(lambda(tuple(x), pl
 map(lambda(tuple(x), plus(x, number)), [1])	map(lambda(tuple(x), multiply(x, number)), [1])
 [1]	[0]
 [2]	[1]
+-- a lambda argument called in the body
+apply_lambda(lambda(tuple(y), untuple(tuple(y))), 11).1	apply_lambda(lambda(tuple(y), untuple(tuple(y))), 22).1
+11	22
+wrap_apply_lambda(11).1	wrap_apply_lambda(22).1
+11	22
 -- a WITH lambda keeps its name: stored view definitions keep WITH lambdas
 tupleElement((x), \'1\')
 11

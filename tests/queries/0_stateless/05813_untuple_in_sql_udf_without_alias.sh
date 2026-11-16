@@ -10,6 +10,8 @@ g="${CLICKHOUSE_DATABASE}_untuple_value_nested"
 fr="${CLICKHOUSE_DATABASE}_format_row"
 um="${CLICKHOUSE_DATABASE}_untuple_map"
 m="${CLICKHOUSE_DATABASE}_map"
+ap="${CLICKHOUSE_DATABASE}_apply_lambda"
+wa="${CLICKHOUSE_DATABASE}_wrap_apply_lambda"
 
 $CLICKHOUSE_CLIENT -q "
 CREATE FUNCTION $f AS (x) -> untuple(tuple(x));
@@ -17,6 +19,8 @@ CREATE FUNCTION $g AS (y) -> $f(y);
 CREATE FUNCTION $fr AS (x) -> formatRowNoNewline('JSONEachRow', x);
 CREATE FUNCTION $um AS (fn, xs) -> untuple(tuple(arrayMap(fn, xs)));
 CREATE FUNCTION $m AS (fn, xs) -> arrayMap(fn, xs);
+CREATE FUNCTION $ap AS (fn, x) -> fn(x);
+CREATE FUNCTION $wa AS (x) -> $ap(y -> untuple(tuple(y)), x);
 
 SELECT '-- https://github.com/ClickHouse/ClickHouse/issues/131545';
 SELECT * FROM (SELECT $f(11), $f(22)) FORMAT TSVWithNames;
@@ -29,6 +33,9 @@ SELECT * FROM (SELECT $g(11), $g(22)) FORMAT TSVWithNames;
 SELECT '-- lambda arguments';
 SELECT * FROM (SELECT $um(x -> x + 1, [1]), $um(x -> x + 2, [1])) FORMAT TSVWithNames;
 SELECT * FROM (SELECT $m(x -> x + number, [1]), $m(x -> x * number, [1]) FROM numbers(2)) ORDER BY 1 FORMAT TSVWithNames;
+SELECT '-- a lambda argument called in the body';
+SELECT * FROM (SELECT $ap(y -> untuple(tuple(y)), 11), $ap(y -> untuple(tuple(y)), 22)) FORMAT TSVWithNames;
+SELECT * FROM (SELECT $wa(11), $wa(22)) FORMAT TSVWithNames;
 SELECT '-- a WITH lambda keeps its name: stored view definitions keep WITH lambdas';
 SELECT * FROM (WITH x -> untuple(tuple(x)) AS l SELECT l(11)) FORMAT TSVWithNames;
 SELECT '-- an alias still names the columns';
@@ -48,4 +55,6 @@ DROP FUNCTION $g;
 DROP FUNCTION $fr;
 DROP FUNCTION $um;
 DROP FUNCTION $m;
+DROP FUNCTION $wa;
+DROP FUNCTION $ap;
 " | sed "s/${CLICKHOUSE_DATABASE}_//g"

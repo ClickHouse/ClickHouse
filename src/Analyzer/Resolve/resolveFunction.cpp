@@ -3073,6 +3073,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
+            lambda_scope.inlined_call_projection_name.emplace();
             /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
             /// substituted at `CREATE`, so their names may change.
             if (inlines_sql_udf)
@@ -3155,7 +3156,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
             /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
             /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
-            /// Without an alias, the outermost call of the contiguous chain of inlined SQL UDF calls is used instead.
+            /// Without an alias, the outermost SQL UDF call of the contiguous chain of inlined calls is used instead.
             String untuple_alias = node->getAlias();
             String inlined_call_projection_name;
             bool through_inlined_calls = true;
@@ -3178,9 +3179,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 if (call_node->hasAlias())
                     untuple_alias = call_node->getAlias();
-                through_inlined_calls = through_inlined_calls && !current_scope->inlined_call_projection_name.empty();
-                if (through_inlined_calls)
-                    inlined_call_projection_name = current_scope->inlined_call_projection_name;
+                through_inlined_calls = through_inlined_calls && current_scope->inlined_call_projection_name.has_value();
+                if (through_inlined_calls && !current_scope->inlined_call_projection_name->empty())
+                    inlined_call_projection_name = *current_scope->inlined_call_projection_name;
                 current_node = call_node.get();
                 current_scope = current_scope->parent_scope;
             }
