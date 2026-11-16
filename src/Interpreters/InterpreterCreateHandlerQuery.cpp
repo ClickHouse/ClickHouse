@@ -18,6 +18,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -42,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
     extern const int HANDLER_ALREADY_EXISTS;
     extern const int KEEPER_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
@@ -140,29 +142,49 @@ String describeStatementKind(const IAST & statement)
     return Poco::toUpper(String(magic_enum::enum_name(statement.getQueryKind())));
 }
 
-void collectQueryAliases(const IAST & ast, std::unordered_set<String> & aliases)
+/// Collects the aliases of one query scope. A nested query, including an operand of `UNION`, has its own scope: its aliases
+/// are not visible here, so they must not hide a table name of this scope.
+void collectScopeAliases(const IAST & ast, std::unordered_set<String> & aliases)
 {
     if (String alias = ast.tryGetAlias(); !alias.empty())
         aliases.insert(std::move(alias));
     for (const auto & child : ast.children)
-        if (child)
-            collectQueryAliases(*child, aliases);
+        if (child && !child->as<ASTSelectQuery>())
+            collectScopeAliases(*child, aliases);
 }
 
 /// `AddDefaultDatabaseVisitor` leaves the table name of `joinGet` alone, and `joinGet` resolves a bare name in the current
 /// database of the request. Qualify it, so the handler reads the table its query was checked against.
-void qualifyJoinGetTableNames(IAST & ast, const String & database, const std::unordered_set<String> & aliases)
+/// `scope_aliases` are the aliases of the innermost query that contains `ast`.
+void qualifyJoinGetTableNames(IAST & ast, const String & database, const std::unordered_set<String> & scope_aliases)
 {
+    if (ast.as<ASTSelectQuery>())
+    {
+        std::unordered_set<String> aliases;
+        collectScopeAliases(ast, aliases);
+        for (const auto & child : ast.children)
+            if (child)
+                qualifyJoinGetTableNames(*child, database, aliases);
+        return;
+    }
+
     if (auto * function = ast.as<ASTFunction>(); function && function->arguments && functionIsJoinGet(function->name)
         && !function->arguments->children.empty())
     {
         auto & table_argument = function->arguments->children[0];
         if (const auto * identifier = table_argument->as<ASTIdentifier>())
         {
-            /// A compound identifier is already qualified, a parameterized name is only known when the handler is invoked,
-            /// and an alias of an expression is not a table name.
-            if (!identifier->compound() && !identifier->isParam() && !aliases.contains(identifier->name()))
+            /// A compound identifier is already qualified, and a parameterized name is only known when the handler is invoked.
+            if (!identifier->compound() && !identifier->isParam())
+            {
+                /// An alias of the same scope takes precedence over a table name, and its value can name a table in the
+                /// current database of the request, which is not known here.
+                if (scope_aliases.contains(identifier->name()))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The table argument of {} in the query of a handler cannot be the alias `{}`, write the table name instead",
+                        function->name, identifier->name());
                 table_argument = make_intrusive<ASTIdentifier>(std::vector<String>{database, identifier->name()});
+            }
         }
         else if (auto * literal = table_argument->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
         {
@@ -177,7 +199,7 @@ void qualifyJoinGetTableNames(IAST & ast, const String & database, const std::un
 
     for (const auto & child : ast.children)
         if (child)
-            qualifyJoinGetTableNames(*child, database, aliases);
+            qualifyJoinGetTableNames(*child, database, scope_aliases);
 }
 
 /// Qualifies the names with the current database of the user storing the handler, as `CREATE VIEW` does.
@@ -189,9 +211,7 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
         /// The full traversal of the visitor expects the common table expressions to be expanded.
         ApplyWithSubqueryVisitor::visit(select, max_expanded_ast_elements);
         visitor.visit(select);
-        std::unordered_set<String> aliases;
-        collectQueryAliases(*select, aliases);
-        qualifyJoinGetTableNames(*select, database, aliases);
+        qualifyJoinGetTableNames(*select, database, {});
     };
 
     if (auto * insert = statement->as<ASTInsertQuery>())

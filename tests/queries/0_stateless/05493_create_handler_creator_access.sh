@@ -203,6 +203,14 @@ GRANT SELECT ON ${DB}.j TO ${U}"
 as_user "$U" "CREATE HANDLER h19_${DB} URL '/${DB}/h19' AS SELECT joinGet('j', 'v', toUInt32(1))"
 handler_query "h19_${DB}" query
 ${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h19?database=${DB_B}"
+# An alias of another scope does not hide the table name.
+as_user "$U" "CREATE HANDLER h19u_${DB} URL '/${DB}/h19u' AS SELECT joinGet(j, 'v', toUInt32(1)) UNION ALL SELECT '' AS j"
+handler_query "h19u_${DB}" query
+${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h19u?database=${DB_B}" | sort
+# An alias of the same scope is refused.
+http_query_as "$U" "CREATE HANDLER h19a_${DB} URL '/${DB}/h19a' AS WITH 'j' AS a SELECT joinGet(a, 'v', toUInt32(1))" \
+    | grep -o -m1 'cannot be the alias' || echo OK
+handlers "h19a_${DB}"
 
 echo "--- 20. a temporary table of the session"
 http_query "GRANT CREATE TEMPORARY TABLE ON *.* TO ${U}"
