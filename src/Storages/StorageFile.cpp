@@ -81,6 +81,7 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -872,7 +873,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -884,7 +885,7 @@ namespace
             format = format_name;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -1155,12 +1156,12 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        [[nodiscard]] String getLastFilePath() const override
         {
             return last_read_file_path;
         }
 
-        bool supportsLastReadBufferRecreation() const override { return true; }
+        [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
@@ -3365,7 +3366,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -3535,7 +3536,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -3552,7 +3553,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));

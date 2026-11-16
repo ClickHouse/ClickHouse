@@ -134,7 +134,7 @@ void registerInputFormatNative(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Native");
 
     factory.setDocumentation("Native", Documentation{
