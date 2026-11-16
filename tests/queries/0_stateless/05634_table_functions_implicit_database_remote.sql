@@ -13,6 +13,7 @@ INSERT INTO t_implicit_db VALUES (2, 'a'), (3, 'b');
 CREATE DICTIONARY d_implicit_db (x UInt64, s String) PRIMARY KEY x
     SOURCE(CLICKHOUSE(TABLE 't_implicit_db')) LIFETIME(0) LAYOUT(HASHED());
 CREATE TABLE ts_implicit_db ENGINE = TimeSeries;
+INSERT INTO ts_implicit_db (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
 
 -- A table name without a database, '' and a dictionary name, in a subquery of IN and of JOIN.
 SELECT sum(number), count() FROM remote('127.0.0.2', numbers(4)) WHERE number IN (SELECT x FROM loop(t_implicit_db) LIMIT 2);
@@ -38,6 +39,11 @@ SELECT count() FROM remote('127.0.0.2', numbers(1)) WHERE number IN (SELECT coun
 SELECT count() FROM remote('127.0.0.2', numbers(1)) WHERE number IN (SELECT count() * 0 FROM timeSeriesSamples(ts_implicit_db));
 SELECT count() FROM remote('127.0.0.2', numbers(1)) WHERE number IN (SELECT count() * 0 FROM timeSeriesSelector(ts_implicit_db, 'up', 0, 1000, 'samples'));
 SELECT count() FROM remote('127.0.0.2', numbers(1)) WHERE number IN (SELECT count() * 0 FROM prometheusQuery(ts_implicit_db, 'up', 1000));
+
+-- Parallel replicas are sent the query as well.
+SELECT metric_name FROM timeSeriesTags(ts_implicit_db)
+    SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0;
 
 -- The table of remote() is resolved by the remote server, in its own default database.
 SELECT x FROM remote('127.0.0.2', loop(t_implicit_db)) LIMIT 1; -- { serverError UNKNOWN_TABLE }
