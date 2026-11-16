@@ -603,3 +603,46 @@ SELECT 'FixedString key full query buckets any', count() FROM tab WHERE hasAnyTo
 SELECT 'FixedString key full query buckets any', count() FROM tab WHERE hasAnyTokenLike(m['k\0\0'], 'env:prod%', 'array') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;
+
+-- An index on the subcolumn itself is found by the element function too.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    t Tuple(k String),
+    INDEX idx_m(m.key_k) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_t(t.k) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi',
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
+INSERT INTO tab SELECT number, if(number < 16, map('k', 'env:prod-eu'), map('x', 'env:prod-eu')), tuple(if(number < 16, 'env:prod-eu', 'other')) FROM numbers(64);
+
+SELECT 'subcolumn index map any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%');
+SELECT 'subcolumn index map any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index map any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index map any', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index map all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']);
+SELECT 'subcolumn index map all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index map all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index map all', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, 'k'), 'prod%');
+SELECT 'subcolumn index tuple any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, 'k'), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, 'k'), 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, 'k'), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, 'k'), ['env:prod%']);
+SELECT 'subcolumn index tuple all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, 'k'), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, 'k'), ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, 'k'), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple position any', count() FROM tab WHERE hasAnyTokenLike(t.1, 'prod%');
+SELECT 'subcolumn index tuple position any', count() FROM tab WHERE hasAnyTokenLike(t.1, 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple position any', count() FROM tab WHERE hasAnyTokenLike(t.1, 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple position any', count() FROM tab WHERE hasAnyTokenLike(t.1, 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']);
+SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+
+DROP TABLE tab;

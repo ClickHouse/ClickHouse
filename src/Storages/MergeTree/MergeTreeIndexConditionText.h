@@ -259,8 +259,8 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     [[nodiscard]] bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
-    /// Returns true if the index is built on `m['key']` and the node reads the same element, as the subcolumn
-    /// `m.key_<key>` that `optimize_functions_to_subcolumns` makes, or as `m[key]` with an equal key.
+    /// Returns true if the index and the node read the same map or tuple element, one as a function
+    /// (`m['key']`, `tupleElement(t, 'a')`) and the other as its subcolumn (`m.key_<key>`, `t.a`).
     [[nodiscard]] bool hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const;
 
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this

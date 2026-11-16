@@ -243,3 +243,27 @@ FixedString key short query buckets element	0
 FixedString key short query buckets element	0
 FixedString key full query buckets any	16
 FixedString key full query buckets any	16
+subcolumn index map any	0
+subcolumn index map any	0
+subcolumn index map any	0
+subcolumn index map any	0
+subcolumn index map all	16
+subcolumn index map all	16
+subcolumn index map all	16
+subcolumn index map all	16
+subcolumn index tuple any	0
+subcolumn index tuple any	0
+subcolumn index tuple any	0
+subcolumn index tuple any	0
+subcolumn index tuple all	16
+subcolumn index tuple all	16
+subcolumn index tuple all	16
+subcolumn index tuple all	16
+subcolumn index tuple position any	0
+subcolumn index tuple position any	0
+subcolumn index tuple position any	0
+subcolumn index tuple position any	0
+subcolumn index tuple position all	16
+subcolumn index tuple position all	16
+subcolumn index tuple position all	16
+subcolumn index tuple position all	16
