@@ -986,7 +986,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(
             scratch = ColumnUInt64::create();
 
         /// The threshold takes its lock for every offer, so the ranks reach it a batch at a time.
-        std::array<UInt64, 1024> rank_batch;
+        std::array<UInt64, 1024> rank_batch{};
         size_t batched_ranks = 0;
         const auto offer_ranks = [&]
         {
