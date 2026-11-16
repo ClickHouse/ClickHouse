@@ -152,7 +152,7 @@ public:
     }
 
     /// Number of inserted values.
-    size_t size() const { return num_values; }
+    [[nodiscard]] size_t size() const { return num_values; }
 
     /// Compresses and finalizes the current page of values.
     /// Called automatically when a page is full or at the end to finalize the structure.
@@ -200,7 +200,7 @@ public:
 
     void clearTemporaryStorage() { current_page_values = {}; }
 
-    size_t totalAllocatedMemory() const { return pages.allocated_bytes() + current_page_values.allocated_bytes() + arena.allocatedBytes(); }
+    [[nodiscard]] size_t totalAllocatedMemory() const { return pages.allocated_bytes() + current_page_values.allocated_bytes() + arena.allocatedBytes(); }
 };
 
 
@@ -318,7 +318,7 @@ public:
 
     /// Looks up the new _part_offset in the merged data.
     /// Returns std::nullopt if the source row was dropped by the merge.
-    std::optional<UInt64> tryGetNewOffset(UInt64 part_index, UInt64 part_offset) const
+    [[nodiscard]] std::optional<UInt64> tryGetNewOffset(UInt64 part_index, UInt64 part_offset) const
     {
         chassert(mode != MappingMode::Disabled);
         chassert(part_index < offset_maps.size());
@@ -335,7 +335,7 @@ public:
     /// Whether every source row of the part in [first, last] was dropped by the merge.
     /// Values of a part do not decrease and each surviving row has its own odd value,
     /// so the rows are all dropped if and only if both ends hold the same even value.
-    bool areRowsDropped(UInt64 part_index, UInt64 first, UInt64 last) const
+    [[nodiscard]] bool areRowsDropped(UInt64 part_index, UInt64 first, UInt64 last) const
     {
         chassert(mode == MappingMode::EnabledWithDrops);
         chassert(part_index < offset_maps.size());
@@ -347,7 +347,7 @@ public:
 
     /// Number of rows of the part, which is the number of its mapped offsets.
     /// In EnabledWithDrops mode it includes the dropped rows once the mapping is flushed.
-    size_t getPartRowsCount(UInt64 part_index) const
+    [[nodiscard]] size_t getPartRowsCount(UInt64 part_index) const
     {
         chassert(mode != MappingMode::Disabled);
         chassert(part_index < offset_maps.size());
@@ -355,7 +355,7 @@ public:
     }
 
     /// Number of source rows of the part that survive the merge.
-    UInt64 getPartSurvivingRowsCount(UInt64 part_index) const
+    [[nodiscard]] UInt64 getPartSurvivingRowsCount(UInt64 part_index) const
     {
         chassert(mode == MappingMode::EnabledWithDrops);
         chassert(part_index < surviving_rows.size());
@@ -404,18 +404,18 @@ public:
             formatReadableSizeWithBinarySuffix(total_allocated_memory));
     }
 
-    bool isFinalized() const { return finalized; }
-    bool isMappingEnabled() const { return mode != MappingMode::Disabled; }
-    bool isMappingWithDrops() const { return mode == MappingMode::EnabledWithDrops; }
+    [[nodiscard]] bool isFinalized() const { return finalized; }
+    [[nodiscard]] bool isMappingEnabled() const { return mode != MappingMode::Disabled; }
+    [[nodiscard]] bool isMappingWithDrops() const { return mode == MappingMode::EnabledWithDrops; }
 
-    bool hasDroppedRows() const
+    [[nodiscard]] bool hasDroppedRows() const
     {
         chassert(finalized);
         return num_dropped > 0;
     }
 
-    bool empty() const { return num_rows == 0; }
-    size_t size() const { return num_rows; }
+    [[nodiscard]] bool empty() const { return num_rows == 0; }
+    [[nodiscard]] size_t size() const { return num_rows; }
 
     void clear()
     {

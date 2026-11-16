@@ -51,7 +51,7 @@ public:
     /// Defers the build until all blocks are received: their indexed columns are kept and aggregated in `finalize`.
     /// If they exceed `max_rows` rows or the memory limit of the build, or there are none, the build is abandoned and has no segments.
     void deferBuild(size_t max_rows) { max_deferred_rows = max_rows; }
-    bool isAbandoned() const { return abandoned; }
+    [[nodiscard]] bool isAbandoned() const { return abandoned; }
 
 private:
     void aggregateBlock(const Block & block);
@@ -118,14 +118,14 @@ public:
 private:
     void finalize();
     void cancelImpl() noexcept;
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
     void initializeTokensQueue();
 
     /// Cursor over the single String sort column with statically dispatched comparisons.
     using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const TokenSortCursor & cursor) const;
+    [[nodiscard]] bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
     /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
