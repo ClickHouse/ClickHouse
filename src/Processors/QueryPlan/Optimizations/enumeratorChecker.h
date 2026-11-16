@@ -69,6 +69,17 @@ private:
     /// interesting.
     void offerPlan(UInt subset, const Plan & plan);
 
+    /// A shuffle of one split by an equality of a class: it depends on the split only, not on the plans of its sides.
+    struct SplitShuffle
+    {
+        UInt32 key_class = 0;
+        bool raw = false;           /// the key hashes its values as they are; false for a cast key or an added one
+        UInt32 left_relation = 0;   /// with `raw`: the relations of the key columns on the two sides
+        UInt32 right_relation = 0;
+        Int8 state = Optimizer::any_partitioning_state; /// the state of the result
+    };
+    std::vector<SplitShuffle> split_shuffles; /// scratch of `acceptDistributedJoins`
+
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
         const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
@@ -215,6 +226,12 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
     const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
 {
+    /// The plans of a side: its cheapest plan (-1) and its plans in the other states.
+    const auto left_plans = static_cast<Int8>(dp_table[lhs_subset].ordered.size());
+    const auto right_plans = static_cast<Int8>(dp_table[rhs_subset].ordered.size());
+    if (optimizer.distribution_stopped
+        || !optimizer.spendDistributedPlanPairs(static_cast<size_t>(left_plans + 1) * static_cast<size_t>(right_plans + 1)))
+        return;
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);
     const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
@@ -226,21 +243,55 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     constexpr Int8 replicated = Optimizer::replicated_state;
     constexpr Int8 single_node = Optimizer::single_node_state;
 
-    /// The plans of a side: its cheapest plan and its plans in the other states.
-    auto side_plans = [&](UInt subset)
+    /// Shuffle: both sides hashed by one equality of a class. Predicate cleanup keeps the first edge of a class and drops
+    /// the others as redundant, and when the join has no edge of the class, it may add one with a column that is not
+    /// known here. After a shuffle by an edge of two columns of one type, Cascades knows the rows are hashed by these two
+    /// columns, so a later shuffle by an edge with one of them moves no rows of that side. An edge cast before hashing,
+    /// or an added one, gives rows that no later join reuses.
+    split_shuffles.clear();
+    for (UInt64 classes = key_classes; classes; classes &= classes - 1)
     {
-        std::vector<Int8> plans{-1};
-        for (size_t i = 0; i < dp_table[subset].ordered.size(); ++i)
-            plans.push_back(static_cast<Int8>(i));
-        return plans;
-    };
+        const auto key_class = static_cast<UInt32>(std::countr_zero(classes));
+        const auto edge = std::ranges::find_if(edges, [&](const JoinActionRef * candidate)
+        {
+            return optimizer.shuffleKey(candidate).key_class == static_cast<Int32>(key_class);
+        });
+        if (edge == edges.end())
+        {
+            if (optimizer.hasSynthesizedShuffleKey(key_class))
+                split_shuffles.push_back({.key_class = key_class, .state = any_partitioning});
+            continue;
+        }
+        const auto & key = optimizer.shuffleKey(*edge);
+        if (!key.hashable)
+            continue;
+        const bool lhs_on_left = (left_mask >> key.lhs_relation) & 1;
+        split_shuffles.push_back({
+            .key_class = key_class,
+            .raw = key.raw,
+            .left_relation = lhs_on_left ? key.lhs_relation : key.rhs_relation,
+            .right_relation = lhs_on_left ? key.rhs_relation : key.lhs_relation,
+            .state = key.raw
+                ? optimizer.partitionState(key_class, (static_cast<UInt32>(1) << key.lhs_relation) | (static_cast<UInt32>(1) << key.rhs_relation))
+                : any_partitioning});
+    }
 
-    for (const Int8 left_index : side_plans(lhs_subset))
+    /// The fields of the plans of the split that do not depend on the plans of its sides: the edges are copied once.
+    Plan plan;
+    plan.left = lhs_subset;
+    plan.right = rhs_subset;
+    plan.sel = selectivity.reported_value;
+    plan.kind = kind;
+    plan.strictness = strictness;
+    plan.edges.assign(edges.begin(), edges.end());
+    plan.method = JoinMethod::Hash;
+
+    for (Int8 left_index = -1; left_index < left_plans; ++left_index)
     {
         const Plan & left = planAt(lhs_subset, left_index);
         const double left_rows = left.search_rows;
         const Int8 left_state = left.partition_state;
-        for (const Int8 right_index : side_plans(rhs_subset))
+        for (Int8 right_index = -1; right_index < right_plans; ++right_index)
         {
             const Plan & right = planAt(rhs_subset, right_index);
             const double right_rows = right.search_rows;
@@ -252,19 +303,11 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                 estimateJoinedRows(selectivity, to_rows(left_rows), to_rows(right_rows)), 1.0, max_search_rows);
             const double inputs_cost = left.cost + right.cost;
 
-            Plan plan;
-            plan.left = lhs_subset;
-            plan.right = rhs_subset;
             plan.left_plan = left_index;
             plan.right_plan = right_index;
             plan.rows_cost = left.rows_cost + right.rows_cost + joined_rows;
-            plan.sel = selectivity.reported_value;
-            plan.kind = kind;
-            plan.strictness = strictness;
             plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, selectivity, kind, strictness);
             plan.search_rows = plan.estimated_rows ? static_cast<double>(*plan.estimated_rows) : joined_rows;
-            plan.edges.assign(edges.begin(), edges.end());
-            plan.method = JoinMethod::Hash;
 
             auto offer = [&](double cost, Int8 state)
             {
@@ -293,43 +336,16 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                     + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
                 right_state == single_node ? any_partitioning : right_state);
 
-            /// Shuffle: both sides hashed by one equality of a class. Predicate cleanup keeps the first edge of a class and
-            /// drops the others as redundant, and when the join has no edge of the class, it may add one with a column that
-            /// is not known here. After a shuffle by an edge of two columns of one type, Cascades knows the rows are hashed
-            /// by these two columns, so a later shuffle by an edge with one of them moves no rows of that side. An edge cast
-            /// before hashing, or an added one, gives rows that no later join reuses.
-            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+            for (const auto & shuffle : split_shuffles)
             {
-                const auto key_class = static_cast<UInt32>(std::countr_zero(classes));
-                const auto edge = std::ranges::find_if(edges, [&](const JoinActionRef * candidate)
-                {
-                    return optimizer.shuffleKey(candidate).key_class == static_cast<Int32>(key_class);
-                });
-                if (edge == edges.end())
-                {
-                    if (optimizer.hasSynthesizedShuffleKey(key_class, !edges.empty()))
-                        offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes)
-                                + join_cost.toNewPartitioning(right_state, right_rows, right_bytes) + join_work(nodes),
-                            any_partitioning);
-                    continue;
-                }
-
-                const auto & key = optimizer.shuffleKey(*edge);
-                if (!key.hashable)
-                    continue;
-                const bool lhs_on_left = (left_mask >> key.lhs_relation) & 1;
-                const UInt32 left_relation = lhs_on_left ? key.lhs_relation : key.rhs_relation;
-                const UInt32 right_relation = lhs_on_left ? key.rhs_relation : key.lhs_relation;
                 auto move = [&](Int8 state, UInt32 relation, double rows, double bytes)
                 {
-                    return key.raw && optimizer.isPartitionedBy(state, key_class, relation) ? 0.0 : join_cost.toNewPartitioning(state, rows, bytes);
+                    const bool reused = shuffle.raw && optimizer.isPartitionedBy(state, shuffle.key_class, relation);
+                    return reused ? 0.0 : join_cost.toNewPartitioning(state, rows, bytes);
                 };
-                const Int8 state = key.raw
-                    ? optimizer.partitionState(key_class, (static_cast<UInt32>(1) << left_relation) | (static_cast<UInt32>(1) << right_relation))
-                    : any_partitioning;
-                offer(move(left_state, left_relation, left_rows, left_bytes) + move(right_state, right_relation, right_rows, right_bytes)
-                        + join_work(nodes),
-                    state);
+                offer(move(left_state, shuffle.left_relation, left_rows, left_bytes)
+                        + move(right_state, shuffle.right_relation, right_rows, right_bytes) + join_work(nodes),
+                    shuffle.state);
             }
 
             /// Local: both sides on one node.

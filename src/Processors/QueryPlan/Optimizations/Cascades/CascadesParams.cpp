@@ -32,4 +32,11 @@ size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit)
     return default_limit;
 }
 
+size_t getLimitParam(ContextPtr context, const String & name)
+{
+    const auto & parameters = context->getQueryParameters();
+    auto it = parameters.find(name);
+    return it == parameters.end() ? 0 : parse<size_t>(it->second);
+}
+
 }

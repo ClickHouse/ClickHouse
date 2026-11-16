@@ -93,6 +93,10 @@ public:
     explicit DPSubJoinOrderOptimizer(QueryGraph & query_graph_)
         : query_graph(query_graph_)
     {
+        if (query_graph.distribution_plan_pair_limit)
+            plan_pair_limit = std::min(plan_pair_limit, query_graph.distribution_plan_pair_limit);
+        if (query_graph.distribution_partition_state_limit)
+            partition_state_limit = std::min(partition_state_limit, query_graph.distribution_partition_state_limit);
     }
 
     DPJoinEntryPtr solve();
@@ -184,6 +188,22 @@ private:
 
     /// Whether joins are costed by the data they move between nodes, see `QueryGraph::distribution_node_count`.
     bool useDistribution() const { return dpsub_data.distribution; }
+    /// The search keeps a plan per partitioning state, so its work grows with the product of the plans of two sides. It
+    /// costs distributed joins only for graphs with at most this many classes that join two relations or more. After
+    /// this many pairs of plans it adds no more distributed plans, and the graph is planned again without distribution.
+    static constexpr size_t max_distribution_classes = 16;
+    static constexpr size_t max_distributed_plan_pairs = 10'000'000;
+    /// A set keeps a plan for each state, and its plans are numbered with `Int8`: the keyed states and the three negative
+    /// ones must fit into the positive range.
+    static constexpr size_t max_partition_states = std::numeric_limits<Int8>::max() - 3;
+    /// Counts the pairs of plans of a distributed join; false when the search is over the budget and must stop.
+    bool spendDistributedPlanPairs(size_t pairs)
+    {
+        distributed_plan_pairs += pairs;
+        if (distributed_plan_pairs > plan_pair_limit)
+            distribution_stopped = true;
+        return !distribution_stopped;
+    }
     /// The states of a plan's rows over the nodes (`DPPlan::partition_state`): an index in `DPSubData::partition_states`
     /// is partitioned as that entry says, and the negative values are the states below.
     static constexpr Int8 any_partitioning_state = -1; /// Partitioned in a way that no later join uses.
@@ -202,14 +222,13 @@ private:
     };
     const ShuffleKey & shuffleKey(const JoinActionRef * edge) const { return dpsub_data.shuffle_keys[edge - query_graph.edges.data()]; }
     /// Whether predicate cleanup adds an equality of the class to a join with no edge of the class, see `cleanupJoinPredicates`.
-    bool hasSynthesizedShuffleKey(UInt32 key_class, bool join_has_predicates) const
+    bool hasSynthesizedShuffleKey(UInt32 key_class) const
     {
-        const bool hashable = (dpsub_data.shuffle_classes >> key_class) & 1;
-        return hashable && (!join_has_predicates || dpsub_data.class_single_type[key_class]);
+        return ((dpsub_data.shuffle_classes >> key_class) & 1) && dpsub_data.class_single_type[key_class];
     }
-    /// The state of rows that a shuffle by a raw key of the class hashed: Cascades advertises them as hashed by the
-    /// columns of the key, here the columns of the class in `relations`. `any_partitioning_state` when there is no such
-    /// state, for example when a relation has two columns in the class.
+    /// The state of rows that a shuffle by a raw key of the class hashed: Cascades advertises them as hashed by the two
+    /// columns of the key, the columns of the class in `relations`. `any_partitioning_state` when there is no such state,
+    /// for example when a relation has two columns in the class.
     Int8 partitionState(UInt32 key_class, UInt32 relations);
     /// Whether rows in the state are hashed by the column of the class in the relation, so that a shuffle by a raw key
     /// with that column moves no rows.
@@ -306,6 +325,14 @@ private:
 
     const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
     SelectivityEstimate computeSelectivityMask(const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    /// The limits of the distributed search: the defaults above, or lower ones from `QueryGraph`.
+    size_t plan_pair_limit = max_distributed_plan_pairs;
+    size_t partition_state_limit = max_partition_states;
+    size_t distributed_plan_pairs = 0;
+    /// Set when the distributed search went over its budget: its plans are not complete, so its result is not used.
+    bool distribution_stopped = false;
+    /// Set for the second search of a graph, after the distributed one stopped.
+    bool distribution_disabled = false;
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -574,8 +601,9 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.equiv_generation = 0;
 
     const size_t num_classes = dpsub_data.class_members.size();
-    dpsub_data.distribution = query_graph.distribution_node_count > 1 && query_graph.distribution_cost_config
-        && num_classes <= std::numeric_limits<UInt64>::digits;
+    const auto joining_classes = std::ranges::count_if(dpsub_data.class_relations, [](UInt32 relations) { return std::popcount(relations) > 1; });
+    dpsub_data.distribution = query_graph.distribution_node_count > 1 && query_graph.distribution_cost_config && !distribution_disabled
+        && num_classes <= std::numeric_limits<UInt64>::digits && static_cast<size_t>(joining_classes) <= max_distribution_classes;
     dpsub_data.interesting_orders = !dpsub_data.distribution && query_graph.use_interesting_orders
         && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.class_single_type.assign(num_classes, 0);
@@ -1007,7 +1035,7 @@ Int8 DPSubJoinOrderOptimizer::partitionState(UInt32 key_class, UInt32 relations)
     for (size_t i = 0; i < states.size(); ++i)
         if (states[i].key_class == key_class && states[i].relations == relations)
             return static_cast<Int8>(i);
-    if (states.size() >= static_cast<size_t>(std::numeric_limits<Int8>::max()))
+    if (states.size() >= partition_state_limit)
         return any_partitioning_state;
     states.push_back({.key_class = key_class, .relations = relations});
     return static_cast<Int8>(states.size() - 1);
@@ -1546,48 +1574,71 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         return nullptr;
     }
 
-    Checker checker(n, *this);
-    if (useDistribution())
+    /// Returns nothing when the distributed search went over its budget.
+    auto search = [&](Checker & checker) -> std::optional<DPJoinEntryPtr>
     {
-        for (size_t i = 0; i < n; ++i)
+        if (useDistribution())
         {
-            auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
-            leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
-            addLeafStates(static_cast<UInt32>(1) << i, leaf);
+            for (size_t i = 0; i < n; ++i)
+            {
+                auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
+                leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
+                addLeafStates(static_cast<UInt32>(1) << i, leaf);
+            }
         }
-    }
-    Enumerator enumerator(n, log);
-    enumerator.enumerate(checker, query_graph);
+        Enumerator enumerator(n, log);
+        enumerator.enumerate(checker, query_graph);
+        if (distribution_stopped)
+            return std::nullopt;
 
-    const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
-    const auto & dptable = checker.getDPTable();
+        const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
+        const auto & dptable = checker.getDPTable();
 
-    /// The full set is assembled only if the join graph is connected. When it is not e.g.
-    /// cross products, or predicates that reference a single relation or a constant and thus
-    /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
-    /// disconnected components, so the full-set entry is missing (or was never given a join)
-    const bool full_built = dptable.isConnected(full_set)
-                            && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
-    if (!full_built)
+        /// The full set is assembled only if the join graph is connected. When it is not e.g.
+        /// cross products, or predicates that reference a single relation or a constant and thus
+        /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
+        /// disconnected components, so the full-set entry is missing (or was never given a join)
+        const bool full_built = dptable.isConnected(full_set)
+                                && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
+        if (!full_built)
+        {
+            LOG_TRACE(log, "DPsub: join graph is disconnected");
+            return nullptr;
+        }
+
+        if (!useDistribution())
+            return buildPhysicalPlan(dptable, full_set);
+
+        /// The result of the joins goes to one node in the end, so a plan pays the gather of its rows too. This is the cost
+        /// of the plan as the root of the query, not under an aggregation, which needs less.
+        const auto & root = dptable[full_set];
+        const auto join_cost = distributedJoinCost();
+        const double root_bytes = rowBytes(full_set);
+        auto root_cost = [&](const DPPlan & plan) { return plan.cost + join_cost.toSingleNode(plan.partition_state, plan.search_rows, root_bytes); };
+        Int32 root_index = -1;
+        for (size_t i = 0; i < root.ordered.size(); ++i)
+            if (root_cost(root.ordered[i]) < root_cost(root_index < 0 ? root : root.ordered[root_index]))
+                root_index = static_cast<Int32>(i);
+        return buildPhysicalPlan(dptable, full_set, root_index);
+    };
+
     {
-        LOG_TRACE(log, "DPsub: join graph is disconnected");
-        return nullptr;
+        Checker checker(n, *this);
+        auto result = search(checker);
+        if (useDistribution())
+            LOG_TRACE(log, "DPsub: the distribution-aware search visited {} pairs of plans", distributed_plan_pairs);
+        if (result)
+            return *result;
     }
-
-    if (!useDistribution())
-        return buildPhysicalPlan(dptable, full_set);
-
-    /// The result of the joins goes to one node in the end, so a plan pays the gather of its rows too. This is the cost
-    /// of the plan as the root of the query, not under an aggregation, which needs less.
-    const auto & root = dptable[full_set];
-    const auto join_cost = distributedJoinCost();
-    const double root_bytes = rowBytes(full_set);
-    auto root_cost = [&](const DPPlan & plan) { return plan.cost + join_cost.toSingleNode(plan.partition_state, plan.search_rows, root_bytes); };
-    Int32 root_index = -1;
-    for (size_t i = 0; i < root.ordered.size(); ++i)
-        if (root_cost(root.ordered[i]) < root_cost(root_index < 0 ? root : root.ordered[root_index]))
-            root_index = static_cast<Int32>(i);
-    return buildPhysicalPlan(dptable, full_set, root_index);
+    LOG_TRACE(log, "DPsub: the distribution-aware search visited more than {} pairs of plans, planning the graph without distribution",
+        plan_pair_limit);
+    dp_table.clear();
+    expression_selectivity.clear();
+    distribution_disabled = true;
+    distribution_stopped = false;
+    initDPsubScratch();
+    Checker checker(n, *this);
+    return search(checker).value();
 }
 
 }

@@ -197,6 +197,10 @@ struct QueryGraph
     /// rows. DPsub then costs every join as a local, shuffle, broadcast or replicated join, with the cost model of Cascades.
     size_t distribution_node_count = 0;
     std::shared_ptr<const CostConfig> distribution_cost_config;
+    /// Lower limits for the pairs of plans and the partitioning states of that search, 0 for its own limits. Set by tests
+    /// with `_internal_dpsub_distribution_plan_pair_limit` and `_internal_dpsub_distribution_partition_state_limit`.
+    size_t distribution_plan_pair_limit = 0;
+    size_t distribution_partition_state_limit = 0;
     /// Where the rows of a join input are when its own plan ends.
     enum class InputPlacement : uint8_t
     {

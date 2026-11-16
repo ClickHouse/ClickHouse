@@ -1366,6 +1366,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 auto it = parameters.find(CascadesParams::COST_CONFIG);
                 query_graph.distribution_cost_config
                     = std::make_shared<const CostConfig>(it != parameters.end() ? parseCostConfig(it->second) : CostConfig{});
+                query_graph.distribution_plan_pair_limit = getLimitParam(query_context, CascadesParams::DPSUB_PLAN_PAIR_LIMIT);
+                query_graph.distribution_partition_state_limit = getLimitParam(query_context, CascadesParams::DPSUB_PARTITION_STATE_LIMIT);
                 for (auto * input : query_graph_builder.inputs)
                     query_graph.distribution_inputs.push_back(distributionInputOf(*input, optimization_settings.distributed_plan_execute_locally));
             }
