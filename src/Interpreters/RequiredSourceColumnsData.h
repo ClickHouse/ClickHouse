@@ -59,10 +59,10 @@ struct RequiredSourceColumnsData
     bool addArrayJoinAliasIfAny(const IAST & ast);
     void addArrayJoinIdentifier(const ASTIdentifier & node);
 
-    NameSet requiredColumns() const;
+    [[nodiscard]] NameSet requiredColumns() const;
     /// Whether all `appears` appearances of `name` are subcolumns of aliases visible from where they are, e.g. `a.x` in `(tuple(1) AS a).x`.
-    bool isSubcolumnOfAliases(const String & name, size_t appears) const;
-    size_t nameInclusion(const String & name) const;
+    [[nodiscard]] bool isSubcolumnOfAliases(const String & name, size_t appears) const;
+    [[nodiscard]] size_t nameInclusion(const String & name) const;
 };
 
 std::ostream & operator << (std::ostream & os, const RequiredSourceColumnsData & cols);
