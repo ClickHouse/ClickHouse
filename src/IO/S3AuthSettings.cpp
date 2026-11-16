@@ -64,6 +64,9 @@ namespace DB
 DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
 
+/// The settings are serialized with `writeChangedBinary` (see `serialize`), including by code outside of this repository.
+CLIENT_SETTINGS_LIST(ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION, ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION)
+
 namespace S3
 {
 

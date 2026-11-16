@@ -17,7 +17,7 @@ struct AccessToken
     DB::SecretString token;
     std::optional<std::chrono::system_clock::time_point> expires_at;
 
-    bool isExpired() const
+    [[nodiscard]] bool isExpired() const
     {
         if (!expires_at.has_value())
             return false;

@@ -27,7 +27,7 @@ struct DiskEncryptedSettings
     std::unordered_map<UInt128 /* fingerprint */, SecretString /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    SecretString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    [[nodiscard]] SecretString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
@@ -240,7 +240,7 @@ public:
         delegate_transaction->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
         const String & path,
         size_t buf_size,
         WriteMode mode,
@@ -265,7 +265,7 @@ private:
         WriteMode mode,
         const WriteSettings & settings);
 
-    String wrappedPath(const String & path) const
+    [[nodiscard]] String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
     }

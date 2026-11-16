@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <tuple>
@@ -2000,6 +2001,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
+
+    /// The tables are created with the UUIDs stored in ZooKeeper, so a table can get the data path and part names
+    /// of a dropped table with the same UUID, and the caches keyed by them must not serve the dropped table's data.
+    if (std::ranges::any_of(table_name_to_metadata, [&](const auto & table) { return !isTableExist(table.first, getContext()); }))
+        getContext()->clearCaches();
 
     /// Create all needed tables in a proper order
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");

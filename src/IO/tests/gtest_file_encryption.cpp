@@ -300,7 +300,7 @@ namespace
 
         /// `ReadBufferFromFilePRead` is the inner buffer because plain `ReadBufferFromFile`
         /// uses `read` and so reports no `readBigAt` support.
-        std::unique_ptr<ReadBufferFromEncryptedFile> open() const
+        [[nodiscard]] std::unique_ptr<ReadBufferFromEncryptedFile> open() const
         {
             return std::make_unique<ReadBufferFromEncryptedFile>(
                 path, DBMS_DEFAULT_BUFFER_SIZE, std::make_unique<ReadBufferFromFilePRead>(path), key, header);

@@ -296,13 +296,13 @@ public:
     /// NOLINTNEXTLINE
     AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result);
 
-    const Aws::String & getAccessKeyID() const { return access_key_id; }
+    [[nodiscard]] const Aws::String & getAccessKeyID() const { return access_key_id; }
 
-    const Aws::String & getSecretAccessKey() const { return secret_access_key; }
+    [[nodiscard]] const Aws::String & getSecretAccessKey() const { return secret_access_key; }
 
-    const Aws::String & getSessionToken() const { return session_token; }
+    [[nodiscard]] const Aws::String & getSessionToken() const { return session_token; }
 
-    const Aws::Utils::DateTime & getExpiration() const { return expiration; }
+    [[nodiscard]] const Aws::Utils::DateTime & getExpiration() const { return expiration; }
 
 private:
     Aws::String access_key_id;
