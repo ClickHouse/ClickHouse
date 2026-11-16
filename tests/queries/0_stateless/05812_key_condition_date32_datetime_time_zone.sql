@@ -15,6 +15,13 @@ SELECT 'part >=', count() FROM t_part WHERE dt >= toDate32('2024-01-02');
 SELECT 'part =', count() FROM t_part WHERE dt = toDate32('2024-01-02');
 SELECT extract(explain, 'Condition: .*') FROM (EXPLAIN indexes = 1 SELECT dt FROM t_part WHERE dt >= toDate32('2024-01-02')
     SETTINGS optimize_use_implicit_projections = 0) WHERE explain ILIKE '%Condition: %toDate(dt)%';
+-- With a `Date` or a `DateTime64` constant the supertype is one of the two sides, so the constant is not converted.
+SELECT 'part = Date', count() FROM t_part WHERE dt = toDate('2024-01-02');
+SELECT extract(explain, 'Condition: .*') FROM (EXPLAIN indexes = 1 SELECT dt FROM t_part WHERE dt = toDate('2024-01-02')
+    SETTINGS optimize_use_implicit_projections = 0) WHERE explain ILIKE '%Condition: %toDate(dt)%';
+SELECT 'part = DateTime64', count() FROM t_part WHERE dt = toDateTime64('2024-01-02 10:00:00', 0, 'Asia/Tokyo');
+SELECT extract(explain, 'Condition: .*') FROM (EXPLAIN indexes = 1 SELECT dt FROM t_part WHERE dt = toDateTime64('2024-01-02 10:00:00', 0, 'Asia/Tokyo')
+    SETTINGS optimize_use_implicit_projections = 0) WHERE explain ILIKE '%Condition: %toDate(dt)%';
 
 CREATE TABLE t_pk (id UInt64, dt DateTime('Europe/Moscow'), INDEX mm toStartOfHour(dt) TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY toStartOfHour(dt) SETTINGS index_granularity = 1, auto_statistics_types = '';
@@ -29,6 +36,12 @@ CREATE TABLE t_hash (dt DateTime('Europe/Moscow')) ENGINE = MergeTree ORDER BY c
 INSERT INTO t_hash SELECT toDateTime('2024-01-02 00:00:00', 'UTC') + number * 3600 FROM numbers(100);
 SELECT 'hash =', count() FROM t_hash WHERE dt = toDate32('2024-01-02') SETTINGS force_primary_key = 1;
 SELECT 'hash <=>', count() FROM t_hash WHERE dt <=> toDate32('2024-01-02') SETTINGS force_primary_key = 1;
+-- The result depends on the session time zone, so the query condition cache must not reuse it across zones.
+-- `max_block_size = 1` puts every granule in a block of its own, so each granule without matches is cached.
+SELECT 'qcc UTC', count() FROM t_hash WHERE dt >= toDate32('2024-01-03')
+    SETTINGS use_query_condition_cache = 1, session_timezone = 'UTC', max_block_size = 1;
+SELECT 'qcc Asia/Tokyo', count() FROM t_hash WHERE dt >= toDate32('2024-01-03')
+    SETTINGS use_query_condition_cache = 1, session_timezone = 'Asia/Tokyo', max_block_size = 1;
 CREATE TABLE t_hex (dt DateTime('Europe/Moscow')) ENGINE = MergeTree PARTITION BY hex(dt) ORDER BY tuple() SETTINGS auto_statistics_types = '';
 INSERT INTO t_hex SELECT toDateTime('2024-01-01 19:00:00', 'UTC') + number * 3600 FROM numbers(4);
 SELECT 'hex !=', count() FROM t_hex WHERE dt != toDate32('2024-01-02');
