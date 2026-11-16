@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace
 {
 
@@ -58,13 +53,10 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// The same as `FunctionMathBinaryFloat64`, which also derives the result type from it.
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (const auto & arg : arguments)
-            if (!isNativeNumber(arg) && !isDecimal(arg) && !WhichDataType(arg).isBFloat16())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                    arg->getName(), getName());
-        return std::make_shared<DataTypeFloat64>();
+        return "(NativeNumber | Decimal | BFloat16, NativeNumber | Decimal | BFloat16) -> Float64";
     }
 
     /// Matches FunctionMathBinaryFloat64 so that pow(Dynamic, ...) returns Nullable(Float64) instead of Dynamic.
