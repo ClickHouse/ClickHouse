@@ -42,6 +42,42 @@ WHERE database = currentDatabase() AND table = 't_positionless_source' AND event
 
 DROP TABLE t_positionless_source;
 
+-- A merge that keeps every row builds the index of such a part from its rows and merges it with the other parts' indexes.
+
+DROP TABLE IF EXISTS t_positionless_source_ordinary;
+
+CREATE TABLE t_positionless_source_ordinary
+(
+    id UInt64,
+    text String,
+    INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+    allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO t_positionless_source_ordinary SELECT number, 'old row ' || toString(number) FROM numbers(1000);
+
+ALTER TABLE t_positionless_source_ordinary DETACH PARTITION tuple();
+ALTER TABLE t_positionless_source_ordinary DROP INDEX idx_text;
+ALTER TABLE t_positionless_source_ordinary ADD INDEX idx_text (text) TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1) GRANULARITY 1;
+ALTER TABLE t_positionless_source_ordinary ATTACH PARTITION tuple();
+
+INSERT INTO t_positionless_source_ordinary SELECT number, 'new row ' || toString(number) FROM numbers(1000, 500);
+
+OPTIMIZE TABLE t_positionless_source_ordinary FINAL;
+
+SELECT count() FROM t_positionless_source_ordinary WHERE hasPhrase(text, 'old row') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_positionless_source_ordinary WHERE hasPhrase(text, 'new row') SETTINGS force_data_skipping_indices = 'idx_text';
+SELECT count() FROM t_positionless_source_ordinary WHERE hasPhrase(text, 'row old') SETTINGS force_data_skipping_indices = 'idx_text';
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT ProfileEvents['MergedTextIndexes'], ProfileEvents['RebuiltTextIndexes'] FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_positionless_source_ordinary' AND event_type = 'MergeParts' AND error = 0;
+
+DROP TABLE t_positionless_source_ordinary;
+
 -- `MODIFY COLUMN ... ALIAS` changes what an index over the alias indexes without rewriting the index files.
 
 DROP TABLE IF EXISTS t_alias_source;

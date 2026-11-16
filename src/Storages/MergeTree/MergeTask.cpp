@@ -1503,8 +1503,7 @@ static bool hasPartOffsetOrIndexColumn(const ColumnsDescription & columns)
 }
 
 /// `has_due_ttl` is set even if TTL merges are stopped, because column TTL rewrites the expired values anyway.
-MergeTask::RowsReduction MergeTask::getRowsReduction(
-    const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl)
+MergeTask::RowsReduction MergeTask::getRowsReduction(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl)
 {
     const auto & metadata = *global_ctx.metadata_snapshot;
     const auto mode = global_ctx.merging_params.mode;
@@ -1571,7 +1570,25 @@ static bool readsAliasColumn(const IAST & ast, const ColumnsDescription & column
 {
     if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && columns.hasAlias(identifier->name()))
         return true;
+
     return std::ranges::any_of(ast.children, [&](const auto & child) { return readsAliasColumn(*child, columns); });
+}
+
+/// Whether the source part's copy of the text index exists and contains every substream the merged index writes.
+/// An older copy (e.g. no `.pos` while the index now has `support_phrase_search = 1`) is rebuilt from the rows instead.
+static bool canMergeTextIndexFromIndexFiles(const IMergeTreeIndex & index, const IMergeTreeDataPart & part)
+{
+    auto format = index.getDeserializedFormat(part, index.getFileName());
+    if (!format)
+        return false;
+
+    for (const auto & substream : index.getSubstreams())
+    {
+        if (!std::ranges::contains(format.substreams, substream.type, &MergeTreeIndexSubstream::type))
+            return false;
+    }
+
+    return true;
 }
 
 bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
@@ -1595,24 +1612,12 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
             return true;
 
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx.metadata_snapshot, index, *global_ctx.data_settings);
-        const auto required_substreams = index_ptr->getSubstreams();
 
+        /// A part without a compatible index would build it from all of its rows, dropped ones included.
         for (const auto & part : global_ctx.future_part->parts)
         {
-            if (part->rows_count == 0)
-                continue;
-
-            /// A part without the index would build it from all of its rows, dropped ones included.
-            auto format = index_ptr->getDeserializedFormat(*part, index_ptr->getFileName());
-            if (!format)
+            if (part->rows_count != 0 && !canMergeTextIndexFromIndexFiles(*index_ptr, *part))
                 return true;
-
-            /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
-            for (const auto & required : required_substreams)
-            {
-                if (!std::ranges::contains(format.substreams, required.type, &MergeTreeIndexSubstream::type))
-                    return true;
-            }
         }
     }
 
@@ -3126,9 +3131,9 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                     && global_ctx->merged_part_offsets->getPartSurvivingRowsCount(part_idx) == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (canMergeTextIndexFromIndexFiles(*index_ptr, *part))
                 {
-                    /// If text index exists in the source part, take it as is.
+                    /// If a compatible text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
                 }
                 else
@@ -3754,8 +3759,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
         /// Rebuild index if part offsets cannot be adjusted for this merge.
-        /// Build index if it is not materialized in the data part.
-        if (global_ctx->rebuild_text_indexes || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        /// Build index if it is not materialized in the data part or lacks a substream of the current definition.
+        if (global_ctx->rebuild_text_indexes || !canMergeTextIndexFromIndexFiles(*index_ptr, data_part))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));

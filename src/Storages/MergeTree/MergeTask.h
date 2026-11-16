@@ -655,8 +655,7 @@ private:
     static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
-    static RowsReduction getRowsReduction(
-        const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl);
+    static RowsReduction getRowsReduction(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl);
     static bool needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
     static MergeCheckpointIdentity makeMergeCheckpointIdentity(const GlobalRuntimeContext & global_ctx);
