@@ -24,8 +24,8 @@ class MergeTreeMarksGetter
 public:
     MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_);
 
-    MarkInCompressedFile getMark(size_t row_index, size_t column_index) const;
-    size_t getNumColumns() const { return num_columns_in_mark; }
+    [[nodiscard]] MarkInCompressedFile getMark(size_t row_index, size_t column_index) const;
+    [[nodiscard]] size_t getNumColumns() const { return num_columns_in_mark; }
 
 private:
     const MarkCache::MappedPtr marks;

@@ -6,9 +6,7 @@ title: 'Cache de páginas em espaço de usuário'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 > O cache de páginas em espaço de usuário é um novo mecanismo de cache que permite armazenar
 > dados na memória do processo, em vez de depender do cache de páginas do SO.
@@ -28,13 +26,9 @@ Ele difere do cache do sistema de arquivos das seguintes maneiras:
 | Não aparece no uso de memória do servidor                              | Aparece no uso de memória do servidor        |
 | Adequado tanto para disco quanto para memória (cache de páginas do SO) | **Bom para servidores sem disco**            |
 
-<div id="configuration-settings-and-usage">
-  ## Opções de configuração e uso
-</div>
+## Opções de configuração e uso {#configuration-settings-and-usage}
 
-<div id="usage">
-  ### Uso
-</div>
+### Uso {#usage}
 
 Para habilitar o cache de páginas em espaço de usuário, primeiro configure-o no servidor:
 
@@ -55,9 +49,7 @@ Em seguida, habilite seu uso no nível da consulta:
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
 
-<div id="settings">
-  ### Configurações
-</div>
+### Configurações {#settings}
 
 | Configuração                                            | Descrição                                                                                                                                                                                                                                                                                                                                                              | Padrão      |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -75,9 +67,7 @@ SET use_page_cache_for_disks_without_file_cache=1;
 | `page_cache_lookahead_blocks`                           | Quando houver falha no cache de páginas em espaço de usuário, lê de uma só vez até essa quantidade de blocos consecutivos do armazenamento subjacente, se eles também não estiverem no cache. Cada bloco tem page&#95;cache&#95;block&#95;size bytes.                                                                                                                  | `16`        |
 | `page_cache_shards`                                     | Distribui o cache de páginas em espaço de usuário entre esta quantidade de shards para reduzir a contenção de mutex. Experimental, provavelmente não melhorará o desempenho.                                                                                                                                                                                           | `4`         |
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * [Cache do sistema de arquivos](/pt-BR/concepts/features/configuration/server-config/storing-data)
 * [Webinar de lançamento do ClickHouse v25.3](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)
