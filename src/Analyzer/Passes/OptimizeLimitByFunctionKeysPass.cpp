@@ -35,7 +35,13 @@ public:
 
         /// A `GROUP BY` key is not a function of other ones in subtotals: it can have a default value there.
         const bool has_subtotals = query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets();
-        removeKeysThatAreFunctionsOfOtherKeys(query->getLimitBy().getNodes(), has_subtotals ? getGroupByKeys(*query) : QueryTreeNodes{});
+        auto & keys = query->getLimitBy().getNodes();
+        const QueryTreeNodePtrWithHashSet all_keys(keys.begin(), keys.end());
+        removeKeysThatAreFunctionsOfOtherKeys(keys, has_subtotals ? getGroupByKeys(*query) : QueryTreeNodes{});
+
+        for (auto & key : keys)
+            if (has_subtotals && isExpressionFunctionOfKeys(key, all_keys))
+                key = cloneWithoutAliases(key);
     }
 };
 

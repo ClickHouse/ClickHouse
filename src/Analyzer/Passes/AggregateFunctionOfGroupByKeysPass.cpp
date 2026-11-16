@@ -21,6 +21,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
 }
 
@@ -225,7 +226,7 @@ public:
         if (!collecting_output_nodes && node_type == QueryTreeNodeType::FUNCTION)
         {
             auto * function_node = node->as<FunctionNode>();
-            if (array_join_depth == 0 && aggregationCanBeEliminated(node, group_by_keys_stack.back()))
+            if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
             {
                 /// min(LowCardinality(String)) is String: a filter keeps the bare key for the pushdown,
                 /// an output position casts it back to keep the observable type.
@@ -341,8 +342,7 @@ private:
         if (group_by_keys.keys.empty())
             return false;
 
-        if (group_by_keys.only_in_filters && (!filter_root || equal_to_output_depth != 0))
-            return false;
+        bool changes_result = array_join_depth != 0 || (group_by_keys.only_in_filters && (!filter_root || equal_to_output_depth != 0));
 
         auto * function = node->as<FunctionNode>();
         if (!function || !function->isAggregateFunction())
@@ -380,10 +380,13 @@ private:
         if (function_arguments.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single argument of function '{}' but received {}", function->getFunctionName(), function_arguments.size());
 
-        /// Compare names, because types with a custom name, like `Bool`, are equal to the types without it.
-        if (recursiveRemoveLowCardinality(function->getResultType())->getName()
-            != recursiveRemoveLowCardinality(function_arguments[0]->getResultType())->getName())
+        const auto result_type = recursiveRemoveLowCardinality(function->getResultType());
+        const auto argument_type = recursiveRemoveLowCardinality(function_arguments[0]->getResultType());
+        if (!result_type->equals(*argument_type))
             return false;
+
+        /// Types with a custom name, like `Bool`, are equal to the types without it.
+        changes_result |= result_type->getName() != argument_type->getName();
 
         candidates.push_back({ function_arguments[0], true });
 
@@ -393,14 +396,12 @@ private:
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
-            if (!group_by_keys.parts_of_other_keys.empty() && group_by_keys.parts_of_other_keys.contains(candidate))
-                return false;
+            changes_result |= !group_by_keys.parts_of_other_keys.empty() && group_by_keys.parts_of_other_keys.contains(candidate);
 
             bool found = group_by_keys.keys.contains(candidate);
 
             /// For example, `arrayJoin` of a key has several values in a group.
-            if (found && !parents_are_only_deterministic)
-                return false;
+            changes_result |= found && !parents_are_only_deterministic;
 
             switch (candidate->getNodeType())
             {
@@ -433,7 +434,17 @@ private:
             }
         }
 
-        return true;
+        if (!changes_result)
+            return true;
+
+        /// A remote server would calculate them with other names of arguments (https://github.com/ClickHouse/ClickHouse/issues/130512).
+        if (hasFunctionNode(node, "formatRow") || hasFunctionNode(node, "formatRowNoNewline")
+            || (getSettings()[Setting::enable_named_columns_in_function_tuple] && hasFunctionNode(node, "tuple")))
+            return true;
+
+        /// In a positional argument it has the alias of the projection, and a remote server can find different definitions of it.
+        node->removeAlias();
+        return false;
     }
 
     GroupByKeysStack group_by_keys_stack;

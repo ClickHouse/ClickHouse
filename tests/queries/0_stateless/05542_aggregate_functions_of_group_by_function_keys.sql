@@ -34,3 +34,14 @@ SELECT 'grouping';
 SELECT number + 1 AS a, toString(a) AS b, grouping(b) AS g FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY a, b ORDER BY a;
 SELECT number + 1 AS a, toString(a) AS b, count() FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY a, b HAVING grouping(b) = 0 ORDER BY a;
 SELECT number AS a, ((number, 2), 2) AS b, grouping(a) AS g FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY a, b ORDER BY a;
+
+SELECT 'positional arguments with aliases';
+SET enable_positional_arguments = 1, optimize_limit_by_function_keys = 1;
+SELECT (SELECT groupArray(x + m) FROM (SELECT number + 1 AS x, max(arrayJoin([x])) AS m FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY 1 ORDER BY 1, 2 LIMIT 2));
+SELECT (SELECT (count(), sum(y - x)) FROM (SELECT number AS y, negate(abs(y) AS a) AS x FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY x, y WITH ROLLUP LIMIT 1 BY y, 2));
+SELECT number * 2 AS x, abs(max(number + 1 AS a)) FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY number ORDER BY 1 WITH FILL, 2 INTERPOLATE (a AS a + 1);
+SELECT number, max(formatRowNoNewline('TSKV', number + 1 AS z)) FROM remote('127.0.0.{2,3}', numbers(2)) GROUP BY number ORDER BY number WITH FILL, 2 SETTINGS serialize_query_plan = 0;
+SELECT 'self join';
+SELECT b.number AS y, negate(a.number) AS x, negate(b.number) AS z FROM numbers(2) AS a CROSS JOIN numbers(2) AS b GROUP BY y, z, x WITH ROLLUP ORDER BY y, z, x LIMIT 1 BY 1, 3;
+SELECT 'time zones';
+SELECT number AS y, toHour(toDateTime(0, 'UTC') + y * 3600) AS h, toHour(toDateTime(0, 'Asia/Tokyo') + y * 3600) AS k FROM numbers(2) GROUP BY k, y WITH ROLLUP ORDER BY y, k LIMIT 1 BY 1, 3;
