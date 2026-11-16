@@ -147,6 +147,7 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
             {
                 CurrentThread::checkIfNotCancelled();
                 producer->poll(timeout);
+                throwIfDeliveryFailed();
                 continue;
             }
             ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
@@ -182,6 +183,11 @@ void KafkaProducer::finish()
         break;
     }
 
+    throwIfDeliveryFailed();
+}
+
+void KafkaProducer::throwIfDeliveryFailed()
+{
     if (size_t failed = std::exchange(failed_deliveries, 0))
         throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
             "Failed to deliver {} message(s) to Kafka topic '{}': {}", failed, topic, first_delivery_error.to_string());

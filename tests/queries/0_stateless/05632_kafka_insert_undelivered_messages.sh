@@ -21,10 +21,10 @@ cleanup()
     trap - EXIT INT TERM
     set +e
 
-    for table in missing_topic no_broker no_broker_keeper kill; do
+    for table in missing_topic no_broker no_broker_keeper queue_full kill; do
         $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${name}_${table}" 2>/dev/null
     done
-    for collection in missing_topic no_broker kill; do
+    for collection in missing_topic no_broker queue_full kill; do
         $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${name}_${collection}" 2>/dev/null
     done
 
@@ -43,11 +43,15 @@ $CLICKHOUSE_CLIENT -q "
     CREATE NAMED COLLECTION ${name}_no_broker AS
         kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = '${name}', kafka_format = 'JSONEachRow',
         \`kafka.message_timeout_ms\` = '1000';
+    CREATE NAMED COLLECTION ${name}_queue_full AS
+        kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = '${name}', kafka_format = 'JSONEachRow',
+        \`kafka.message_timeout_ms\` = '1000', \`kafka.queue_buffering_max_messages\` = '1';
     CREATE NAMED COLLECTION ${name}_kill AS
         kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = '${name}', kafka_format = 'JSONEachRow',
         \`kafka.message_timeout_ms\` = '30000', \`kafka.queue_buffering_max_messages\` = '1';
     CREATE TABLE ${name}_missing_topic (x UInt64) ENGINE = Kafka(${name}_missing_topic);
     CREATE TABLE ${name}_no_broker (x UInt64) ENGINE = Kafka(${name}_no_broker);
+    CREATE TABLE ${name}_queue_full (x UInt64) ENGINE = Kafka(${name}_queue_full);
     CREATE TABLE ${name}_kill (x UInt64) ENGINE = Kafka(${name}_kill);"
 $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
     CREATE TABLE ${name}_no_broker_keeper (x UInt64) ENGINE = Kafka(${name}_no_broker)
@@ -56,6 +60,8 @@ $CLICKHOUSE_CLIENT --allow_kafka_offsets_storage_in_keeper 1 -q "
 echo "missing topic: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_missing_topic VALUES (1)" 2>&1 | grep -m1 -c "Failed to deliver 1 message(s) to Kafka topic '${missing_topic}'.*Unknown topic")"
 echo "no broker: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker VALUES (1)" 2>&1 | grep -m1 -c 'Failed to deliver 1 message(s).*Message timed out')"
 echo "no broker, offsets in Keeper: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker_keeper VALUES (1)" 2>&1 | grep -m1 -c 'Failed to deliver 1 message(s).*Message timed out')"
+# The failure of message 1 is seen while message 2 waits for room in the one-message queue, so the INSERT stops there.
+echo "queue full: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_queue_full SELECT number FROM numbers(5)" 2>&1 | grep -m1 -c 'Failed to deliver 1 message(s).*Message timed out')"
 # The INSERT reports the error of its SELECT, not the failed delivery of the rows produced before it.
 echo "select error: $($CLICKHOUSE_CLIENT -q "INSERT INTO ${name}_no_broker SELECT throwIf(number = 3) FROM numbers(10) SETTINGS max_block_size = 1" 2>&1 | grep -m1 -c 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO')"
 

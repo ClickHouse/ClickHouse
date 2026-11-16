@@ -34,6 +34,8 @@ public:
     void cancel() noexcept override;
 
 private:
+    void throwIfDeliveryFailed();
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};
 
     /// Written by the delivery report callback of `producer`, so they must outlive it.

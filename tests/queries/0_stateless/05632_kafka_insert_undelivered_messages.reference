@@ -1,6 +1,7 @@
 missing topic: 1
 no broker: 1
 no broker, offsets in Keeper: 1
+queue full: 1
 select error: 1
 killed: 1
 cancelled: 1
