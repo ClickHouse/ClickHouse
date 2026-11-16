@@ -1092,8 +1092,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         return;
 
     /// Reads Keeper nodes in batches of keeper_multiread_batch_size, like the
-    /// cleanup threads do, so a large listing never turns into one oversized
-    /// multi-read request.
+    /// cleanup threads do. Zero means no batching: everything in one read.
     struct NodeValue
     {
         Coordination::Error error = Coordination::Error::ZOK;
@@ -1102,14 +1101,12 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     auto multi_try_get = [&](const std::vector<std::string> & node_paths)
     {
         std::vector<NodeValue> values;
+        if (node_paths.empty())
+            return values;
         values.reserve(node_paths.size());
-        const size_t batch_size = std::max<size_t>(keeper_multiread_batch_size, 1);
-        for (size_t offset = 0; offset < node_paths.size(); offset += batch_size)
-        {
-            std::vector<std::string> batch(
-                node_paths.begin() + offset,
-                node_paths.begin() + std::min(offset + batch_size, node_paths.size()));
 
+        auto read_batch = [&](const std::vector<std::string> & batch)
+        {
             zkutil::ZooKeeper::MultiTryGetResponse responses;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
             {
@@ -1129,6 +1126,19 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 value.error = response.error;
                 value.data = response.data;
             }
+        };
+
+        if (!keeper_multiread_batch_size || node_paths.size() <= keeper_multiread_batch_size)
+        {
+            read_batch(node_paths);
+            return values;
+        }
+
+        for (size_t offset = 0; offset < node_paths.size(); offset += keeper_multiread_batch_size)
+        {
+            read_batch(std::vector<std::string>(
+                node_paths.begin() + offset,
+                node_paths.begin() + std::min(offset + keeper_multiread_batch_size, node_paths.size())));
         }
         return values;
     };
@@ -1143,9 +1153,10 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     /// per poll, almost all of them for buckets this batch has nothing to do
     /// with (with partition bucketing a writer always lands in the same bucket).
     ///
-    /// Without partitioning the partition key is an empty string. A file whose
-    /// partition key can't be parsed is tracked by the bucket-level node, same
-    /// as in getProcessingStateFromKeeper.
+    /// Without partitioning the partition key is an empty string and the
+    /// bucket-level node is the one to read. With partitioning, a file whose
+    /// partition key can't be parsed has no per-partition node, so nothing is
+    /// read for it and it is never filtered out as processed here, as before.
     using PartitionKey = std::string;
     using WatermarkKey = std::pair<Bucket, PartitionKey>;
 
@@ -1160,7 +1171,8 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         PartitionKey partition_key = partitioned ? getPartitionKey(path, partitioning_mode, parser) : "";
         WatermarkKey key{bucket, std::move(partition_key)};
 
-        if (!watermark_node_paths.contains(key))
+        const bool has_processed_node = !partitioned || !key.second.empty();
+        if (has_processed_node && !watermark_node_paths.contains(key))
         {
             std::filesystem::path node_path = use_buckets_for_processing
                 ? getProcessedPathWithBucket(zk_path_, bucket)
