@@ -2833,7 +2833,7 @@ static void renameColumnsByPosition(QueryPlan & plan, const Block & header, cons
 /// matches `NULL` with `NULL` like the set operation does. The `DISTINCT` step added after it deduplicates only after
 /// LEFT ANTI: INNER ANY and RIGHT ANTI emit each key once.
 static QueryPlan buildIntersectOrExceptDistinctAsJoin(
-    SelectUnionMode union_mode, std::vector<std::unique_ptr<QueryPlan>> query_plans, const Block & header, const ContextPtr & query_context)
+    SelectUnionMode union_mode, VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans, const Block & header, const ContextPtr & query_context)
 {
     chassert(query_plans.size() == 2);
 
@@ -2849,7 +2849,7 @@ static QueryPlan buildIntersectOrExceptDistinctAsJoin(
     const auto & right_header = query_plans[1]->getCurrentHeader();
 
     JoinExpressionActions join_expression_actions(*left_header, *right_header);
-    std::vector<JoinActionRef> predicates;
+    VectorWithMemoryTracking<JoinActionRef> predicates;
     predicates.reserve(num_columns);
     std::vector<const ActionsDAG::Node *> output_nodes;
     output_nodes.reserve(num_columns);
