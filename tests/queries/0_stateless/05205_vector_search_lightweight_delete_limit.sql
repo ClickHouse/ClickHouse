@@ -23,7 +23,7 @@ SET min_bytes_to_use_direct_io = 0;
 DROP TABLE IF EXISTS t_05205;
 -- `ReplacingMergeTree` (the ids are unique, so it reads like a `MergeTree`) to check the `FINAL` read as well.
 CREATE TABLE t_05205 (id UInt64, v Array(Float32), INDEX vidx v TYPE vector_similarity('hnsw', 'L2Distance', 2, 'f32', 16, 32))
-ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 10485760;
+ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 10485760, allow_vector_similarity_index_in_specialized_merge_tree = 1;
 INSERT INTO t_05205 SELECT number, [toFloat32(number % 10), toFloat32(intDiv(number, 10) % 10)] FROM numbers(300);
 
 -- The three exact matches of the reference vector.
