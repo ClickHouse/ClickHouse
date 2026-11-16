@@ -1,4 +1,6 @@
+#include <Access/AccessControl.h>
 #include <Access/DefinerDependencies.h>
+#include <Access/User.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
@@ -27,6 +29,7 @@
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
+#include <base/sort.h>
 
 #include <ranges>
 
@@ -439,6 +442,30 @@ private:
     bool show_plan;
 };
 
+/// Whether the query runs with the identity the query of the view runs with: its definer, with the definer's default roles
+/// and without a limit from the authentication method. Such a query can read whatever the view reads.
+bool runsAsDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    if (metadata.sql_security_type != SQLSecurityType::DEFINER || !metadata.definer)
+        return false;
+
+    /// A secondary query runs as the user the initiator was authenticated as (or as the cluster user), without the limits of the
+    /// initiator's credential, so only an initial query is known to have the definer's full identity.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY || context->getAuthenticationGrants())
+        return false;
+
+    /// By ID: users of different storages may share a name.
+    const auto definer_id = context->getAccessControl().find<User>(*metadata.definer);
+    const auto user = context->getAccess()->tryGetUser();
+    if (!definer_id || !user || context->getUserID() != definer_id)
+        return false;
+
+    auto default_roles = user->granted_roles.findGranted(user->default_roles);
+    ::sort(default_roles.begin(), default_roles.end());
+    /// The current and external roles together, sorted.
+    return context->getCurrentRoles() == default_roles;
+}
+
 /// Whether the plan of the view, which runs with the view's privileges, holds nothing new to the user.
 /// That is the case for the definer, and for a user who could have created the same view: `SET DEFINER` on the
 /// definer (or `ALLOW SQL SECURITY NONE` for a `NONE` view) is not enough for that, because `CREATE VIEW` also
@@ -458,7 +485,7 @@ bool canSeeViewPlan(const StorageID & view_id, const StorageInMemoryMetadata & m
     {
         if (!metadata.definer)
             return false;
-        if (*metadata.definer == context->getUserName())
+        if (runsAsDefiner(metadata, context))
             return true;
         if (!access->isGranted(AccessType::SET_DEFINER, *metadata.definer))
             return false;
@@ -706,6 +733,12 @@ bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const Conte
     return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
 }
 
+bool StorageView::isReadByDefiner(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
+{
+    /// A row policy on the view itself restricts even the definer, so the view stays sealed then.
+    return runsAsDefiner(metadata, context) && !getEffectiveRowPolicyFilter(*this, context);
+}
+
 StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
 {
     if (is_parameterized_view || isSealed(*snapshot->metadata, context))
@@ -742,7 +775,7 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    const bool sealed = isSealed(*storage_snapshot->metadata, context);
+    const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
