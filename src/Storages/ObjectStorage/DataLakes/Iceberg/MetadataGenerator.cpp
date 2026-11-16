@@ -10,8 +10,11 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Common/randomSeed.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
@@ -108,36 +111,16 @@ void setSnapshotTotals(
     set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
 
+constexpr UInt32 max_iceberg_decimal_precision = 38;
+
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
-    if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
-        return true;
+    /// A primitive type is a string, such as "long" or "decimal(9, 2)". A nested type is an object; changing it is not supported.
+    if (!old_type.isString() || !new_type.isString())
+        return false;
+    return Iceberg::IcebergSchemaProcessor::allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>());
+}
 
-    if (new_type.isString() && new_type.extract<String>() == "long" &&
-        old_type.isString() && (old_type.extract<String>() == "long" ||  old_type.extract<String>() == "int"))
-    {
-        return true;
-    }
-
-    if (new_type.isString() && new_type.extract<String>() == "double" &&
-        old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
-    {
-        return true;
-    }
-
-    {
-        auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
-        auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
-
-        if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
-            (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
-             old_complex_type->getValue<Int32>("scale") <= new_complex_type->getValue<Int32>("scale")))
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 /// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
@@ -148,8 +131,6 @@ Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
     for (UInt32 i = 0; i < schemas->size(); ++i)
         result = std::max(result, Iceberg::IcebergSchemaProcessor::getMaxFieldId(schemas->getObject(i)->getArray(Iceberg::f_fields)));
     return static_cast<Int32>(result);
-}
-
 }
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
@@ -577,8 +558,20 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
-            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
+            const auto old_field_type = current_field->get(Iceberg::f_type);
+            if (!checkValidSchemaEvolution(old_field_type, new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
+
+            /// The Iceberg spec limits the precision of a decimal to 38. A table with a wider decimal
+            /// cannot be loaded by the readers that enforce it, so do not promote a column to such a type.
+            const auto nested_type = removeNullable(type);
+            if (isDecimal(nested_type) && getDecimalPrecision(*nested_type) > max_iceberg_decimal_precision
+                && old_field_type.convert<String>() != new_type.first.convert<String>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg spec doesn't allow schema evolution to type {}: the maximum precision of an Iceberg decimal is {}",
+                    type->getPrettyName(),
+                    max_iceberg_decimal_precision);
 
             auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
