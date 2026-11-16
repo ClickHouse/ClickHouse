@@ -92,7 +92,7 @@ public:
     /// Replay raw terminal bytes typed while a query ran as key presses of the next readLine call.
     virtual void addTypedInput(const String &) {}
 
-    bool hasInputData() const;
+    [[nodiscard]] bool hasInputData() const;
 
 protected:
     enum InputStatus

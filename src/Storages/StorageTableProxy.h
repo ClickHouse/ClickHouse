@@ -91,7 +91,7 @@ public:
     /// The loaded storage, or nullptr if the table has not been loaded yet. Unlike `tryGetNested`,
     /// never waits for a load in progress: the database calls this with its own mutex held, see
     /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
-    StoragePtr getLoadedTable() const
+    [[nodiscard]] StoragePtr getLoadedTable() const
     {
         if (!is_loaded.load(std::memory_order_acquire))
             return nullptr;
@@ -108,8 +108,8 @@ public:
 
     /// Only asked about a table that is about to be read or written inside a transaction, or written
     /// to on a read-only disk, so loading it costs nothing.
-    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
-    bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
+    [[nodiscard]] bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    [[nodiscard]] bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
 
     bool storesDataOnDisk() const override { return true; }
     /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
