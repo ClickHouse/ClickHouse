@@ -778,14 +778,14 @@ namespace
 class AggregateFunctionCombinatorTuple final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Tuple"; }
+    [[nodiscard]] String getName() const override { return "Tuple"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    bool transformsMultipleNestedFunctions() const override { return true; }
+    [[nodiscard]] bool transformsMultipleNestedFunctions() const override { return true; }
 
     /// The elements of the tuples are passed to the nested functions row by row, so the tuples are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     void convertVariantArgumentsAroundMultipleNestedFunctions(
         DataTypes & arguments, const VectorWithMemoryTracking<DataTypes> & converted_nested_arguments_list) const override
@@ -805,7 +805,7 @@ public:
         }
     }
 
-    VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
+    [[nodiscard]] VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -849,7 +849,7 @@ public:
         return nested_arguments_list;
     }
 
-    AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
         const String & nested_name,
         VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions,
         const AggregateFunctionProperties &,

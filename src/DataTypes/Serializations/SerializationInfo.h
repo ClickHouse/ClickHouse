@@ -68,8 +68,8 @@ public:
 
     virtual ~SerializationInfo() = default;
 
-    virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
-    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
+    [[nodiscard]] virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
+    [[nodiscard]] virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
@@ -77,9 +77,9 @@ public:
     virtual void addDefaults(size_t length);
     virtual void replaceData(const SerializationInfo & other);
 
-    virtual std::shared_ptr<SerializationInfo> clone() const;
+    [[nodiscard]] virtual std::shared_ptr<SerializationInfo> clone() const;
 
-    virtual std::shared_ptr<SerializationInfo> createWithType(
+    [[nodiscard]] virtual std::shared_ptr<SerializationInfo> createWithType(
         const IDataType & old_type,
         const IDataType & new_type,
         const SerializationInfoSettings & new_settings) const;
@@ -110,9 +110,9 @@ public:
     /// encoded source part would keep the result encoded and would also outvote sparse serialization.
     void resetLowCardinality();
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
-    const SerializationInfoSettings & getSettings() const { return settings; }
-    const Data & getData() const { return data; }
-    const ISerialization::KindStack & getKindStack() const { return kind_stack; }
+    [[nodiscard]] const SerializationInfoSettings & getSettings() const { return settings; }
+    [[nodiscard]] const Data & getData() const { return data; }
+    [[nodiscard]] const ISerialization::KindStack & getKindStack() const { return kind_stack; }
 
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
@@ -150,9 +150,9 @@ public:
     void remove(const SerializationInfoByName & other);
     void remove(const String & name, const SerializationInfo & info);
 
-    SerializationInfoPtr tryGet(const String & name) const;
+    [[nodiscard]] SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
-    ISerialization::KindStack getKindStack(const String & column_name) const;
+    [[nodiscard]] ISerialization::KindStack getKindStack(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
@@ -161,13 +161,13 @@ public:
 
     void writeJSON(WriteBuffer & out) const;
 
-    SerializationInfoByName clone() const;
+    [[nodiscard]] SerializationInfoByName clone() const;
 
-    const Settings & getSettings() const { return settings; }
+    [[nodiscard]] const Settings & getSettings() const { return settings; }
 
-    MergeTreeSerializationInfoVersion getVersion() const;
+    [[nodiscard]] MergeTreeSerializationInfoVersion getVersion() const;
 
-    bool needsPersistence() const;
+    [[nodiscard]] bool needsPersistence() const;
 
     /// Describes a column that is absent from the part's data files and whose
     /// values are the recorded type's default.
@@ -181,11 +181,11 @@ public:
     };
     using MissingColumns = std::vector<MissingColumnInfo>;
 
-    const MissingColumns & getMissingColumns() const { return missing_columns; }
+    [[nodiscard]] const MissingColumns & getMissingColumns() const { return missing_columns; }
     void setMissingColumns(MissingColumns columns);
 
-    bool isMissingColumn(const String & name) const;
-    const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
+    [[nodiscard]] bool isMissingColumn(const String & name) const;
+    [[nodiscard]] const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 

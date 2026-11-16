@@ -104,12 +104,12 @@ struct PackedStringRefT : PackedStringRefWords<HASH_BYTES>
 
 private:
     ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
-    ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
+    [[nodiscard]] ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
 
     /// Every `build` path value-initializes both words before any byte is read, so the tag byte is
     /// always defined; the analyzer cannot see that through the byte-punned `rawBytes` read.
     // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.UndefReturn)
-    ALWAYS_INLINE uint8_t getTagByte() const { return rawBytes()[TAG_BYTE_OFFSET]; }
+    [[nodiscard]] ALWAYS_INLINE uint8_t getTagByte() const { return rawBytes()[TAG_BYTE_OFFSET]; }
 
     /// Store the low `n` bytes (n <= 8) of `value` at `dst` in little-endian
     /// byte order, regardless of host endianness.
@@ -179,38 +179,38 @@ private:
     }();
 
 public:
-    ALWAYS_INLINE bool isLarge() const
+    [[nodiscard]] ALWAYS_INLINE bool isLarge() const
     {
         return (getTagByte() & LARGE_TAG_BYTE) != 0;
     }
 
-    ALWAYS_INLINE bool isEmpty() const
+    [[nodiscard]] ALWAYS_INLINE bool isEmpty() const
     {
         return high == 0;
     }
 
-    ALWAYS_INLINE bool isMedium() const
+    [[nodiscard]] ALWAYS_INLINE bool isMedium() const
         requires(HASH_BYTES > 0)
     {
         return !isLarge() && getSmallSize() == 0 && !isEmpty();
     }
 
-    ALWAYS_INLINE bool isSmall() const
+    [[nodiscard]] ALWAYS_INLINE bool isSmall() const
     {
         return !isLarge() && getSmallSize() != 0;
     }
 
-    ALWAYS_INLINE uint8_t getSmallSize() const
+    [[nodiscard]] ALWAYS_INLINE uint8_t getSmallSize() const
     {
         return static_cast<uint8_t>((getTagByte() & SMALL_LEN_NIBBLE_MASK) >> SMALL_LEN_SHIFT_IN_BYTE);
     }
 
-    ALWAYS_INLINE const char * getSmallPtr() const
+    [[nodiscard]] ALWAYS_INLINE const char * getSmallPtr() const
     {
         return reinterpret_cast<const char *>(rawBytes() + SMALL_PAYLOAD_OFFSET);
     }
 
-    ALWAYS_INLINE uint32_t getMediumSize() const
+    [[nodiscard]] ALWAYS_INLINE uint32_t getMediumSize() const
         requires(HASH_BYTES > 0)
     {
         uint32_t size = 0;
@@ -218,23 +218,23 @@ public:
         return size;
     }
 
-    ALWAYS_INLINE const char * getMediumPtr() const
+    [[nodiscard]] ALWAYS_INLINE const char * getMediumPtr() const
         requires(HASH_BYTES > 0)
     {
         return getHeapPtr();
     }
 
-    ALWAYS_INLINE uint64_t getLargeSize() const
+    [[nodiscard]] ALWAYS_INLINE uint64_t getLargeSize() const
     {
         return loadLE(rawBytes(), sizeof(uint64_t));
     }
 
-    ALWAYS_INLINE const char * getLargePtr() const
+    [[nodiscard]] ALWAYS_INLINE const char * getLargePtr() const
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), sizeof(uint64_t)) & POINTER_MASK);
     }
 
-    ALWAYS_INLINE uint32_t getHash() const
+    [[nodiscard]] ALWAYS_INLINE uint32_t getHash() const
         requires(HASH_BYTES > 0)
     {
         if constexpr (std::endian::native == std::endian::little)
@@ -245,7 +245,7 @@ public:
         return hash;
     }
 
-    ALWAYS_INLINE size_t heapSize() const
+    [[nodiscard]] ALWAYS_INLINE size_t heapSize() const
     {
         if constexpr (HASH_BYTES > 0)
         {
@@ -259,12 +259,12 @@ public:
 
     /// The out-of-line bytes of a medium or large string, `heapSize` of them: both encodings
     /// keep the pointer in the same low 56 bits.
-    ALWAYS_INLINE const char * getHeapPtr() const
+    [[nodiscard]] ALWAYS_INLINE const char * getHeapPtr() const
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
-    ALWAYS_INLINE size_t size() const
+    [[nodiscard]] ALWAYS_INLINE size_t size() const
         requires(HASH_BYTES == 0)
     {
         return isLarge() ? getLargeSize() : getSmallSize();
