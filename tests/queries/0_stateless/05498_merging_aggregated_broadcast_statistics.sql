@@ -9,6 +9,7 @@ SET make_distributed_plan = 1;
 SET distributed_plan_optimize_exchanges = 1;
 SET distributed_plan_max_rows_to_broadcast = 20;
 SET use_statistics = 1;
+SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE merging_broadcast_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE merging_broadcast_right (k UInt64 STATISTICS(uniq), v UInt64) ENGINE = MergeTree ORDER BY k;
