@@ -3797,12 +3797,24 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     return res;
 }
 
+/// Whether `ColumnMetaData.encodings` lists the encoding. The list comes from the file as is and may hold values that are
+/// not valid encodings, so the elements are compared by their underlying integers: loading such a value as an enum is
+/// undefined behavior. An unknown value does not match any encoding, as when it is not looked at; a data page of an
+/// unknown encoding is rejected when it is read.
+static bool hasEncoding(const parq::ColumnMetaData & meta, parq::Encoding::type encoding)
+{
+    return std::any_of(meta.encodings.begin(), meta.encodings.end(), [&](const parq::Encoding::type & value)
+        {
+            return thriftEnumToInt(value) == static_cast<int>(encoding);
+        });
+}
+
 /// Whether the decoded strings of a column chunk may take more than its uncompressed size, besides their offsets.
 /// `DELTA_BYTE_ARRAY` stores only the part of a string after the prefix that it shares with the previous one, so e.g.
 /// a long string repeated in all rows takes a few bytes per row.
 static bool stringsMayExpandOnDecoding(const parq::ColumnMetaData & meta)
 {
-    return std::find(meta.encodings.begin(), meta.encodings.end(), parq::Encoding::DELTA_BYTE_ARRAY) != meta.encodings.end();
+    return hasEncoding(meta, parq::Encoding::DELTA_BYTE_ARRAY);
 }
 
 /// Whether the decoder converts the strings into values of variable size that the strings do not bound, e.g.
@@ -3818,10 +3830,7 @@ static bool decoderMayExpandStrings(const Reader::PrimitiveColumnInfo & column_i
 static bool mayBeDictionaryEncoded(const parq::ColumnMetaData & meta)
 {
     return meta.__isset.dictionary_page_offset
-        || std::any_of(meta.encodings.begin(), meta.encodings.end(), [](parq::Encoding::type encoding)
-            {
-                return encoding == parq::Encoding::PLAIN_DICTIONARY || encoding == parq::Encoding::RLE_DICTIONARY;
-            });
+        || hasEncoding(meta, parq::Encoding::PLAIN_DICTIONARY) || hasEncoding(meta, parq::Encoding::RLE_DICTIONARY);
 }
 
 double Reader::estimateMaxColumnMemoryBytesOfChunk(

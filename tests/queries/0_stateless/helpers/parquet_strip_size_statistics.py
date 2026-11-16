@@ -81,7 +81,8 @@ def read_list_header(buf, pos):
 
 def copy_struct(buf, pos, drop_path, out):
     """Copies a struct from `buf` at `pos` to `out` without the fields in `drop_path`, returns the position after it.
-    A field of `drop_path` that maps to bytes is not dropped, but its binary value is replaced with them."""
+    A field of `drop_path` that maps to bytes is not dropped, but its binary value is replaced with them. A field that
+    maps to a tuple of integers is replaced with a list of these `i32`, e.g. to write invalid values of an enum."""
     last_field_in = 0
     last_field_out = 0
     while True:
@@ -114,6 +115,12 @@ def copy_struct(buf, pos, drop_path, out):
         if isinstance(nested_path, bytes) and field_type == BINARY:
             pos = skip_value(buf, pos, field_type)
             out += write_varint(len(nested_path)) + nested_path
+        elif isinstance(nested_path, tuple) and field_type == LIST:
+            pos = skip_value(buf, pos, field_type)
+            assert len(nested_path) < 15
+            out.append((len(nested_path) << 4) | I32)
+            for value in nested_path:
+                out += write_varint((value << 1) ^ (value >> 63))
         elif nested_path and field_type == STRUCT:
             pos = copy_struct(buf, pos, nested_path, out)
         elif nested_path and field_type == LIST:
