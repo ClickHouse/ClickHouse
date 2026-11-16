@@ -116,6 +116,10 @@ struct ProjectionPartData
     size_t stored_bytes_most = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
+    /// for a normal part under adaptive granularity: the bytes and the per-row bytes of the blocks that a merge writes, only if the
+    /// calculated block has more columns, a merge reads the stored columns without the subcolumns that the projection names
+    size_t merge_bytes = 0;
+    PaddedPODArray<UInt32> merge_row_bytes;
     /// for a level-zero aggregate part: the part that `MATERIALIZE PROJECTION` writes, if it can differ from the part of an insert
     /// its `format_bytes` are those of the block before the merge, the mutation chooses the format from them
     std::unique_ptr<ProjectionPartData> materialized;
@@ -144,9 +148,8 @@ struct ProjectionPartData
 
 /// per-row version of `getBlockSizeForGranularity`
 /// a merge builds the states in the memory of its column, and the writer counts that memory if it is more than the serialized states
-void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
+void appendRowSizes(ProjectionPartData & out, PaddedPODArray<UInt32> & row_bytes, const Block & block, bool merged)
 {
-    auto & row_bytes = out.row_bytes;
     const size_t rows = block.rows();
     const size_t offset = row_bytes.size();
     row_bytes.resize_fill(offset + rows, 0);
@@ -603,21 +606,39 @@ String buildProjectionPart(
     const auto & merge_tree = read_step->getMergeTreeData();
     const bool wide_parts = merge_tree.choosePartFormat(0, 0, 0, &projection).part_type == MergeTreeDataPartType::Wide;
     bool stored_bytes_known = true;
+    auto add_key = [&](Block & block)
+    {
+        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
+        for (const auto & required : proj_key.expression->getRequiredColumns())
+            if (!block.has(required))
+                block.insert(block.getSubcolumnByName(required));
+        proj_key.expression->execute(block);
+    };
     /// the stored columns, as the writer gets them
     auto add = [&](ProjectionPartData & target, MutableColumns & keys, Block projected, bool merged_states)
     {
         /// the writer chooses the part format before the key expression and sizes the granules after it
         target.format_bytes += projected.bytes();
+        /// a merge reads only the stored columns and calculates the key, see `MergeTask`
+        Block merge_block;
         if (merged_rows)
+        {
             stored_bytes_known &= addMergedPartsBytes(target, projected, stored_columns, stored_settings, stream_names, wide_parts);
-        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
-        for (const auto & required : proj_key.expression->getRequiredColumns())
-            if (!projected.has(required))
-                projected.insert(projected.getSubcolumnByName(required));
-        proj_key.expression->execute(projected);
+            for (const auto & column : stored_columns)
+                if (const auto * elem = projected.findByName(column.name))
+                    merge_block.insert(*elem);
+        }
+        const bool merge_block_differs = need_row_bytes && merged_rows && merge_block.columns() != projected.columns();
+        add_key(projected);
         target.bytes += getBlockSizeForGranularity(projected);
         if (need_row_bytes)
-            appendRowSizes(target, projected, merged_states);
+            appendRowSizes(target, target.row_bytes, projected, merged_states);
+        if (merge_block_differs)
+        {
+            add_key(merge_block);
+            target.merge_bytes += getBlockSizeForGranularity(merge_block);
+            appendRowSizes(target, target.merge_row_bytes, merge_block, merged_states);
+        }
 
         if (keys.empty())
             for (const auto & name : proj_key.column_names)
@@ -776,11 +797,19 @@ struct PartFromSample
 {
     const ProjectionPartData & sample;
     size_t rows;
+    /// the per-row bytes and the bytes of the blocks that the writer gets
+    const PaddedPODArray<UInt32> & row_bytes;
+    size_t block_bytes;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
 
-    PartFromSample(const ProjectionPartData & sample_, size_t rows_)
-        : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
+    /// `merge_blocks`: the blocks of a merge, with the stored columns only
+    PartFromSample(const ProjectionPartData & sample_, size_t rows_, bool merge_blocks = false)
+        : sample(sample_)
+        , rows(rows_)
+        , row_bytes(merge_blocks ? sample.merge_row_bytes : sample.row_bytes)
+        , block_bytes(merge_blocks ? sample.merge_bytes : sample.bytes)
+        , bytes_before_sample_row(sample.rows + 1)
     {
         for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
         {
@@ -799,8 +828,8 @@ struct PartFromSample
 
     [[nodiscard]] size_t sampleRowBytes(size_t sample_row) const
     {
-        const bool per_row = sample.row_bytes.size() == sample.rows;
-        return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
+        const bool per_row = row_bytes.size() == sample.rows;
+        return per_row ? row_bytes[sample.order[sample_row]] : std::max<size_t>(block_bytes / sample.rows, 1);
     }
 
     [[nodiscard]] UInt64 bytesBefore(size_t part_row) const
@@ -900,8 +929,12 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
-    std::optional<PartFromSample> materialized_part;
+    std::optional<PartFromSample> merge_blocks_part;
     const bool merged_rows = data.merged;
+    if (merged_rows && data.merge_bytes != 0)
+        merge_blocks_part.emplace(data, part_rows, /* merge_blocks */ true);
+    const PartFromSample & merge_source = merge_blocks_part ? *merge_blocks_part : whole_part;
+    std::optional<PartFromSample> materialized_part;
     if (data.materialized)
     {
         stableGetPermutation(data.materialized->key_block, sort_description, data.materialized->order);
@@ -939,9 +972,11 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
                 primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
         }
 
+        /// the first chunking is the one block of an insert, the others are the blocks of a merge
         std::vector<std::vector<size_t>> layouts;
-        for (const auto & [rows_limit, bytes_limit] : chunkings)
-            layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+        for (size_t i = 0; i < chunkings.size(); ++i)
+            layouts.push_back(simulateWriterMarks(
+                i == 0 ? whole_part : merge_source, part_type, mt_settings, adaptive_marks, chunkings[i].first, chunkings[i].second));
         auto constant = [&](double granule_rows)
         {
             const auto rows_per_mark = static_cast<size_t>(
