@@ -201,12 +201,12 @@ public:
         setStepDescription("Read the query log records of the current user");
     }
 
-    String getName() const override { return "ReadFromUserQueryLog"; }
+    [[nodiscard]] String getName() const override { return "ReadFromUserQueryLog"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    String buildPushedDownConditions() const;
+    [[nodiscard]] String buildPushedDownConditions() const;
 
     StorageID log_table_id;
     bool has_query_access_info_marker;
@@ -262,6 +262,8 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     inner_context->setClientInfo(outer_context->getClientInfo());
     inner_context->setProgressCallback(outer_context->getProgressCallback());
     inner_context->setProcessListElement(outer_context->getProcessListElement());
+    /// A part of the outer query: plan it from the same snapshot.
+    inner_context->shareQueryMaxThreadsSnapshot(*outer_context);
     inner_context->setNormalizedQueryHash(outer_context->getNormalizedQueryHash());
 
     /// Replay the caller's settings, except the expression-injection ones: `additional_table_filters`

@@ -1,7 +1,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
-#include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
@@ -152,16 +152,6 @@ namespace ErrorCodes
 
 namespace
 {
-/// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
-/// squashing does not accumulate more data than the host can hold. Shared between direct
-/// INSERT and materialized-view pipelines so the cap is applied symmetrically.
-size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
-{
-    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
-        return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-    return value;
-}
-
 /// True when `target` is an Enum that contains `source` with the same in-memory width, i.e. `source`
 /// is a narrower Enum whose members are a subset of `target`. This mirrors the compatibility that
 /// StorageInMemoryMetadata::check allows but that is not type equality.
@@ -216,11 +206,11 @@ class ViewErrorsRegistry
             value = value_;
             return true;
         }
-        bool isSet() const
+        [[nodiscard]] bool isSet() const
         {
             return is_set.test();
         }
-        T get() const
+        [[nodiscard]] T get() const
         {
             if (is_set.test())
                 return value;
@@ -260,7 +250,7 @@ public:
         view_errors.try_emplace(view_id);
     }
 
-    const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
+    [[nodiscard]] const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
     {
         return view_errors.at(view_id);
     }
@@ -270,7 +260,7 @@ public:
         return view_errors.at(view_id);
     }
 
-    std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
+    [[nodiscard]] std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
     {
         const auto & errors = getErrors(view_id);
         if (auto e = errors.current_exception.get())
@@ -732,7 +722,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]),
+            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1233,7 +1223,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]) : 0ULL,
+                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));

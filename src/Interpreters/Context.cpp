@@ -36,6 +36,7 @@
 #include <Common/PageCache.h>
 #if USE_GPU
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 #endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
@@ -50,6 +51,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
+#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -84,6 +86,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -829,6 +832,13 @@ struct ContextSharedPart : boost::noncopyable
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    OnceFlag directory_watch_reactor_initialized;
+    mutable std::mutex directory_watch_reactor_mutex;
+    /// The thread that watches the directories of all `FileLog` tables
+    mutable std::shared_ptr<DirectoryWatchReactor> directory_watch_reactor TSA_GUARDED_BY(directory_watch_reactor_mutex);
+#endif
+
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
@@ -1325,6 +1335,9 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
         BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        std::shared_ptr<DirectoryWatchReactor> delete_directory_watch_reactor;
+#endif
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1460,6 +1473,13 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        {
+            std::lock_guard lock(directory_watch_reactor_mutex);
+            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+        }
+#endif
+
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
         /// - before storage startup (because of some streaming of, i.e. Kafka, to
@@ -1495,6 +1515,11 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
         join_background_pool(std::move(delete_streaming_schedule_pool));
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// The tables are shut down by now, so this is normally the last reference and stops the reactor thread.
+        delete_directory_watch_reactor.reset();
+#endif
 
         delete_access_control.reset();
 
@@ -1700,12 +1725,15 @@ ContextData::ContextData(const ContextData &o) :
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
+    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     columns_cache_write_budget(o.columns_cache_write_budget),
+    query_max_threads_snapshot(o.query_max_threads_snapshot),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -2745,8 +2773,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -2835,13 +2868,13 @@ void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_cons
     {
         /// Check the profile's settings against current constraints before resolving, because after
         /// resolving the parent_profile references are already expanded and checkSettingsConstraints
-        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
-        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
+        /// would not see them. The profile replaces this context's settings, so every user is bound by
+        /// its constraints, even one defined in the server config; only a context without a user is trusted.
         SettingsProfileElements elements;
         elements.emplace_back().parent_profile = profile_id;
         getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
             *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
-            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
+            /* actor_is_config_defined= */ !user_id);
     }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
@@ -2919,6 +2952,20 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        bool has(const String &) override { return false; }
+        ResourceLink get(const String &) override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -2937,8 +2984,22 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (is_metadata_query)
+        {
+            static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = metadata_exempt_classifier;
+        }
+        else
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    }
     return classifier;
+}
+
+void Context::setMetadataQuery()
+{
+    std::lock_guard lock(mutex);
+    is_metadata_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -4256,6 +4317,34 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
     clampToSettingsConstraintsWithLock(changes, source);
 }
 
+SettingsChanges Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings)
+{
+    /// Clamping the whole clause as a batch would check every change against the settings as they were
+    /// before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve differently
+    /// from the last-wins reading the clause has everywhere else. `clampToSettingsConstraintsRejectingInvalidChanges`
+    /// keeps a change that does not change the value, so clamping one change at a time does not lose the batch's
+    /// `compatibility` marker: `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` keeps the `1`.
+    SettingsChanges effective_changes;
+    for (const auto & change : changes)
+    {
+        SettingsChanges single_change{change};
+        clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+        applySettingsChanges(single_change);
+        effective_changes.insert(effective_changes.end(), single_change.begin(), single_change.end());
+    }
+
+    if (!default_settings.empty())
+    {
+        auto allowed_resets = default_settings;
+        SettingsChanges clamped_resets;
+        clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        resetSettingsToDefaultValue(allowed_resets);
+        applySettingsChanges(clamped_resets);
+    }
+
+    return effective_changes;
+}
+
 void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
 {
     if (std::ranges::any_of(changes, isProfileChange))
@@ -4587,6 +4676,7 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -5337,6 +5427,26 @@ GPU::GPUDevice & Context::getGPU() const
     if (!shared->gpu)
         throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
     return *shared->gpu;
+}
+
+void Context::updateGPUKernelCacheConfiguration(const ServerSettings & server_settings)
+{
+    if (!shared->gpu)
+        return;
+
+    const GPU::GPUDeviceSettings settings = GPU::GPUDeviceSettings::fromServerSettings(server_settings);
+    GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    cache.setMaxSizeInBytes(settings.kernel_cache_max_size_in_bytes);
+    cache.setMaxCount(settings.kernel_cache_max_count);
+}
+
+std::pair<size_t, size_t> Context::getGPUKernelCacheLimits() const
+{
+    if (!shared->gpu)
+        return {0, 0};
+
+    const GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
+    return {cache.maxSizeInBytes(), cache.maxCount()};
 }
 #endif
 
@@ -6271,6 +6381,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -6488,6 +6602,21 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
     SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->distributed_schedule_pool;
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
+{
+    callOnce(shared->directory_watch_reactor_initialized, [&]
+    {
+        auto created_reactor = std::make_shared<DirectoryWatchReactor>();
+        std::lock_guard lock(shared->directory_watch_reactor_mutex);
+        shared->directory_watch_reactor = std::move(created_reactor);
+    });
+
+    std::lock_guard lock(shared->directory_watch_reactor_mutex);
+    return shared->directory_watch_reactor;
+}
+#endif
 
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {
@@ -6976,7 +7105,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
@@ -8936,6 +9065,11 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
+{
+    return getInputFormat(name, buf, sample, max_block_size, std::nullopt);
+}
+
 InputFormatPtr Context::getInputFormat(
     const String & name,
     ReadBuffer & buf,
@@ -8963,9 +9097,19 @@ InputFormatPtr Context::getInputFormat(
         min_block_size_bytes);
 }
 
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormat(name, buf, sample, std::nullopt);
+}
+
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
+}
+
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return getOutputFormatParallelIfPossible(name, buf, sample, std::nullopt);
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -9036,6 +9180,11 @@ void Context::stopServers(const ServerType & server_type) const
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
+}
+
+bool Context::isShutdownCalled() const
+{
+    return shared->shutdown_called;
 }
 
 
@@ -9380,6 +9529,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
@@ -10119,6 +10271,11 @@ ReadSettings Context::getReadSettings() const
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
             res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
+    /// The plan refills once half of it is left, so twice the window keeps a whole fetch resolved ahead.
+    if (res.reader_executor.plan_look_ahead < 2 * res.reader_executor.window_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least twice reader_executor_window_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.window_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -10435,6 +10592,17 @@ RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
 {
     return columns_cache_write_budget;
+}
+
+const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
+{
+    return query_max_threads_snapshot;
+}
+
+void Context::shareQueryMaxThreadsSnapshot(const Context & from)
+{
+    if (from.query_max_threads_snapshot)
+        query_max_threads_snapshot = from.query_max_threads_snapshot;
 }
 
 UInt64 Context::getClientProtocolVersion() const
