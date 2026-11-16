@@ -27,6 +27,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/FixedHashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/RowsSkipBudget.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
@@ -61,11 +62,30 @@ class JoinMask;
 ///  - `Set` is `HashJoin::MapsSet`, which stores no right row at all. It is only valid for joins whose
 ///    result never contains a value taken from a right row, so the map only has to answer whether a key
 ///    is present. See `HashJoin::canUseSetMaps` for when it is picked.
+///  - `Count` is `HashJoin::MapsCount`, which stores the number of right rows of a key and no right row.
+///    It is used by `INTERSECT ALL` and `EXCEPT ALL`, where each left row uses up one right row of its key.
+///  - `CountWithRef` is `HashJoin::MapsCountWithRef`, which also stores one right row of a key. It is used
+///    by `EXCEPT ALL` as RIGHT ANTI, which emits the right rows that are not used up.
 enum class JoinMapsKind : uint8_t
 {
     Default,
     All,
     Set,
+    Count,
+    CountWithRef,
+};
+
+/// How many right rows of a key are not used up yet.
+struct RowCount
+{
+    mutable Int64 remaining = 0;
+};
+
+/// A right row of a key and how many right rows of that key are not used up yet.
+struct RowRefWithCount
+{
+    RowRef ref;
+    mutable Int64 remaining = 0;
 };
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -99,6 +119,18 @@ struct BuildResult
 {
     bool is_inserted = false;
     bool all_values_unique = true;
+};
+
+/// What a probe stream of `INTERSECT ALL` or `EXCEPT ALL` keeps from one block to the next: the table it pre-aggregates the
+/// rows of its blocks in.
+struct SetOperationProbeState
+{
+    struct PreAggregationTable
+    {
+        virtual ~PreAggregationTable() = default;
+    };
+
+    std::unique_ptr<PreAggregationTable> pre_aggregation_table;
 };
 
 /** Data structure for implementation of hash JOIN.
@@ -248,7 +280,7 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    JoinResultPtr joinBlock(Block block) override;
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override;
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -570,8 +602,10 @@ public:
     using MapsAll = MapsTemplate<RowRefList>;
     using MapsAsof = MapsTemplate<AsofRowRefs>;
     using MapsSet = MapsTemplate<VoidMapped>;
+    using MapsCount = MapsTemplate<RowCount>;
+    using MapsCountWithRef = MapsTemplate<RowRefWithCount>;
 
-    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof, MapsSet>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof, MapsSet, MapsCount, MapsCountWithRef>;
 
     struct NullMapHolder
     {
@@ -641,6 +675,15 @@ public:
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
         BuildSlots slots;
+
+        /// The lock under which the counts of a bucket are updated.
+        struct alignas(CH_CACHE_LINE_SIZE) SetOperationBucketLock
+        {
+            std::mutex mutex;
+        };
+        mutable std::array<SetOperationBucketLock, NUM_HASH_TABLE_BUCKETS> set_operation_bucket_locks;
+        /// Throttles the pre-aggregation of the probe of `INTERSECT ALL` and `EXCEPT ALL` for all probe streams.
+        mutable RowsSkipBudget set_operation_pre_aggregation_skip_budget;
 
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
@@ -792,6 +835,13 @@ private:
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
 
+    /// What each probe stream keeps from one of its blocks to the next, by the number of the stream.
+    /// Sized once, by the first call of a probe stream.
+    std::once_flag init_probe_states_once;
+    std::vector<SetOperationProbeState> probe_states;
+
+    SetOperationProbeState * getProbeState(JoinProbeContext context);
+
     std::vector<Sizes> key_sizes;
 
     /// Block with columns from the right-side table.
@@ -865,7 +915,7 @@ private:
 
     class ContinuationResult;
 
-    JoinResultPtr runJoinDispatch(ScatteredBlock block);
+    JoinResultPtr runJoinDispatch(ScatteredBlock block, SetOperationProbeState * probe_state);
 
     bool preferUseMapsAll() const;
 

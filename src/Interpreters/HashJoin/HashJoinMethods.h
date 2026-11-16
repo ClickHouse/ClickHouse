@@ -44,6 +44,25 @@ struct Inserter
         new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
     }
 
+    /// Returns whether the map now refers to this row, so its block has to be kept.
+    static ALWAYS_INLINE bool
+    insertCount(HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
+    {
+        constexpr bool with_ref = std::is_same_v<typename HashMap::mapped_type, RowRefWithCount>;
+        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        const bool inserted = emplace_result.isInserted();
+        if (inserted)
+        {
+            if constexpr (with_ref)
+                new (&emplace_result.getMapped()) RowRefWithCount{RowRef(stored_block_no, i), 0};
+            else
+                new (&emplace_result.getMapped()) RowCount{};
+            ++new_keys;
+        }
+        ++emplace_result.getMapped().remaining;
+        return with_ref && inserted;
+    }
+
     static ALWAYS_INLINE bool
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
@@ -86,7 +105,7 @@ struct Inserter
     }
 };
 
-/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
+/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof, MapsSet, MapsCount and MapsCountWithRef
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
@@ -121,7 +140,8 @@ public:
         ScatteredBlock block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
-        bool is_join_get = false);
+        bool is_join_get = false,
+        SetOperationProbeState * probe_state = nullptr);
 
 private:
     template <typename AddedColumns>
@@ -172,6 +192,16 @@ private:
         bool need_filter,
         bool fast_path,
         typename AddedColumns>
+    static size_t joinRightColumns(
+        KeyGetter & key_getter,
+        const Map * map,
+        AddedColumns & added_columns,
+        JoinStuff::JoinUsedFlags & used_flags,
+        const ScatteredBlock::Selector::Range & selector);
+
+    /// The probe of a count map, for `INTERSECT ALL` and `EXCEPT ALL`.
+    template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
+    requires CountJoinMaps<MapsTemplate>
     static size_t joinRightColumns(
         KeyGetter & key_getter,
         const Map * map,
@@ -234,6 +264,9 @@ extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::All, Hash
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Semi, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsOne>;
+extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsCount>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsCount>;
+extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsCountWithRef>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Asof, HashJoin::MapsAsof>;
 
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsOne>;

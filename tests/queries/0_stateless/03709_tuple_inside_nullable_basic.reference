@@ -239,9 +239,9 @@ UNION DISTINCT - Elements
 INTERSECT - Elements
 EXCEPT - Elements
 11
+11
 33
 44
-11
 Subquery - IN clause
 1	(11,'alpha')
 3	(33,'gamma')

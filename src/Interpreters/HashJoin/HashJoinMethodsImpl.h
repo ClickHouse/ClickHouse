@@ -5,6 +5,7 @@
 #include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/joinRightColumnsSetOperation.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
@@ -13,6 +14,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <atomic>
 #include <span>
 #include <type_traits>
 
@@ -266,9 +268,9 @@ BuildResult insertSlotRows(
             chassert(!null_map || ind < null_map->size());
             if (null_map && (*null_map)[ind])
             {
-                /// nulls are not inserted into hash table,
-                /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-                if constexpr (!is_set)
+                /// A row with a `NULL` key is not inserted, but `RIGHT` and `FULL` joins output it, so its block is kept.
+                /// A set map is never used by those joins, and the keys of a count map are never `NULL`.
+                if constexpr (!is_set && !CountJoinMaps<MapsTemplate>)
                     result.is_inserted = true;
                 continue;
             }
@@ -283,6 +285,8 @@ BuildResult insertSlotRows(
                 asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
         else if constexpr (is_set)
             Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
+        else if constexpr (CountJoinMaps<MapsTemplate>)
+            result.is_inserted |= Inserter<HashMap, KeyGetter>::insertCount(map, key_getter, stored_block_no, ind, pool, new_keys);
         else if constexpr (mapped_one)
             result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
                 any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
@@ -331,9 +335,9 @@ NO_INLINE BuildResult insertFromBlockImplTypeCase(
         skip = key_getter.skipOrAllSelected(buildRowSkipData(null_map, join_mask, key_getter.skip_buffer, 0, key_getter.num_rows));
 
     BuildResult result;
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
-    /// the block has to be kept for another algorithm the caller drops it.
-    if constexpr (is_set)
+    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, and a count map only to
+    /// the rows `insertCount` reports, so unless the block has to be kept for another algorithm the caller drops it.
+    if constexpr (is_set || CountJoinMaps<MapsTemplate>)
         result.is_inserted = join.mustKeepRightBlocks();
     else
         result.is_inserted = !mapped_one || is_asof_join;
@@ -432,7 +436,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     ScatteredBlock block,
     const Block & block_with_columns_to_add,
     const MapsTemplateVector & maps_,
-    bool is_join_get)
+    bool is_join_get,
+    SetOperationProbeState * probe_state)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
@@ -472,6 +477,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     if (join.matched_rows_stats && join.matched_rows_stats->hasRightFlags())
         added_columns.match_stats = join.matched_rows_stats.get();
+    added_columns.set_operation_probe_state = probe_state;
 
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
@@ -527,7 +533,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             is_join_get,
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
-            join.enable_lazy_columns_indexing
+            join.enable_lazy_columns_indexing,
+            added_columns.matched_rows_have_repeats
         });
 
     if (next_scattered_block)
@@ -915,6 +922,37 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
     }
 
+    return 0;
+}
+
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
+requires CountJoinMaps<MapsTemplate>
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+    KeyGetter & key_getter,
+    const Map * map,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags & /*used_flags*/,
+    const ScatteredBlock::Selector::Range & selector)
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+    static_assert(
+        (join_features.inner && join_features.is_any_join) || join_features.is_anti_join,
+        "A count map is only chosen for INNER ANY, LEFT ANTI and RIGHT ANTI");
+    static_assert(need_filter, "Every join kind with count maps filters its probe rows");
+
+    /// The probe of a count map skips no row: NULL-safe keys are split into a non-nullable value and `isNull`, so no
+    /// key is NULL, and there is no ON-section condition.
+    if constexpr (!fast_path)
+    {
+        IColumn::Filter skip_buffer;
+        if (added_columns.join_on_keys.at(0).buildRowSkipData(skip_buffer, selector.first, ScatteredBlock::Selector::size(selector)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The probe of a count map skips rows of its block");
+    }
+
+    /// `INNER ANY` (`INTERSECT ALL`) keeps the matched rows, `LEFT ANTI` (`EXCEPT ALL`) keeps the unmatched rows, and `RIGHT ANTI`
+    /// (`EXCEPT ALL` with the sides swapped) keeps no rows.
+    joinRightColumnsSetOperation<join_features.inner, join_features.left>(key_getter, *map, added_columns, selector);
     return 0;
 }
 

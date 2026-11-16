@@ -81,9 +81,11 @@ enum class JoinSetOperation : uint8_t
     None = 0,
     IntersectDistinct,
     ExceptDistinct,
+    IntersectAll,
+    ExceptAll,
 };
 
-constexpr uint8_t JoinSetOperationMax = static_cast<uint8_t>(JoinSetOperation::ExceptDistinct);
+constexpr uint8_t JoinSetOperationMax = static_cast<uint8_t>(JoinSetOperation::ExceptAll);
 
 void serializeJoinSetOperation(JoinSetOperation set_operation, WriteBuffer & out);
 JoinSetOperation deserializeJoinSetOperation(ReadBuffer & in);

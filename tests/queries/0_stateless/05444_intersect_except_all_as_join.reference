@@ -1,0 +1,48 @@
+-- semantics and plan
+1116	225855	295	176
+1116	225855	295	176
+1
+8884	2077300	475	734
+1
+8884	2077300	475	734
+1
+-- `Dynamic` values match only with the same type.
+\N	None
+\N	None
+1	Int32
+a	String
+-- Values are compared after the conversion to the common type.
+0
+1
+2
+-- Two columns with the same name in a branch stay apart.
+1	1
+-- Under another join.
+13096	3601791	3601791
+-- The empty probe side must not stop RIGHT ANTI from emitting the build side.
+10
+-- The empty probe side stops LEFT ANTI from reading the build side.
+0
+-- A join that spills gives the same result.
+3000
+7000
+-- The totals of the first branch win.
+
+0	100000
+
+0	100000
+-- Only the second branch has totals.
+2	3
+
+0	7
+-- One row of a key stands for its copies in the result, also when the result is split into small blocks.
+3335	14995
+6665	30005
+-- A block with more keys than the probe pre-aggregation table holds.
+25000	62487500
+75000	187462500
+-- Repeated rows with lazy output, which a small LIMIT above the join turns on.
+1000	2495	998	499
+1000	167	999	167
+-- A swapped EXCEPT ALL keeps only the right blocks with a row it outputs.
+10000	2

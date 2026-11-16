@@ -14,5 +14,5 @@ SELECT 1 FROM system.one AS t1 INNER JOIN system.one AS t2 ON (('a', 'b') AS a6)
 SELECT 1 EXCEPT ALL SELECT 2;
 (SELECT 1) EXCEPT ALL (SELECT 2);
 (SELECT 1) EXCEPT DISTINCT (SELECT 2);
-SELECT number FROM numbers(5) EXCEPT ALL SELECT number FROM numbers(3);
-(SELECT number FROM numbers(5)) INTERSECT ALL (SELECT number FROM numbers(3, 5));
+SELECT * FROM (SELECT number FROM numbers(5) EXCEPT ALL SELECT number FROM numbers(3)) ORDER BY ALL;
+SELECT * FROM ((SELECT number FROM numbers(5)) INTERSECT ALL (SELECT number FROM numbers(3, 5))) ORDER BY ALL;

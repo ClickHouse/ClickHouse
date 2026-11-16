@@ -45,7 +45,10 @@ public:
     Selector() : Selector(0, 0) { }
     explicit Selector(size_t size) : Selector(0, size) { }
 
-    explicit Selector(IndexesPtr && selector_) : data(initializeFromSelector(std::move(selector_))) { }
+    explicit Selector(IndexesPtr && selector_, bool has_repeats = false)
+        : data(initializeFromSelector(std::move(selector_), has_repeats))
+    {
+    }
 
     class Iterator
     {
@@ -168,14 +171,14 @@ public:
 private:
     using Data = std::variant<Range, IndexesPtr>;
 
-    Data initializeFromSelector(IndexesPtr && selector_)
+    Data initializeFromSelector(IndexesPtr && selector_, bool has_repeats)
     {
         const auto & selector = selector_->getData();
         if (selector.empty())
             return Range{0, 0};
 
-        /// selector represents continuous range
-        if (selector.back() == selector.front() + selector.size() - 1)
+        /// selector represents continuous range, unless it lists a row more than once.
+        if (!has_repeats && selector.back() == selector.front() + selector.size() - 1)
             return Range{selector.front(), selector.front() + selector.size()};
 
         return std::move(selector_);
@@ -267,14 +270,15 @@ struct ScatteredBlock : private boost::noncopyable
         return block.getByName(name);
     }
 
-    void filter(std::span<UInt64> matched_rows)
+    /// `matched_rows` is in ascending order. With `has_repeats` a row is listed more than once.
+    void filter(std::span<UInt64> matched_rows, bool has_repeats = false)
     {
         if (matched_rows.empty())
         {
             selector = Selector();
             return;
         }
-        else if (matched_rows.size() == rows())
+        else if (!has_repeats && matched_rows.size() == rows())
             return;
 
         IndexesPtr new_selector = Indexes::create(matched_rows.size());
@@ -282,7 +286,7 @@ struct ScatteredBlock : private boost::noncopyable
         size_t i = 0;
         for (const auto pos : matched_rows)
             data[i++] = selector[pos];
-        selector = Selector(std::move(new_selector));
+        selector = Selector(std::move(new_selector), has_repeats);
     }
 
     /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`

@@ -131,6 +131,31 @@ private:
     bool join_checks_limits;
 };
 
+/// The pipeline gives the N `JoiningTransform`s that probe one join the streams 0 to N - 1 (`forStream`). Calls with the
+/// same stream never overlap, so a join may keep unsynchronized state per stream, indexed by `getStream`.
+class JoinProbeContext
+{
+public:
+    /// Stream `stream` of the `num_streams` streams that probe one join concurrently.
+    static JoinProbeContext forStream(size_t stream, size_t num_streams);
+
+    /// A call that is not made by a probe stream, such as the computation of the header.
+    static JoinProbeContext none() { return JoinProbeContext(0, 0); }
+
+    bool hasStream() const { return num_streams != 0; }
+    size_t getStream() const { return stream; }
+    size_t getNumStreams() const { return num_streams; }
+
+private:
+    JoinProbeContext(UInt32 stream_, UInt32 num_streams_)
+        : stream(stream_), num_streams(num_streams_)
+    {
+    }
+
+    UInt32 stream;
+    UInt32 num_streams;
+};
+
 class IJoin
 {
 public:
@@ -185,8 +210,9 @@ public:
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
-    /// Could be called from different threads in parallel.
-    virtual JoinResultPtr joinBlock(Block block) = 0;
+    /// Could be called from different threads in parallel, but by one thread at a time for one probe stream.
+    /// `context` says which probe stream makes the call.
+    virtual JoinResultPtr joinBlock(Block block, JoinProbeContext context) = 0;
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.

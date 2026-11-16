@@ -280,16 +280,18 @@ FROM
 ORDER BY value NULLS LAST;
 
 SELECT 'INTERSECT - Elements';
-SELECT tup.u FROM tuple_test WHERE tup.u IS NOT NULL
-INTERSECT
-SELECT n FROM tuple_test WHERE n IS NOT NULL
-ORDER BY tup.u;
+SELECT * FROM (
+    SELECT tup.u FROM tuple_test WHERE tup.u IS NOT NULL
+    INTERSECT
+    SELECT n FROM tuple_test WHERE n IS NOT NULL)
+ORDER BY ALL;
 
 SELECT 'EXCEPT - Elements';
-SELECT tup.u FROM tuple_test WHERE tup.u IS NOT NULL
-EXCEPT
-SELECT n FROM tuple_test WHERE n IS NOT NULL
-ORDER BY tup.u;
+SELECT * FROM (
+    SELECT tup.u FROM tuple_test WHERE tup.u IS NOT NULL
+    EXCEPT
+    SELECT n FROM tuple_test WHERE n IS NOT NULL)
+ORDER BY ALL;
 
 SELECT 'Subquery - IN clause';
 SELECT id, tup
