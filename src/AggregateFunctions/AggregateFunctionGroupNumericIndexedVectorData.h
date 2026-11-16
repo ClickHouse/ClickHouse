@@ -166,13 +166,13 @@ public:
 
     void addValue(IndexType index, ValueType value) { impl.addValue(index, value); }
 
-    ValueType getValue(IndexType index) const { return impl.getValue(index); }
+    [[nodiscard]] ValueType getValue(IndexType index) const { return impl.getValue(index); }
 
-    Float64 getAllValueSum() const { return impl.getAllValueSum(); }
+    [[nodiscard]] Float64 getAllValueSum() const { return impl.getAllValueSum(); }
 
-    UInt64 getCardinality() const { return impl.getCardinality(); }
+    [[nodiscard]] UInt64 getCardinality() const { return impl.getCardinality(); }
 
-    String shortDebugString() const { return impl.shortDebugString(); }
+    [[nodiscard]] String shortDebugString() const { return impl.shortDebugString(); }
 
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const
     {
