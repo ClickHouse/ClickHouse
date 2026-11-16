@@ -68,8 +68,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Clearing the low mantissa bits is `floor(|x| / 2^n) * 2^n` with the sign kept, which is
-    /// non-decreasing across the whole sign-magnitude float line, for every `n` including 0.
+    /// Clearing the low mantissa bits truncates `|x|` toward zero to a multiple of `2^n` ulps of its
+    /// binade, with the sign kept. The result stays in the same binade, so it is non-decreasing across
+    /// the whole sign-magnitude float line, for every `n` including 0.
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
@@ -106,16 +107,9 @@ public:
         if (!arguments[1].column || !isColumnConst(*arguments[1].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of {} must be constant", getName());
 
-        auto result_type = getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
-
-        if (isNativeInt(arguments[1].type))
-        {
-            const Int64 n = arguments[1].column->getInt(0);
-            if (n < 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of {} must be non-negative, got {}", getName(), n);
-        }
-
-        return result_type;
+        /// The sign of `n` is checked in `executeImpl`, not here: for a `Nullable` constant this sees
+        /// the nested value, which is arbitrary under a `NULL` (e.g. `nullIf(-1, -1)` stores `-1`).
+        return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -150,6 +144,16 @@ private:
         using MaskType = typename TrimTraits<Float>::UInt;
 
         const auto & values = assert_cast<const ColumnVector<Float> &>(*arguments[0].column).getData();
+
+        /// A constant `NULL` count never reaches here: the default implementation for nulls returns
+        /// `NULL` without executing the function, so the value is a real one.
+        if (isNativeInt(arguments[1].type))
+        {
+            const Int64 n = arguments[1].column->getInt(0);
+            if (n < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of {} must be non-negative, got {}", name, n);
+        }
+
         const auto mask = getMask<Float>(arguments[1].column->getUInt(0));
 
         /// An `n` of 0 keeps every bit, so the argument column is already the result

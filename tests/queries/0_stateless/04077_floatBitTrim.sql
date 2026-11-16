@@ -54,7 +54,7 @@ SELECT 100 AS n, bin(reinterpretAsUInt16(floatBitTrim(1.9921875::BFloat16, 100))
 -- Errors.
 SELECT floatBitTrim('a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT floatBitTrim(1.0::Float64, 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- A signed `n` is accepted by type, but a negative value is rejected during analysis.
+-- A signed `n` is accepted by type, but a negative value is rejected when the function runs.
 SELECT floatBitTrim(1.0::Float64, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT floatBitTrim(1.0::Float64, -1::Int64); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT floatBitTrim(materialize(1.0::Float64), 10 - 20); -- { serverError ARGUMENT_OUT_OF_BOUND }
@@ -140,6 +140,10 @@ SELECT floatBitTrim(materialize(1.0::Float64), CAST(NULL, 'Nullable(UInt64)')),
        toTypeName(floatBitTrim(materialize(1.0::Float64), CAST(NULL, 'Nullable(UInt64)')));
 SELECT floatBitTrim(CAST(NULL, 'Nullable(Float64)'), 20);
 SELECT number, floatBitTrim(if(number % 2, NULL, 1.234::Float64), 20) FROM numbers(4) ORDER BY number;
+-- A constant `NULL` count gives `NULL` whatever value is stored under the `NULL`.
+SELECT floatBitTrim(materialize(1.234::Float64), nullIf(-1::Int64, -1::Int64)),
+       toTypeName(floatBitTrim(materialize(1.234::Float64), nullIf(-1::Int64, -1::Int64)));
+SELECT floatBitTrim(1.234::Float64, nullIf(-1::Int64, -1::Int64));
 
 SELECT 'Nullable arguments agree with the non-nullable path.';
 SELECT toTypeName(floatBitTrim(toNullable(1.0::Float64), 20));

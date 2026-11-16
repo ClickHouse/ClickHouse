@@ -97,6 +97,8 @@ A NULL argument gives NULL.
 1	\N
 2	1.2339999999385327
 3	\N
+\N	Nullable(Float64)
+\N
 Nullable arguments agree with the non-nullable path.
 Nullable(Float64)
 1
