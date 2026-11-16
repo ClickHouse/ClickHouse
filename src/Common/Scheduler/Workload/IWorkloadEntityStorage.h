@@ -138,11 +138,11 @@ class IWorkloadEntityStorage
 public:
     virtual ~IWorkloadEntityStorage() = default;
 
-    virtual std::string_view getName() const = 0;
+    [[nodiscard]] virtual std::string_view getName() const = 0;
 
     /// Whether this storage can replicate entities to another node.
-    virtual bool isReplicated() const { return false; }
-    virtual String getReplicationID() const { return ""; }
+    [[nodiscard]] virtual bool isReplicated() const { return false; }
+    [[nodiscard]] virtual String getReplicationID() const { return ""; }
 
     /// Loads all entities. Can be called once - if entities are already loaded the function does nothing.
     virtual void loadEntities(const Poco::Util::AbstractConfiguration & config) = 0;
@@ -151,22 +151,22 @@ public:
     virtual void updateImplicitEntities(const ImplicitWorkloadEntitiesConfig & /*config*/) {}
 
     /// Get visible entity. Throws if there is no such entity.
-    virtual ASTPtr get(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    [[nodiscard]] virtual ASTPtr get(WorkloadEntityType entity_type, const String & entity_name) const = 0;
 
     /// Get visible entity. Returns nullptr if there is no such entity.
-    virtual ASTPtr tryGet(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    [[nodiscard]] virtual ASTPtr tryGet(WorkloadEntityType entity_type, const String & entity_name) const = 0;
 
     /// Check if visible entity exists.
-    virtual bool has(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    [[nodiscard]] virtual bool has(WorkloadEntityType entity_type, const String & entity_name) const = 0;
 
     /// Get all visible entities.
-    virtual WorkloadEntities getAllEntities() const = 0;
+    [[nodiscard]] virtual WorkloadEntities getAllEntities() const = 0;
 
     /// Returns the name of the storage layer owning the visible entity, or an empty string if there is no such entity.
-    virtual String getEntitySource(WorkloadEntityType entity_type, const String & entity_name) const = 0;
+    [[nodiscard]] virtual String getEntitySource(WorkloadEntityType entity_type, const String & entity_name) const = 0;
 
     /// Check whether any entity is visible.
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}

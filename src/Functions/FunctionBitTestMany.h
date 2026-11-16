@@ -26,13 +26,13 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitTestMany>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Both positions match the legacy checks exactly: `isInteger` for the value and
         /// `isUInt` for every bit position, so wide integers are accepted here and rejected
@@ -40,12 +40,12 @@ public:
         return "(Integer, UInt, ...) -> UInt8";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto * value_col = arguments.front().column.get();
 
@@ -145,7 +145,7 @@ private:
     }
 
     template <typename ValueType>
-    PaddedPODArray<ValueType> createMask(const size_t size, const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] PaddedPODArray<ValueType> createMask(const size_t size, const ColumnsWithTypeAndName & arguments) const
     {
         PaddedPODArray<ValueType> mask(size, ValueType{});
 

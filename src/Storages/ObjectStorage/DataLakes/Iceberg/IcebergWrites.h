@@ -85,7 +85,7 @@ public:
 
     void add(const Row & partition_value);
 
-    const std::vector<FieldSummary> & getFields() const { return fields; }
+    [[nodiscard]] const std::vector<FieldSummary> & getFields() const { return fields; }
 
 private:
     std::vector<FieldSummary> fields;

@@ -29,14 +29,14 @@ public:
     {
     }
 
-    size_t size() const { return slots.size(); }
+    [[nodiscard]] size_t size() const { return slots.size(); }
 
     Arena & arena(size_t slot) { return *slots[slot].arena; }
 
     /// The bytes of the arena of `slot` and of its buckets of `map`. Only this slot's buffers: the others are
     /// growing under their own locks.
     template <typename Map>
-    size_t slotBytes(const Map & map, size_t slot) const
+    [[nodiscard]] size_t slotBytes(const Map & map, size_t slot) const
     {
         size_t res = slots[slot].arena->allocatedBytes();
         /// A `PartitionedFixedHashTable` has one buffer, allocated when the table is created. Slot 0 counts it.
@@ -48,7 +48,7 @@ public:
         return res;
     }
 
-    size_t arenaBytes() const
+    [[nodiscard]] size_t arenaBytes() const
     {
         size_t res = 0;
         for (const auto & slot : slots)
