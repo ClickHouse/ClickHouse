@@ -57,6 +57,7 @@ public:
 
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
+    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

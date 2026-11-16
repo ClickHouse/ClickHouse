@@ -452,7 +452,11 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
                         table_name.empty() ? "" : " for table " + table_name);
 
-    skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
+    /// The values are in the order of the INSERT column list, which can differ from CREATE (mysqldump omits generated columns).
+    Names insert_column_names;
+    skipToDataInInsertQuery(in, &insert_column_names);
+    if (!insert_column_names.empty())
+        column_names = std::move(insert_column_names);
 }
 
 void MySQLDumpRowInputFormat::readPrefix()
