@@ -88,14 +88,14 @@ public:
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
-    UInt64 getSeed() const { return seed; }
+    [[nodiscard]] UInt64 getSeed() const { return seed; }
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
-    size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+    [[nodiscard]] size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
 
     /// Returns query parameters collected/generated during the last fuzzMain() call.
     /// Callers should pass these to the execution context via setQueryParameters().
-    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
+    [[nodiscard]] const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -337,6 +337,10 @@ private:
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
+    /// The `CODEC <path> (...)` entries of a column list, added to a list that has none.
+    void fuzzCodecDeclarations(ASTColumns & columns_list);
+    /// Point a codec target at a subcolumn inside it, or at its parent.
+    void fuzzCodecTarget(String & name);
     ASTPtr makeTextIndexTokenizer();
     String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);

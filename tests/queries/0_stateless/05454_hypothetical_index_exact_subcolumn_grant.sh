@@ -39,9 +39,10 @@ check()
     echo "$line"
 }
 
+# `CREATE HYPOTHETICAL INDEX` also needs `SHOW COLUMNS` on the table, which a column-level `SELECT` does not give
 reset()
 {
-    $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user"
+    $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user; GRANT SHOW COLUMNS ON $t TO $user"
 }
 
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(p) ON $t TO $user"

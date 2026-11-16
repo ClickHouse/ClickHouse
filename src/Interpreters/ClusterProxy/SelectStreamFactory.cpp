@@ -25,6 +25,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -76,7 +77,7 @@ void SelectStreamFactory::createForShard(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
+    QueryPlanPtrs & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
@@ -105,7 +106,7 @@ void SelectStreamFactory::createForShardImpl(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
+    QueryPlanPtrs & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
@@ -313,7 +314,7 @@ void SelectStreamFactory::createForShard(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
-    std::vector<QueryPlanPtr> & local_plans,
+    QueryPlanPtrs & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,

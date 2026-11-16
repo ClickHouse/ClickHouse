@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['병렬 처리', '쿼리 최적화', '성능', '스레드 처리', '모범 사례']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 [속도를 위해 설계되었습니다](/ko/get-started/about/why-clickhouse-is-so-fast). 쿼리를 매우 높은 수준의 병렬 방식으로 실행하며, 사용 가능한 모든 CPU 코어를 활용하고, 데이터를 처리 레인에 분산하고, 하드웨어 성능을 한계에 가깝게 끌어올리는 경우가 많습니다.
 
 이 가이드에서는 ClickHouse에서 쿼리 병렬성이 어떻게 작동하는지, 그리고 대규모 워크로드에서 성능을 개선하기 위해 이를 어떻게 조정하거나 모니터링할 수 있는지 설명합니다.
@@ -21,7 +19,15 @@ ClickHouse는 [속도를 위해 설계되었습니다](/ko/get-started/about/why
 
 ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터가 있는 집계 쿼리를 실행할 때, ② 어떤 그래뉼을 처리해야 하고 어떤 그래뉼을 안전하게 건너뛸 수 있는지 식별하기 위해 ③ 프라이머리 인덱스(primary index)를 메모리에 로드합니다:
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="인덱스 분석" />
+<div className="ch-image-md">
+
+<Frame>
+
+![인덱스 분석](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### 처리 레인 간 작업 분산
@@ -29,7 +35,15 @@ ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터
 
 선택한 데이터는 이후 `n`개의 병렬 [처리 레인](/ko/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)에 [동적으로](#load-balancing-across-processing-lanes) 분산되며, 각 레인은 데이터를 [블록](/ko/resources/develop-contribute/introduction/architecture#block) 단위로 스트리밍하고 처리해 최종 결과를 생성합니다:
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4개의 병렬 처리 레인" />
+<div className="ch-image-md">
+
+<Frame>
+
+![4개의 병렬 처리 레인](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -39,7 +53,15 @@ ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터
 
 `8`개의 코어가 있는 머신에서는 더 많은 레인이 데이터를 병렬로 처리하므로 쿼리 처리량이 대략 2배로 증가합니다(메모리 사용량도 그에 따라 함께 증가합니다):
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8개의 병렬 처리 레인" />
+<div className="ch-image-md">
+
+<Frame>
+
+![8개의 병렬 처리 레인](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -53,7 +75,15 @@ ClickHouse는 ① 테이블의 프라이머리 키(primary key)에 대한 필터
 
 테이블 데이터가 여러 서버에 [세그먼트](/ko/guides/oss/deployment-and-scaling/shards)로 분산되어 있으면 각 서버는 자신의 세그먼트를 병렬로 처리합니다. 각 서버 내부에서는 앞서 설명한 대로 로컬 데이터가 병렬 처리 레인을 통해 처리됩니다:
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="분산 레인" />
+<div className="ch-image-md">
+
+<Frame>
+
+![분산 레인](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -127,7 +157,15 @@ FROM
 
 ClickHouse의 [내장 web UI](/ko/concepts/features/interfaces/http) (`/play` endpoint에서 사용 가능)는 위의 물리적 계획을 그래픽으로 시각화해 표시할 수 있습니다. 이 예시에서는 시각화를 간결하게 유지하기 위해 `max_threads`를 `4`로 설정하여 병렬 처리 레인 4개만 표시합니다:
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="쿼리 파이프라인" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![쿼리 파이프라인](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
+
+</div>
 
 참고: 이 시각화는 왼쪽에서 오른쪽으로 읽으십시오. 각 행은 데이터 블록을 순차적으로 스트리밍하면서 필터링, 집계, 최종 처리 단계와 같은 변환을 적용하는 병렬 처리 레인을 나타냅니다. 이 예시에서는 `max_threads = 4` 설정에 해당하는 4개의 병렬 레인을 확인할 수 있습니다.
 

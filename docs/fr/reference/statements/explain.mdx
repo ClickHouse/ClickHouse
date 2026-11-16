@@ -825,6 +825,18 @@ Le nombre de lignes et d’octets est indiqué une seule fois pour l’ensemble 
   2. le nombre maximal de threads de traitement des requêtes défini dans `max_threads`.
 </Note>
 
+#### Déversement sur le disque dans les étapes d&#39;agrégation, de tri et de dédoublonnage {#explain-analyze-spilling}
+
+Lorsqu&#39;une étape `GROUP BY`, `ORDER BY` ou `DISTINCT` déverse des données dans un stockage temporaire, elle indique :
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+Il s&#39;agit du nombre cumulé d&#39;octets compressés écrits par l&#39;ensemble de l&#39;étape, y compris ses processeurs parallèles.
+Ce total inclut les fichiers temporaires déjà consommés ou supprimés, et comptabilise chaque écriture lorsque des données sont déversées sur disque à plusieurs reprises.
+Cette ligne est omise si aucune donnée n&#39;a été déversée sur disque.
+
 #### Étapes de jointure {#explain-analyze-join-steps}
 
 Pour une étape de jointure, `EXPLAIN ANALYZE` affiche des lignes comparant les estimations de l’optimiseur de requêtes d’ordre de jointure avec ce qui s’est réellement produit (voir [Métriques de jointure estimées et réelles](#explain-analyze-join-estimation)), ainsi que, pour chaque côté, des lignes de *participation* — `Left` et `Right` — suivies des éventuelles lignes propres à l’implémentation de la jointure. `Left` et `Right` correspondent aux côtés logiques de la requête SQL. Dans la plupart des cas, `Left` correspond également au côté sonde (probe) de la jointure, et `Right` au côté de construction (build). Ce n’est toutefois pas toujours le cas, en raison de l’inversion (swap) qui peut se produire lors de l’exécution de la jointure. Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sont prises en charge (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), de même que les trois implémentations que ce paramètre ne peut pas sélectionner : les jointures `CROSS` ou `COMMA`, la [jointure par boucles imbriquées par blocs](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition) utilisée pour une section `ON` ne déterminant aucune clé de jointure, et le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join). La plupart indiquent les deux côtés ; certaines n’indiquent que le côté qu’elles matérialisent (par exemple, `direct` affiche uniquement `Left:`).
@@ -1103,7 +1115,7 @@ Le rapport indique les marques et les lignes que la projection lirait, un `read_
 
 Lorsque le résultat dépend de la disposition de la part de projection, `marks_span` indique la plage de valeurs, et une décision trop incertaine pour trancher est signalée comme `too close to call`. Sur les tables volumineuses, l’estimation lit un échantillon de granules (voir `projection_scan_budget_rows`).
 
-Les projections d’agrégation, les projections comportant une clause `WHERE`, leurs propres index de saut, une clé basée sur l’ordre de commit ou sur une colonne virtuelle, ou un `_block_number` stocké, ainsi que les projections qui ne couvrent pas toutes les colonnes lues par la requête, sont signalées comme `not_applicable`. `force_optimize_projection_name` et `preferred_optimize_projection_name` sont ignorés, et `force_optimize_projection` ne fait pas échouer le statement.
+WHATIF signale comme `not_applicable` les projections d’agrégation et les projections disposant de leurs propres index de saut. Il signale également comme `not_applicable` les projections dont la clé est basée sur l’ordre de commit ou sur une colonne virtuelle, ou qui comportent un `_block_number` stocké. Il en va de même pour les projections qui ne contiennent pas toutes les colonnes lues par la requête. WHATIF ignore `force_optimize_projection_name` et `preferred_optimize_projection_name`, et `force_optimize_projection` ne fait pas échouer le statement.
 
 **Syntaxe**
 
@@ -1114,7 +1126,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **Paramètres**
 
 * `projection_scan_budget_rows` — nombre de lignes qu’une estimation de projection peut lire avant de basculer sur un échantillon de granules. Valeur par défaut : `10000000`. `0` signifie aucune limite ; `max_rows_to_read` peut l’abaisser. Un échantillon lit au moins une trentaine de granules, avec au moins un granule par part ; lorsque `max_rows_to_read` ne le permet pas, l’estimation est `unsupported`.
-* `empirical` — `1` (par défaut) évalue l’index en mémoire sur les granules restant après le filtrage initial pour mesurer le taux d’exclusion (une borne supérieure). `0` saute cette étape. Dans les deux cas, si `empirical` ne produit aucun résultat (parce qu’il est désactivé ou que l’index ne peut pas être évalué en mémoire), l’estimateur utilise les [statistiques](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) des colonnes. Si elles ne sont pas disponibles non plus, il fournit un résumé indiquant uniquement si l’index est applicable.
+* `empirical` — `1` (par défaut) évalue l’index en mémoire sur les granules conservés après l’élagage de référence pour mesurer le taux d’exclusion (une borne supérieure). `0` saute cette étape. Dans les deux cas, si `empirical` ne produit aucun résultat (parce qu’il est désactivé ou que l’index ne peut pas être évalué en mémoire), l’estimateur utilise les [statistiques](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) des colonnes. Si elles ne sont pas disponibles non plus, il fournit un résumé indiquant uniquement si l’index est applicable.
 
 **Sortie**
 
