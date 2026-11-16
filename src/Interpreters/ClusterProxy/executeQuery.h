@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -59,6 +60,9 @@ namespace ClusterProxy
 {
 
 class SelectStreamFactory;
+
+/// Returns the shard without its replicas on this server, so that only the replicas on other servers are asked.
+Cluster::ShardInfo makeShardInfoWithoutLocalReplicas(const Cluster::ShardInfo & shard_info, const Settings & settings);
 
 /// `database` is an initiator-only setting: it selects the default database for the user's query
 /// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a

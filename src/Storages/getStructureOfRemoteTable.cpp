@@ -20,6 +20,8 @@
 #include <Common/NetException.h>
 #include <Common/quoteString.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -193,7 +195,9 @@ ColumnsDescription getStructureOfRemoteTable(
             }
             catch (const Exception & e)
             {
-                if (!skip_missing_table || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
+                /// A shard with remote replicas is still asked below, so it is not abandoned here.
+                const bool missing_table_in_local_replica = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
+                if (!missing_table_in_local_replica || !(skip_missing_table || (table_func_ptr && shard_info.hasRemoteConnections())))
                     throw;
                 missing_table = std::current_exception();
             }
@@ -202,13 +206,19 @@ ColumnsDescription getStructureOfRemoteTable(
 
     for (const auto & shard_info : shards_info)
     {
-        /// Already asked above.
-        if (missing_table && shard_info.isLocal())
+        /// The local replica has been asked above, only the remote replicas of the shard are left.
+        const bool local_replica_asked = missing_table && shard_info.isLocal();
+        if (local_replica_asked && !shard_info.hasRemoteConnections())
             continue;
+
+        std::optional<Cluster::ShardInfo> remote_replicas;
+        if (local_replica_asked)
+            remote_replicas = ClusterProxy::makeShardInfoWithoutLocalReplicas(shard_info, context->getSettingsRef());
 
         try
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(
+                cluster, remote_replicas ? *remote_replicas : shard_info, table_id, context, table_func_ptr);
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.

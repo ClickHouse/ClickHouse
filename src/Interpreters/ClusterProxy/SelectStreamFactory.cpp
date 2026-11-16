@@ -143,7 +143,7 @@ void SelectStreamFactory::createForShardImpl(
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
-    auto emplace_remote_stream = [&](bool lazy = false)
+    auto emplace_remote_stream = [&](bool lazy = false, const Cluster::ShardInfo * remote_replicas = nullptr)
     {
         SharedHeader shard_header;
         PlannerContextPtr planner_context;
@@ -181,7 +181,7 @@ void SelectStreamFactory::createForShardImpl(
             .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
-            .shard_info = shard_info,
+            .shard_info = remote_replicas ? *remote_replicas : shard_info,
             .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
@@ -211,10 +211,12 @@ void SelectStreamFactory::createForShardImpl(
             }
             catch (const Exception & e)
             {
-                /// A table function that finds no table is an absent table below, in the mode that skips one.
+                /// A table function that finds no table is an absent table below: the remote replicas of the shard are tried,
+                /// and a shard without them is skipped in the mode that skips one.
                 const bool missing_table = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
-                if (!missing_table || !settings[Setting::skip_unavailable_shards]
-                    || settings[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE)
+                const bool skip_missing_table = settings[Setting::skip_unavailable_shards]
+                    && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE;
+                if (!missing_table || !(skip_missing_table || shard_info.hasRemoteConnections()))
                     throw;
             }
         }
@@ -228,18 +230,27 @@ void SelectStreamFactory::createForShardImpl(
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
+            /// The table of a table function has no name.
+            const String missing_table_name = table_func_ptr ? table_func_ptr->formatForLogging() : main_table.getNameForLogs();
             if (shard_info.hasRemoteConnections())
             {
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
-                    main_table.getNameForLogs(), shard_info.shard_num);
-                emplace_remote_stream();
+                    missing_table_name, shard_info.shard_num);
+                if (table_func_ptr)
+                {
+                    /// A table function is not checked for existence on the replicas, so the replica on this server is left out.
+                    const auto remote_replicas = makeShardInfoWithoutLocalReplicas(shard_info, settings);
+                    emplace_remote_stream(/*lazy=*/false, &remote_replicas);
+                }
+                else
+                    emplace_remote_stream();
             }
             else if (settings[Setting::skip_unavailable_shards])
             {
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
-                    main_table.getNameForLogs(), shard_info.shard_num);
+                    missing_table_name, shard_info.shard_num);
                 ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
                 if (unavailable_shard_tracker)
                     unavailable_shard_tracker->onShardSkipped();

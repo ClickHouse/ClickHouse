@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS ts_dist;
 DROP TABLE IF EXISTS ts_dist_skip;
 DROP TABLE IF EXISTS ts_dist_strict;
 DROP TABLE IF EXISTS t_saved;
+DROP TABLE IF EXISTS t_saved_replicas;
 DROP TABLE IF EXISTS t_plain;
 DROP DATABASE IF EXISTS shard_1;
 
@@ -55,11 +56,24 @@ CREATE TABLE t_saved AS cluster('test_cluster_two_shards_different_databases_wit
 SELECT count() FROM t_saved;
 SELECT count() FROM t_saved SETTINGS skip_unavailable_shards = 0; -- { serverError UNKNOWN_TABLE }
 SELECT count() FROM t_saved SETTINGS skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
+
+SELECT '--- the remote replica of the shard of the missing local table answers, whatever the shard skip settings are';
+-- The first replica of the only shard is this server, the second one has the table in shard_1.
+DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
+DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
+DESCRIBE cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1;
+SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
+SELECT count() FROM cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain)) SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
+CREATE TABLE t_saved_replicas AS cluster('test_cluster_one_shard_local_and_remote_replica', view(SELECT x FROM t_plain));
+SELECT count() FROM t_saved_replicas;
+SELECT count() FROM t_saved_replicas SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable';
+
 CREATE TABLE t_plain (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_plain VALUES (2), (3);
 SELECT count() FROM t_saved;
 
 DROP TABLE t_saved;
+DROP TABLE t_saved_replicas;
 DROP TABLE t_plain;
 DROP TABLE ts_dist;
 DROP TABLE ts_dist_skip;

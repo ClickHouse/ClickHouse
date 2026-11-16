@@ -5,6 +5,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -78,6 +79,8 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsUInt64 distributed_replica_error_cap;
+    extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsSeconds max_execution_time;
@@ -159,6 +162,26 @@ namespace
 
 namespace ClusterProxy
 {
+
+Cluster::ShardInfo makeShardInfoWithoutLocalReplicas(const Cluster::ShardInfo & shard_info, const Settings & settings)
+{
+    Cluster::ShardInfo res = shard_info;
+    res.local_addresses.clear();
+    res.per_replica_pools.clear();
+    for (const auto & replica_pool : shard_info.per_replica_pools)
+    {
+        bool is_local = std::any_of(shard_info.local_addresses.begin(), shard_info.local_addresses.end(),
+            [&](const Cluster::Address & address) { return (address.host_name == replica_pool->getHost()) && (address.port == replica_pool->getPort()); });
+        if (!is_local)
+            res.per_replica_pools.push_back(replica_pool);
+    }
+    res.pool = res.per_replica_pools.empty() ? nullptr : std::make_shared<ConnectionPoolWithFailover>(
+        res.per_replica_pools,
+        settings[Setting::load_balancing],
+        settings[Setting::distributed_replica_error_half_life].totalSeconds(),
+        settings[Setting::distributed_replica_error_cap]);
+    return res;
+}
 
 void stripDatabaseSetting(Settings & settings)
 {

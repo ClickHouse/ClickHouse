@@ -13,4 +13,12 @@
 1
 --- a table created from cluster() decides on every read
 1
+--- the remote replica of the shard of the missing local table answers, whatever the shard skip settings are
+x	UInt8					
+x	UInt8					
+x	UInt8					
+1
+1
+1
+1
 3
