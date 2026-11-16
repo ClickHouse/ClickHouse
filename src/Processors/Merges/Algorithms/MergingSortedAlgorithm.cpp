@@ -636,7 +636,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
 
-        /// Nothing below can shorten a one-row batch: `hasEnoughRows` has just checked the block limits, and there is no row limit.
+        /// A one-row batch cannot be shortened: `hasEnoughRows` has just checked the block limits and there is no `limit`.
         if (initial_batch_size == 1 && !limit && !current.impl->isLast())
         {
             insertRow(*current.impl);
@@ -666,7 +666,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             updated_batch_size -= merged_rows + updated_batch_size - merged_data.maxBlockSize();
         }
 
-        /// A chunk moved whole ignores the byte limit, so its rows are measured only for the row limit.
+        /// A chunk moved whole is never clipped to the block limits; only the `limit` checks below read its batch size.
         const bool insert_whole_chunk = current.impl->isFirst()
             && current.impl->isLast(initial_batch_size)
             && !current_inputs[current.impl->order].skip_last_row;
