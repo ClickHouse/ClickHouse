@@ -2157,12 +2157,15 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         requirement->set("type", "assert-ref-snapshot-id");
         requirement->set("ref", "main");
 
+        /// `snapshot-id` is required; `null` asserts that `main` does not exist yet.
+        Poco::Dynamic::Var expected_main_snapshot_id;
         if (new_snapshot->has("parent-snapshot-id"))
         {
             auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
             if (parent_snapshot_id != -1)
-                requirement->set("snapshot-id", parent_snapshot_id);
+                expected_main_snapshot_id = parent_snapshot_id;
         }
+        requirement->set("snapshot-id", expected_main_snapshot_id);
 
         Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
         requirements->add(requirement);

@@ -20,6 +20,7 @@
     {"prefix":"replicated_fetches","mode":"token","target":"/reference/settings/server-settings/settings/replicated-fetches"},
     {"prefix":"streaming_exchange","mode":"token","target":"/reference/settings/server-settings/settings/streaming-exchange"},
     {"prefix":"uncompressed_cache","mode":"token","target":"/reference/settings/server-settings/settings/uncompressed-cache"},
+    {"prefix":"amber_connections","mode":"token","target":"/reference/settings/server-settings/settings/amber-connections"},
     {"prefix":"background_merges","mode":"token","target":"/reference/settings/server-settings/settings/background-merges"},
     {"prefix":"distributed_cache","mode":"token","target":"/reference/settings/server-settings/settings/distributed-cache"},
     {"prefix":"encryption_header","mode":"token","target":"/reference/settings/server-settings/settings/encryption-header"},
