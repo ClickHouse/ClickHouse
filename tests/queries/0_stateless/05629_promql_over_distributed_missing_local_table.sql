@@ -10,6 +10,8 @@ SET distributed_foreground_insert = 1;
 DROP TABLE IF EXISTS ts_dist;
 DROP TABLE IF EXISTS ts_dist_skip;
 DROP TABLE IF EXISTS ts_dist_strict;
+DROP TABLE IF EXISTS t_saved;
+DROP TABLE IF EXISTS t_plain;
 DROP DATABASE IF EXISTS shard_1;
 
 CREATE DATABASE shard_1;
@@ -41,6 +43,24 @@ SELECT count() FROM prometheusQuery(ts_dist_skip, 'm', 140) SETTINGS skip_unavai
 SELECT count() FROM prometheusQuery(ts_dist_strict, 'm', 140); -- { serverError UNKNOWN_TABLE }
 SELECT count() FROM prometheusQuery(ts_dist_strict, 'm', 140) SETTINGS skip_unavailable_shards_mode = 'unavailable_or_table_missing';
 
+SELECT '--- a skipped local shard counts against the limits';
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_ratio = 0.4; -- { serverError TOO_MANY_UNAVAILABLE_SHARDS }
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_ratio = 0.5;
+SELECT count() FROM prometheusQuery(ts_dist, 'm', 140) SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_num = 1;
+
+SELECT '--- a table created from cluster() decides on every read';
+CREATE TABLE shard_1.t_plain (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO shard_1.t_plain VALUES (1);
+CREATE TABLE t_saved AS cluster('test_cluster_two_shards_different_databases_with_local', view(SELECT x FROM t_plain), SETTINGS skip_unavailable_shards = 1);
+SELECT count() FROM t_saved;
+SELECT count() FROM t_saved SETTINGS skip_unavailable_shards = 0; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM t_saved SETTINGS skip_unavailable_shards_mode = 'unavailable'; -- { serverError UNKNOWN_TABLE }
+CREATE TABLE t_plain (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_plain VALUES (2), (3);
+SELECT count() FROM t_saved;
+
+DROP TABLE t_saved;
+DROP TABLE t_plain;
 DROP TABLE ts_dist;
 DROP TABLE ts_dist_skip;
 DROP TABLE ts_dist_strict;

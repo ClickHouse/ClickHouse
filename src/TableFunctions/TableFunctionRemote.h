@@ -34,10 +34,6 @@ private:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    /// With skip_unavailable_shards on, leaves out the local shards whose table function finds no table,
-    /// unless skip_unavailable_shards_mode is `unavailable`.
-    void skipLocalShardsWithoutTable(const ContextPtr & context);
-
     std::string name;
     bool is_cluster_function;
     PreformattedMessage help_message;

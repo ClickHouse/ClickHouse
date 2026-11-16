@@ -8,3 +8,9 @@
 1
 --- skip_unavailable_shards_mode = unavailable skips no shard without the table
 1
+--- a skipped local shard counts against the limits
+1
+1
+--- a table created from cluster() decides on every read
+1
+3

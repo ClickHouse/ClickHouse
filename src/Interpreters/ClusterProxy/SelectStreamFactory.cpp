@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
@@ -49,6 +50,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -202,7 +205,18 @@ void SelectStreamFactory::createForShardImpl(
         if (table_func_ptr)
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            try
+            {
+                main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            }
+            catch (const Exception & e)
+            {
+                /// A table function that finds no table is an absent table below, in the mode that skips one.
+                const bool missing_table = e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
+                if (!missing_table || !settings[Setting::skip_unavailable_shards]
+                    || settings[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE)
+                    throw;
+            }
         }
         else
         {

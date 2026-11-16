@@ -30,12 +30,16 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool describe_compact_output;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -165,24 +169,43 @@ ColumnsDescription getStructureOfRemoteTable(
 
     std::string fail_messages;
 
+    /// A read with these settings skips a local shard whose table function finds no table, so the discovery does too.
+    const auto & settings = context->getSettingsRef();
+    const bool skip_missing_table = table_func_ptr && settings[Setting::skip_unavailable_shards]
+        && settings[Setting::skip_unavailable_shards_mode] != SkipUnavailableShardsMode::UNAVAILABLE;
+    std::exception_ptr missing_table;
+
     /// Use local shard as first priority, as it needs no network communication
     for (const auto & shard_info : shards_info)
     {
         if (shard_info.isLocal())
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            try
+            {
+                const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
 
-            /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
-            /// In that case, fall through to try remote shards.
-            if (res.empty())
-                break;
+                /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
+                /// In that case, fall through to try remote shards.
+                if (res.empty())
+                    break;
 
-            return res;
+                return res;
+            }
+            catch (const Exception & e)
+            {
+                if (!skip_missing_table || (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE))
+                    throw;
+                missing_table = std::current_exception();
+            }
         }
     }
 
     for (const auto & shard_info : shards_info)
     {
+        /// Already asked above.
+        if (missing_table && shard_info.isLocal())
+            continue;
+
         try
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
@@ -201,6 +224,10 @@ ColumnsDescription getStructureOfRemoteTable(
             continue;
         }
     }
+
+    /// With no shard left to answer, the error of the missing table stays.
+    if (missing_table)
+        std::rethrow_exception(missing_table);
 
     throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
         "All attempts to get table structure failed. Log: \n\n{}\n", fail_messages);
