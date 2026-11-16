@@ -1083,8 +1083,6 @@ namespace
 {
 /// Reader cache key of the part's SST, or nullopt when the part has no SST
 /// checksum entry (non-UNIQUE KEY or legacy part): such parts are never cached.
-/// The identity is the physical location (`disk:path`), not the UUID: a
-/// background move keeps the UUID but not the location.
 std::optional<UniqueKeySSTReaderCacheKey> getSSTReaderCacheKey(const IMergeTreeDataPart & part)
 {
     const auto it = part.checksums.files.find(SSTIndexWriter::FILE_NAME);

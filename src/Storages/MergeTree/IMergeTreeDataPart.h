@@ -680,10 +680,8 @@ public:
     std::optional<String> getDenseIndexBackingPath() const;
 
 #if USE_ROCKSDB
-    /// UNIQUE KEY — this part's SST reader, shared process-wide through the
-    /// reader cache (keyed by part location + SST checksum). Direct open (no
-    /// caching) when the cache is disabled, the part is not Active, or the SST
-    /// has no checksum entry.
+    /// `UNIQUE KEY` SST reader shared through the reader cache; direct open
+    /// when the cache is disabled or the part is not cacheable.
     SSTFileReaderPtr getOrOpenSSTReader() const;
 #endif
 

@@ -20,15 +20,11 @@
 namespace DB
 {
 
-/// Weight: the reader's resident size (`index_size + filter_size`, preloaded at open
-/// because `no_block_cache` forces `cache_index_and_filter_blocks` off) plus a fixed
-/// per-reader cost. If a shared RocksDB block cache (`UniqueKeyIndexCache`) is ever
-/// wired in with `cache_index_and_filter_blocks = true`, readers become lightweight
-/// and this weight should drop to the fixed cost.
+/// Weight: resident index + filter blocks (preloaded at open) plus a fixed
+/// per-reader cost.
 struct UniqueKeySSTReaderWeightFunction
 {
-    /// Fixed per-reader cost not in `memoryUsage`: the RocksDB reader objects. A
-    /// reader holds no read buffer.
+    /// Fixed per-reader cost not in `memoryUsage`: the RocksDB reader objects.
     static constexpr size_t UNIQUE_KEY_SST_READER_CACHE_OVERHEAD = 4096;
 
     size_t operator()(const SSTFileReader & reader) const

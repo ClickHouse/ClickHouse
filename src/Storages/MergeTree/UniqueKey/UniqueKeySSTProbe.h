@@ -30,11 +30,9 @@ class DeleteBitmap;
 /// Probe window size, matching RocksDB's per-call `MultiGet` cap.
 constexpr size_t PROBE_BATCH_SIZE = 32;
 
-/// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
-/// RocksDB `Env`, so remote (S3 etc.) disks work as well. Block
-/// cache is disabled: load-time validation would only pollute it.
-/// Keeps no read buffer or settings: each block read opens a throwaway buffer
-/// with the reading thread's settings (`getReadSettings`), so one reader can be
+/// Reads a part's `unique_key_index.sst` through `IDataPartStorage`, so remote
+/// disks work as well. Holds no read buffer or settings: each block read opens
+/// a throwaway buffer with the reading thread's settings, so one reader can be
 /// shared across queries (the reader cache).
 class SSTFileReader
 {
