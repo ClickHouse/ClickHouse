@@ -231,9 +231,9 @@ public:
         return result;
     }
 
-    size_t getAllocatedSize() const { return allocated_size; }
+    [[nodiscard]] size_t getAllocatedSize() const { return allocated_size; }
 
-    size_t getPageSize() const { return page_size; }
+    [[nodiscard]] size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -289,10 +289,10 @@ private:
         {
         }
 
-        void * base() const { return pages_base; }
-        size_t pagesSize() const { return pages_size; }
-        size_t pageSize() const { return page_size; }
-        size_t blockSize() const { return pages_size * page_size; }
+        [[nodiscard]] void * base() const { return pages_base; }
+        [[nodiscard]] size_t pagesSize() const { return pages_size; }
+        [[nodiscard]] size_t pageSize() const { return page_size; }
+        [[nodiscard]] size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -406,7 +406,7 @@ public:
         return true;
     }
 
-    size_t allocatedSize() const
+    [[nodiscard]] size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -723,7 +723,7 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::Triple(llvm::sys::getProcessTriple());
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
