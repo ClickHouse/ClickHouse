@@ -1,0 +1,13 @@
+<test>
+    <!-- A dense `Enum16` with more than 1024 values, like the metric names in `system.metric_log`. -->
+    <create_query>
+        CREATE TABLE enum16_dense ENGINE = MergeTree ORDER BY tuple() AS
+        SELECT CAST(intHash32(number) % 2000, assumeNotNull((SELECT 'Enum16(' || arrayStringConcat(arrayMap(i -> '''ProfileEvent_SomeMetricName' || toString(i) || ''' = ' || toString(i), range(2000)), ', ') || ')'))) AS e
+        FROM numbers(20000000)
+    </create_query>
+
+    <query>SELECT CAST(e AS String) FROM enum16_dense FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT CAST(toInt16(e), toTypeName(e)) FROM enum16_dense FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS enum16_dense</drop_query>
+</test>

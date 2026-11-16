@@ -6,7 +6,9 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/saturatedDuration.h>
 
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 
 namespace Poco
 {
@@ -96,8 +98,10 @@ public:
     void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
 
 private:
-    void subscribe();
+    void subscribe(UInt64 generation);
+    bool isCurrentChannel(UInt64 generation) const { return generation == channel_generation; }
     bool isChannelUsable();
+    void notifyReceivedSpace();
     void updateCommitInfo(CommitInfo record);
 
     /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
@@ -121,6 +125,9 @@ private:
 
     String channel_id;
     UInt64 channel_id_counter = 0;
+    /// Incremented on every channel update and captured by value in the channel callbacks.
+    /// AMQP-CPP can dispatch callbacks of a replaced channel later, they must not touch the consumer state.
+    std::atomic<UInt64> channel_generation = 0;
 
     enum class State : uint8_t
     {
@@ -139,6 +146,13 @@ private:
 
     std::condition_variable cv;
     std::mutex mutex;
+
+    /// Held by the channel callbacks while they touch the consumer state and by `updateChannel`
+    /// while it replaces the generation and clears `received`. Recursive because AMQP-CPP calls the error
+    /// callback of a failed `consume` right away, from `subscribe` inside the `onReady` callback.
+    std::recursive_mutex channel_mutex;
+    /// Notified when `received` gets space, the channel is replaced, or the consumer is stopped.
+    std::condition_variable_any received_space_cv;
 };
 
 }

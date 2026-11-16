@@ -71,6 +71,8 @@ public:
     /// `ParallelReadingExtension` it constructed before passing into the pool.
     RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
+    const RangesInDataParts & getPartsRanges() const { return parts_ranges; }
+
     /// Must be called before the pipeline starts to call getTask. Not every pool applies the
     /// refiner: see refineReadRanges calls in getTask of the concrete pools.
     void setReadRangesRefiner(MergeTreeReadRangesRefinerPtr refiner) { ranges_refiner = std::move(refiner); }

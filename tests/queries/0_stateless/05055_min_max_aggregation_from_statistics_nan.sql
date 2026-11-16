@@ -20,7 +20,6 @@ SET materialize_statistics_on_insert = 1;
 -- Pin every setting the optimization's eligibility depends on: the test runner randomizes
 -- optimize_aggregation_in_order, and aggregation-in-order (like aggregate_functions_null_for_empty)
 -- disables the projection optimization entirely, turning the EXPLAIN checks below into 0.
-SET enable_analyzer = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 
@@ -30,7 +29,7 @@ INSERT INTO t_nan_stats SELECT number, nan, nan FROM numbers(1000);
 INSERT INTO t_nan_stats SELECT 1000 + number, toFloat32(number) + 1, toFloat64(number) + 1 FROM numbers(1000);
 
 SELECT 'all parts are covered by statistics';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'an all-NaN part next to a finite one';
 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats;
@@ -89,7 +88,7 @@ OPTIMIZE TABLE t_nan_stats_merged FINAL;
 
 SELECT 'the merged part is a single part covered by statistics';
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_nan_stats_merged' AND active;
-SELECT count() FROM (EXPLAIN actions = 1 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'one part merged from an all-NaN prefix and a finite suffix';
 SELECT min(f32), max(f32), min(f64), max(f64) FROM t_nan_stats_merged;

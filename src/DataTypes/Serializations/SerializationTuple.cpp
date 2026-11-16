@@ -13,6 +13,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -162,15 +164,24 @@ void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<vo
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
 }
 
-SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
+SerializationTuple::SerializationTuple(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_)
+    : elems(std::move(elems_))
+    , elem_types(std::move(elem_types_))
+    , has_explicit_names(has_explicit_names_)
+    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
+{
+    chassert(elem_types.size() == elems.size());
+}
+
+SerializationPtr SerializationTuple::create(ElementSerializations elems_, DataTypes elem_types_, bool has_explicit_names_)
 {
     for (const auto & elem : elems_)
     {
         if (!elem->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationTuple(std::move(elems_), has_explicit_names_));
+            return std::shared_ptr<ISerialization>(new SerializationTuple(std::move(elems_), std::move(elem_types_), has_explicit_names_));
     }
     auto hash = getHash(elems_, has_explicit_names_);
-    return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
+    return ISerialization::pooled(hash, [e = std::move(elems_), t = std::move(elem_types_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), std::move(t), has_explicit_names_); });
 }
 
 bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
@@ -537,7 +548,10 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
                     }
 
                     auto & element_column = extractElementColumn(column, element_pos);
-                    element_column.insertDefault();
+                    if (elem_types[element_pos]->isDefaultInsertTrivial())
+                        element_column.insertDefault();
+                    else
+                        elem_types[element_pos]->insertDefaultInto(element_column);
                 }
             }
 
@@ -752,12 +766,12 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone() : nullptr);
+            new_state->states.push_back(state ? state->clone(context) : nullptr);
 
         return new_state;
     }
@@ -919,15 +933,13 @@ size_t SerializationTuple::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);
     bytes += elems.capacity() * sizeof(ElementSerializationPtr);
+    bytes += elem_types.capacity() * sizeof(DataTypePtr);
     return bytes;
 }
 
 bool SerializationTuple::supportsPooling() const
 {
-    for (const auto & elem : elems)
-        if (!elem->supportsPooling())
-            return false;
-    return true;
+    return elems_support_pooling;
 }
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const

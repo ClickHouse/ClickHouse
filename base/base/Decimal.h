@@ -56,7 +56,7 @@ struct Decimal
     constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
 
     template <typename U>
-    constexpr U convertTo() const
+    [[nodiscard]] constexpr U convertTo() const
     {
         if constexpr (is_decimal<U>)
             return convertTo<typename U::NativeType>();
@@ -92,8 +92,8 @@ struct Decimal
     template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
-    /// This is to avoid UB for sumWithOverflow()
-    void NO_SANITIZE_UNDEFINED addOverflow(const T & x);
+    /// This is to avoid UB for sumWithOverflow(). Defined here rather than in Decimal.cpp so that it can be inlined.
+    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
 
     T value;
 };

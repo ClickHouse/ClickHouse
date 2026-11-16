@@ -14,8 +14,6 @@
 -- query_plan_lower_array_join_function = 0 keeps the arrayJoin inside the
 -- expression, which is the path under test (lowering moves it into an ARRAY JOIN step).
 
--- enable_analyzer = 1: correlated scalar subqueries require the analyzer;
--- the old analyzer rejects this shape with UNKNOWN_IDENTIFIER before it can form.
 SELECT DISTINCT s
 FROM
 (
@@ -23,7 +21,7 @@ FROM
     WHERE isNotNull((SELECT DISTINCT s FROM (SELECT toFixedString(NULL, 16) ORDER BY s ASC NULLS LAST) LIMIT 1 SETTINGS optimize_distinct_in_order = 1))
 )
 ORDER BY s
-SETTINGS optimize_distinct_in_order = 1, enable_analyzer = 1, query_plan_lower_array_join_function = 0;
+SETTINGS optimize_distinct_in_order = 1, query_plan_lower_array_join_function = 0;
 
 -- The scan over the DAG outputs must skip (not abort on) the unsupported ARRAY JOIN output:
 -- an arrayJoin result listed before a preserved sorted key must not wipe the valid sort prefix

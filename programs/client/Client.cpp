@@ -97,6 +97,10 @@ Client::~Client() = default;
 
 void Client::processError(std::string_view query) const
 {
+    /// The reader of the output went away, e.g. `clickhouse-client -q '...' | head -1`: stop quietly.
+    if (stdout_is_broken)
+        return;
+
     if (server_exception)
     {
         fmt::print(
@@ -466,6 +470,17 @@ try
 
             if (should_ask_2fa)
             {
+                /// The server asks for the second factor before it checks the password, so the first attempt
+                /// without any password ends here too. Ask for the password alone first: it may already contain
+                /// the code (`password+code`); otherwise the server asks again and the code is prompted.
+                if (!asked_password && !config().has("password") && !config().getBool("ask-password", false))
+                {
+                    asked_password = true;
+                    config().setBool("ask-password", true);
+                    preserve_announced_endpoint_for_retry = true;
+                    continue;
+                }
+
                 asked_2fa = true;
                 if (!connection_parameters.password.empty())
                     config().setString("password", connection_parameters.password);
@@ -508,7 +523,7 @@ try
         /// error, and the AST fuzzer reports an early stop - losing the server, say - only
         /// through this exit code, so granting it success would end a truncated fuzzer run with
         /// `Fuzzer exited with success`.
-        if (buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error)
+        if ((buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error) && !stdout_is_broken)
         {
             // If exception code isn't zero, we should return non-zero return
             // code anyway.
@@ -535,6 +550,9 @@ try
 }
 catch (Exception & e)
 {
+    if (stdout_is_broken)
+        return 0;
+
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -542,6 +560,9 @@ catch (Exception & e)
 }
 catch (...)
 {
+    if (stdout_is_broken)
+        return 0;
+
     std::cerr << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
 }
@@ -957,7 +978,8 @@ void Client::connect()
             }
 
             /// This problem can't be fixed with reconnection so it is not attempted
-            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD
+                || e.code() == ErrorCodes::REQUIRED_SECOND_FACTOR)
                 throw;
 
             if (attempted_address_index == hosts_and_ports.size() - 1)
