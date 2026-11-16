@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Esta página traz orientações práticas para evitar junções sempre que possível e reduzir seu custo quando forem necessárias. Para a sintaxe e a semântica, consulte a [referência da cláusula `JOIN`](/pt-BR/reference/statements/select/join). Para os algoritmos de execução e a escolha do algoritmo, consulte [Junção de tabelas](/pt-BR/concepts/features/operations/select/joining-tables).
 
 ## Prefira evitar junções {#prefer-avoiding-joins}
@@ -54,7 +52,15 @@ Se a sua principal métrica de otimização for o desempenho e você quiser exec
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Árvore de decisão para otimização de desempenho de junções" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árvore de decisão para otimização de desempenho de junções](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -78,7 +84,15 @@ Se você quiser otimizar uma junção para obter o menor uso de memória, em vez
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Árvore de decisão para otimização de memória em junções" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Árvore de decisão para otimização de memória em junções](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

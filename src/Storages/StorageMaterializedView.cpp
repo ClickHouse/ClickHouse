@@ -839,6 +839,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
         refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// The temporary table repeats the stored definition of the existing target.
+        refresh_context->setSetting("allow_reserved_column_names", Field(UInt64{1}));
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -986,10 +988,7 @@ void StorageMaterializedView::alter(
             /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
             /// this lock, and the alter below reads the inner table's metadata through that cache.
             if (auto metadata_cache = local_context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
             /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
             /// and commits it at the first metadata change made from the query context itself, which has

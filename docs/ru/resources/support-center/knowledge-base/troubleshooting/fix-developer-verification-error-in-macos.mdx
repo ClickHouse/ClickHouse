@@ -6,8 +6,6 @@ tags: ['Ошибки и исключения']
 keywords: ['Проверка разработчика', 'macOS']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ## Устранение ошибки проверки разработчика в macOS {#fix-the-developer-verification-error-in-macos}
 
 По умолчанию macOS не запускает приложения и инструменты, загруженные из интернета, если они не подписаны идентифицированным разработчиком и не прошли нотаризацию в Apple.
@@ -24,7 +22,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 При попытке запустить бинарный файл `clickhouse`, находящийся в карантине, может появиться следующая ошибка:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Диалоговое окно ошибки проверки разработчика в macOS" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Диалоговое окно ошибки проверки разработчика в macOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 Если перейти на подписанную сборку невозможно, снимите с бинарного файла карантин — в Системных настройках или в терминале.
 
@@ -36,13 +42,29 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 3. Перейдите в раздел **Конфиденциальность и безопасность**:
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Стандартный вид настроек macOS «Конфиденциальность и безопасность»" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![Стандартный вид настроек macOS «Конфиденциальность и безопасность»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. Прокрутите вниз до раздела **Безопасность** и найдите сообщение: *«Использование „clickhouse-macos-aarch64“ было заблокировано, так как программа не получена от идентифицированного разработчика»*.
 
 5. Нажмите **Всё равно разрешить** (в последних версиях macOS — **Всё равно открыть**).
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Настройки macOS «Конфиденциальность и безопасность» с кнопкой «Все равно разрешить»" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![Настройки macOS «Конфиденциальность и безопасность» с кнопкой «Все равно разрешить»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. Введите пароль пользователя macOS.
 
