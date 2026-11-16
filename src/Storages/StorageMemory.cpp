@@ -665,7 +665,7 @@ static Block logicalDefaultInputs(
         else if (rows > 0)
         {
             auto filled = physical->type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
-            logical.insert({std::move(filled), physical->type, name});
+            logical.insert({filled, physical->type, name});
         }
     }
 

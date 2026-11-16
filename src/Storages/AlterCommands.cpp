@@ -2362,7 +2362,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     {
         ASTPtr expression;
         DataTypePtr type;
-        ColumnDefaultKind kind;
+        ColumnDefaultKind kind = ColumnDefaultKind::Default;
     };
     std::map<String, PendingDefault> pending_defaults;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
