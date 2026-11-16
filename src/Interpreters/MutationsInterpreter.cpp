@@ -242,6 +242,12 @@ std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
     collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
     collectSets(expression, *planner_context);
 
+    /// A set from a subquery or a table would be built here and once more by the mutation itself, which costs
+    /// another read and may give another result. `mutationPredicateContainsDeferredSet` rejects such a set written
+    /// in the predicate, but the definition of an `ALIAS` column can bring one in, seen only after the resolution.
+    if (!planner_context->getPreparedSets().getSubqueries().empty())
+        return std::nullopt;
+
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     /// Use plain column names for the DAG inputs (instead of planner column identifiers
     /// like `__table1.x`), so that the caller can match them against key expression columns.
@@ -252,22 +258,6 @@ std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
         empty_correlated_columns_set,
         /*use_column_identifier_as_action_node_name=*/ false);
     correlated_subtrees.assertEmpty("in a mutation predicate");
-
-    /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
-    auto subquery_options = SelectQueryOptions{}.subquery();
-    for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
-    {
-        auto query_tree = subquery->detachQueryTree();
-        createUniqueAliasesIfNecessary(query_tree, context);
-        Planner subquery_planner(
-            query_tree,
-            subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
-        subquery_planner.buildQueryPlanIfNeeded();
-
-        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
-    }
 
     if (actions.getOutputs().size() != 1)
         return std::nullopt;
