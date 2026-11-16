@@ -2072,8 +2072,9 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    /// `Address::operator==` does not compare the inter-server secret, but the connection pool of the queue
-    /// signs every request with it, so rotating only the secret (e.g. with `ALTER CLUSTER`) must recreate the queue.
+    /// `Address::operator==` does not compare the inter-server secret, but the queue's connection pool
+    /// signs every new request with it. Rotating only the secret replaces that pool in place.
+    /// An in-flight `sendBatch` keeps the pool it already borrowed.
     auto addresses_changed = [](const Cluster::Addresses & lhs, const Cluster::Addresses & rhs)
     {
         if (lhs != rhs)

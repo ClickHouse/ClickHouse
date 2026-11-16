@@ -220,6 +220,7 @@ static struct InitFiu
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(sql_cluster_create_pause_after_namespace_check) \
+    PAUSEABLE_ONCE(distributed_async_insert_batch_pause_after_first_file) \
     REGULAR(ddl_worker_quote_entry_query) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_processing_lock) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_watermark_commit) \
