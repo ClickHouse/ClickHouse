@@ -79,6 +79,10 @@ SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1),
     (k, 1) NOT IN (SELECT tuple(toUInt8(1)), 1)
 FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k);
 
+-- A `Bool` key converts even when the probe has its type: a byte other than 0 and 1 is `true`. The same
+-- holds for a `UInt8` probe, which the type comparison does not tell from a `Bool` one.
+SELECT reinterpret(materialize(toUInt8(2)), 'Bool') IN (SELECT true), materialize(toUInt8(2)) IN (SELECT true);
+
 {% endfor %}
 
 -- Outer NULLs and precision loss in different key components exclude rows in either column order.
