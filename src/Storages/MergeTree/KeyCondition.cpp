@@ -3493,7 +3493,10 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         else if (auto transform = tryGetDeterministicKeyTransform(node, info))
         {
             const auto & dag = transform->dag;
-            if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name))
+            /// With `tuple(x)` as the key, a NULL `x` is an ordinary key value that isn't in the set, but
+            /// `x NOT IN (...)` is NULL on that row.
+            if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name)
+                || deterministicTransformMayHideNull(dag.input_type, transform->key_column_type, /*nested_null_is_ordinary_value*/ false))
                 candidate.is_relaxed = true;
 
             candidate.column_mappings.push_back({
@@ -4201,9 +4204,11 @@ void KeyCondition::appendSetAtoms(
 
             const bool is_injective = isDeterministicTransformInjective(
                 candidate.dag.actions->getActionsDAG(), candidate.dag.input_name, candidate.dag.output_name);
+            const bool hides_null = deterministicTransformMayHideNull(
+                candidate.dag.input_type, candidate.key_column_type, /*nested_null_is_ordinary_value*/ false);
             /// A non-injective transform supplies only a necessary membership condition, whose
-            /// complement cannot prune.
-            if (!allow_relaxed_pruning && !is_injective)
+            /// complement cannot prune. The same holds for a transform that hides a NULL.
+            if (!allow_relaxed_pruning && (!is_injective || hides_null))
                 continue;
 
             SetAtomCandidate set_candidate;
@@ -4214,7 +4219,7 @@ void KeyCondition::appendSetAtoms(
             /// A whole-tuple candidate consumes one packed set column, like `packed_tuple_candidate`.
             /// `tryPrepareSetAtom` repacks an unpacked set for the transform's tuple input.
             set_candidate.args_count = source.is_whole_tuple ? 1 : args_count;
-            set_candidate.is_relaxed = !is_injective;
+            set_candidate.is_relaxed = !is_injective || hides_null;
 
             auto candidate_atom = tryPrepareSetAtom(
                 set_columns, set_types, std::move(set_candidate), allow_relaxed_pruning, has_element_type);

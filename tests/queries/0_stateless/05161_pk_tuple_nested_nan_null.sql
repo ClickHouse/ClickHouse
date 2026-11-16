@@ -198,6 +198,18 @@ SELECT count(), sum(x) FROM t_pk_null_data_assume_not_null WHERE n != 2;
 
 DROP TABLE t_pk_null_data_assume_not_null;
 
+-- `ifNull(n, 0)` and `tuple(n)` both store a `NULL` `n` as an ordinary key value. `n NOT IN (2)` is `NULL` on
+-- that row, and neither key column shows it.
+CREATE TABLE t_pk_null_data_two_transforms (n Nullable(Int32), x Int32) ENGINE = MergeTree ORDER BY (ifNull(n, 0), tuple(n))
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+
+INSERT INTO t_pk_null_data_two_transforms VALUES (NULL,1),(1,1),(2,1),(3,1);
+
+SELECT count() FROM t_pk_null_data_two_transforms WHERE n NOT IN (2);
+SELECT count(), sum(x) FROM t_pk_null_data_two_transforms WHERE n NOT IN (2);
+
+DROP TABLE t_pk_null_data_two_transforms;
+
 -- A `NULL` nested in an `Array` or a `Map` is compared as an ordinary value, so the key analysis of
 -- these keys stays exact; the counts must agree with the row-level filter.
 CREATE TABLE t_pk_array_nested_null (a Array(Nullable(Int32)), x Int32) ENGINE = MergeTree ORDER BY a
