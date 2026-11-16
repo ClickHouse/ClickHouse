@@ -352,8 +352,12 @@ void selectWithinPartsRange(
             );
         }
 
-        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
-
+        /// The interpolation above approaches its bounds from below, and the truncation to an integer can take the
+        /// result below `base`: with `base = 1` (aggressive selection by `OPTIMIZE`) and `max_parts_to_merge_at_once = 2`,
+        /// it gives something like 1.9999 and then 1, which allows no merge at all. A merge of fewer than two parts
+        /// makes no progress, so the heuristic never lowers the width below two; only an explicitly configured
+        /// `max_parts_to_merge_at_once` can.
+        max_parts_to_merge_at_once = std::min(std::max<size_t>(2, max_parts_to_merge_at_once), settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)

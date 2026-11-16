@@ -1,0 +1,6 @@
+before	t_merge_width_simple	6
+before	t_merge_width_stochastic	6
+capped	t_merge_width_simple	5
+capped	t_merge_width_stochastic	5
+15	6
+15	6
