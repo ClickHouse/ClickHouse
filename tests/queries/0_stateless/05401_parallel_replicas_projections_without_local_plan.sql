@@ -4,6 +4,9 @@
 -- With parallel_replicas_prefer_local_replica = 0 the initiator builds no local plan, so the replicas must not
 -- leave rows answered by a projection (exact count, minmax, a projection beside parts without it) to it.
 
+-- Disable force_primary_key_reverse_order: the `EXPLAIN` check of the exact count from the primary key depends on the sort order of the table
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_pr_no_local_plan;
 CREATE TABLE t_pr_no_local_plan (x UInt64, b UInt64) ENGINE = MergeTree ORDER BY x;
 SYSTEM STOP MERGES t_pr_no_local_plan;
