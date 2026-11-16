@@ -28,6 +28,16 @@ namespace Setting
 template <typename ResultType, bool legacy_constness>
 struct ArrayCountImpl
 {
+    /// Declarative signature — `f(array)` overload counts non-zero elements;
+    /// the lambda return type follows the boolean-predicate convention used
+    /// by `arrayFilter` (UInt8, optionally Nullable, or Nothing).
+    /// The result type follows `ResultType`: `UInt64`, or `UInt32` under `array_count_legacy_uint32_result`.
+    static constexpr auto signature = std::is_same_v<ResultType, UInt64>
+        ? "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array, ...) -> UInt64"
+          " OR (Array(UInt8)) -> UInt64"
+        : "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array, ...) -> UInt32"
+          " OR (Array(UInt8)) -> UInt32";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

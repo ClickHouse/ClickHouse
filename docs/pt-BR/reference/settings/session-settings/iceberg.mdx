@@ -34,11 +34,21 @@ As tarefas de decodificação são pausadas quando a fila fica cheia e a consult
 
 Deve ser maior que zero.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para listar apenas o prefixo de chave `metadata\/v` ao procurar o arquivo de metadados mais recente de uma tabela Iceberg lida por caminho."}]}]} />
+
+Localiza o arquivo de metadados mais recente de uma tabela Iceberg lida por caminho no S3 ou no Azure listando apenas o prefixo de chave `metadata/v`, de modo que os manifestos armazenados no mesmo diretório `metadata` não sejam listados. Se esse prefixo contiver arquivos `.metadata.json`, somente eles serão candidatos; caso contrário, o diretório inteiro será listado. Não se aplica quando `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` ou `iceberg_recent_metadata_file_by_last_updated_ms_field` são usados, nem às tabelas de um banco de dados de catálogo do lago de dados.
+
+Habilite-a somente para tabelas cujos arquivos de metadados sigam todos o padrão de nome `v<N>...` (como fazem os catálogos do ClickHouse e do Hadoop): em um diretório que também contenha arquivos `<N>-<uuid>.metadata.json`, esses arquivos nunca são considerados candidatos e, portanto, os commits do processo de gravação que os gerou não são detectados.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +72,14 @@ Deve ser maior que zero.
       label:
         "Nova configuração que limita quantos arquivos de manifesto de exclusão do Iceberg são decodificados de forma concorrente antes da leitura da primeira linha. Antes da 26.8, os manifestos eram decodificados um por vez, com o fetch do próximo já em andamento; por isso, `2` é o equivalente mais próximo do comportamento anterior, que colocava a soma dos round-trips ao armazenamento de objetos no caminho crítico antes da primeira linha. Na época, a configuração se chamava `iceberg_delete_manifest_decode_concurrency`, nome que agora é um alias dela."
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "Aumenta de 4 para 16 o número padrão de arquivos de manifesto do Iceberg decodificados de forma concorrente, para sobrepor mais round-trips ao armazenamento de objetos em tabelas com muitos manifestos." }
   ]
 }
 ]}
@@ -97,6 +115,16 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "Nova configuração"}]}]} />
 
 Limite de arquivos de dados de compactação no Iceberg.
+
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "Nova configuração. `remove_orphan_files` rejeita um `older_than` inferior a esta quantidade de segundos antes do momento atual, preservando assim os arquivos de uma escrita iniciada há menos tempo que isso e que ainda não foi confirmada. Definir `compatibility` com versões anteriores à 26.10 restaura o comportamento anterior (sem valor mínimo)."}]}]} />
+
+Idade mínima, em segundos, dos arquivos que `ALTER TABLE ... EXECUTE remove_orphan_files` pode excluir de uma tabela Iceberg. Um `older_than` (fornecido explicitamente ou derivado de `iceberg_orphan_files_older_than_seconds`) mais próximo do momento atual do que este valor é rejeitado: os arquivos de uma escrita ainda não confirmada não são referenciados pelos metadados da tabela e seriam excluídos, o que corromperia a tabela quando a escrita fosse confirmada. Mantenha este valor acima do tempo máximo que uma escrita na tabela pode levar para ser confirmada. O valor 0 desabilita a verificação.
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 

@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS sum_buffers;
 DROP FUNCTION IF EXISTS bad_buffers_zero_columns;
 DROP FUNCTION IF EXISTS bad_buffers_wrong_size;
@@ -14,7 +14,7 @@ EOF
 
 cat "${CUR_DIR}/wasm/buffered_abi.wasm" | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'buffered_abi_buffers', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
+${CLICKHOUSE_CLIENT} << 'EOF'
 CREATE OR REPLACE FUNCTION sum_buffers
     LANGUAGE WASM ABI BUFFERED_V1
     FROM 'buffered_abi_buffers' :: 'sum_buffers_u32_u64'
