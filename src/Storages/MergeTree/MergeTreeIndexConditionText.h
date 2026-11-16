@@ -1,8 +1,13 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <unordered_map>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/TextIndexDictionaryDFA.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -41,6 +46,54 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// Bounds the work and memory spent on dictionary automata (see `TextIndexDictionaryDFA`) by all `LIKE` patterns of one
+/// query and index, and lets identical patterns share their automata. A single automaton is capped by `pattern_limit`,
+/// but without a shared budget, a query with many patterns (e.g. hundreds of `OR`ed `LIKE`s) would build and keep one
+/// automaton per pattern. The budget is owned by the `MergeTreeIndexText` of the query, so that all conditions created
+/// from it share it: with `use_constant_folding_in_index_analysis`, there is one condition per partition, and each of
+/// them would otherwise compile all patterns again with a fresh budget.
+/// A pattern which gets no automaton uses the regular dictionary scan, so the budget only affects speed.
+struct TextIndexAutomatonBudget
+{
+    static constexpr size_t pattern_limit = 256 * 1024;
+    static constexpr size_t total_limit = 4 * 1024 * 1024;
+
+    /// Returns how much memory the next automaton may use, 0 if the budget is spent.
+    size_t available() const { return std::min(remaining.load(), pattern_limit); }
+    /// Charges `bytes`, saturating at zero.
+    void charge(size_t bytes)
+    {
+        size_t current = remaining.load();
+        while (!remaining.compare_exchange_weak(current, current - std::min(current, bytes))) {}
+    }
+
+    /// Returns true and sets `automaton` if an attempt for `key` has been made before. A null `automaton` is a cached
+    /// failure: building it again would waste the time again and fail again.
+    bool lookup(const String & key, std::shared_ptr<const TextIndexDictionaryDFA> & automaton) const
+    {
+        std::lock_guard lock(mutex);
+        auto it = built.find(key);
+        if (it == built.end())
+            return false;
+        automaton = it->second;
+        return true;
+    }
+    void store(const String & key, std::shared_ptr<const TextIndexDictionaryDFA> automaton)
+    {
+        std::lock_guard lock(mutex);
+        built.emplace(key, std::move(automaton));
+    }
+
+    std::atomic<size_t> remaining{total_limit};
+
+private:
+    mutable std::mutex mutex;
+    /// Keyed by the kind of the pattern, its options and its text, see `TextSearchQuery`.
+    std::unordered_map<String, std::shared_ptr<const TextIndexDictionaryDFA>> built;
+};
+
+using TextIndexAutomatonBudgetPtr = std::shared_ptr<TextIndexAutomatonBudget>;
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -50,15 +103,17 @@ struct TextSearchQuery
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+        VectorWithMemoryTracking<String> phrase_tokens_ = {},
+        TextIndexAutomatonBudget * automaton_budget = nullptr);
 
-    const String & getFunctionName() const { return function_name; }
-    TextSearchMode getSearchMode() const { return search_mode; }
-    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
-    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
-    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
-    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
-    UInt128 getHash() const { return hash; }
+    [[nodiscard]] const String & getFunctionName() const { return function_name; }
+    [[nodiscard]] TextSearchMode getSearchMode() const { return search_mode; }
+    [[nodiscard]] TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
+    [[nodiscard]] const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
+    [[nodiscard]] const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    [[nodiscard]] const auto & getPatternAutomata() const { return pattern_automata; }
+    [[nodiscard]] const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    [[nodiscard]] UInt128 getHash() const { return hash; }
 
 private:
     void initializeHash();
@@ -70,6 +125,9 @@ private:
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
+    /// Compiled once per query, shared by the dictionary readers of all parts.
+    /// A null entry means this pattern uses the existing literal/matcher scan.
+    std::vector<std::shared_ptr<const TextIndexDictionaryDFA>> pattern_automata;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
     /// Precomputed in the constructor because getHash is called on hot paths.
@@ -100,40 +158,41 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
-        JSONIndexArgumentTypes json_argument_types_);
+        JSONIndexArgumentTypes json_argument_types_,
+        TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
-    TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
+    [[nodiscard]] TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
-    bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    std::string getDescription() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] std::string getDescription() const override;
 
-    bool hasSearchPatterns() const;
-    UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
-    const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
-    const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
-    TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
-    const Block & getHeader() const { return header; }
+    [[nodiscard]] bool hasSearchPatterns() const;
+    [[nodiscard]] UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
+    [[nodiscard]] const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
+    [[nodiscard]] const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
+    [[nodiscard]] TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
+    [[nodiscard]] const Block & getHeader() const { return header; }
 
     /// Create text search query for the function node if it is suitable for optimization.
-    TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
+    [[nodiscard]] TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
-    bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
+    [[nodiscard]] bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
-    std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
+    [[nodiscard]] std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
 
-    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
-    TextIndexHeaderCachePtr headerCache() const { return header_cache; }
-    TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
-    TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
-    bool useGlobalHeaderCache() const { return use_global_header_cache; }
+    [[nodiscard]] TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
+    [[nodiscard]] TextIndexHeaderCachePtr headerCache() const { return header_cache; }
+    [[nodiscard]] TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
+    [[nodiscard]] TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
+    [[nodiscard]] bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
-    TokenizerPtr getTokenizer() const { return tokenizer; }
-    MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
-    MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
+    [[nodiscard]] TokenizerPtr getTokenizer() const { return tokenizer; }
+    [[nodiscard]] MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
+    [[nodiscard]] MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -169,7 +228,7 @@ private:
 
     /// Whether the function accepts a tokenizer definition as its third argument and the given node
     /// is a constant one that denotes the index tokenizer.
-    bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
@@ -178,19 +237,22 @@ private:
         Field value_field,
         RPNElement & out) const;
 
-    TextIndexDirectReadMode getHintOrNoneMode() const;
+    [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
-    bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+    [[nodiscard]] bool traverseMapElementValueNode(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
-    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
     /// index's column.
-    std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
+    [[nodiscard]] std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
     /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
@@ -212,22 +274,22 @@ private:
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     /// `compact` is valid only for `All` queries; `Any` queries must keep covered tokens.
-    VectorWithMemoryTracking<String> stringToTokens(const Field & field, bool compact) const;
-    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw, bool compact) const;
-    VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
-    VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> stringToTokens(const Field & field, bool compact) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> stringToTokens(std::string_view raw, bool compact) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
     /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
-    std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
+    [[nodiscard]] std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
     /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
     /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
-    std::vector<OptimizedRegularExpression>
+    [[nodiscard]] std::vector<OptimizedRegularExpression>
     stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+    [[nodiscard]] bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
@@ -264,6 +326,8 @@ private:
     /// Reference postprocessor expression
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     bool has_postprocessor;
+    /// Shared by the automata of all `LIKE` patterns of this condition, and of the other conditions of the same index.
+    TextIndexAutomatonBudgetPtr automaton_budget;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
     /// Cache for tokens and their infos (cardinality, etc.)
