@@ -78,4 +78,14 @@ SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(10
 SELECT countIf(explain ILIKE '%JoinLogical%') > 0 FROM (EXPLAIN SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3)
     SETTINGS parallel_replicas_local_plan = 0, query_plan_optimize_join_order_randomize = 0);
 
+-- A hint inside a lambda in a filter fused into a shipped `ARRAY JOIN` (fusion is skipped for serialized plans).
+SELECT count(), sum(l.b) FROM t_index_hint_serialized AS l
+    INNER JOIN (SELECT number AS k FROM numbers(20) ARRAY JOIN [number] AS elem WHERE arrayExists(y -> y = elem AND indexHint(y < 10), [elem])) AS r ON l.a = r.k
+    SETTINGS serialize_query_plan = 0, query_plan_join_swap_table = false, query_plan_optimize_join_order_randomize = 0;
+SELECT countIf(explain LIKE '%ArrayJoin%') = 2 AND countIf(explain LIKE '%Element filter%') = 1 AND countIf(explain LIKE '%Filter (WHERE)%') = 0
+FROM (EXPLAIN actions = 1 SELECT count(), sum(l.b) FROM t_index_hint_serialized AS l
+    INNER JOIN (SELECT number AS k FROM numbers(20) ARRAY JOIN [number] AS elem WHERE arrayExists(y -> y = elem AND indexHint(y < 10), [elem])) AS r ON l.a = r.k
+    SETTINGS serialize_query_plan = 0, parallel_replicas_local_plan = 1, query_plan_max_step_description_length = 1000000,
+        query_plan_join_swap_table = false, query_plan_optimize_join_order_randomize = 0);
+
 DROP TABLE t_index_hint_serialized;
