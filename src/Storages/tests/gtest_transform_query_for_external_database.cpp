@@ -58,12 +58,12 @@ struct State
         return state;
     }
 
-    const NamesAndTypesList & getColumns(size_t idx = 0) const
+    [[nodiscard]] const NamesAndTypesList & getColumns(size_t idx = 0) const
     {
         return tables[idx].columns;
     }
 
-    std::vector<TableWithColumnNamesAndTypes> getTables(size_t num = 0) const
+    [[nodiscard]] std::vector<TableWithColumnNamesAndTypes> getTables(size_t num = 0) const
     {
         std::vector<TableWithColumnNamesAndTypes> res;
         for (size_t i = 0; i < std::min(num, tables.size()); ++i)

@@ -87,13 +87,13 @@ public:
         checkHasValuesToGet();
         return getValue(begin);
     }
-    const T & front() const
+    [[nodiscard]] const T & front() const
     {
         checkHasValuesToGet();
         return getValue(begin);
     }
 
-    const T & back() const
+    [[nodiscard]] const T & back() const
     {
         size_t ps = end;
         moveLeft(ps);
@@ -101,16 +101,16 @@ public:
     }
 
     size_t & frontGap() { return container[begin].gap; }
-    const size_t & frontGap() const { return container[begin].gap; }
+    [[nodiscard]] const size_t & frontGap() const { return container[begin].gap; }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         if (begin <= end)
             return end - begin;
         return end + (container.size() - begin);
     }
 
-    bool empty() const { return begin == end; }
+    [[nodiscard]] bool empty() const { return begin == end; }
 
 private:
     PODArray<ValueWithGap> container;
@@ -123,7 +123,7 @@ private:
     void destructValue(size_t index) { reinterpret_cast<T *>(container[index].value)->~T(); }
 
     T & getValue(size_t index) { return *reinterpret_cast<T *>(container[index].value); }
-    const T & getValue(size_t index) const { return *reinterpret_cast<const T *>(container[index].value); }
+    [[nodiscard]] const T & getValue(size_t index) const { return *reinterpret_cast<const T *>(container[index].value); }
 
     void moveRight(size_t & index) const
     {

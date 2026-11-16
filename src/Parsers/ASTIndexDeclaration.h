@@ -36,7 +36,7 @@ public:
     ASTPtr getExpression() const;
     boost::intrusive_ptr<ASTFunction> getType() const;
     /// Condition of a partial index: only rows satisfying it are indexed. Null if absent.
-    ASTPtr getWhere() const;
+    [[nodiscard]] ASTPtr getWhere() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

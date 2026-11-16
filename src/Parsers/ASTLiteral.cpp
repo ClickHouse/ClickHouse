@@ -226,7 +226,7 @@ public:
 private:
     FieldVisitorToString visitor;
 
-    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+    [[nodiscard]] const Derived & derived() const { return static_cast<const Derived &>(*this); }
 
     template <typename Container>
     String formatContainer(const Container & x, const char * prefix, const char * suffix) const

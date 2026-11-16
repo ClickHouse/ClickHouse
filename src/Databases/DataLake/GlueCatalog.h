@@ -40,13 +40,13 @@ public:
 
     ~GlueCatalog() override;
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
-    CatalogTables getTables() const override;
+    [[nodiscard]] CatalogTables getTables() const override;
 
-    Namespaces getNamespaces() const override;
+    [[nodiscard]] Namespaces getNamespaces() const override;
 
-    bool existsTable(const std::string & database_name, const std::string & table_name) const override;
+    [[nodiscard]] bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
     void getTableMetadata(
         const std::string & database_name,
@@ -58,20 +58,20 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
-    std::optional<StorageType> getStorageType() const override
+    [[nodiscard]] std::optional<StorageType> getStorageType() const override
     {
         /// Glue catalog is AWS service, so it supports only data in S3
         return StorageType::S3;
     }
 
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    [[nodiscard]] DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+    [[nodiscard]] DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
-    std::optional<std::string> getDefaultTableLocation(
+    [[nodiscard]] std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
         const std::string & table_name) const override;
 
@@ -79,9 +79,9 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
+    [[nodiscard]] bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
-    bool updateSchema(
+    [[nodiscard]] bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
@@ -115,7 +115,7 @@ private:
 
     /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
     /// Returns `false` if the pointer no longer names `base_catalog_metadata_location`.
-    bool commitTableUpdate(
+    [[nodiscard]] bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
@@ -130,12 +130,12 @@ private:
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
 
-    DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    [[nodiscard]] DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
+    [[nodiscard]] CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
-    String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+    [[nodiscard]] String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
     struct ObjectStorageWithPath
     {
@@ -144,7 +144,7 @@ private:
         String table_path;  /// Path within bucket
     };
 
-    ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
+    [[nodiscard]] ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 };
 
 }
