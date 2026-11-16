@@ -112,7 +112,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
 
-    makeColumnNamesUnique(column_names);
+    if (format_settings.with_names_rename_duplicate_columns)
+        makeColumnNamesUnique(column_names);
 
     if (!column_names.empty())
     {
@@ -182,7 +183,12 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// or column names from provided header is a subset of values from this row
     auto column_names = getPort().getHeader().getNames();
     std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
-    std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
+
+    /// Duplicate names of the header are renamed, so compare the names as they would be after the renaming.
+    auto candidate_names = first_row_values;
+    if (format_settings.with_names_rename_duplicate_columns)
+        makeColumnNamesUnique(candidate_names);
+    std::unordered_set<std::string_view> first_row_values_set(candidate_names.begin(), candidate_names.end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
     {
         /// Rollback to the beginning of the first row to parse it as data later.
@@ -476,7 +482,8 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, data_type_names);
 
-    makeColumnNamesUnique(column_names);
+    if (format_settings.with_names_rename_duplicate_columns)
+        makeColumnNamesUnique(column_names);
 
     if (!data_type_names.empty())
     {
