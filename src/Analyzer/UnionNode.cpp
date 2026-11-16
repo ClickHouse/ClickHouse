@@ -254,8 +254,8 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
 
     return is_subquery == rhs_typed.is_subquery
         && (options.ignore_cte
-            || (is_cte == rhs_typed.is_cte && is_materialized == rhs_typed.is_materialized && cte_name == rhs_typed.cte_name))
-        && is_recursive_cte == rhs_typed.is_recursive_cte
+            || (is_cte == rhs_typed.is_cte && is_materialized == rhs_typed.is_materialized
+                && is_recursive_cte == rhs_typed.is_recursive_cte && cte_name == rhs_typed.cte_name))
         && union_mode == rhs_typed.union_mode
         && settings_changes == rhs_typed.settings_changes
         && default_settings == rhs_typed.default_settings
@@ -267,7 +267,7 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_subquery);
     state.update(!options.ignore_cte && is_cte);
     state.update(!options.ignore_cte && is_materialized);
-    state.update(is_recursive_cte);
+    state.update(!options.ignore_cte && is_recursive_cte);
 
     if (recursive_cte_table)
     {

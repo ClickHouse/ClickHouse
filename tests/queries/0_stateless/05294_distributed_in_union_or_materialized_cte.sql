@@ -24,6 +24,15 @@ SELECT sum(number IN (b)) FROM remote('127.0.0.{1,2}', numbers(5));
 WITH a AS (SELECT number FROM numbers(3) UNION ALL SELECT number FROM numbers(3))
 SELECT sum(number IN (SELECT number FROM a)) FROM remote('127.0.0.{1,2}', numbers(5));
 
+-- `WITH RECURSIVE` without a self-reference, for a UNION CTE and for a query with its own `WITH RECURSIVE` clause.
+WITH RECURSIVE a AS (SELECT number FROM numbers(3) UNION ALL SELECT number FROM numbers(3))
+SELECT sum(number IN (a)) FROM remote('127.0.0.{1,2}', numbers(5));
+
+WITH a AS (WITH RECURSIVE b AS (SELECT number FROM numbers(3)) SELECT number FROM b)
+SELECT sum(number IN (a)) FROM remote('127.0.0.{1,2}', numbers(5));
+
+SELECT sum(number IN (WITH RECURSIVE b AS (SELECT number FROM numbers(3)) SELECT number FROM b)) FROM remote('127.0.0.{1,2}', numbers(5));
+
 -- With enable_materialized_cte = 0 the MATERIALIZED keyword is ignored, with a warning.
 SET send_logs_level = 'error';
 SET enable_materialized_cte = 0;
