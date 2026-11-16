@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -1135,6 +1136,19 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             sources.emplace_back(source);
         }
         auto pipe = Pipe::unitePipes(std::move(pipes));
+
+        /// The source returns the Hive partition columns after the columns read from the file, the insert expects table order.
+        const auto & insert_header = block_io.pipeline.getHeader();
+        if (!blocksHaveEqualStructure(pipe.getHeader(), insert_header))
+        {
+            auto converting_actions = std::make_shared<ExpressionActions>(ActionsDAG::makeConvertingActions(
+                pipe.getHeader().getColumnsWithTypeAndName(),
+                insert_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                queue_context));
+            pipe.addSimpleTransform([&](const SharedHeader & header)
+                { return std::make_shared<ExpressionTransform>(header, converting_actions); });
+        }
 
         block_io.pipeline.complete(std::move(pipe));
         block_io.pipeline.setNumThreads(threads);
