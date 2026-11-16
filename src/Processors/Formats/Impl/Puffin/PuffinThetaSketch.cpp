@@ -29,12 +29,10 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
-#include <base/sort.h>
 #include <base/unaligned.h>
 
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
-#include <theta_update_sketch_base.hpp>
 #endif
 
 namespace DB
@@ -149,35 +147,10 @@ ColumnPtr encodeUUIDs(const IColumn & column)
 
 struct PuffinColumnThetaSketch::Impl
 {
-    using Table = datasketches::theta_update_sketch_base<UInt64, datasketches::trivial_extract_key, std::allocator<UInt64>>;
-
-    struct TableBuilder : datasketches::update_theta_sketch::builder
-    {
-        Table build() const { return Table(starting_lg_size(), lg_k_, rf_, p_, starting_theta(), seed_, allocator_); }
-    };
-
-    // NOLINTBEGIN(modernize-use-nodiscard)
-    struct Retained
-    {
-        bool empty;
-        UInt64 theta;
-        std::vector<UInt64> entries;
-
-        bool is_empty() const { return empty; }
-        bool is_ordered() const { return true; }
-        UInt16 get_seed_hash() const { return compute_seed_hash(datasketches::DEFAULT_SEED); }
-        UInt64 get_theta64() const { return empty ? datasketches::theta_constants::MAX_THETA : theta; }
-        std::allocator<UInt64> get_allocator() const { return {}; }
-        size_t get_num_retained() const { return entries.size(); }
-        auto begin() const { return entries.begin(); }
-        auto end() const { return entries.end(); }
-    };
-    // NOLINTEND(modernize-use-nodiscard)
-
     Impl(DataTypePtr type_, DataTypePtr cast_to_)
         : type(std::move(type_))
         , cast_to(std::move(cast_to_))
-        , table(TableBuilder().build())
+        , sketch(datasketches::update_theta_sketch::builder().build())
     {
     }
 
@@ -199,42 +172,26 @@ struct PuffinColumnThetaSketch::Impl
     void update(const ColumnPtr & column, const NullMap * null_map)
     {
         const auto encoded = encode(column);
-        PaddedPODArray<UInt64> hashes(encoded->size());
-        encoded->computeMurmurHash3Into(0, encoded->size(), static_cast<UInt32>(datasketches::DEFAULT_SEED), hashes.data());
-        const auto * strings = typeid_cast<const ColumnString *>(encoded.get());
-        for (size_t i = 0; i < hashes.size(); ++i)
+        for (size_t i = 0; i < encoded->size(); ++i)
         {
-            if ((null_map && (*null_map)[i]) || (strings && strings->getDataAt(i).empty()))
+            if (null_map && (*null_map)[i])
                 continue;
-            table.is_empty_ = false;
-            const UInt64 hash = hashes[i] >> 1;
-            if (hash >= table.theta_ || hash == 0)
-                continue;
-            const auto [slot, found] = table.find(hash);
-            if (!found)
-                table.insert(slot, hash);
+            const auto value = encoded->getDataAt(i);
+            if (!value.empty())
+                sketch.update(value.data(), value.size());
         }
     }
 
     datasketches::compact_theta_sketch compact() const
     {
-        Retained retained{.empty = table.is_empty_, .theta = table.theta_, .entries = {}};
-        if (!retained.empty)
-        {
-            retained.entries.reserve(table.num_entries_);
-            for (size_t i = 0; i < (1ULL << table.lg_cur_size_); ++i)
-                if (table.entries_[i] != 0)
-                    retained.entries.push_back(table.entries_[i]);
-            ::sort(retained.entries.begin(), retained.entries.end());
-        }
         auto sketch_union = datasketches::theta_union::builder().build();
-        sketch_union.update(datasketches::compact_theta_sketch(retained, /*ordered=*/ true));
+        sketch_union.update(sketch);
         return sketch_union.get_result();
     }
 
     DataTypePtr type;
     DataTypePtr cast_to;
-    Table table;
+    datasketches::update_theta_sketch sketch;
 };
 
 bool PuffinColumnThetaSketch::isSupportedType(const DataTypePtr & type)
@@ -277,7 +234,7 @@ PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
 
 void PuffinColumnThetaSketch::reset()
 {
-    impl->table.reset();
+    impl->sketch.reset();
 }
 
 #else

@@ -17,8 +17,6 @@
 #include <base/unaligned.h>
 #include <base/arithmeticOverflow.h>
 
-#include <MurmurHash3.h>
-
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
 #    include <llvm/IR/IRBuilder.h>
@@ -140,18 +138,6 @@ void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
 
         pos += str_size;
         prev_offset = offset;
-    }
-}
-
-void ColumnString::computeMurmurHash3Into(size_t row_begin, size_t row_end, UInt32 seed, UInt64 * hash_out) const
-{
-    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
-    for (size_t i = row_begin; i < row_end; ++i)
-    {
-        UInt64 hash[2];
-        MurmurHash3_x64_128(chars.data() + prev_offset, offsets[i] - prev_offset, seed, hash);
-        hash_out[i - row_begin] = hash[0];
-        prev_offset = offsets[i];
     }
 }
 
