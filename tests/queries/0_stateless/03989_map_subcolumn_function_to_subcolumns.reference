@@ -16,7 +16,7 @@
 1
 1
 1
--- No optimization with basic (non-bucketed) serialization
+-- Optimization also works with basic (non-bucketed) serialization
 1
 -- Correctness: results with optimization
 7	7	70

@@ -2,6 +2,7 @@
 -- Verifies that m['key'] is rewritten to m.key_<serialized_key> in EXPLAIN output.
 SET explain_query_plan_default = 'legacy';
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_subcolumns;
@@ -150,19 +151,20 @@ SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_subcolumns WHE
 
 -- ==========================================
 -- Section 8: basic serialization (not with_buckets)
--- The rewrite is not applied: with basic serialization the key subcolumn reads the whole map anyway.
+-- The optimization still applies because DataTypeMap exposes dynamic subcolumns
+-- regardless of serialization version. With basic serialization, the whole map is
+-- read and the key is extracted; with_buckets reads only the relevant bucket.
 -- ==========================================
 
 DROP TABLE t_map_subcolumns;
 
 CREATE TABLE t_map_subcolumns (id UInt64, m Map(String, UInt64))
-ENGINE = MergeTree ORDER BY id
-SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_map_subcolumns SELECT number, map('key1', number) FROM numbers(10);
 
-SELECT '-- No optimization with basic (non-bucketed) serialization';
-SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_subcolumns WHERE m['key1'] > 5) WHERE explain LIKE '%m.key_key1%';
+SELECT '-- Optimization also works with basic (non-bucketed) serialization';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_subcolumns WHERE m['key1'] > 5) WHERE explain LIKE '%m.key_key1%';
 
 -- ==========================================
 -- Section 9: Correctness - verify actual query results after optimization
