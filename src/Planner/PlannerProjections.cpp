@@ -1,12 +1,14 @@
 #include <Planner/PlannerProjections.h>
 
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -65,31 +67,19 @@ private:
 /// collects the name that the projection stores each expression of node under
 void collectStoredNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
 {
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION)
-    {
-        /// a constant folded from an expression takes the name of that expression
-        const auto * constant_node = node->as<ConstantNode>();
-        const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
+    /// a constant folded from an expression takes the name of that expression
+    const auto * constant_node = node->as<ConstantNode>();
+    const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
 
-        if (written_node->getNodeType() == QueryTreeNodeType::FUNCTION && written_node->hasOriginalAST())
-        {
-            /// the analysis renames some functions, the AST has the name that the query writes
-            result.emplace(node, written_node->getOriginalAST()->getColumnName());
-        }
-        else
-        {
-            /// the analysis made this node: a column has no table prefix and a constant is a plain literal
-            ConvertToASTOptions ast_options;
-            ast_options.use_source_expression_for_constants = true;
-            ast_options.add_cast_for_constants = false;
-            ast_options.fully_qualified_identifiers = false;
-            result.emplace(node, node->toAST(ast_options)->getColumnName());
-        }
-    }
+    /// the analysis makes a new node for a column; a function and a literal keep the expression that the query writes
+    if (const auto * column_node = written_node->as<ColumnNode>())
+        result.emplace(node, column_node->getColumnName());
+    else if ((written_node->as<FunctionNode>() || written_node->as<ConstantNode>()) && written_node->hasOriginalAST())
+        result.emplace(node, written_node->getOriginalAST()->getColumnName());
 
     for (const auto & child : node->getChildren())
-        if (child)
+        /// a subquery has its own plan with its own names
+        if (child && !isQueryOrUnionNode(child))
             collectStoredNodeNames(child, result);
 }
 
