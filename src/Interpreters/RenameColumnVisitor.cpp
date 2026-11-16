@@ -150,21 +150,21 @@ private:
         lambdas.pop_back();
     }
 
-    bool isVisible(const Alias & alias) const
+    [[nodiscard]] bool isVisible(const Alias & alias) const
     {
         return !alias.lambda || std::ranges::any_of(lambdas, [&](const Lambda & lambda) { return lambda.node == alias.lambda; });
     }
 
     /// An alias does not bind inside its own definition: for the analyzer inside any aliased ancestor,
     /// for `TreeRewriter` inside the nearest one.
-    bool isInFlight(const Alias & alias) const
+    [[nodiscard]] bool isInFlight(const Alias & alias) const
     {
         if (data.new_analyzer_binding)
             return std::ranges::find(aliased_ancestors, alias.node) != aliased_ancestors.end();
         return !aliased_ancestors.empty() && aliased_ancestors.back() == alias.node;
     }
 
-    String checkReference(const ASTIdentifier & reference, const String & where) const
+    [[nodiscard]] String checkReference(const ASTIdentifier & reference, const String & where) const
     {
         if (std::ranges::find(data.lambda_parameters, data.rename_to) != data.lambda_parameters.end())
             return fmt::format("{} is a lambda parameter in {}", backQuote(data.rename_to), where);
