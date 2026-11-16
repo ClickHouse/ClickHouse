@@ -41,6 +41,14 @@ SELECT count() FROM numbers(1000) WHERE number % 10 != 0
     AND ((cityHash64(repeat(toString(number), 10)) % 4 = 1 AND number % 3 != 0) OR (cityHash64(repeat(toString(number), 10)) % 4 IN (2, 3) AND number % 5 != 0))
 SETTINGS short_circuit_function_evaluation = 'disable', short_circuit_function_evaluation_reorder_arguments = 0, log_comment = '05628_or_of_and_disable';
 
+-- The uses of the shared expression are reached through aliases.
+SELECT if(number % 2 = 0, length(x) + position(x, '7'), 0) FROM (SELECT number, repeat(toString(number), 10) AS x FROM numbers(1000))
+SETTINGS short_circuit_function_evaluation = 'enable', query_plan_remove_unused_columns = 1, log_comment = '05628_subquery_alias_enable'
+FORMAT Null;
+SELECT if(number % 2 = 0, length(x) + position(x, '7'), 0) FROM (SELECT number, repeat(toString(number), 10) AS x FROM numbers(1000))
+SETTINGS short_circuit_function_evaluation = 'disable', query_plan_remove_unused_columns = 1, log_comment = '05628_subquery_alias_disable'
+FORMAT Null;
+
 SELECT count() FROM numbers(1000) WHERE number % 2 = 0
     AND notEmpty(arrayFilter(t -> t.3 = 0, arrayZip(untuple(dictGet('d_05628', ('a1', 'a2', 'a3'), toString(number % 100))))))
 SETTINGS short_circuit_function_evaluation = 'enable', optimize_dictget_tuple_element = 0, log_comment = '05628_dict_get_enable';
