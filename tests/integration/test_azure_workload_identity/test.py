@@ -40,6 +40,8 @@ delta_node = cluster.add_instance(
     # Env variables are shared across the cluster by default; keep this authority host to this node. `node` stays
     # shared, so the MinIO settings of the remote database disk reach the cluster's env file.
     instance_env_variables=True,
+    # `test_delta_lake_restricted_after_restart` restarts the server.
+    stay_alive=True,
 )
 
 
