@@ -6,18 +6,31 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Applies a simple binary operator (arithmetic or comparison) to two instant vectors or scalars.
-/// The actual operation is provided via `apply_function_to_ast`, which receives two AST nodes
-/// (left and right values) and returns the combined AST.
-/// If at least one operand is scalar, the operation is applied element-wise without joining.
-/// If both operands are instant vectors, they are joined on their label sets (respecting
-/// `on()`/`ignoring()` and `group_left`/`group_right` modifiers from `operator_node`).
-/// If `drop_metric_name` is true, the `__name__` tag is removed from the result.
-/// If `allow_grouping_modifier_copy_metric_name` is true, `group_left(__name__)` or `group_right(__name__)`
-/// can re-introduce `__name__` into the result from the "one" side even when `drop_metric_name` is true.
-/// This corresponds to the default Prometheus behavior for arithmetic operators.
-/// For comparison operators with the `bool` modifier, `allow_grouping_modifier_copy_metric_name` should be
-/// false, because `bool` always drops `__name__` unconditionally.
+/// The histogram arm of a simple binary operator, mirroring the `hlhs`/`hrhs` cases of `vectorElemBinop`
+/// in Prometheus promql/engine.go; engaged only when at least one operand is StoreMethod::HISTOGRAM_GRID.
+struct SimpleBinaryOperatorHistogramArm
+{
+    /// The per-step float value, histogram payload and kind (0 = float, 1 = histogram, NULL = no sample)
+    /// of each side; a scalar side has kind statically 0 and a typed-NULL histogram (never used).
+    struct Input
+    {
+        ASTPtr left_value;
+        ASTPtr left_histogram;
+        ASTPtr left_kind;
+        ASTPtr right_value;
+        ASTPtr right_histogram;
+        ASTPtr right_kind;
+        bool left_is_scalar = false;
+        bool right_is_scalar = false;
+    };
+
+    /// Builds the `histogram_values` arm expression from the per-step values/kinds of both sides:
+    /// the histogram sample produced by the operation, or NULL where it is not allowed (the sample is dropped).
+    std::function<ASTPtr(const Input &)> build_histogram_values_arm;
+};
+
+/// Applies a simple binary operator (via `apply_function_to_ast`) to two scalars or instant vectors, joining vectors
+/// on label sets per `operator_node`; `drop_metric_name` drops `__name__`, `allow_grouping_modifier_copy_metric_name` lets grouping modifiers re-add it.
 SQLQueryPiece applySimpleBinaryOperator(
     const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
@@ -25,6 +38,7 @@ SQLQueryPiece applySimpleBinaryOperator(
     ConverterContext & context,
     std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
     bool drop_metric_name,
-    bool allow_grouping_modifier_copy_metric_name);
+    bool allow_grouping_modifier_copy_metric_name,
+    const SimpleBinaryOperatorHistogramArm * histogram_arm = nullptr);
 
 }
