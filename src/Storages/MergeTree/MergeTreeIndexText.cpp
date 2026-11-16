@@ -1841,7 +1841,7 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it{};
 
-    /// A smaller set size to fit in L1
+    /// Below this size tokens_map fits in L1 and a direct probe costs about as much as the bloom check.
     static constexpr size_t min_keep_set_bloom_tokens = 64;
 
     const bool build_bloom = keep_set_bloom.empty() && filter_tokens.size() >= min_keep_set_bloom_tokens;
