@@ -173,15 +173,16 @@ void countAliases(const ASTPtr & expr, std::unordered_map<String, size_t> & alia
         countAliases(child, aliases);
 }
 
-/// A stateful function, such as `rowNumberInAllBlocks`, depends on the rows that were read before.
-bool hasStatefulFunction(const ASTPtr & expr, const ContextPtr & context)
+/// A stateful function, such as `rowNumberInAllBlocks`, depends on the rows that were read before, and `arrayJoin` multiplies the rows.
+bool dependsOnOtherRows(const ASTPtr & expr, const ContextPtr & context)
 {
     if (!expr)
         return false;
     if (const auto * function = expr->as<ASTFunction>())
-        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isStateful())
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+            resolver && (resolver->isStateful() || resolver->getName() == "arrayJoin"))
             return true;
-    return std::ranges::any_of(expr->children, [&](const ASTPtr & child) { return hasStatefulFunction(child, context); });
+    return std::ranges::any_of(expr->children, [&](const ASTPtr & child) { return dependsOnOtherRows(child, context); });
 }
 
 /// Returns true if the expression contains an aggregate function anywhere in its tree.
@@ -783,9 +784,12 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
 {
     const auto & metadata = *snapshot->metadata;
 
-    /// The condition would be evaluated on the rows that the view, or a row policy on it, hides.
-    if (is_parameterized_view || (isSealed(metadata, context) && !isReadByDefiner(metadata, context))
-        || getEffectiveRowPolicyFilter(*this, context))
+    /// The condition is analyzed in the context of the view, so it would get the rights of the definer,
+    /// and it would be evaluated on the rows that the view, or a row policy on it, hides.
+    const bool runs_as_reader
+        = (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
+        || isReadByDefiner(metadata, context);
+    if (is_parameterized_view || !runs_as_reader || getEffectiveRowPolicyFilter(*this, context))
         return {};
 
     /// The condition names the columns of the view, which bind to the aliases of its query before the columns of the table.
@@ -801,10 +805,6 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
         return {};
 
     const auto & select = inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>();
-
-    /// The condition would change the rows that a stateful function of the view has seen.
-    if (hasStatefulFunction(select.select(), view_context) || hasStatefulFunction(select.where(), view_context))
-        return {};
 
     /// The stored column of the table behind each column that the query lists, empty for any other expression.
     struct ListedColumn
@@ -830,6 +830,14 @@ NameSet StorageView::getPrewhereColumns(const StorageSnapshotPtr & snapshot, con
 
     const auto table_metadata = table->getInMemoryMetadataPtr(context, false);
     const auto & table_columns = table_metadata->getColumns();
+
+    /// The condition would change the rows that such functions of the view see, also behind an `ALIAS` column of the table.
+    if (dependsOnOtherRows(select.select(), view_context) || dependsOnOtherRows(select.where(), view_context)
+        || std::ranges::any_of(table_columns, [&](const auto & column)
+           {
+               return column.default_desc.kind == ColumnDefaultKind::Alias && dependsOnOtherRows(column.default_desc.expression, view_context);
+           }))
+        return {};
     const auto table_prewhere_columns = table->supportedPrewhereColumns();
 
     NameSet result;

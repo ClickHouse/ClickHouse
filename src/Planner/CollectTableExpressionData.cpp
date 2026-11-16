@@ -384,12 +384,13 @@ private:
     bool table_supported_prewhere_columns_include_subcolumns = false;
 };
 
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
+void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression, const ContextPtr & context)
 {
     if (auto * table_node = table_expression->as<TableNode>())
     {
         auto storage = table_node->getStorage();
-        if (!storage->supportsPrewhere())
+        const auto * view = typeid_cast<const StorageView *>(storage.get());
+        if (view ? view->getPrewhereColumns(table_node->getStorageSnapshot(), context).empty() : !storage->supportsPrewhere())
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -458,7 +459,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (!prewhere_table_expression)
         {
             prewhere_table_expression = table_expressions_nodes[0];
-            checkStorageSupportPrewhere(prewhere_table_expression);
+            checkStorageSupportPrewhere(prewhere_table_expression, planner_context->getQueryContext());
         }
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(prewhere_table_expression);

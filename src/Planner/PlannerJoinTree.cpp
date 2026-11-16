@@ -1681,11 +1681,14 @@ ASTPtr getViewQueryWithPrewhere(
 
     /// The condition is analyzed again in the query of the view, by the names of the columns. A subquery would see
     /// the names of that query, and an argument of a lambda would take the place of a column of the same name.
+    /// A stateful function would see the rows of the table instead of the rows of the view.
     std::function<bool(const QueryTreeNodePtr &)> can_be_moved = [&](const QueryTreeNodePtr & node)
     {
         if (!node)
             return true;
         if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            return false;
+        if (const auto * function = node->as<FunctionNode>(); function && function->isOrdinaryFunction() && function->getFunctionOrThrow()->isStateful())
             return false;
         if (const auto * lambda = node->as<LambdaNode>();
             lambda && std::ranges::any_of(lambda->getArguments().getNames(), [&](const auto & name) { return prewhere_columns.contains(name); }))

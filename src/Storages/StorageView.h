@@ -57,7 +57,7 @@ public:
 
     /// The columns of the view that a `PREWHERE` of the outer query may use. Such a `PREWHERE` is moved into the query
     /// of the view, where the table executes it. This needs a view that hides no rows from the reader and selects
-    /// from a single table without stateful functions, and a column that is a stored column of that table.
+    /// with their own rights from a single table without stateful functions, and a column that is a stored column of that table.
     NameSet getPrewhereColumns(const StorageSnapshotPtr & snapshot, const ContextPtr & context) const;
 
     void readImpl(

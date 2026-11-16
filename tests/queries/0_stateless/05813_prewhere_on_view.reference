@@ -7,8 +7,11 @@ the same rows as with WHERE
 45	4500
 1
 1
+100
+2
 10
 10
 100
 the table executes it as its own PREWHERE
 1
+10
