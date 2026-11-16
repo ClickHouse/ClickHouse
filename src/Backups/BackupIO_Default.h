@@ -46,9 +46,9 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    const ReadSettings & getReadSettings() const override { return read_settings; }
-    const WriteSettings & getWriteSettings() const override { return write_settings; }
-    size_t getWriteBufferSize() const override { return write_buffer_size; }
+    [[nodiscard]] const ReadSettings & getReadSettings() const override { return read_settings; }
+    [[nodiscard]] const WriteSettings & getWriteSettings() const override { return write_settings; }
+    [[nodiscard]] size_t getWriteBufferSize() const override { return write_buffer_size; }
 
 protected:
     LoggerPtr const log;
@@ -68,24 +68,40 @@ public:
 
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents) override;
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    void copyFileFromDisk(
+    bool copyFileFromDiskNatively(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
+    void copyFileFromDiskWithFallback(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
+
+    /// Default implementation returns false (no native blob copy support).
+    /// Object storage backends (S3, Azure) override this to perform native copies.
+    bool copyFileFromBlobPath(
+        const String & path_in_backup,
+        DiskPtr src_disk,
+        const String & src_blob_key,
+        const String & src_blob_namespace,
+        bool copy_encrypted,
+        UInt64 start_pos,
+        UInt64 length,
+        UInt64 src_object_size,
+        const CreateReadBufferFunction & create_fallback_read_buffer) override;
 
     void removeFiles(const Strings & file_names) override;
     void removeEmptyDirectories() override;
     void removeEmptyRootDirectory() override {}
 
-    const ReadSettings & getReadSettings() const override { return read_settings; }
-    const WriteSettings & getWriteSettings() const override { return write_settings; }
-    size_t getWriteBufferSize() const override { return write_buffer_size; }
+    [[nodiscard]] const ReadSettings & getReadSettings() const override { return read_settings; }
+    [[nodiscard]] const WriteSettings & getWriteSettings() const override { return write_settings; }
+    [[nodiscard]] size_t getWriteBufferSize() const override { return write_buffer_size; }
 
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override = 0;
 
 protected:
     LoggerPtr const log;
 
-    /// The read settings are used to read from the source disk in copyFileFromDisk().
+    /// The read settings are used to read from the source disk in `copyFileFromDiskWithFallback`.
     const ReadSettings read_settings;
 
     const WriteSettings write_settings;

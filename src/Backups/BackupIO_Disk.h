@@ -45,7 +45,7 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
-    void copyFileFromDisk(
+    void copyFileFromDiskWithFallback(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
 
@@ -61,7 +61,7 @@ public:
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
-    std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
+    [[nodiscard]] std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
 
     const DiskPtr disk;
     const std::filesystem::path root_path;

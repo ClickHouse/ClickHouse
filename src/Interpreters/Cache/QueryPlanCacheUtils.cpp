@@ -1633,7 +1633,7 @@ QueryPlan materializeCachedQueryPlan(
     /// `concurrency_control`, is derived from `use_concurrency_control`, which is part of the key,
     /// so the stored value always equals the current one (and the outer plan's copy is re-derived
     /// anyway by `InterpreterSelectQueryFromPlan::execute`).
-    replaceStoredMaxThreads(plan, getEffectiveMaxThreads(context->getSettingsRef()));
+    replaceStoredMaxThreads(plan, getEffectiveMaxThreads(*context));
     recomputeAggregationSpillThresholds(plan, context->getSettingsRef());
 
     /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data

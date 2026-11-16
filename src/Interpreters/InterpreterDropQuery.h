@@ -34,7 +34,7 @@ public:
                                  const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false,
                                  bool propagate_metadata_transaction = true);
 
-    bool supportsTransactions() const override;
+    [[nodiscard]] bool supportsTransactions() const override;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
@@ -44,7 +44,7 @@ public:
     }
 
 private:
-    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
     ASTPtr current_query_ptr;
     /// Is this a step of another statement rather than a DROP the user issued.

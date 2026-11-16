@@ -14,17 +14,17 @@ public:
     ReadFromTableStep(
         SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
 
-    String getName() const override { return "ReadFromTable"; }
+    [[nodiscard]] String getName() const override { return "ReadFromTable"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    const String & getTable() const { return table_name; }
-    TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
-    bool useParallelReplicas() const { return use_parallel_replicas; }
+    [[nodiscard]] const String & getTable() const { return table_name; }
+    [[nodiscard]] TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
+    [[nodiscard]] bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
     /** True when the query selects no columns from the table and the single output column was
@@ -35,7 +35,7 @@ public:
       * This is a store-time-only annotation consumed while collecting cache dependencies from a
       * freshly built plan; it is deliberately not serialized, so a deserialized step reports false.
       */
-    bool readsOnlyInjectedColumn() const { return reads_only_injected_column; }
+    [[nodiscard]] bool readsOnlyInjectedColumn() const { return reads_only_injected_column; }
     void setReadsOnlyInjectedColumn(bool value) { reads_only_injected_column = value; }
 
     /** The column set whose `SELECT` privilege the planner actually verified for this read, i.e.
@@ -50,7 +50,7 @@ public:
       * collecting cache dependencies from a freshly built plan; it is deliberately not serialized,
       * so a deserialized step reports an empty set.
       */
-    const Names & getAccessCheckedColumns() const { return access_checked_columns; }
+    [[nodiscard]] const Names & getAccessCheckedColumns() const { return access_checked_columns; }
     void setAccessCheckedColumns(Names value) { access_checked_columns = std::move(value); }
 
     /** The row-level security filter of the table, set only in a plan built for the query plan cache.
@@ -61,10 +61,10 @@ public:
       * on the rows the policy hides. The filter is carried here and pushed into the read when the plan is
       * materialized (see `QueryPlan::resolveStorages`).
       */
-    const FilterDAGInfoPtr & getRowLevelFilter() const { return row_level_filter; }
+    [[nodiscard]] const FilterDAGInfoPtr & getRowLevelFilter() const { return row_level_filter; }
     void setRowLevelFilter(FilterDAGInfoPtr value) { row_level_filter = std::move(value); }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;

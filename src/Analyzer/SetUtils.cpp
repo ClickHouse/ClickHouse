@@ -156,10 +156,8 @@ std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & m
         return ColumnPtr(lhs_type->createColumn());
 
     const DataTypePtr & source_type = members.front().type;
-    if (!nativeBatchApplicable(source_type, lhs_type))
-        return std::nullopt;
     for (const auto & member : members)
-        if (!member.type->equals(*source_type))
+        if (!nativeBatchApplicable(member.type, lhs_type) || !member.type->equals(*source_type))
             return std::nullopt;
 
     /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a

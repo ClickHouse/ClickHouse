@@ -55,7 +55,7 @@ public:
     /// we store this offset inside nextimpl_working_buffer_offset.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
-    off_t getPosition() const override;
+    [[nodiscard]] off_t getPosition() const override;
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
