@@ -31,15 +31,9 @@ Granules: 50/50
 -- hasToken on string field
 SELECT count() FROM ghdata WHERE hasToken(data.actor.login, 'dependabot')
 37
-Condition: (mode: All; tokens: ["dependabot"])
-Parts: 1/1
-Granules: 28/50
 -- hasAllTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAllTokens(data.payload.pull_request.title::String, 'Fix spelling')
 4
-Condition: (mode: All; tokens: ["fix", "spelling"])
-Parts: 1/1
-Granules: 4/50
 -- hasAnyTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAnyTokens(data.payload.pull_request.title::String, ['Fix', 'fix'])
 18

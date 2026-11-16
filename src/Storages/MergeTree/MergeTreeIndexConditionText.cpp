@@ -1343,9 +1343,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasPhrase" && !isTokenizerSupportedByHasPhrase(*tokenizer))
             return false;
 
-        const bool is_array_valued_path
-            = !WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString();
-        bool has_verbatim_needles = has_preprocessor && value_field.getType() == Field::Types::Array;
+        const bool is_token_function = is_special_text_index_function || function_name == "hasToken" || function_name == "hasTokenOrNull";
+        const bool is_array_valued_path = isArray(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type));
 
         /// Direct read does not apply the preprocessor to a JSON path, so the row-level function sees the raw value and the index
         /// only has to return a superset of its rows. The preprocessed needles do when the preprocessor maps each token of the value
@@ -1354,8 +1353,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const auto tokenizer_type = tokenizer->getType();
         const bool tokenizer_keeps_case_mapped_tokens = tokenizer_type == ITokenizer::Type::SplitByNonAlpha
             || tokenizer_type == ITokenizer::Type::Array || tokenizer_type == ITokenizer::Type::Ngrams;
-        if (is_special_text_index_function && has_verbatim_needles && !is_array_valued_path && !has_postprocessor
-            && preprocessor->isASCIILowerOrUpper() && tokenizer_keeps_case_mapped_tokens)
+        const bool needles_give_superset = !has_preprocessor
+            || (!has_postprocessor && preprocessor->isASCIILowerOrUpper() && tokenizer_keeps_case_mapped_tokens);
+
+        /// A string needle is preprocessed with the tokenizer below, array needles are taken verbatim there.
+        if (is_special_text_index_function && has_preprocessor && needles_give_superset && !is_array_valued_path
+            && value_field.getType() == Field::Types::Array)
         {
             Array processed_needles;
             for (const Field & element : value_field.safeGet<Array>())
@@ -1365,15 +1368,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 processed_needles.emplace_back(preprocessor->processConstant(element.safeGet<String>()));
             }
             value_field = std::move(processed_needles);
-            has_verbatim_needles = false;
         }
 
         /// The index cannot prune when:
         /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
         ///   search inside its elements;
-        /// - array needles meet any other preprocessor: the index stores preprocessed tokens, while the array needles are taken verbatim.
+        /// - the preprocessed needles do not give a superset of the rows.
         /// Still return a query: direct read uses it to inject the index tokenizer and postprocessor.
-        if (is_special_text_index_function && (is_array_valued_path || has_verbatim_needles))
+        if (is_token_function && (is_array_valued_path || !needles_give_superset))
         {
             out.function = RPNElement::FUNCTION_UNKNOWN;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(

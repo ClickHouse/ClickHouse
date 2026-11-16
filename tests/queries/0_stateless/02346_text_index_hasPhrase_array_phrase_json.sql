@@ -140,6 +140,15 @@ CREATE TABLE tab_case_mapping_postprocessor
 ENGINE = MergeTree
 ORDER BY id;
 
+CREATE TABLE tab_phrase_preprocessor
+(
+  id UInt32,
+  data JSON(key String),
+  INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(JSONAllValues(data), 'a b', 'c'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
 INSERT INTO tab_split_by_string VALUES (1, '{"key": "the quick brown fox"}'), (2, '{"key": "lazy dog"}'), (3, '{"key": "brown quick"}');
 INSERT INTO tab_split_by_non_alpha SELECT * FROM tab_split_by_string;
 INSERT INTO tab_array SELECT * FROM tab_split_by_string;
@@ -154,6 +163,7 @@ INSERT INTO tab_array_path_sparse_grams VALUES (1, '{"key": ["quick brown"]}'), 
 INSERT INTO tab_case_mapping SELECT * FROM tab_preprocessor;
 INSERT INTO tab_case_mapping_letter_separator VALUES (1, '{"key": "aXb"}'), (2, '{"key": "cXd"}');
 INSERT INTO tab_case_mapping_postprocessor VALUES (1, '{"key": "a"}'), (2, '{"key": "c"}');
+INSERT INTO tab_phrase_preprocessor VALUES (1, '{"key": "a b"}'), (2, '{"key": "d"}');
 INSERT INTO tab_array_path_postprocessor VALUES (1, '{"key": ["CAT"]}'), (2, '{"key": ["dog"]}');
 
 SELECT 'splitByString';
@@ -282,6 +292,20 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_regexp_preprocessor WHERE hasPhra
 SELECT groupArray(id) FROM (SELECT id FROM tab_regexp_preprocessor WHERE hasAnyTokens(data.key, ['QUICK']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_regexp_preprocessor WHERE hasAnyTokens(data.key, ['QUICK']) ORDER BY id) SETTINGS use_skip_indexes = 0;
 
+SELECT 'other preprocessor, string needles';
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, 'a') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, 'a') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasAnyTokens(data.key, 'a') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasAnyTokens(data.key, 'a') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasAllTokens(data.key, 'a') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasAllTokens(data.key, 'a') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasToken(data.key, 'a') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasToken(data.key, 'a') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasTokenOrNull(data.key, 'a') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasTokenOrNull(data.key, 'a') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, ['a']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_phrase_preprocessor WHERE hasPhrase(data.key, ['a']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+
 SELECT 'array-valued path, tokenizer unsupported by hasPhrase';
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_sparse_grams WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM tab_array_path_sparse_grams WHERE hasPhrase(data.key, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
@@ -301,4 +325,5 @@ DROP TABLE tab_case_mapping;
 DROP TABLE tab_case_mapping_letter_separator;
 DROP TABLE tab_case_mapping_postprocessor;
 DROP TABLE tab_regexp_preprocessor;
+DROP TABLE tab_phrase_preprocessor;
 DROP TABLE tab_array_path_sparse_grams;
