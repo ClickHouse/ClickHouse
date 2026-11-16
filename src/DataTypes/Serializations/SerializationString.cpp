@@ -70,9 +70,7 @@ SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion
 
 bool SerializationString::isColumnCompatible(const IColumn & column) const
 {
-    /// The bulk readers of every version read into a ColumnString; the size-stream and
-    /// the filtered single-stream paths cast to it unchecked, so a sparse column of
-    /// strings is still the wrong destination.
+    /// Every bulk version reads into a ColumnString; some paths cast to it unchecked.
     return typeid(column) == typeid(ColumnString);
 }
 

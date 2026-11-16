@@ -238,7 +238,7 @@ size_t MergeTreeReaderWide::readRows(
 
         /// Result columns created by the data type alone may not match the part's serializations
         /// (see ISerialization::isColumnCompatible): reading into them would be UB. A shared column
-        /// is adopted as the destination as-is (see takeColumnForAppending), so check both carriers.
+        /// is adopted as-is (see takeColumnForAppending), so check both carriers.
         auto checkDestination = [&](size_t pos, const IColumn & column)
         {
             if (!serializations[pos]->isColumnCompatible(column))

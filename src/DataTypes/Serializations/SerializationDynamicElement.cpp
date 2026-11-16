@@ -313,9 +313,8 @@ MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(Mutab
 
 bool SerializationDynamicElement::isColumnCompatible(const IColumn & column) const
 {
-    /// Mirrors deserializeBinaryBulkWithMultipleStreams: the null maps are filled here as UInt8
-    /// columns; the values are read by SerializationVariantElement, which removes the Nullable
-    /// added by the extraction and appends only to the nested column, like the wrap above.
+    /// Mirrors the wrap above: null maps are UInt8 columns; otherwise the Nullable added
+    /// by the extraction is peeled off and only the nested column is checked.
     if (is_null_map_subcolumn || selected_subcolumn_is_null_map)
         return typeid(column) == typeid(ColumnUInt8);
 

@@ -37,9 +37,6 @@ ColumnPtr nullableString()
 /// `assert_cast`; `isColumnCompatible` is what MergeTree readers check result columns with.
 TEST(SerializationIsColumnCompatible, StringRequiresColumnString)
 {
-    /// The bulk readers of every serialization version read into a ColumnString: the
-    /// size-stream and the filtered single-stream paths cast to it unchecked, so a
-    /// sparse column of strings is still the wrong destination.
     const auto versions = {MergeTreeStringSerializationVersion::SINGLE_STREAM, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM};
     for (auto version : versions)
     {
@@ -130,8 +127,8 @@ TEST(SerializationIsColumnCompatible, ObjectRequiresColumnObject)
     EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
 }
 
-/// A `v.JSON` subcolumn of Variant reads into a Nullable(JSON) column: the element serialization
-/// fills the extraction's null map itself and passes only the nested column to SerializationObject.
+/// A `v.JSON` subcolumn reads into a Nullable(JSON) column: the element serialization passes
+/// only the nested column to SerializationObject.
 TEST(SerializationIsColumnCompatible, VariantElementUnwrapsExtractionNullable)
 {
     const auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.b UInt32)");
@@ -181,8 +178,8 @@ TEST(SerializationIsColumnCompatible, DynamicElementNullMapRequiresColumnUInt8)
     EXPECT_FALSE(serialization->isColumnCompatible(*nullableString()));
 }
 
-/// A part can store a tuple element sparsely; a plain tuple of the type's columns would reach
-/// SerializationSparse's unchecked cast through SerializationTuple's in-place element reads.
+/// A plain tuple of the type's columns would reach SerializationSparse's unchecked cast
+/// when the element is stored sparsely.
 TEST(SerializationIsColumnCompatible, TupleChecksNestedElements)
 {
     SerializationTuple::ElementSerializations element_serializations;
