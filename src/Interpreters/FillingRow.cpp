@@ -396,8 +396,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         return true;
     }
 
-    /// Stepping never starts from or reaches a non-finite value, so the filling of `pos` stops here unless a border
-    /// comes before the next value. The later columns are filled above independently of it.
+    /// Stepping never starts from or reaches a non-finite value, so it stops here unless a border comes before the next value.
     if (row[pos].isNaN() || row[pos].isInf())
         return false;
 
