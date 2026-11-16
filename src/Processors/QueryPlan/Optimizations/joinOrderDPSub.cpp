@@ -1379,9 +1379,13 @@ UInt32 DPSubJoinOrderOptimizer::routedRelations(const DPTable & dptable, TUInt S
         const auto [left_relation, right_relation] = shuffleKeyRelations(dptable, S, plan_index);
         return (static_cast<UInt32>(1) << left_relation) | (static_cast<UInt32>(1) << right_relation);
     }
-    /// A broadcast join keeps the rows of its partitioned side where they are.
-    return plan.partitioned_side == 0 ? routedRelations(dptable, plan.left, plan.left_plan, key_class, type)
-                                      : routedRelations(dptable, plan.right, plan.right_plan, key_class, type);
+    /// A broadcast join keeps the rows of its partitioned side where they are. When that side is in another state, the
+    /// plan shuffles it into this one before the join (see `prunePartitionedPlans`), by its columns of the class.
+    const TUInt side = plan.partitioned_side == 0 ? plan.left : plan.right;
+    const Int32 side_plan = plan.partitioned_side == 0 ? plan.left_plan : plan.right_plan;
+    if (const UInt32 routed = routedRelations(dptable, side, side_plan, key_class, type))
+        return routed;
+    return dpsub_data.class_type_relations[key_class][type] & static_cast<UInt32>(side);
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
@@ -1702,6 +1706,10 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         /// The cheapest plan per interesting sort order (or partitioning, see `useDistribution`), kept even when the
         /// cheapest plan overall is another one.
         VectorWithMemoryTracking<DPPlan> ordered;
+        /// With `useDistribution`: `ordered` keeps only the plans that a later join may prefer, see `prunePartitionedPlans`.
+        bool pruned{false};
+        /// The states of the plans that `prunePartitionedPlans` dropped.
+        std::vector<Int8> pruned_states;
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
     using Checker = EnumeratorCheckerWithCosts<DPTable, DPSubJoinOrderOptimizer>;

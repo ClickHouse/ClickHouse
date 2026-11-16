@@ -68,6 +68,12 @@ private:
     /// Keeps the plan as the cheapest plan of the subset and as its cheapest plan in its state, where that state is
     /// interesting.
     void offerPlan(UInt subset, const Plan & plan);
+    /// Drops the plans of a set in a partitioning state that cost at least as much as its cheapest plan shuffled into
+    /// that state, and have at least its rows: a shuffle join by the state's key moves the rows of the cheapest plan for
+    /// less. A broadcast join keeps the state of its partitioned side, so it is also offered on the cheapest plan shuffled
+    /// into a dropped state (`DPEntry::pruned_states`). Done once, when a larger set first uses the set, since DPsub
+    /// plans all subsets of a set before the set itself.
+    void prunePartitionedPlans(UInt subset);
 
     /// A shuffle of one split by an equality of a class: it depends on the split only, not on the plans of its sides.
     struct SplitShuffle
@@ -223,11 +229,32 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subs
 }
 
 template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::prunePartitionedPlans(const UInt subset)
+{
+    auto & entry = dp_table[subset];
+    if (entry.pruned)
+        return;
+    entry.pruned = true;
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double cheapest_shuffled = entry.cost
+        + join_cost.toNewPartitioning(entry.partition_state, entry.search_rows, optimizer.rowBytes(static_cast<UInt32>(subset)));
+    std::erase_if(entry.ordered, [&](const Plan & plan)
+    {
+        if (plan.partition_state < 0 || plan.cost < cheapest_shuffled || plan.search_rows < entry.search_rows)
+            return false;
+        entry.pruned_states.push_back(plan.partition_state);
+        return true;
+    });
+}
+
+template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
     const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
 {
     /// The plans of a side: its cheapest plan (-1) and its plans in the other states.
+    prunePartitionedPlans(lhs_subset);
+    prunePartitionedPlans(rhs_subset);
     const auto left_plans = static_cast<Int8>(dp_table[lhs_subset].ordered.size());
     const auto right_plans = static_cast<Int8>(dp_table[rhs_subset].ordered.size());
     if (optimizer.distribution_stopped
@@ -344,7 +371,18 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             offer(join_cost.toPartitioned(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
                     + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
                 right_state == single_node ? any_partitioning : right_state);
+            /// The cheapest plan of a side shuffled into a state whose own plan was dropped, then broadcast to.
+            if (right_index == -1)
+                for (const Int8 state : dp_table[rhs_subset].pruned_states)
+                    offer(join_cost.toNewPartitioning(right_state, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                            + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                        state);
             plan.partitioned_side = 0;
+            if (left_index == -1)
+                for (const Int8 state : dp_table[lhs_subset].pruned_states)
+                    offer(join_cost.toNewPartitioning(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                            + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                        state);
 
             for (const auto & shuffle : split_shuffles)
             {
