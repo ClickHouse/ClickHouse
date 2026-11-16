@@ -1,0 +1,231 @@
+other target
+0	0	0
+1	10	1
+2	20	2
+3	30	3
+4	33	6
+5	39	12
+6	51	24
+qualified
+0	0	0
+1	10	1
+2	20	2
+3	30	3
+4	33	6
+5	39	12
+6	51	24
+alias of an expression
+0	0	0
+1	10	100
+2	20	200
+3	30	300
+4	330	301
+5	631	302
+6	933	303
+aggregates
+0	0	1
+1	1	11
+2	12	21
+3	33	31
+4	1	1
+5	2	11
+6	13	21
+7	34	31
+8	2	1
+swap
+0	0	100
+1	1	101
+2	2	102
+3	3	103
+4	103	3
+5	3	103
+6	103	3
+lambda
+0	0	0
+1	10	1
+2	20	2
+3	30	3
+4	33	6
+5	39	12
+6	51	24
+target dropped by the outer query
+0	0
+1	10
+2	20
+3	30
+4	33
+5	39
+6	51
+remote
+0	0	0
+1	10	1
+2	20	2
+3	30	3
+4	33	6
+5	39	12
+6	51	24
+constant target
+0	5	0
+1	6	5
+2	7	11
+3	5	1
+constant target dropped by the outer query
+0	0
+1	5
+2	11
+3	1
+constant target declared after its reader
+0	5	0
+1	6	5
+2	7	11
+3	5	1
+the fill column is not a target
+0	0	0
+1	10	0
+2	20	1
+3	3	1
+a literal is not a target
+0	5	0
+1	6	5
+2	7	10
+3	5	1
+a shared expression is not rebound
+0	1	1
+1	0	2
+2	0	2
+3	0	2
+4	2	2
+a shared expression is not rebound, reversed
+0	1	1
+1	0	2
+2	0	2
+3	0	2
+4	2	2
+a fill column read keeps no target
+0	0
+1	0
+2	1
+3	1
+a shared expression read keeps no target
+0	0
+1	1
+2	1
+3	1
+equal columns of different tables are different expressions
+0	0
+1	1
+2	3
+3	1
+a target named like another column
+0	1	0
+1	1	1
+2	2	2
+3	1	6
+4	7	7
+5	14	8
+6	1	12
+a constant target named like another column
+0	1	5
+1	6	6
+2	12	7
+3	1	5
+4	6	6
+5	12	7
+6	1	5
+a chain through a constant target dropped by the outer query
+0	0
+1	5
+2	11
+3	19
+4	1
+an alias column read keeps no target
+0	0
+1	1
+2	1
+3	1
+a UNION ALL branch keeps no target for another branch
+0	0
+1	1
+2	3
+3	1
+10	0
+11	1
+12	2
+13	1
+a shared expression is not rebound when one of its targets is dropped by the outer query
+0	1	0
+1	2	1
+2	3	1
+3	4	1
+4	2	1
+0	1	1	0
+1	0	2	1
+2	0	3	1
+3	0	4	1
+4	2	2	1
+a read of a target expression keeps no target read inside it
+0	0
+1	2
+2	5
+3	9
+4	1
+a column computed before the fill is read as it is
+0	2	4	0
+1	3	0	4
+2	4	0	4
+3	5	0	4
+4	3	6	1
+an aggregate is read as it is
+0	2	1
+1	3	3
+2	4	3
+3	5	3
+4	3	1
+a constant target inside an aggregate, a window function or another column is read as it is
+0	5	1
+1	6	6
+2	7	6
+3	8	6
+4	5	1
+0	5	0
+1	6	10
+2	7	10
+3	8	10
+4	5	1
+0	5	10	0
+1	6	0	10
+2	7	0	20
+3	8	0	30
+4	5	10	1
+a target whose expression reads a constant target
+0	5	6	0
+1	6	12	6
+2	7	24	18
+3	8	48	42
+4	5	7	1
+a constant target is read as the constant where it is computed before the fill or must be constant
+0	5	0
+1	6	5
+2	7	11
+3	8	18
+4	5	1
+0	5	1
+1	6	6
+2	7	12
+3	8	19
+4	5	1
+0	5	0
+1	6	21
+2	7	43
+3	8	66
+4	5	1
+0	5	5	0
+1	6	0	115
+2	7	0	221
+3	8	0	328
+4	5	5	1
+0	5	a\0\0\0\0
+1	6	5\0\0\0\0
+2	7	6\0\0\0\0
+3	8	7\0\0\0\0
+4	5	a\0\0\0\0
