@@ -162,6 +162,19 @@ The supported options are:
   * `replace`: under the UTF-8 encoding, replaces invalid bytes with the
     Unicode replacement character (`�`); same as `remove` for other encodings
   *   `truncate` truncates the text at the first invalid byte
+* `settings`: [ClickHouse settings] to send with foreign table queries
+  and inserts on this server. Use syntax from
+  [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings).
+  Use foreign table `settings` to override server settings.
+  `pg_clickhouse.session_settings` values override both for matching keys;
+  see [Settings Precedence](#settings-precedence) for details. Example:
+
+    ```sql
+    ALTER SERVER taxi_srv OPTIONS(ADD settings 'max_threads 8, final 0');
+    ```
+
+  pg_clickhouse checks the syntax when the option is set; ClickHouse checks
+  the values when a query uses them.
 
 ### ALTER SERVER {#alter-server}
 
@@ -351,6 +364,25 @@ The supported table options are:
   `CollapsingMergeTree()` and `AggregatingMergeTree()`, pg_clickhouse
     automatically applies the parameters to function expressions executed on
     the table.
+* `settings`: [ClickHouse settings] to send with queries and inserts
+  on this table. Use
+  [`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) syntax.
+  Table settings override [server settings](#create-server) for matching keys,
+  so tables can use table-specific settings such as vector index options.
+  ClickHouse uses one list of settings per query. Joins and subqueries that
+  push down to ClickHouse combine settings from their tables. If tables set
+  different values for one setting, pg_clickhouse ignores those table
+  values. Server or [session settings](#pg_clickhousesession_settings) still
+  apply. A `NOTICE` reports
+  conflicting setting names and effective query values or fallback to
+  ClickHouse defaults.
+  See [Settings Precedence](#settings-precedence).
+
+    ```sql
+    ALTER FOREIGN TABLE acts OPTIONS(
+        ADD settings 'hnsw_candidate_list_size_for_search 512'
+    );
+    ```
 
 Use the [data type](#data-types) appropriate for the remote ClickHouse data
 type of each column. The supported column options are:
@@ -686,6 +718,16 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
  the number of rows that must be pulled back into Postgres from 1000 (all of
  them) to just 8, one for each node.
 
+#### Grouping Sets {#grouping-sets}
+
+pg_clickhouse runs `GROUPING SETS`, `ROLLUP`, `CUBE`, and `GROUPING()` in
+ClickHouse using a `GROUPING SETS` clause. `GROUPING()` pushdown requires
+ClickHouse 26.6+.
+
+Postgres returns NULL for keys left out of a grouping set. ClickHouse does too,
+except for types that cannot be `Nullable`, such as `Array` and `Map`. Keys of
+these types return empty values instead, such as `{}` for an array.
+
 ### Partitioned Tables {#partitioned-tables}
 
 A PostgreSQL [partitioned table] can mix local partitions with foreign
@@ -712,7 +754,7 @@ For example on how to move data from local to foreign partitions, see
 Aggregates spanning both local and foreign partitions need [partitionwise
 aggregation], which PostgreSQL disables by default:
 
-```pgsql
+```sql
 SET enable_partitionwise_aggregate = on;
 ```
 
@@ -732,7 +774,7 @@ try=# EXPLAIN (VERBOSE, COSTS OFF)
          ->  Foreign Scan
                Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
                Relations: Aggregate on (events_2023 events)
-               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
+               Remote SQL: SELECT count(*), sumOrNull(val), minOrNull(ts), maxOrNull(ts) FROM "default".events
          ->  Partial Aggregate
                Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
                ->  Seq Scan on public.events_2024 events_1
@@ -861,6 +903,57 @@ try=# COPY logs FROM stdin CSV;
 > insert API. Thus [COPY] currently uses [INSERT](#insert) statements to
 > insert records. This will be improved in a future release.
 
+### UPDATE and DELETE {#update-and-delete}
+
+pg_clickhouse runs [UPDATE] and [DELETE] on a foreign table as a single
+ClickHouse [lightweight UPDATE] or [lightweight DELETE] statement:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF)
+       DELETE FROM logs WHERE resource = '/search' AND response >= 500;
+                                              QUERY PLAN
+-------------------------------------------------------------------------------------------------------
+ Delete on public.logs
+   ->  Foreign Delete on public.logs
+         Remote SQL: DELETE FROM "default".logs WHERE ((response >= 500)) AND ((resource = '/search'))
+(3 rows)
+```
+
+The following cannot be pushed down:
+
+* `RETURNING`
+* Joins, as with `UPDATE ... FROM`, `DELETE ... USING`, or `IN (SELECT ...)`
+* Row-level triggers on the foreign table, or `WITH CHECK OPTION` views
+
+Subqueries that do not reference outer query columns run in Postgres first,
+then pass their result to ClickHouse as a query parameter.
+
+With default settings, `UPDATE`s and `DELETE`s wait for the storage operation
+to complete before returning, so subsequent queries see their changes.
+ClickHouse reports no affected row count, so Postgres always reports `UPDATE 0`
+or `DELETE 0`.
+
+Lightweight `DELETE` requires a [MergeTree] family table. Lightweight
+`UPDATE` requires ClickHouse 25.7+ and a MergeTree family table, other than
+`SummingMergeTree`, `AggregatingMergeTree`, or `GraphiteMergeTree`, created with
+`SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1`.
+For ClickHouse 25.7, also set `allow_experimental_lightweight_update = 1`.
+Pass ClickHouse settings, such as `lightweight_deletes_sync`, as for other queries
+(see [Settings Precedence](#settings-precedence)).
+
+### TRUNCATE {#truncate}
+
+Use [TRUNCATE] to remove all rows from foreign tables. pg_clickhouse sends one
+ClickHouse [TRUNCATE TABLE] statement per table:
+
+```pgsql
+try=# TRUNCATE logs;
+TRUNCATE TABLE
+```
+
+ClickHouse truncates immediately. ROLLBACK does not restore them. If truncating
+a table fails partway through, already truncated tables remain truncated.
+
 ### LOAD {#load}
 
 Use [LOAD] to load the pg_clickhouse shared library:
@@ -890,16 +983,17 @@ settings] to be set on subsequent queries. Example:
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-The default is
+The default is an empty string. pg_clickhouse always sends these built-in
+settings, which this parameter overrides by key:
 
 ```
 join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
 ```
 
-Set it to an empty string to fall back on the ClickHouse server's settings —
-but note that pushdown correctness depends on some of these defaults:
-`join_use_nulls` for outer joins and `transform_null_in` for the `IN` family
-(see [IN and NULL Semantics](#in-and-null-semantics)).
+Correct results depend on `join_use_nulls` for outer joins,
+`group_by_use_nulls` for [grouping sets](#grouping-sets), and
+`transform_null_in` for the `IN` family (see
+[IN and NULL Semantics](#in-and-null-semantics)).
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -945,9 +1039,11 @@ $$;
 Some settings will be ignored in cases where they would interfere with the
 operation of pg_clickhouse itself. These include:
 
-*   `date_time_output_format`: the http driver requires it to be "iso"
-*   `format_tsv_null_representation`: the http driver requires the default
-*   `output_format_tsv_crlf_end_of_line` the http driver requires the default
+* `date_time_output_format`: the http driver requires it to be "iso"
+* `format_tsv_null_representation`: the http driver requires the default
+* `output_format_tsv_crlf_end_of_line` the http driver requires the default
+* `session_timezone`: pg_clickhouse sets it to PostgreSQL's [TimeZone] on
+  ClickHouse 23.6 and later
 
 Otherwise, pg_clickhouse does not validate the settings, but passes them on to
 ClickHouse for every query. It thus supports all settings for each ClickHouse
@@ -956,6 +1052,31 @@ version.
 Note that pg_clickhouse must be loaded before setting
 `pg_clickhouse.session_settings`; either use [shared library preloading] or
 simply use one of the objects in the extension to ensure it loads.
+
+##### Settings Precedence {#settings-precedence}
+
+Foreign table queries and inserts combine settings by key. Later entries
+override earlier entries:
+
+1. Built-in settings, shown above
+2. Foreign server `settings`
+3. Foreign table `settings`
+4. `pg_clickhouse.session_settings`
+
+Overrides affect only matching keys. For example, table option
+`settings 'final 0'` overrides built-in `final 1`. Override that table option
+with:
+
+```sql
+SET pg_clickhouse.session_settings = 'final 1';
+```
+
+Queries on this table now use `final 1` along with its other settings.
+
+[`clickhouse_query()`](#clickhouse_query) and
+[`clickhouse_perform()`](#clickhouse_perform) use only built-in settings and
+`pg_clickhouse.session_settings`; the `settings` options apply to queries and
+inserts on foreign tables.
 
 #### `pg_clickhouse.pushdown_regex` {#pg_clickhousepushdown_regex}
 
@@ -968,6 +1089,19 @@ SET pg_clickhouse.pushdown_regex = 'false';
 ```
 
 See [Regular Expressions](#regular-expressions) for details.
+
+#### `pg_clickhouse.vector_planner_warnings` {#pg_clickhousevector_planner_warnings}
+
+pg_clickhouse warns by default when a pgvector nearest neighbor search
+cannot use a ClickHouse vector similarity index because of its `ORDER BY`
+or `LIMIT`. Each warning explains why. Set
+`pg_clickhouse.vector_planner_warnings` to false to silence these warnings:
+
+```sql
+SET pg_clickhouse.vector_planner_warnings = 'false';
+```
+
+See [Vector Index Use](#vector-index-use) for details.
 
 ### ALTER ROLE {#alter-role}
 
@@ -1081,6 +1215,7 @@ conversion rules.
 | Nullable(T)                  | T                           |                                           | Column imports without NOT NULL                      |
 | Point                        | point                       |                                           |                                                      |
 | Polygon                      | polygon[]                   |                                           |                                                      |
+| QBit(T,N)                    | T[]                         |                                           | Transposes N elements to and from bit planes         |
 | Ring                         | polygon                     | lseg                                      | lseg requires two points                             |
 | SimpleAggregateFunction(f,T) | T                           |                                           | Stores values as T                                   |
 | String                       | text                        | bytea; input-compatible types             | bytea keeps raw bytes                                |
@@ -1124,6 +1259,24 @@ or `bigint` to read and write counts of their units. For example, an
 `IntervalDay` value of `3` maps to the integer `3`. Mapping
 `IntervalNanosecond` to `bigint` preserves nanoseconds, while mapping to
 `interval` truncates to microseconds.
+
+### Vector Types {#vector-types}
+
+When the [pgvector] extension is installed, declare ClickHouse float array
+columns as `vector` to read and write them as pgvector values:
+
+```sql
+CREATE FOREIGN TABLE items (
+    id        bigint NOT NULL,
+    embedding vector(768) NOT NULL
+) SERVER ch OPTIONS (table_name 'items');
+```
+
+| ClickHouse        | PostgreSQL  | Notes                                                     |
+|-------------------|-------------|-----------------------------------------------------------|
+| `Array(Float32)`  | `vector(n)` | Lossless                                                  |
+| `Array(Float64)`  | `vector(n)` | Reads round to `real`; writes are exact                   |
+| `Array(BFloat16)` | `vector(n)` | Reads are exact; writes truncate to the bfloat16 mantissa |
 
 ### BYTEA {#bytea}
 
@@ -1223,7 +1376,7 @@ The text columns will be correct:
 But reading them as [BYTEA] will not:
 
 ```pgsql
-# SELECT * FROM bytes;
+try=# SELECT * FROM bytes;
  c1 |                                                           c2                                                           |                                   c3
 ----+------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------
   1 | \x5c783162663766306363383231643331313738363136613535613865306335323637373733353339376364646536663431353361396664336437 | \x5c786165336232386364653032353432663831616363653837383332343534333064
@@ -1267,12 +1420,67 @@ SELECT id, vals FROM t1 WHERE vals[1:2] = ARRAY[10,20];
 SELECT id, vals FROM t1 WHERE vals[1:2][2] = 20; -- currently fails
 ```
 
+#### Tuple {#tuple}
+
+PostgreSQL provides no type corresponding to the ClickHouse [Tuple] type.
+[IMPORT FOREIGN SCHEMA](#import-foreign-schema) therefore maps [Tuple] columns
+map to `text[]`, with each element appearing in the order defined for the
+[Tuple]. pg_clickhouse emits a `NOTICE` when it makes such a mapping.
+
+For example, given this ClickHouse table:
+
+```sql
+CALL clickhouse_perform('ch_srv', $$
+    CREATE TABLE named_tuples (
+      a Tuple(s String, i Int64)
+    ) ENGINE = Memory
+$$);
+```
+
+[IMPORT FOREIGN SCHEMA](#import-foreign-schema) will import it as:
+
+```
+ attname |  type  | attndims | attnotnull
+---------+--------+----------+------------
+ a       | text[] |        1 | t
+```
+
+Insert tuples as arrays of values:
+
+```sql
+INSERT INTO named_tuples VALUES (ARRAY['y', '10']), (ARRAY['x', '-10']);
+```
+
+Each array must contain the correct number of elements expected by the
+ClickHouse tuple; incompatible values trigger an error.
+
+The data fetches as:
+
+```pgsql
+try=# SELECT * FROM named_tuples;
+    a
+---------
+ {y,10}
+ {x,-10}
+```
+
+Values cannot be accessed via array subscripts. In other words, this query
+returns an error:
+
+```sql
+SELECT * FROM named_tuples WHERE a[2] = '10';
+```
+
+But see [Manual Type Mappings](#manual-type-mappings) for how to use
+[composite type]s both to map tuple element data types and to query by field
+values.
+
 #### Map {#map}
 
 PostgreSQL provides no type corresponding to the ClickHouse [Map] type.
-pg_clickhouse therefore maps [Map] columns to `text[][]`, with each key-value
-pair as its own array. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses
-this mapping. One can `INSERT` maps as arrays, as well. An example:
+pg_clickhouse therefore [Map] types to `text[][]`, with each key-value pair as
+its own array. [IMPORT FOREIGN SCHEMA](#import-foreign-schema) uses this
+mapping. One can `INSERT` maps as arrays, as well. An example:
 
 ```sql
 -- Create ClickHouse table with Map column.
@@ -1299,17 +1507,16 @@ try=# SELECT * FROM maps;
 Each nested array must contain exactly two text values. Values incompatible
 with corresponding ClickHouse key or value types trigger an error.
 
-<Note>
-Inserting a `Map` requires the `binary` driver, which derives column types
-from the ClickHouse sever. The `http` driver does not, so lacks the
-information to format and insert the appropriate value.
-</Note>
+Values cannot be accessed via array subscripts. In other words, this query
+returns an error:
 
-#### Tuple {#tuple}
+```sql
+SELECT * FROM maps WHERE c2[1] = 'b';
+```
 
-Similarly, a ClickHouse [Tuple] columns map to `text[]` and supports `INSERT`s
-via the binary driver. `IMPORT FOREIGN SCHEMA` emits a `NOTICE` when it makes
-such a mapping.
+But see [Manual Type Mappings](#manual-type-mappings) for how to use
+[composite type]s both to map [Map] element data types and to query by field
+values.
 
 #### Nested {#nested}
 
@@ -1392,10 +1599,10 @@ INSERT INTO nests
 VALUES (1, ARRAY[['42', 'Arthur'], ['99', 'Barbara']]);
 ```
 
-Pushdown of `text[][]` columns over Nested types fails, however:
+Pushdown of subscript access fails, however:
 
 ```pgsql
-SELECT * FROM nests WHERE c2[1][1] = '42`
+try=# SELECT * FROM nests WHERE c2[1][1] = '42`
 ERROR:  pg_clickhouse: DB::Exception: First argument for function 'arrayElement' must be array, got 'Tuple(serial UInt32, order_id String)' instead
 ```
 
@@ -1409,7 +1616,7 @@ pushdown works as long as the composite field names are identical to the
 Nested field names:
 
 ```sql
-SELECT * FROM nests WHERE c2[1].id = 42;
+SELECT * FROM nests WHERE (c2[1]).id = 42;
 ```
 
 ### Manual Type Mappings {#manual-type-mappings}
@@ -1427,11 +1634,6 @@ CALL clickhouse_perform('ch_srv', $$
       labels Map(String, Int64),
       items  Nested(id Int32, name String)
     ) ORDER BY id SETTINGS flatten_nested = 0
-$$);
-
-CALL clickhouse_perform('ch_srv', $$
-    INSERT INTO events
-    VALUES(1, 'new', tuple(3, 4), {'k1': 5, 'k2': 6}, [tuple(100, 'xx')])
 $$);
 ```
 
@@ -1459,14 +1661,25 @@ ClickHouse enum labels and `Nested` or `Tuple` field names to ensure that
 pushdown specifies the proper names.
 </Tip>
 
-Match composite field order and types to ClickHouse declarations. [Map] keys
-and values become first and second fields, respectively (`key` and `value` in
-this case). `Nested` and `Map` become arrays of composites, while `Tuple`
-becomes one composite value:
+To insert a row using the custom types, match composite field order and types
+to ClickHouse declarations. [Map] keys and values become first and second
+fields, respectively (`key` and `value` in this case). `Nested` and `Map`
+become arrays of composites, while `Tuple` becomes one composite value.
+Composite inserts into `Nested` columns require the `binary` driver.
+
+```sql
+INSERT INTO events
+VALUES (
+    1, 'new', (3, 4),
+    ARRAY[('k1', 5), ('k2', 6)]::event_label[],
+    ARRAY[(100, 'xx'), (101, 'yy')]::event_item[]
+);
+```
+
+And to fetch the values:
 
 ```pgsql
-SELECT * FROM events ORDER BY id;
- id | status | point |       labels        |          items
+try=# SELECT * FROM events ORDER BY id; id | status | point |       labels        |          items
 ----+--------+-------+---------------------+-------------------------
   1 | new    | (3,4) | {"(k1,5)","(k2,6)"} | {"(100,xx)","(101,yy)"}
 (1 row)
@@ -1476,9 +1689,9 @@ Of course you can use the composite type field names, too, both in a `SELECT`
 list:
 
 ```pgsql
-SELECT (point).x,       (point).y,
-       (labels[1]).key, (labels[1]).value,
-       (items[1]).id,   (items[1]).name
+try=# SELECT (point).x,       (point).y,
+             (labels[1]).key, (labels[1]).value,
+             (items[1]).id,   (items[1]).name
   FROM events ORDER BY id;
  x | y | key | value | id  | name
 ---+---+-----+-------+-----+------
@@ -1582,12 +1795,13 @@ equivalents as follows:
 * `abs`: [abs](/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/reference/functions/regular-functions/math-functions#factorial)
 * `mod` (int2/int4/int8/numeric): [modulo](/reference/functions/regular-functions/arithmetic-functions#modulo)
-* `pow` & `power` (float8, not numeric): [pow](https://clickhouse.com/docs/sql-reference/functions/math-functions#pow)
+* `pow` & `power` (float8, not numeric): [pow](/reference/functions/regular-functions/math-functions#pow)
 * `round`: [round](/reference/functions/regular-functions/rounding-functions#round)
 * `sin`, `cos`, `tan`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `degrees`, `radians`, `pi`: [ClickHouse math functions](/reference/functions/regular-functions/math-functions)
-  of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed down: PG
-  raises on out-of-range input where CH returns `NaN`.
-* `date_part`:
+  of the same name. `asin`, `acos`, `atanh`, `acosh` are not pushed
+  down: PG raises on out-of-range input where CH returns `NaN`.
+* `date_part`: passes PostgreSQL's [TimeZone] to ClickHouse for `timestamp`
+   and `timestamptz` values.
   * `date_part('day')`: [toDayOfMonth](/reference/functions/regular-functions/date-time-functions#toDayOfMonth)
   * `date_part('doy')`: [toDayOfYear](/reference/functions/regular-functions/date-time-functions#toDayOfYear)
   * `date_part('dow')`: [toDayOfWeek](/reference/functions/regular-functions/date-time-functions#toDayOfWeek)
@@ -1600,7 +1814,8 @@ equivalents as follows:
   * `date_part('isoyear')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toISOYear)
   * `date_part('week')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toISOWeek)
   * `date_part('epoch')`: [toISOYear](/reference/functions/regular-functions/date-time-functions#toUnixTimestamp)
-* `date_trunc`:
+* `date_trunc`: passes PostgreSQL's `TimeZone` to ClickHouse for `timestamp`
+  and `timestamptz` values.
   * `date_trunc('week')`: [toMonday](/reference/functions/regular-functions/date-time-functions#toMonday)
   * `date_trunc('second')`: [toStartOfSecond](/reference/functions/regular-functions/date-time-functions#toStartOfSecond)
   * `date_trunc('minute')`: [toStartOfMinute](/reference/functions/regular-functions/date-time-functions#toStartOfMinute)
@@ -1609,9 +1824,17 @@ equivalents as follows:
   * `date_trunc('month')`: [toStartOfMonth](/reference/functions/regular-functions/date-time-functions#toStartOfMonth)
   * `date_trunc('quarter')`: [toStartOfQuarter](/reference/functions/regular-functions/date-time-functions#toStartOfQuarter)
   * `date_trunc('year')`: [toStartOfYear](/reference/functions/regular-functions/date-time-functions#toStartOfYear)
-* `extract(field FROM source)`: same mappings as `date_part`
-* `date(timestamp)` & `date(timestamptz)`: [toDate](/reference/functions/regular-functions/type-conversion-functions#toDate)
-  (deparsed as CH alias `date`)
+* `extract(field FROM source)`: same mappings as `date_part`; passes PostgreSQL's
+  `TimeZone` to ClickHouse for `timestamp` and `timestamptz` values.
+* `date(timestamp)` & `date(timestamptz)`: [toDate32](/reference/functions/regular-functions/type-conversion-functions#toDate32);
+  passes PostgreSQL's `TimeZone` to ClickHouse, as do casts between `date`
+  and `timestamp` or `timestamptz`.
+* `AT TIME ZONE` & `timezone(zone, source)`: uses [toString](/reference/functions/regular-functions/type-conversion-functions#tostring)
+  followed by [toDateTime64](/reference/functions/regular-functions/type-conversion-functions#todatetime64)
+  to preserve local date and time while changing time zone. When converting
+  `timestamp` to `timestamptz`, local times skipped or repeated during
+  daylight saving changes produce different results: ClickHouse chooses
+  an earlier time than PostgreSQL.
 * `array_position`: [indexOf](/reference/functions/regular-functions/array-functions#indexOf) with
   [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif)
   to convert `0` to `NULL` and
@@ -1621,9 +1844,9 @@ equivalents as follows:
 * `array_append`: [arrayPushBack](/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/reference/functions/regular-functions/array-functions#arrayRemove)
-* `cardinality`: [arrayFlattenedLength](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayFlattenedLength)
+* `cardinality`: [arrayFlattenedLength](/reference/functions/regular-functions/array-functions#arrayFlattenedLength)
   on ClickHouse 26.9+, otherwise
-  [length](https://clickhouse.com/docs/sql-reference/functions/array-functions#length),
+  [length](/reference/functions/regular-functions/array-functions#length),
   which counts only the outer array
 * `array_length(array, 1)`: `nullIf(length(array), 0)`
 * `array_length` & `cardinality`: [length](/reference/functions/regular-functions/array-functions#length)
@@ -1658,7 +1881,7 @@ equivalents as follows:
 * `regexp_split_to_array`: [splitByRegexp](/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/reference/functions/regular-functions/hash-functions#MD5)
 * `sha224`, `sha256`, `sha384`, and `sha512`: Corresponding ClickHouse
-  [SHA functions](https://clickhouse.com/docs/sql-reference/functions/hash-functions#sha224)
+  [SHA functions](/reference/functions/regular-functions/hash-functions#sha224)
 * `encode(bytea, fmt)` when `fmt` is a string constant (case-insensitive):
   * `encode(bytea, 'hex')`: [hex](/reference/functions/regular-functions/encoding-functions#hex)
       wrapped in [lower](/reference/functions/regular-functions/string-functions#lower),
@@ -1678,7 +1901,8 @@ equivalents as follows:
   when `fmt` is a string constant whose every keyword has a faithful
   ClickHouse equivalent. See [to_char()](#to_char) under Compatibility
   Notes for the supported keywords. Otherwise the function evaluates
-  locally in PostgreSQL.
+  locally in PostgreSQL. Passes PostgreSQL's `TimeZone` to ClickHouse for
+  `timestamp` and `timestamptz` values.
 * `statement_timestamp`, `transaction_timestamp`, & `clock_timestamp`:
   [nowInBlock64](/reference/functions/regular-functions/date-time-functions#nowInBlock64)
   (`nowInBlock64(9, $session_timezone)`)
@@ -1712,6 +1936,20 @@ equivalents as follows:
 * `!~*` (case insensitive regexp not match): [match](/reference/functions/regular-functions/string-search-functions#match)
 * `->>` (JSON/JSONB extract element as text): [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (JSON/JSONB extract): [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
+* `jsonb` subscripts (`data['a']['b']`): [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns).
+  Pushdown requires a column with constant, non-NULL text subscripts.
+  Integer, numeric text, and non-constant subscripts evaluate locally.
+* `/` (integer division): [intDiv](/reference/functions/regular-functions/arithmetic-functions#intDiv)
+* `^` (exponent): [pow](/reference/functions/regular-functions/math-functions#pow)
+* `|/` (square root): [sqrt](/reference/functions/regular-functions/math-functions#sqrt)
+* `||/` (cube root): [cbrt](/reference/functions/regular-functions/math-functions#cbrt)
+* `@` (absolute value): [abs](/reference/functions/regular-functions/arithmetic-functions#abs)
+* `&` (bitwise and): [bitAnd](/reference/functions/regular-functions/bit-functions#bitAnd)
+* `|` (bitwise or): [bitOr](/reference/functions/regular-functions/bit-functions#bitOr)
+* `#` (bitwise xor): [bitXor](/reference/functions/regular-functions/bit-functions#bitXor)
+* `~` (bitwise not): [bitNot](/reference/functions/regular-functions/bit-functions#bitNot)
+* `<<` (shift left): [bitShiftLeft](/reference/functions/regular-functions/bit-functions#bitShiftLeft)
+* `>>` (shift right): [bitShiftRight](/reference/functions/regular-functions/bit-functions#bitShiftRight)
 
 ### IN and NULL semantics {#in-and-null-semantics}
 
@@ -1738,9 +1976,9 @@ ClickHouse columns. The proof follows non-NULL constants, `NOT NULL` columns,
 and basic arithmetic (`+`, `-`, `*`, unary `-`) over them.
 
 These rules assume ClickHouse's default `transform_null_in = 0`, which
-pg_clickhouse sets on every query through the default value of the
-[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) parameter
-so that a ClickHouse server profile cannot silently change it. Setting
+pg_clickhouse sets on every query through its built-in
+[session settings](#pg_clickhousesession_settings) so that a ClickHouse server
+profile cannot silently change it. Setting
 `transform_null_in = 1` breaks the semantics of every pushed `IN`.
 
 ### Custom functions {#custom-functions}
@@ -1787,10 +2025,104 @@ Two [fuzzystrmatch] functions push down to ClickHouse:
 * `soundex`: [soundex](/reference/functions/regular-functions/string-functions#soundex)
 * `levenshtein` (2-arg): [editDistanceUTF8](/reference/functions/regular-functions/string-functions#editDistanceUTF8)
 
+#### pgvector {#pgvector}
+
+These [pgvector] operators and functions on the `vector` type push down to
+ClickHouse:
+
+* `<->`, `l2_distance`: [L2Distance](/reference/functions/regular-functions/distance-functions#L2Distance)
+* `<=>`, `cosine_distance`: [cosineDistance](/reference/functions/regular-functions/distance-functions#cosineDistance)
+* `<#>`: negated [dotProduct](/reference/functions/regular-functions/array-functions#arrayDotProduct)
+* `inner_product`: [dotProduct](/reference/functions/regular-functions/array-functions#arrayDotProduct)
+* `<+>`, `l1_distance`: [L1Distance](/reference/functions/regular-functions/distance-functions#L1Distance)
+* `vector_dims`: [length](/reference/functions/regular-functions/array-functions#length)
+* `=`: [equals](/reference/operators#equals)
+* `<>`: [notEquals](/reference/operators#notEquals)
+
+A nearest-neighbor query pushes its distance sort and `LIMIT` to ClickHouse,
+along with any `WHERE` conditions:
+
+```sql
+SELECT id FROM items
+ WHERE category = 'footwear'
+ ORDER BY embedding <=> '[0.12, 0.03, 0.4]'
+ LIMIT 10;
+```
+
+`EXPLAIN (VERBOSE)` shows the remote query:
+
+```sql
+SELECT id, embedding FROM items WHERE ((category = 'footwear'))
+ORDER BY cosineDistance(embedding, cast([0.12,0.03,0.4] as Array(Float32))) ASC NULLS LAST
+LIMIT 10
+```
+
+pgvector's `<#>` returns the negative inner product, so pg_clickhouse sorts
+it as `dotProduct(...) DESC`, the form ClickHouse vector similarity indexes
+serve. `<#>` and `inner_product` require ClickHouse 23.8 or later, where
+`dotProduct` accepts arrays; earlier versions evaluate them in Postgres.
+ClickHouse computes distances of `Array(Float32)` columns in `Float32`, as
+pgvector does.
+
+A tiebreaker, such as `ORDER BY embedding <=> '[...]', id`, also pushes
+down, but ClickHouse does not use a vector similarity index for a sort with
+more than one key.
+
+##### Vector Index Use {#vector-index-use}
+
+For a nearest neighbor search, `EXPLAIN` shows the distance function and the
+ClickHouse [vector similarity index] that can serve it. If no index can, it
+says why:
+
+```pgsql
+try=# EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM items ORDER BY embedding <=> '[1,0]' LIMIT 5;
+                                                                 QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.items
+   Output: id, (embedding <=> '[1,0]'::vector)
+   Vector Search: cosineDistance on embedding
+   Vector Index: none
+   Vector Index Not Used: index "items_idx" uses L2Distance (<->), not cosineDistance
+   Remote SQL: SELECT id, embedding FROM try.items ORDER BY cosineDistance(embedding, cast([1,0] as Array(Float32))) ASC NULLS LAST LIMIT 5
+(6 rows)
+```
+
+`EXPLAIN` reads index definitions from ClickHouse's
+`system.data_skipping_indices` table. If that lookup fails, `EXPLAIN`
+continues without index details. ClickHouse can't use an index, and instead
+compares every row, when:
+
+* The index uses a different distance function than the search
+* The column has no index
+* The sort is descending, or has more than one key
+* The query has no `LIMIT`, or one over `max_limit_for_vector_search_queries`
+* A `WHERE` condition doesn't push down, so neither does the `LIMIT`
+* The server is older than ClickHouse 25.8
+
+Such an exact search returns the true nearest neighbors. An index search is
+much faster, but approximate. Even when `EXPLAIN` names an index, ClickHouse
+may choose to filter rows first and compare them exactly, for example when a
+`WHERE` condition matches the primary key.
+
+<Note>
+Query planning also issues a warning when a pgvector nearest neighbor search
+cannot use a ClickHouse vector similarity index because of its `ORDER BY` or
+`LIMIT`. Use `EXPLAIN` for additional detail. Set
+[`pg_clickhouse.vector_planner_warnings`](#pg_clickhousevector_planner_warnings)
+to false to silence these warnings.
+</Note>
+
+pg_clickhouse casts `vector` constants to `Array(Float32)`, so equality
+compares the same `Float32` values ClickHouse stores in `Array(Float32)`
+columns. `vector_norm`, `l2_normalize`, `subvector`, and other pgvector
+functions do not push down: ClickHouse's equivalents differ for zero
+vectors, negative offsets, or older versions. See [Vector Types](#vector-types)
+under Data Types for supported column types.
+
 #### pgcrypto {#pgcrypto}
 
 *   `digest(text, text)` and `digest(bytea, text)`: Corresponding ClickHouse
-    [hash function](https://clickhouse.com/docs/sql-reference/functions/hash-functions)
+    [hash function](/reference/functions/regular-functions/hash-functions)
     when the algorithm is a constant `md5`, `sha1`, `sha224`,
     `sha256`, `sha384`, or `sha512` (matched case-insensitively).
 
@@ -1835,6 +2167,19 @@ These PostgreSQL aggregate functions pushdown to ClickHouse.
 * [var_op](/reference/functions/aggregate-functions/varPop)
 * [var_samp /variance](/reference/functions/aggregate-functions/varSamp)
 
+These PostgreSQL regression aggregate functions pushdown to ClickHouse 26.9
+and later, but stay local to Postgres for earlier ClickHouse versions:
+
+* [regr_avgx](/reference/functions/aggregate-functions/regr_avgx)
+* [regr_avgy](/reference/functions/aggregate-functions/regr_avgy)
+* [regr_count](/reference/functions/aggregate-functions/regr_count)
+* [regr_intercept](/reference/functions/aggregate-functions/regr_intercept)
+* [regr_r2](/reference/functions/aggregate-functions/regr_r2)
+* [regr_slope](/reference/functions/aggregate-functions/regr_slope)
+* [regr_sxx](/reference/functions/aggregate-functions/regr_sxx)
+* [regr_sxy](/reference/functions/aggregate-functions/regr_sxy)
+* [regr_syy](/reference/functions/aggregate-functions/regr_syy)
+
 ### Custom aggregates {#custom-aggregates}
 
 These custom aggregate functions created by pg_clickhouse provide foreign
@@ -1866,16 +2211,16 @@ SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY a) FROM t1;
 Maps to this ClickHouse query:
 
 ```sql
-SELECT quantile(0.25)(a) FROM t1;
+SELECT quantileOrNull(0.25)(a) FROM t1;
 ```
 
 Note that the non-default `ORDER BY` suffixes `DESC` and `NULLS FIRST`
 aren't supported and will raise an error.
 
 * `percentile_cont(double)`: [quantile](/reference/functions/aggregate-functions/quantile)
-* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
-* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
-* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
+* `percentile_cont(double[])`: [quantiles](/reference/functions/aggregate-functions/quantiles)
+* `percentile_disc(double)`: [quantileExactLow](/reference/functions/aggregate-functions/quantileExactLow)
+* `percentile_disc(double[])`: [quantilesExactLow](/reference/functions/aggregate-functions/quantilesExactLow)
 
 ### Custom Ordered Set Aggregates
 
@@ -1894,8 +2239,8 @@ provide foreign query pushdown for select ClickHouse [parametric aggregate
 functions]. If any of these functions cannot be pushed down they will raise an
 exception.
 
-* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
+* [quantile](/reference/aggregate-functions/reference/quantile)
+* [quantileExact](/reference/aggregate-functions/reference/quantileexact)
 
 ### Pushdown window functions {#pushdown-window-functions}
 
@@ -1903,17 +2248,17 @@ These PostgreSQL [window functions] push down to ClickHouse with
 `OVER (PARTITION BY ... ORDER BY ...)` clauses, including frame specifications
 where applicable.
 
-* [row_number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
-* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
-* [dense_rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
-* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
-* [cume_dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
-* [percent_rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
-* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
-* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
-* [first_value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
-* [last_value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
-* [nth_value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
+* [row_number](/reference/functions/window-functions/row_number)
+* [rank](/reference/functions/window-functions/rank)
+* [dense_rank](/reference/functions/window-functions/dense_rank)
+* [ntile](/reference/functions/window-functions/ntile)
+* [cume_dist](/reference/functions/window-functions/cume_dist)
+* [percent_rank](/reference/functions/window-functions/percent_rank)
+* [lead](/reference/functions/window-functions/lead)
+* [lag](/reference/functions/window-functions/lag)
+* [first_value](/reference/functions/window-functions/first_value)
+* [last_value](/reference/functions/window-functions/last_value)
+* [nth_value](/reference/functions/window-functions/nth_value)
 * `min` / `max` (with `OVER` clause)
 
 Ranking functions (`row_number`, `rank`, `dense_rank`, `ntile`, `cume_dist`,
@@ -2058,7 +2403,10 @@ other backslash sequences are treated as literal text.
 
 ## Authors {#authors}
 
-[David E. Wheeler](https://justatheory.com/)
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+* [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 
 ## Copyright {#copyright}
 
@@ -2132,10 +2480,26 @@ Copyright (c) 2025-2026, ClickHouse
     "PostgreSQL Docs: INSERT"
   [COPY]: https://www.postgresql.org/docs/current/sql-copy.html
     "PostgreSQL Docs: COPY"
+  [UPDATE]: https://www.postgresql.org/docs/current/sql-update.html
+    "PostgreSQL Docs: UPDATE"
+  [DELETE]: https://www.postgresql.org/docs/current/sql-delete.html
+    "PostgreSQL Docs: DELETE"
+  [lightweight UPDATE]: /reference/statements/update
+    "ClickHouse Docs: The Lightweight UPDATE Statement"
+  [lightweight DELETE]: /reference/statements/delete
+    "ClickHouse Docs: The Lightweight DELETE Statement"
+  [MergeTree]: /reference/engines/table-engines/index/mergetree-family/mergetree
+    "ClickHouse Docs: MergeTree"
+  [TRUNCATE]: https://www.postgresql.org/docs/current/sql-truncate.html
+    "PostgreSQL Docs: TRUNCATE"
+  [TRUNCATE TABLE]: /reference/statements/truncate
+    "ClickHouse Docs: TRUNCATE"
   [LOAD]: https://www.postgresql.org/docs/current/sql-load.html
     "PostgreSQL Docs: LOAD"
   [SET]: https://www.postgresql.org/docs/current/sql-set.html
     "PostgreSQL Docs: SET"
+  [TimeZone]: https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-TIMEZONE
+    "PostgreSQL Docs: TimeZone"
   [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html
     "PostgreSQL Docs: ALTER ROLE"
   [shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD
@@ -2162,15 +2526,15 @@ Copyright (c) 2025-2026, ClickHouse
     "PostgreSQL Docs: Declaring Composite Types"
   [CALL]: https://www.postgresql.org/docs/current/sql-call.html
     "PostgreSQL Docs: CALL"
-  [Array] https://clickhouse.com/docs/reference/data-types/array
+  [Array]: /reference/data-types/array
     "ClickHouse Docs: Array(T)"
-  [Map]: https://clickhouse.com/docs/sql-reference/data-types/map
+  [Map]: /reference/data-types/map
     "ClickHouse Docs: Map"
-  [Tuple]: https://clickhouse.com/docs/reference/data-types/tuple
+  [Tuple]: /reference/data-types/tuple
     "ClickHouse Docs: Tuple(T1, T2, ...)"
-  [Nested]: https://clickhouse.com/docs/sql-reference/data-types/nested-data-structures/nested
+  [Nested]: /reference/data-types/nested-data-structures/nested
     "ClickHouse Docs: Nested"
-  [Enum]: https://clickhouse.com/docs/reference/data-types/enum
+  [Enum]: /reference/data-types/enum
     "ClickHouse Docs: Enum"
   [String]: /reference/data-types/string
     "ClickHouse Docs: String"
@@ -2189,6 +2553,10 @@ Copyright (c) 2025-2026, ClickHouse
     "PostgreSQL Docs: intarray"
   [fuzzystrmatch]: https://www.postgresql.org/docs/current/fuzzystrmatch.html
     "PostgreSQL Docs: fuzzystrmatch"
+  [pgvector]: https://github.com/pgvector/pgvector
+    "pgvector: Open-source vector similarity search for Postgres"
+  [vector similarity index]: /reference/engines/table-engines/mergetree-family/annindexes
+    "ClickHouse Docs: Exact and Approximate Vector Search"
   [`to_char()`]: https://www.postgresql.org/docs/current/functions-formatting.html
     "PostgreSQL Docs: Data Type Formatting Functions"
   [formatDateTime]: /reference/functions/regular-functions/date-time-functions#formatDateTime

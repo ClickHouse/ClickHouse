@@ -49,6 +49,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -616,6 +617,16 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     /// suffix would both expose the internal index and break predicates written against the real path.
     if (include_connection_info && object_info.relative_path_with_metadata.read_source_index)
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
+
+#if USE_AWS_S3
+    /// A URL with `versionId` reads that version of each object.
+    if (include_connection_info)
+    {
+        if (const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(&configuration);
+            s3_configuration && !s3_configuration->url.version_id.empty())
+            result += fmt::format("#versionId={}", s3_configuration->url.version_id);
+    }
+#endif
 
     if (include_connection_info)
         result = getArchiveEntryKey(result, object_info.archive_entry_index);
@@ -2032,6 +2043,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        std::optional<FormatSettings> ordered_format_settings;
+#if USE_AVRO
+        if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+            iceberg_object && iceberg_object->usesStreamingPositionDeletes(context_))
+        {
+            ordered_format_settings = format_settings ? *format_settings : getFormatSettings(context_);
+            ordered_format_settings->parquet.preserve_order = true;
+        }
+#endif
+        const auto & object_format_settings = ordered_format_settings ? ordered_format_settings : format_settings;
+
         InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the Parquet metadata cache and
         /// for the columns cache.
@@ -2057,7 +2079,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 context_,
                 max_block_size,
                 object_with_metadata,
-                format_settings,
+                object_format_settings,
                 parser_shared_resources,
                 filter_info,
                 true /* is_remote_fs */,
@@ -2075,7 +2097,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header,
             context_,
             max_block_size,
-            format_settings,
+            object_format_settings,
             parser_shared_resources,
             filter_info,
             true /* is_remote_fs */,
@@ -2106,7 +2128,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(object_info, builder, object_format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows

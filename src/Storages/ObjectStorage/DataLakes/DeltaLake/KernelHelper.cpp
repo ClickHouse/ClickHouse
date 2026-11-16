@@ -135,13 +135,13 @@ public:
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
     }
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return url.key; }
+    [[nodiscard]] const std::string & getDataPath() const override { return url.key; }
 
     /// The S3 object storage resolves a fully-qualified path to its own bucket and key. The table's checks
     /// (`remote_url_allow_hosts`, the credentials, the source grant) cover the table's location only.
-    std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
+    [[nodiscard]] std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const override
     {
         auto qualified = DB::trySplitFullyQualifiedObjectPath(path);
         if (!qualified)
@@ -157,7 +157,7 @@ public:
         return DB::unescapeForFileName(path);
     }
 
-    DB::UInt128 getCredentialsFingerprint() const override
+    [[nodiscard]] DB::UInt128 getCredentialsFingerprint() const override
     {
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
@@ -184,7 +184,7 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
-    ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -498,9 +498,9 @@ public:
         , data_path(normalizeBlobPath(blob_path_))
     {}
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return data_path; }
+    [[nodiscard]] const std::string & getDataPath() const override { return data_path; }
 
     /// The Azure object storage resolves a key inside the container and the endpoint prefix of the table. The table's
     /// checks (the credentials, the source grant) cover the table's location only.
@@ -540,7 +540,7 @@ public:
         return key.substr(prefix.size());
     }
 
-    ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -615,13 +615,13 @@ public:
     {
     }
 
-    const std::string & getTableLocation() const override { return table_location; }
+    [[nodiscard]] const std::string & getTableLocation() const override { return table_location; }
 
-    const std::string & getDataPath() const override { return path; }
+    [[nodiscard]] const std::string & getDataPath() const override { return path; }
 
     /// The local object storage confines an absolute path to its root like any other key. The source grant was
     /// checked for the table's location only, so an absolute path needs it on the whole source.
-    std::string resolveDataFilePath(const std::string & data_file_path, const DB::ContextPtr & context) const override
+    [[nodiscard]] std::string resolveDataFilePath(const std::string & data_file_path, const DB::ContextPtr & context) const override
     {
         if (!data_file_path.starts_with("file:"))
             return IKernelHelper::resolveDataFilePath(data_file_path, context);
@@ -638,7 +638,7 @@ public:
         return DB::unescapeForFileName(std::string(file_path));
     }
 
-    ffi::EngineBuilder * createBuilder() const override
+    [[nodiscard]] ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(

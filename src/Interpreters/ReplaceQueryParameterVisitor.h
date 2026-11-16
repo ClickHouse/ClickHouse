@@ -28,7 +28,7 @@ public:
     /// context outside of the full AST traversal (e.g. on the client side).
     void visitSettingsChanges(SettingsChanges & changes);
 
-    size_t getNumberOfReplacedParameters() const { return num_replaced_parameters; }
+    [[nodiscard]] size_t getNumberOfReplacedParameters() const { return num_replaced_parameters; }
 
 private:
     const NameToNameMap & query_parameters;
