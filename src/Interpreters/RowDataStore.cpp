@@ -7,12 +7,14 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/TableJoin.h>
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
 #include <base/getL2CacheSize.h>
 #include <Common/CacheLine.h>
+#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -38,32 +40,56 @@ namespace ErrorCodes
 namespace
 {
 
+void gatherFieldRows(const IColumn & column, const RowDataStore::FieldLayout & field, size_t row_length, size_t start, size_t length, char * dst, char *& overflow_cursor)
+{
+    if (field.elements.empty())
+    {
+        column.gatherRangeIntoRows(dst, row_length, field.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+        return;
+    }
+
+    /// A tuple field is its null byte, if any, then the fields of its elements.
+    const IColumn * tuple_column = &column;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        nullable->getNullMapColumn().gatherRangeIntoRows(dst, row_length, field.offset, start, length, overflow_cursor, /*null_map=*/ nullptr);
+        tuple_column = &nullable->getNestedColumn();
+    }
+
+    const auto & tuple = assert_cast<const ColumnTuple &>(*tuple_column);
+    for (size_t i = 0; i < field.elements.size(); ++i)
+        gatherFieldRows(tuple.getColumn(i), field.elements[i], row_length, start, length, dst, overflow_cursor);
+}
+
 void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst, char *& overflow_cursor)
 {
     for (size_t i = 0; i < layout.size(); ++i)
-        columns[i]->gatherRangeIntoRows(dst, row_length, layout[i], start, length, overflow_cursor, /*null_map=*/ nullptr);
+        gatherFieldRows(*columns[i], layout[i], row_length, start, length, dst, overflow_cursor);
 }
 
-
-MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const RowStorePointers & row_store_ptrs, size_t count)
+/// Reads the rows of `row_store` back into columns through the join's gather kernels.
+MutableColumns doScatterRows(const RowDataStore & row_store, const RowDataStore::RowLayout & layout, size_t row_length, const PaddedPODArray<UInt64> & words)
 {
     MutableColumns columns(layout.size());
     for (size_t i = 0; i < layout.size(); ++i)
         columns[i] = layout[i].type->createColumn();
 
-    if (count == 0)
+    if (words.empty())
         return columns;
 
+    std::vector<GatherNode> nodes(layout.size());
+    std::vector<GatherColumn> gather(layout.size());
     for (size_t i = 0; i < layout.size(); ++i)
-        columns[i]->reserve(count);
-
-    const size_t batch_size = batch_size_opt.value_or(count);
-    for (size_t batch_start = 0; batch_start < count; batch_start += batch_size)
     {
-        const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
-        for (size_t i = 0; i < layout.size(); ++i)
-            columns[i]->fillFromRowStorePtrs(row_store_ptrs, layout[i], batch_start, remaining_batch_size);
+        resolveRowStoreGatherNode(nodes[i], layout[i].type, row_store, layout[i], /*block_no=*/ 0, /*num_blocks=*/ 1);
+        gather[i] = GatherColumn{.node = &nodes[i], .remap_by_block = nullptr, .in_row_store = true};
     }
+
+    gatherJoinOutputColumns(
+        columns,
+        gather,
+        RefWordSelection{.begin = words.data(), .end = words.data() + words.size(), .rows = words.size(), .shape = RefWordShape::Flat},
+        row_length);
     return columns;
 }
 
@@ -234,19 +260,18 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
 
 MutableColumns RowDataStore::scatterRows(size_t start, size_t length) const
 {
-    RowStorePointers row_store_ptrs;
-    row_store_ptrs.base_ptr = getRowAt(start);
-    row_store_ptrs.row_length = row_length;
-    return doScatterRows(*layout, rowStoreBatchSize(row_length), row_store_ptrs, length);
+    PaddedPODArray<UInt64> words(length);
+    for (size_t i = 0; i < length; ++i)
+        words[i] = RowRef(0, start + i).encode();
+    return doScatterRows(*this, *layout, row_length, words);
 }
 
 MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums) const
 {
-    RowStorePointers row_store_ptrs;
-    row_store_ptrs.ptrs.reserve(row_nums.size());
-    for (auto row : row_nums)
-        row_store_ptrs.ptrs.push_back(getRowAt(row));
-    return doScatterRows(*layout, rowStoreBatchSize(row_length), row_store_ptrs, row_nums.size());
+    PaddedPODArray<UInt64> words(row_nums.size());
+    for (size_t i = 0; i < row_nums.size(); ++i)
+        words[i] = RowRef(0, row_nums[i]).encode();
+    return doScatterRows(*this, *layout, row_length, words);
 }
 
 const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_index) const

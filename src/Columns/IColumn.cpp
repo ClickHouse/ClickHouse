@@ -586,10 +586,10 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills columns from resolved row pointers. Fixed-size columns without missing rows grow once,
+/// Appends a field of each row to a column. Fixed-size columns without missing rows grow once,
 /// so the copy loop does not update their size or check capacity for every value.
-template <bool with_null_map, bool range_mode, typename ColumnType>
-static void fillColumnFromRowStorePtrs(ColumnType * col, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
+template <bool with_null_map, typename ColumnType>
+static void gatherColumnFromRows(ColumnType * col, const RowPointers & rows, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
     size_t value_offset = with_null_map ? field_offset + 1 : field_offset;
     size_t value_size = with_null_map ? field_size - 1 : field_size;
@@ -601,9 +601,6 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const RowStorePointers 
         null_map->resize(old_size + count);
         null_dst = null_map->data() + old_size;
     }
-
-    [[maybe_unused]] const char * const base_ptr = row_store_ptrs.base_ptr;
-    [[maybe_unused]] const size_t row_length = row_store_ptrs.row_length;
 
     constexpr bool copy_fixed_values = std::is_base_of_v<ColumnFixedSizeHelper, ColumnType>;
     char * values_dst = nullptr;
@@ -618,40 +615,26 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const RowStorePointers 
         col->reserve(col->size() + count);
     for (size_t i = 0; i < count; ++i)
     {
-        /// TODO: try prefetching row store rows.
-        const char * row_store_ptr = nullptr;
-        if constexpr (range_mode)
-            row_store_ptr = base_ptr + (begin + i) * row_length;
-        else
-            row_store_ptr = row_store_ptrs.ptrs[begin + i];
-        chassert(row_store_ptr != nullptr);
+        /// TODO: try prefetching the rows.
+        const char * row = rows[begin + i];
+        chassert(row != nullptr);
 
         if constexpr (with_null_map)
-            null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
+            null_dst[i] = *reinterpret_cast<const UInt8 *>(row + field_offset);
         if constexpr (copy_fixed_values)
-            memcpy(values_dst + i * value_size, row_store_ptr + value_offset, value_size);
+            memcpy(values_dst + i * value_size, row + value_offset, value_size);
         else
-            col->insertData(row_store_ptr + value_offset, value_size);
+            col->insertData(row + value_offset, value_size);
     }
 }
 
 template <typename ColumnType>
-static void dispatchFillColumnFromRowStorePtrs(ColumnType * col, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
+static void dispatchGatherColumnFromRows(ColumnType * col, const RowPointers & rows, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
-    if (row_store_ptrs.base_ptr != nullptr)
-    {
-        if (null_map)
-            fillColumnFromRowStorePtrs</*with_null_map=*/ true, /*range_mode=*/ true>(col, row_store_ptrs, field_offset, field_size, null_map, begin, count);
-        else
-            fillColumnFromRowStorePtrs</*with_null_map=*/ false, /*range_mode=*/ true>(col, row_store_ptrs, field_offset, field_size, nullptr, begin, count);
-    }
+    if (null_map)
+        gatherColumnFromRows</*with_null_map=*/ true>(col, rows, field_offset, field_size, null_map, begin, count);
     else
-    {
-        if (null_map)
-            fillColumnFromRowStorePtrs</*with_null_map=*/ true, /*range_mode=*/ false>(col, row_store_ptrs, field_offset, field_size, null_map, begin, count);
-        else
-            fillColumnFromRowStorePtrs</*with_null_map=*/ false, /*range_mode=*/ false>(col, row_store_ptrs, field_offset, field_size, nullptr, begin, count);
-    }
+        gatherColumnFromRows</*with_null_map=*/ false>(col, rows, field_offset, field_size, nullptr, begin, count);
 }
 
 #define APPLY_FOR_FIELD_SIZES(M) \
@@ -701,16 +684,15 @@ static void gatherColumn(const IColumn & values, const UInt8 * null_map, size_t 
 
 #undef APPLY_FOR_FIELD_SIZES
 
-void IColumn::fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+void IColumn::gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
-    dispatchFillColumnFromRowStorePtrs<IColumn>(this, row_store_ptrs, field.offset, field.size, null_map, begin, count);
+    dispatchGatherColumnFromRows<IColumn>(this, rows, field_offset, field_size, null_map, begin, count);
 }
 
-void IColumn::gatherRangeIntoRows(char * rows, size_t row_length, const RowStoreFieldLayout & field, size_t start, size_t count, char *&, const UInt8 * null_map) const
+void IColumn::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *&, const UInt8 * null_map) const
 {
     if (!isFixedAndContiguous())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} cannot be stored in the hash join row store", getName());
-    const size_t field_offset = field.offset;
     auto source_row = [start](size_t row) { return start + row; };
     auto destination_row = [rows, row_length, field_offset](size_t row) { return rows + row * row_length + field_offset; };
     if (null_map)
@@ -733,10 +715,10 @@ void IColumn::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::s
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const RowStorePointers & row_store_ptrs, const RowStoreFieldLayout & field, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+void IColumnHelper<Derived, Parent>::gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    dispatchFillColumnFromRowStorePtrs<Derived>(&self, row_store_ptrs, field.offset, field.size, null_map, begin, count);
+    dispatchGatherColumnFromRows<Derived>(&self, rows, field_offset, field_size, null_map, begin, count);
 }
 
 template <typename Derived, typename Parent>

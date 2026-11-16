@@ -30,7 +30,7 @@ namespace DB
 /// The record layout of the aggregate arguments that general payloads stage, fixed for the query by the header.
 /// Fixed-size arguments have offsets within their argument area and use the `RowDataStore` representation:
 /// a `Nullable` field is a null byte followed by the value. The drain rebuilds each of these arguments with
-/// one `IColumn::fillFromRowStorePtrs` over the records. Variable-size arguments follow the key, serialized
+/// one `IColumn::gatherFromRows` over the records. Variable-size arguments follow the key, serialized
 /// one after another in their layout order. A column read by several aggregates is staged once. A single
 /// numeric key used as an argument shares its key bytes instead of occupying another field.
 struct AdaptiveArgumentLayout

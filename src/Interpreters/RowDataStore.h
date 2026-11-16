@@ -34,20 +34,19 @@ class Block;
 class TableJoin;
 using RowDataStorePtr = std::shared_ptr<RowDataStore>;
 
-struct RowStoreFieldLayout
-{
-    DataTypePtr type = nullptr;
-    size_t offset = 0;
-    size_t size = 0;
-    bool is_nullable = false;
-    bool is_string = false;
-    std::vector<RowStoreFieldLayout> elements = {};
-};
-
 class RowDataStore
 {
 public:
-    using FieldLayout = RowStoreFieldLayout;
+    struct FieldLayout
+    {
+        DataTypePtr type;
+        size_t offset;
+        size_t size;
+        bool is_nullable;
+        bool is_string = false;
+        /// The fields of a tuple's elements, empty for any other field.
+        std::vector<FieldLayout> elements = {};
+    };
 
     struct FieldPlanes
     {

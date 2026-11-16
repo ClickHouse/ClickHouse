@@ -1082,7 +1082,7 @@ private:
         const AdaptiveRecordRanges & ranges,
         const Filter & filter,
         PaddedPODArray<AggregateDataPtr> & places,
-        RowStorePointers & records) const;
+        RowPointers & records) const;
 
     /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
     /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
@@ -1144,7 +1144,7 @@ private:
         const Record & format,
         Arena * arena,
         PaddedPODArray<AggregateDataPtr> & places,
-        const RowStorePointers & records,
+        const RowPointers & records,
         bool use_compiled_functions) const;
 
     /// Applies the argument columns rebuilt from drained records to the places of their groups, as the batch executor
