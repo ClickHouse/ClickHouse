@@ -1719,7 +1719,7 @@ private:
     static bool insertLeaf(IColumn & dest, const String & path, const Element & value, const FormatSettings & format_settings)
     {
         ColumnString * col_path = nullptr;
-        ColumnString * col_value;
+        ColumnString * col_value = nullptr;
         if constexpr (with_paths)
         {
             auto & col_tuple = assert_cast<ColumnTuple &>(dest);
