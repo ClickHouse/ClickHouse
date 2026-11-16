@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest, no-msan, long
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
+# Tag long: it takes about 15s under asan, but the parallel copies of the flaky check push it past the 180s cap.
 
 # Comparisons of a Delta `timestamp` / `timestamp_ntz` column (ClickHouse `DateTime64(6)`) with a
 # constant are handed to delta-kernel as timestamp literals, so it can skip files by their min/max
