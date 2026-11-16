@@ -7,7 +7,6 @@ description: 'ClickHouse Cloud のクイックスタートガイド'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -28,13 +27,29 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
         * メールアドレスとパスワードでサインアップした場合は、メールで受信したリンクから 24 時間以内にメールアドレスを確認してください
         * 作成したユーザー名とパスワードでログインします
 
-        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="プランを選択" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![プランを選択](/images/_snippets/signup_page.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
         ログインすると、ClickHouse Cloud のオンボーディングウィザードが開始され、新しい ClickHouse サービスの作成手順が案内されます。サービスをデプロイするリージョンを選択し、新しいサービスに名前を付けます。
 
-        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="新しい ClickHouse サービス" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![新しい ClickHouse サービス](/images/_snippets/createservice1.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -42,7 +57,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         必要に応じて、レプリカのスケーリング範囲となる最小サイズと最大サイズを指定し、サービスリソースをカスタマイズします。準備ができたら、`Create service` を選択します。
 
-        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="スケーリング制限" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![スケーリング制限](/images/_snippets/scaling_limits.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -61,7 +84,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         すぐに始められるよう、ClickHouse では Web ベースの SQL コンソールを提供しています。オンボーディングが完了すると、このコンソールにリダイレクトされます。
 
-        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="SQL Console" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![SQL Console](/images/_snippets/createservice8.webp)
+
+        </Frame>
+
+        </div>
 
         クエリタブを作成し、簡単なクエリを入力して接続が正常に機能していることを確認します。
 
@@ -71,7 +102,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         リストには4つのデータベースと、追加したデータベースが表示されます。
 
-        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![SQL Console](/images/_snippets/show_databases.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -81,7 +120,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         ナビゲーションメニューの接続ボタンを押します。モーダルが開き、サービスの認証情報と、インターフェイスまたは言語クライアントから接続する手順が表示されます。
 
-        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![Service Connect](/images/_snippets/service_connect.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -91,7 +138,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
       <Step title="データを追加" id="3-add-data">
         ClickHouse はデータがあってこそ真価を発揮します。データを追加する方法は複数あり、そのほとんどはナビゲーションメニューからアクセスできる「Data Sources」ページで利用できます。
 
-        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="データソース" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![データソース](/images/_snippets/data_sources.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -107,7 +162,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         [ClickPipes](/ja/integrations/clickpipes/home) は、多様なソースからのデータ取り込みを数回のクリックだけで実現するマネージド統合プラットフォームです。最も要求の厳しいワークロード向けに設計されており、ClickPipes の堅牢でスケーラブルなアーキテクチャは一貫したパフォーマンスと信頼性を確保します。ClickPipes は、長期的なストリーミング用途にも一度限りのデータロードジョブにも利用できます。
 
-        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="ログソースを選択" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![ログソースを選択](/images/_snippets/select_data_source.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -207,7 +270,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         [**clickhouse client**](/ja/concepts/features/interfaces/client) というコマンドラインツールを使用して ClickHouse Cloud サービスに接続することもできます。左メニューの `Connect` をクリックすると、接続情報を確認できます。表示されたダイアログのドロップダウンから `Native` を選択してください:
 
-        <Image img="/images/_snippets/client_details.webp" size="lg" alt="clickhouse client の接続情報" border />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![clickhouse client の接続情報](/images/_snippets/client_details.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
 
@@ -311,7 +382,15 @@ import CloudQuickstartCLI from "/snippets/ja/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="CSVファイルから追加された行" />
+        <div className="ch-image-lg">
+
+        <Frame>
+
+        ![CSVファイルから追加された行](/images/_snippets/new_rows_from_csv.webp)
+
+        </Frame>
+
+        </div>
 
         <br />
       </Step>
