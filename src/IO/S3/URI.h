@@ -62,6 +62,11 @@ struct URI
     static void validateGCSBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
 
+    /// The URL with its scheme replaced by the `url_scheme_mappers` of the server (or the built-in ones), the way
+    /// the constructor resolves it, e.g. `gs://bucket/key` -> `https://storage.googleapis.com/bucket/key`.
+    /// Everything after the authority is kept verbatim. A URL with a scheme that has no mapper is returned as is.
+    static std::string applySchemeMapper(const std::string & url);
+
 private:
     bool tryInitPathStyle();
     bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);

@@ -31,6 +31,7 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <IO/S3/URI.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Common/re2.h>
 
 namespace DB
@@ -214,13 +215,17 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
-S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Settings & settings) const
+S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Settings & settings, String & endpoint_settings_url) const
 {
     const bool allow_archive_path_syntax = settings[Setting::allow_archive_path_syntax];
     const bool keep_presigned_query_parameters = !settings[Setting::compatibility_s3_presigned_url_query_in_path];
 
     if (!recognize_gcs_virtual_hosted_urls)
-        return S3::URI(url_str, allow_archive_path_syntax, keep_presigned_query_parameters, settings[Setting::s3_uri_style]);
+    {
+        S3::URI uri(url_str, allow_archive_path_syntax, keep_presigned_query_parameters, settings[Setting::s3_uri_style]);
+        endpoint_settings_url = uri.uri.toString();
+        return uri;
+    }
 
     /// The native GCS backend: `https://<bucket>.storage.googleapis.com/<key>` is rewritten to the equivalent
     /// path-style URL of the default GCS endpoint before parsing, so that the bucket is taken from the host (it may
@@ -230,10 +235,13 @@ S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Setting
     /// such as `HTTPS://bucket-a.STORAGE.GOOGLEAPIS.COM` that was not recognized here would be parsed as path-style
     /// and address another bucket at the default endpoint. A non-default scheme or port is not the default
     /// endpoint and is parsed as is. Only the origin is parsed here: the path is kept verbatim for `S3::URI`.
-    if (const size_t scheme_end = url_str.find("://"); scheme_end != String::npos)
+    /// The check applies to the URL after `url_scheme_mappers`, which `S3::URI` applies too: a mapper such as
+    /// `gs` -> `https://{bucket}.storage.googleapis.com` produces the virtual-hosted form as well.
+    const String mapped_url = S3::URI::applySchemeMapper(url_str);
+    if (const size_t scheme_end = mapped_url.find("://"); scheme_end != String::npos)
     {
-        const size_t path_begin = std::min(url_str.find_first_of("/?#", scheme_end + 3), url_str.size());
-        const Poco::URI origin(url_str.substr(0, path_begin));
+        const size_t path_begin = std::min(mapped_url.find_first_of("/?#", scheme_end + 3), mapped_url.size());
+        const Poco::URI origin(mapped_url.substr(0, path_begin));
 
         String host = Poco::toLower(origin.getHost());
         if (host.ends_with('.'))
@@ -249,12 +257,18 @@ S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Setting
 
             const String bucket = host.substr(0, host.size() - default_host_suffix.size());
             S3::URI uri(
-                fmt::format("https://storage.googleapis.com/{}{}", bucket, std::string_view(url_str).substr(path_begin)),
+                fmt::format("https://storage.googleapis.com/{}{}", bucket, std::string_view(mapped_url).substr(path_begin)),
                 allow_archive_path_syntax,
                 keep_presigned_query_parameters,
                 S3UriStyle::PATH,
                 /* validate_bucket_name */ false);
             S3::URI::validateGCSBucket(uri.bucket, uri.uri);
+
+            /// The `<s3>` endpoint sections are matched by URL prefix against the URL as the user wrote it, as on
+            /// the S3-compatibility path: a section for `https://<bucket>.storage.googleapis.com/` must keep
+            /// applying, and one for the canonical endpoint must not take its place.
+            const String original_url = allow_archive_path_syntax ? getURIAndArchivePattern(mapped_url).first : mapped_url;
+            endpoint_settings_url = Poco::URI(original_url).toString();
             return uri;
         }
     }
@@ -262,6 +276,7 @@ S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Setting
     S3::URI uri(
         url_str, allow_archive_path_syntax, keep_presigned_query_parameters, settings[Setting::s3_uri_style], /* validate_bucket_name */ false);
     S3::URI::validateGCSBucket(uri.bucket, uri.uri);
+    endpoint_settings_url = uri.uri.toString();
     return uri;
 }
 
@@ -288,10 +303,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     }
 
     auto filename = collection.getOrDefault<String>("filename", "");
+    String endpoint_settings_url;
     if (!filename.empty())
-        url = parseURI(std::filesystem::path(collection_url) / filename, settings);
+        url = parseURI(std::filesystem::path(collection_url) / filename, settings, endpoint_settings_url);
     else
-        url = parseURI(collection_url, settings);
+        url = parseURI(collection_url, settings, endpoint_settings_url);
 
     const auto & config = context->getConfigRef();
 
@@ -299,7 +315,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(endpoint_settings_url, context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
@@ -800,7 +816,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         url_str = std::move(resolved_url);
     }
 
-    url = parseURI(url_str, context->getSettingsRef());
+    String endpoint_settings_url;
+    url = parseURI(url_str, context->getSettingsRef(), endpoint_settings_url);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -819,7 +836,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
     const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(endpoint_settings_url, context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);

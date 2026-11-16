@@ -92,7 +92,9 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     /// and the bucket is validated by the GCS naming rules rather than the S3 ones.
     bool recognize_gcs_virtual_hosted_urls = false;
 
-    S3::URI parseURI(const String & url_str, const Settings & settings) const;
+    /// `endpoint_settings_url` receives the URL to select the `<s3>` endpoint section by: the URL as written (after
+    /// `url_scheme_mappers`), even when the bucket and the key were taken from a rewritten form of it.
+    S3::URI parseURI(const String & url_str, const Settings & settings, String & endpoint_settings_url) const;
 
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);

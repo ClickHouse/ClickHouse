@@ -40,6 +40,32 @@ namespace S3
 namespace
 {
 
+/// The `url_scheme_mappers` of the server configuration, or the built-in ones. Empty without a global context.
+NameToNameMap getSchemeMapper()
+{
+    NameToNameMap mapper;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        return mapper;
+
+    const auto & config = context->getConfigRef();
+    if (config.has("url_scheme_mappers"))
+    {
+        Strings config_keys;
+        config.keys("url_scheme_mappers", config_keys);
+        for (const std::string & config_key : config_keys)
+            mapper[config_key] = config.getString("url_scheme_mappers." + config_key + ".to");
+    }
+    else
+    {
+        mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+        mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+        mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
+        mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
+    }
+    return mapper;
+}
+
 /// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
 /// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
 /// text, are not masked, so a URI must not be put into them as is.
@@ -100,29 +126,9 @@ URI::URI(
     if (!keep_presigned_query_parameters && looks_like_presigned)
         looks_like_presigned = false;
 
-    NameToNameMap mapper;
-    auto context = Context::getGlobalContextInstance();
-    if (context)
-    {
-        const auto *config = &context->getConfigRef();
-        if (config->has("url_scheme_mappers"))
-        {
-            Strings config_keys;
-            config->keys("url_scheme_mappers", config_keys);
-            for (const std::string & config_key : config_keys)
-                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
-        }
-        else
-        {
-            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
-            mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
-            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
-        }
-
-        if (!mapper.empty())
-            URIConverter::modifyURI(uri, mapper);
-    }
+    const NameToNameMap mapper = getSchemeMapper();
+    if (!mapper.empty())
+        URIConverter::modifyURI(uri, mapper);
 
     storage_name = "S3";
 
@@ -185,6 +191,27 @@ URI::URI(
     if (validate_bucket_name)
         validateBucket(bucket, uri);
     validateKey(key, uri);
+}
+
+std::string URI::applySchemeMapper(const std::string & url)
+{
+    const size_t scheme_end = url.find("://");
+    if (scheme_end == std::string::npos)
+        return url;
+
+    const size_t path_begin = std::min(url.find_first_of("/?#", scheme_end + 3), url.size());
+    const Poco::URI origin(url.substr(0, path_begin));
+
+    NameToNameMap mapper = getSchemeMapper();
+    const auto it = mapper.find(origin.getScheme());
+    if (it == mapper.end())
+        return url;
+
+    Macros macros({{"bucket", origin.getHost()}});
+    const String mapped_origin = macros.expand(it->second);
+    if (mapped_origin.empty())
+        return url;
+    return mapped_origin + url.substr(path_begin);
 }
 
 bool URI::tryInitPathStyle()
