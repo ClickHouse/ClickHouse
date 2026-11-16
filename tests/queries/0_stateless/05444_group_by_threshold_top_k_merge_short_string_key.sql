@@ -10,7 +10,6 @@ SET max_threads = 4;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
 SET max_block_size = 1000;
-SET max_rows_to_group_by = 0;
 
 SELECT 'max DESC';
 SELECT toString(number % 12800) AS s, max(number) AS m FROM numbers_mt(1000000) GROUP BY s ORDER BY m DESC LIMIT 5 SETTINGS query_plan_aggregation_bucket_top_k = 1;
