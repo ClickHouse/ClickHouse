@@ -194,14 +194,14 @@ public:
         /// `AdaptiveTopKPruning`): the count bins bound the ranks from above, which serves a descending
         /// order only. It prunes under a throw-mode group limit too: the merge checks the limit against the
         /// groups it builds (see `checkMergedGroupLimit`).
-        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
+        [[nodiscard]] bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with
         /// `adaptive_aggregator_disable_thaw`. A thaw keeps the top-K pruning exact, because a producer that
         /// froze counts the groups of its table into its bins at its finish. Under the pruning, a lone
         /// `count()` also weighs what the pruning would free (see
         /// `Aggregator::adaptiveTopKPruningFreesStaging`).
-        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
+        [[nodiscard]] bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
         /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
@@ -398,7 +398,7 @@ public:
             bool serialize_string_with_zero_byte_,
             bool enable_packed_string_keys_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -407,7 +407,7 @@ public:
             return new_params;
         }
 
-        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
         {
             Params new_params = cloneWithKeys(keys_, only_merge_);
             new_params.aggregates = aggregates_;
@@ -418,7 +418,7 @@ public:
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+        [[nodiscard]] Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(ExplainFormatSettings & settings) const;
@@ -445,13 +445,13 @@ public:
     /// aggregation feeds a descending top-K.
     AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers) const;
 
-    /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
-    /// its count bins when the aggregation prunes by the top-K; the bins take the rows of `local_variants`, the
-    /// producer's own table, as well. A producer that never froze has no bins and hands `local_variants` over for the
-    /// merge to count instead. Counts the producer toward the verdict of the run, and indexes the cells of its table by
-    /// the partitions of the layout for the merges, or converts a frozen table that cannot be indexed to two-level. Every
-    /// producer with the adaptive context calls it before the finish barrier, so the session holds every producer's
-    /// contribution by the time the last finisher assembles the merge.
+    /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the
+    /// session with its count bins when the aggregation prunes by the top-K; the bins take the rows of
+    /// `local_variants`, the producer's own table, as well. A producer that never froze has no bins and hands
+    /// `local_variants` over for the merge to count instead. Counts the producer toward the verdict of the
+    /// run, and indexes the cells of a single-level table by the partitions of the layout for the merges.
+    /// Every producer with the adaptive context calls it before the finish barrier, so the session holds
+    /// every producer's contribution by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
     /// Serves a spill request of the memory scheduler for an adaptive producer: writes its staged records to the
@@ -493,7 +493,7 @@ public:
         const std::atomic<UInt32> * taken = nullptr;
         UInt32 total = 0;
 
-        size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
+        [[nodiscard]] size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
     };
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.
@@ -1372,6 +1372,10 @@ private:
     /// hash tables have already been detached from these states, so nothing else will destroy them).
     void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
 
+    /// Destroy the states of the aggregate functions from `first_function` on of the detached source rows `src_places`,
+    /// except, with `skip_compiled`, those of the compiled functions (see `mergeAndDestroyDetachedBatch`).
+    void destroyDetachedSources(PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, bool skip_compiled) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
@@ -1673,7 +1677,7 @@ private:
     /// The ranks of the groups in a chunk of the final conversion when `Params::bucket_top_k` is set: the
     /// result column of the aggregate `Params::bucket_top_k_rank_index`, which is `UInt64` for every rank the
     /// plan optimization admits.
-    std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
+    [[nodiscard]] std::span<const UInt64> bucketTopKRanks(const Chunk & chunk) const;
 
     /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
     /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold
