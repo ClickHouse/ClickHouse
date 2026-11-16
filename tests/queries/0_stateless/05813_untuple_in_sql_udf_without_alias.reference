@@ -11,9 +11,9 @@ untuple_value(number).1	untuple_value(plus(number, 1)).1
 -- nested function
 untuple_value_nested(11).1	untuple_value_nested(22).1
 11	22
--- WITH lambda
-l(11).1	l(22).1
-11	22
+-- a WITH lambda keeps its name: stored view definitions keep WITH lambdas
+tupleElement((x), \'1\')
+11
 -- an alias still names the columns
 a.1	b.1
 11	22

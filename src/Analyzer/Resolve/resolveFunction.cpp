@@ -3037,9 +3037,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
+        bool inlines_sql_udf = false;
         if (!lambda_expression_untyped && user_defined_function)
+        {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+            inlines_sql_udf = lambda_expression_untyped != nullptr;
+        }
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
@@ -3069,7 +3073,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
-            lambda_scope.inlined_call_projection_name = result_projection_names.front();
+            /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
+            /// substituted at `CREATE`, so their names may change.
+            if (inlines_sql_udf)
+                lambda_scope.inlined_call_projection_name = result_projection_names.front();
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
@@ -3129,7 +3136,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
             /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
             /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
-            /// Without an alias, the outermost call of the contiguous chain of inlined calls is used instead.
+            /// Without an alias, the outermost call of the contiguous chain of inlined SQL UDF calls is used instead.
             String untuple_alias = node->getAlias();
             String inlined_call_projection_name;
             bool through_inlined_calls = true;
