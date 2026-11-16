@@ -716,7 +716,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     if (auto index_cache = storage.getPrimaryIndexCache())
         return loadIndexToCache(*index_cache);
 
-    index = loadIndex();
+    keepIndex(loadIndex());
     return index;
 }
 
@@ -731,11 +731,10 @@ UInt128 IMergeTreeDataPart::getIndexCacheKey() const
     return PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
-bool IMergeTreeDataPart::keepsIndex(const IndexPtr & index_) const
+void IMergeTreeDataPart::keepIndex(IndexPtr index_) const
 {
-    /// Do not wait for an index that is being loaded.
-    std::unique_lock lock(index_mutex, std::try_to_lock);
-    return lock && index == index_;
+    kept_index = index_.get();
+    index = std::move(index_);
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
@@ -751,7 +750,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
         return;
 
     index_cache.set(getIndexCacheKey(), std::const_pointer_cast<Index>(index));
-    index.reset();
+    keepIndex(nullptr);
 
     for (const auto & [_, projection] : projection_parts)
         projection->moveIndexToCache(index_cache);
@@ -788,13 +787,13 @@ void IMergeTreeDataPart::setIndex(Columns index_columns, bool is_accounted)
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = is_accounted ? std::make_shared<Index>(std::move(index_columns)) : makeIndex(std::move(index_columns));
+    keepIndex(is_accounted ? std::make_shared<Index>(std::move(index_columns)) : makeIndex(std::move(index_columns)));
 }
 
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
-    index.reset();
+    keepIndex(nullptr);
 }
 
 bool IMergeTreeDataPart::isIndexLoaded() const
@@ -1811,7 +1810,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
             /// It's important to load index after index granularity.
             if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
-                index = loadIndex();
+                keepIndex(loadIndex());
 
             loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
 

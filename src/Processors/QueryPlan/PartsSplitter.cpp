@@ -6,6 +6,7 @@
 
 #include <Core/Field.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
@@ -33,6 +34,7 @@
 #include <Common/FieldAccurateComparison.h>
 
 #include <algorithm>
+#include <array>
 #include <list>
 #include <numeric>
 #include <ranges>
@@ -62,6 +64,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char parts_splitter_pause_before_index[];
 }
 
 /** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
@@ -234,6 +241,7 @@ public:
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->checkTimeLimit();
 
+        FailPointInjection::pauseFailPoint(FailPoints::parts_splitter_pause_before_index);
         index = part.getIndex();
     }
 
@@ -425,17 +433,17 @@ public:
         /// Check each time when they have become larger by a quarter, so they do not become much larger than that, and the number of
         /// checks of one index does not depend on the number of parts on average. What other queries evict after the last check is not
         /// copied, so a query can hold indexes that are not larger than the cache, but not in it.
+        /// The indexes that their parts keep are counted separately and checked in the same way, because a part can unload its index.
+        /// If it does so after the last check, the index is not accounted until the ranges are calculated.
         static constexpr size_t min_bytes_between_checks = 16 << 20;
         std::vector<HeldIndex> not_copied;
-        size_t not_copied_bytes = 0;
-        size_t checked_bytes = 0;
-        const MergeTreeData * last_storage = nullptr;
-        bool is_cache_used = false;
+        std::array<size_t, 2> not_copied_bytes{};
+        std::array<size_t, 2> checked_bytes{};
         auto copy_evicted = [&]
         {
             for (const auto & evicted : removeEvicted(not_copied))
             {
-                not_copied_bytes -= evicted.bytes;
+                not_copied_bytes[evicted.was_kept_by_part] -= evicted.bytes;
                 indices[evicted.part_index]->copyRanges(parts[evicted.part_index].ranges, max_columns_in_index);
             }
             checked_bytes = not_copied_bytes;
@@ -445,16 +453,6 @@ public:
         for (size_t part_index : getOrderToLoadIndexes(parts))
         {
             const auto & part = parts[part_index];
-
-            /// The parts can be of several tables. Without the cache, they keep their indexes.
-            if (const auto & storage = part.data_part->storage; &storage != last_storage)
-            {
-                last_storage = &storage;
-                auto cache = storage.getPrimaryIndexCache();
-                is_cache_used = cache != nullptr;
-                if (cache)
-                    index_cache = std::move(cache);
-            }
 
             /// A part can be there twice, with different ranges.
             PartIndexAccessPtr index;
@@ -469,12 +467,13 @@ public:
                 index = std::make_shared<PartIndexAccess>(*part.data_part);
 
             indices[part_index] = index;
-            if (index->isCopy() || !is_cache_used)
+            if (index->isCopy())
                 continue;
 
-            not_copied.push_back({part_index, PrimaryIndexWeightFunction{}(*index->getIndex())});
-            not_copied_bytes += not_copied.back().bytes;
-            if (not_copied_bytes - checked_bytes > std::max(checked_bytes / 4, min_bytes_between_checks))
+            const bool is_kept = part.data_part->keepsIndex(index->getIndex());
+            not_copied.push_back({part_index, PrimaryIndexWeightFunction{}(*index->getIndex()), is_kept});
+            not_copied_bytes[is_kept] += not_copied.back().bytes;
+            if (not_copied_bytes[is_kept] - checked_bytes[is_kept] > std::max(checked_bytes[is_kept] / 4, min_bytes_between_checks))
                 copy_evicted();
         }
         copy_evicted();
@@ -518,42 +517,47 @@ private:
     {
         size_t part_index;
         size_t bytes;
+        bool was_kept_by_part;
     };
 
-    /// Removes those indexes that neither the cache nor the part keeps, and returns them.
+    /// Removes those indexes that neither the part nor the cache keeps, and returns them.
+    /// The settings of a table do not tell that, because they can change while the indexes are loaded.
     std::vector<HeldIndex> removeEvicted(std::vector<HeldIndex> & held) const
     {
-        if (held.empty())
+        /// The parts are asked first, because an index can be moved from the part to the cache.
+        const auto not_kept = std::ranges::partition(held, [&](const HeldIndex & index)
+        {
+            return parts[index.part_index].data_part->keepsIndex(indices[index.part_index]->getIndex());
+        });
+        if (not_kept.empty())
             return {};
 
         std::vector<UInt128> keys;
         std::vector<const PrimaryIndex *> values;
-        keys.reserve(held.size());
-        values.reserve(held.size());
-        for (const auto & [part_index, _] : held)
+        keys.reserve(not_kept.size());
+        values.reserve(not_kept.size());
+        for (const auto & index : not_kept)
         {
-            keys.push_back(parts[part_index].data_part->getIndexCacheKey());
-            values.push_back(indices[part_index]->getIndex().get());
+            keys.push_back(parts[index.part_index].data_part->getIndexCacheKey());
+            values.push_back(indices[index.part_index]->getIndex().get());
         }
-        const auto is_cached = index_cache->containsMany(keys, values);
+        const auto cache = parts.front().data_part->storage.getContext()->getPrimaryIndexCache();
+        const auto is_cached = cache ? cache->containsMany(keys, values) : std::vector<bool>(keys.size());
 
         std::vector<HeldIndex> evicted;
-        size_t kept = 0;
-        for (size_t i = 0; i < held.size(); ++i)
+        auto kept_end = not_kept.begin();
+        for (size_t i = 0; i < is_cached.size(); ++i)
         {
-            /// A part can also keep its index itself, for example, if the cache was not used before.
-            const size_t part_index = held[i].part_index;
-            if (is_cached[i] || parts[part_index].data_part->keepsIndex(indices[part_index]->getIndex()))
-                held[kept++] = held[i];
+            if (is_cached[i])
+                *kept_end++ = not_kept[i];
             else
-                evicted.push_back(held[i]);
+                evicted.push_back(not_kept[i]);
         }
-        held.resize(kept);
+        held.erase(kept_end, held.end());
         return evicted;
     }
 
     const RangesInDataParts & parts;
-    PrimaryIndexCachePtr index_cache;
     VectorWithMemoryTracking<PartIndexAccessPtr> indices;
     size_t loaded_columns;
 };
