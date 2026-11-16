@@ -19,7 +19,6 @@ enum class ProgramHeaderType : uint32_t
 {
     NOTE = 4,
     DYNAMIC = 2,
-    LOAD = 1,
 };
 
 enum class NameHeaderType : uint32_t
@@ -30,11 +29,8 @@ enum class NameHeaderType : uint32_t
 enum class DynamicTableTag : int64_t
 {
     Null = 0,
-    NEEDED = 1,
     STRTAB = 5,
     SYMTAB = 6,
-    RPATH = 15,
-    RUNPATH = 29,
     GNU_HASH = 0x6ffffef5,
 };
 

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
@@ -77,7 +75,7 @@ public:
         ExpressionProperties required_properties;
     };
 
-    VectorWithMemoryTracking<Input> inputs;
+    std::vector<Input> inputs;
 
     ExpressionProperties properties;
 
@@ -91,7 +89,7 @@ public:
     /// only a single instance keeps that promise (see `AggregationImplementation`).
     bool is_partial_of_two_stage_aggregation = false;
 
-    UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
+    std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
 

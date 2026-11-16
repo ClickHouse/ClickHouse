@@ -41,23 +41,6 @@ private:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
-    {
-        /// `Float32`/`Float64` keep their precision unless `always_returns_float64`; other `Number` types, including `BFloat16`, become `Float64`.
-        if constexpr (Impl::always_returns_float64)
-            return "(Number) -> Float64";
-        else
-            return R"sig(("Float32") -> "Float32" OR ("Float64") -> "Float64" OR (Number) -> Float64)sig";
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & argument = arguments.front();
@@ -69,7 +52,7 @@ private:
                 getName());
 
         /// Integers are converted to Float64.
-        if (Impl::always_returns_float64 || !isNativeFloat(argument))
+        if (Impl::always_returns_float64 || !isFloat(argument))
             return std::make_shared<DataTypeFloat64>();
         return argument;
     }
@@ -105,11 +88,10 @@ private:
             const size_t rows_remaining = size % Impl::rows_per_iteration;
             const size_t rows_size = size - rows_remaining;
 
-            /// When rows_per_iteration == 1, the loop body is a scalar libm call (or an inlined
-            /// implementation like `preciseExp10` that itself calls libm), so unrolling cannot
-            /// overlap iterations and only bloats the code. Removing this pragma made `exp10`
-            /// 19-23% slower in the CI performance tests on m7i (Sapphire Rapids) with clang 22,
-            /// while a Zen 5 machine showed no difference with the same binaries.
+            /// When rows_per_iteration == 1, the loop body is a scalar function
+            /// call (e.g. exp2, sin). The compiler may aggressively unroll this
+            /// on higher march targets, bloating i-cache for zero throughput
+            /// gain since the bottleneck is the call itself.
 #pragma clang loop unroll(disable)
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&src_data[i], &dst_data[i]);
@@ -133,16 +115,6 @@ private:
     }
 
     template <typename T, typename ReturnType>
-    static constexpr bool convertArgumentsFirst()
-    {
-        if constexpr (requires { Impl::convert_arguments_first; })
-            return Impl::convert_arguments_first && std::is_same_v<ReturnType, Float64> && !std::is_same_v<T, Float64>
-                && std::is_arithmetic_v<T>;
-        else
-            return false;
-    }
-
-    template <typename T, typename ReturnType>
     static ColumnPtr execute(const ColumnVector<T> * col, size_t input_rows_count)
     {
         const auto & src_data = col->getData();
@@ -151,20 +123,7 @@ private:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        if constexpr (convertArgumentsFirst<T, ReturnType>())
-        {
-            /// Convert the whole column first and call the function in place. Converting in the loop around the
-            /// call leaves the conversion of every row on the path into the call, because clang 23 does not
-            /// vectorize that loop (clang 22 did): `tan(number)` became 9-20% slower on x86.
-            for (size_t i = 0; i < input_rows_count; ++i)
-                dst_data[i] = static_cast<Float64>(src_data[i]);
-
-            executeInIterations(dst_data.data(), dst_data.data(), input_rows_count);
-        }
-        else
-        {
-            executeInIterations(src_data.data(), dst_data.data(), input_rows_count);
-        }
+        executeInIterations(src_data.data(), dst_data.data(), input_rows_count);
 
         return dst;
     }
@@ -218,19 +177,15 @@ private:
 };
 
 
-/// `inline_function` is for functions whose body the compiler sees (`preciseExp10`, `sqrt`, `degrees`, `radians`):
-/// their loops vectorize or fold on integer arguments (`exp10` of a `UInt64` is a comparison with 308), so the
-/// arguments must not be converted to `Float64` beforehand.
-template <typename Name, Float64(Function)(Float64), bool inline_function = false>
+template <typename Name, Float64(Function)(Float64)>
 struct UnaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
     static constexpr bool always_returns_float64 = true;
-    static constexpr bool convert_arguments_first = !inline_function;
 
     template <typename T>
-    static void execute(const T * src, Float64 * dst)
+    static void execute(const T * __restrict src, Float64 * __restrict dst)
     {
         *dst = Function(static_cast<Float64>(*src));
     }

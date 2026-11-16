@@ -3,7 +3,6 @@
 #if USE_MINIZIP
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/quoteString.h>
 #include <base/errnoToString.h>
 
@@ -601,7 +600,7 @@ private:
         if (!bytes_read)
             return false;
 
-        setWorkingBufferFromInternal();
+        working_buffer = internal_buffer;
         working_buffer.resize(bytes_read);
         return true;
     }
@@ -853,8 +852,6 @@ void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
     }
 
     std::lock_guard lock{mutex};
-    /// Called from ~HandleHolder, so growing the pool must not throw MEMORY_LIMIT_EXCEEDED.
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     free_handles.push_back(handle_info);
 }
 

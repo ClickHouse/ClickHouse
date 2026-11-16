@@ -1,28 +1,12 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ActionsDAGTraversal.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
-
-#include <limits>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
-/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
-/// among the top-level AND conjuncts of the given filter predicate. One descriptor per
-/// bare-column conjunct (aliases and CASTs on the key are looked through); an `__applyFilter`
-/// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
-/// DAG — is not applied to every row and is not reported. The overload takes the filter
-/// column of a FilterStep by name.
-VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
-VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
-
-using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
-using NodeMap = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>;
+using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
+using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
 
 /// Describes how one `ActionsDAG` output can be traced to one input.
 /// `ValuePreserving` is deliberately restricted to operations explicitly known
@@ -66,7 +50,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
 /// Trace every output to at most one input using iterative, memoized traversal.
 /// The returned vector is ordered by output position and remains unambiguous even
 /// when input or output names are duplicated.
-VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
 
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
@@ -105,7 +89,7 @@ struct MatchedTrees
         std::optional<Monotonicity> monotonicity;
     };
 
-    using Matches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Match>;
+    using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
 };
 
 /// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
@@ -148,36 +132,15 @@ void applyActionsToSortDescription(
 /// a consistent input substitution map cannot be constructed.
 ///
 /// The primary use case is to construct the input substitution map required by `ActionsDAG::foldActionsByProjection`.
-std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
+    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
 
 /// The arguments of a function node in the shape `IFunctionBase` methods expect: the result type of
 /// every child, and its constant column where the child has one. Whether a function is injective or
 /// monotonic can depend on them, so a caller that has a node has no reason to pass nothing.
 ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node);
-
-/// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
-/// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
-/// and the column goes past the DAG untouched.
-///
-/// Names can repeat in both, so the n-th input named `x` reads the n-th header column named `x`, which
-/// is the rule `ActionsDAG::updateHeader` follows to build the block a step runs on. A caller holding
-/// some of the inputs can therefore ask where exactly those read from, which
-/// `ActionsDAG::matchInputPositionsToHeader` cannot answer: it returns a plain list of the positions
-/// something reads, with no way back to which input reads which.
-struct HeaderColumnsToInputs
-{
-    static constexpr size_t passes_through = std::numeric_limits<size_t>::max();
-
-    VectorWithMemoryTracking<size_t> read_by;
-
-    size_t size() const { return read_by.size(); }
-    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
-};
-
-HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 
