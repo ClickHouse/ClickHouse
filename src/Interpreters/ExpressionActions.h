@@ -219,7 +219,7 @@ protected:
     /// Hooks which allow a derived class to change how the functions are executed.
 
     /// Whether the action must be wrapped into a lazily executed ColumnFunction instead of being executed now.
-    virtual bool shouldExecuteLazily(size_t action_index) const { return actions[action_index].is_lazy_executed; }
+    [[nodiscard]] virtual bool shouldExecuteLazily(size_t action_index) const { return actions[action_index].is_lazy_executed; }
 
     /// Called when the action is wrapped into a lazily executed `ColumnFunction` of `num_rows` rows.
     /// `num_rows` is the size of the block at the position of the action, which is the number of rows
@@ -355,8 +355,8 @@ public:
 
         ~Lease() { reset(); }
 
-        const ExpressionActionsPtr & getPtr() const { return instance; }
-        const ExpressionActions * get() const { return instance.get(); }
+        [[nodiscard]] const ExpressionActionsPtr & getPtr() const { return instance; }
+        [[nodiscard]] const ExpressionActions * get() const { return instance.get(); }
         const ExpressionActions & operator*() const { return *instance; }
         const ExpressionActions * operator->() const { return instance.get(); }
         explicit operator bool() const { return instance != nullptr; }
