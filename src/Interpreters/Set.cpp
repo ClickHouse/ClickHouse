@@ -377,40 +377,52 @@ void NO_INLINE Set::insertFromBlockImplCase(
 {
     typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
-    /// For all rows
-    for (size_t i = 0; i < rows; ++i)
+    /// The `QueryStatus`, not an `IProcessor::isCancelled`: `Set` is not a processor and has no
+    /// cancel flag of its own, while the thread that fills the set has the query attached.
+    /// Polled once per 4096 rows, so that a `KILL QUERY` (or a subquery timeout) lands in the
+    /// middle of hashing a chunk instead of after all of it.
+    ///
+    /// The poll is the outer loop on purpose. A per-row `(i & 0xFFF) == 0` branch instead adds
+    /// several instructions to every iteration and pushes the duplicate-key fast path of the
+    /// numeric-key methods out of its cheapest form, which is measurable on a query that hashes
+    /// hundreds of millions of rows into one small set. The inner loop must therefore contain
+    /// only the row work.
+    static constexpr size_t cancellation_poll_interval = 4096;
+
+    for (size_t i = 0; i < rows;)
     {
-        /// The `QueryStatus`, not an `IProcessor::isCancelled`: `Set` is not a processor and has no
-        /// cancel flag of its own, while the thread that fills the set has the query attached.
-        /// Polled once per 4096 rows, so that a `KILL QUERY` (or a subquery timeout) lands in the
-        /// middle of hashing a chunk instead of after all of it.
-        if ((i & 0xFFF) == 0)
-        {
-            /// Not at the first boundary: a test releases the pause by resuming the fail point, and
-            /// pausing at the entry of a chunk would make it a window before the work instead of
-            /// one inside it.
-            if (i > 0) [[unlikely]]
-                FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_pause);
+        /// Not at the first boundary: a test releases the pause by resuming the fail point, and
+        /// pausing at the entry of a chunk would make it a window before the work instead of
+        /// one inside it.
+        if (i > 0) [[unlikely]]
+            FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_pause);
 
-            CurrentThread::checkIfNotCancelled();
-        }
+        CurrentThread::checkIfNotCancelled();
 
-        if constexpr (has_null_map)
+        size_t chunk_end = i + cancellation_poll_interval;
+        if (chunk_end > rows)
+            chunk_end = rows;
+
+        /// For all rows of the chunk
+        for (; i < chunk_end; ++i)
         {
-            if ((*null_map)[i])
+            if constexpr (has_null_map)
             {
-                if constexpr (build_filter)
+                if ((*null_map)[i])
                 {
-                    (*out_filter)[i] = false;
+                    if constexpr (build_filter)
+                    {
+                        (*out_filter)[i] = false;
+                    }
+                    continue;
                 }
-                continue;
             }
+
+            [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+            if constexpr (build_filter)
+                (*out_filter)[i] = emplace_result.isInserted();
         }
-
-        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-
-        if constexpr (build_filter)
-            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 
