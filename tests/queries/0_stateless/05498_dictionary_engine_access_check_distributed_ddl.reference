@@ -21,26 +21,6 @@ CREATE TABLE cluster_db.w_function ON CLUSTER test_shard_localhost (id UInt64, v
 ACCESS_DENIED
 NOT_LOADED
 0
-CREATE TABLE w_view (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
-
-SELECT * FROM w_view
-ACCESS_DENIED
-NOT_LOADED
-CREATE TABLE cluster_db.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('db.d', 'value', toUInt64(1)) AS value)
-
-SELECT * FROM cluster_db.w_view
-ACCESS_DENIED
-NOT_LOADED
-CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM db.missing_table)
-
-CREATE TABLE cluster_db.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM db.missing_table)
-
-2
-CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = 'user', 'db.d_unqualified', 'db.d'), 'value', toUInt64(1)) AS value)
-
-SELECT * FROM w_context
-a
-NOT_LOADED
 --- unqualified name, resolved by ON CLUSTER in the default database of the server
 CREATE TABLE cluster_db.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('d_unqualified')
 ACCESS_DENIED

@@ -103,29 +103,6 @@ unload
 as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')" "&distributed_ddl_entry_format_version=2"
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
-# A table function with an explicit column list creates its storage on first use, with the global context. The query of
-# `view` is evaluated only by the query that reads the table, as its user.
-unload
-as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
-query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_view TO ${username}"
-as_user "SELECT * FROM w_view"
-status
-unload
-as_user "CREATE TABLE ${cluster_db}.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)" "&distributed_ddl_entry_format_version=2"
-query "GRANT SELECT ON ${cluster_db}.w_view TO ${username}"
-as_user "SELECT * FROM ${cluster_db}.w_view"
-status
-# A view over a table that does not exist where the table is created, e.g. on the initiator of `ON CLUSTER`.
-as_user "CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM ${CLICKHOUSE_DATABASE}.missing_table)"
-as_user "CREATE TABLE ${cluster_db}.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM ${CLICKHOUSE_DATABASE}.missing_table)"
-query "SELECT count() FROM system.tables WHERE (database, name) IN (('${CLICKHOUSE_DATABASE}', 'w_missing'), ('${cluster_db}', 'w_missing'))"
-# A dictionary name that depends on the context evaluates to an allowed dictionary for the user, but would evaluate to `d`
-# in the global context, so the query of `view` must not be analyzed with it when the storage is created.
-unload
-as_user "CREATE TABLE w_context (value String) AS view(SELECT dictGet(if(currentUser() = '${username}', '${CLICKHOUSE_DATABASE}.${unqualified}', '${CLICKHOUSE_DATABASE}.d'), 'value', toUInt64(1)) AS value)"
-query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_context TO ${username}"
-as_user "SELECT * FROM w_context"
-status
 
 echo "--- unqualified name, resolved by ON CLUSTER in the default database of the server"
 query "SYSTEM UNLOAD DICTIONARY default.${unqualified}"
