@@ -380,7 +380,11 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.as_table.clear();
     query.if_not_exists = false;
     query.is_populate = false;
-    query.is_create_empty = false;
+    /// `EMPTY` on a refreshable materialized view is not a one-shot action: it tells the refresher to
+    /// skip the initial refresh, so it has to survive into the stored definition. Without it the view
+    /// refreshes as soon as it is loaded again, and replaces its target table.
+    if (!query.is_materialized_view || !query.refresh_strategy)
+        query.is_create_empty = false;
     query.replace_view = false;
     query.replace_table = false;
     query.create_or_replace = false;
