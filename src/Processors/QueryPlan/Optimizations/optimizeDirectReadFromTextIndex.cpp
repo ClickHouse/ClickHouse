@@ -632,7 +632,7 @@ private:
 
     /// Chooses the index for the function: one that can be read directly, then one that can scan its dictionary,
     /// then the first by name. Throws if the indexes that can serve it use different tokenizers.
-    std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
+    [[nodiscard]] std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
         const auto haystack_name = getNameWithoutAliases(function_node.children[0]);
