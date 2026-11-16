@@ -123,7 +123,7 @@ public:
     }
 
     /// All codecs that `choose` may return, for any size of a part.
-    std::vector<CompressionCodecPtr> getAllCodecs() const
+    [[nodiscard]] std::vector<CompressionCodecPtr> getAllCodecs() const
     {
         const auto & factory = CompressionCodecFactory::instance();
 

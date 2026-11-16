@@ -37,9 +37,9 @@ public:
     void finish(bool sync) override;
     void cancel() noexcept override;
 
-    size_t getNumberOfOpenStreams() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return 1; }
 
-    std::optional<std::unordered_map<String, ColumnSize>> getWrittenColumnSizes() const override;
+    [[nodiscard]] std::optional<std::unordered_map<String, ColumnSize>> getWrittenColumnSizes() const override;
 
     /// Whether values of the type can be stored in a Parquet column of a similar type and read back without loss.
     /// Otherwise, the values are stored in the ClickHouse binary format in a `BYTE_ARRAY` column.
@@ -49,12 +49,12 @@ private:
     /// The columns are written in Parquet format, not with the serializations of the columns,
     /// so there are no streams.
     void addStreams(const NameAndTypePair &) override {}
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override { return {}; }
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override { return {}; }
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
     /// Like `computeIndexGranularity`, but the granules are the row groups of the Parquet file.
-    size_t computeRowGroupGranularity(const Block & block) const;
+    [[nodiscard]] size_t computeRowGroupGranularity(const Block & block) const;
 
     void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
 

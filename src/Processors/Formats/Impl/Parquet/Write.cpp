@@ -1382,7 +1382,7 @@ public:
             unalignedStoreLittleEndian<T>(buf.data() + offset + i * sizeof(T), values[i]);
     }
 
-    size_t estimatedDataEncodedSize() const { return buf.size(); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return buf.size(); }
 
     /// Appends the encoded values to `out` and starts a new page.
     void flush(PODArray<char> & out)
@@ -1419,7 +1419,7 @@ public:
     void put(const T * values_, size_t count) { values.insert(values_, values_ + count); }
 
     /// An upper bound in most cases, the same as the size of the `PLAIN` encoding.
-    size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
+    [[nodiscard]] size_t estimatedDataEncodedSize() const { return values.size() * sizeof(T); }
 
     /// Appends the encoded values to `out` and starts a new page.
     void flush(PODArray<char> & out)
