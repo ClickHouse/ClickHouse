@@ -48,3 +48,23 @@ SELECT b FROM file(currentDatabase() || '_01622_lambda_subcolumn.jsonl', JSONEac
 -- "a.x" of the alias "a" is not the column "a" either.
 SELECT b FROM file(currentDatabase() || '_01622_lambda_subcolumn.jsonl', JSONEachRow,
     'z String, a Tuple(x UInt32) DEFAULT tuple(toUInt32(z)), b UInt32 DEFAULT arraySum(arrayMap(x -> (CAST(tuple(2) AS Tuple(x UInt32)) AS a).x + a.x, [1, 2]))');
+
+-- The alias "a" inside the lambda does not hide the column "a" used as "a.x" outside of it.
+DROP TABLE IF EXISTS t_01622_lambda_alias;
+CREATE TABLE t_01622_lambda_alias
+(
+    z UInt32,
+    a Tuple(x UInt32) DEFAULT tuple(z),
+    b UInt32 DEFAULT a.x + arraySum(arrayMap(x -> (CAST(tuple(2) AS Tuple(x UInt32)) AS a).x, [1, 2]))
+) ENGINE = Memory;
+INSERT INTO t_01622_lambda_alias FORMAT JSONEachRow {"z":7,"a":{"x":5},"b":null} {"z":9,"a":null,"b":null};
+
+SELECT z, a, b FROM t_01622_lambda_alias ORDER BY z;
+DROP TABLE t_01622_lambda_alias;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_01622_lambda_alias.jsonl', LineAsString, 'line String')
+    SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"z":7,"a":{"x":5},"b":null}'), ('{"z":9,"a":null,"b":null}');
+
+SELECT b FROM file(currentDatabase() || '_01622_lambda_alias.jsonl', JSONEachRow,
+    'z UInt32, a Tuple(x UInt32) DEFAULT tuple(z), b UInt32 DEFAULT a.x + arraySum(arrayMap(x -> (CAST(tuple(2) AS Tuple(x UInt32)) AS a).x, [1, 2]))')
+    ORDER BY b;

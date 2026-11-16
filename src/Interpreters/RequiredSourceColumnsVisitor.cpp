@@ -177,7 +177,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     {
         if (data.private_aliases.contains(node.name_parts.front()))
             return;
-        data.compound_identifier_prefixes.emplace(node.name(), node.name_parts.front());
+        data.compound_identifiers[node.name()].push_back({node.name_parts.front(), data.current_scopes});
     }
 
     data.addColumnIdentifier(node);
@@ -194,7 +194,9 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
                 local_aliases.push_back(name);
 
         /// visit child with masked local aliases
+        data.current_scopes.push_back(data.scopes_count++);
         RequiredSourceColumnsVisitor(data).visit(node.arguments->children[1]);
+        data.current_scopes.pop_back();
 
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);

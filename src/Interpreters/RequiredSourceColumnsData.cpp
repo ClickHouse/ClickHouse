@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <Interpreters/RequiredSourceColumnsData.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <DataTypes/NestedUtils.h>
@@ -17,6 +18,8 @@ bool RequiredSourceColumnsData::addColumnAliasIfAny(const IAST & ast)
         masked_columns.insert(alias);
 
     complex_aliases.insert(alias);
+    if (mask_subcolumns_of_aliases)
+        alias_scopes[alias].insert(current_scopes.back());
     return true;
 }
 
@@ -53,6 +56,22 @@ size_t RequiredSourceColumnsData::nameInclusion(const String & name) const
     return 0;
 }
 
+bool RequiredSourceColumnsData::isSubcolumnOfAliases(const String & name, size_t appears) const
+{
+    /// Each appearance of `name` must be a subcolumn of an alias visible from its scope.
+    auto it = compound_identifiers.find(name);
+    if (it == compound_identifiers.end() || it->second.size() != appears)
+        return false;
+
+    return std::ranges::all_of(it->second, [&](const CompoundIdentifier & identifier)
+    {
+        auto alias_it = alias_scopes.find(identifier.prefix);
+        if (alias_it == alias_scopes.end() || masked_columns.contains(identifier.prefix))
+            return false;
+        return std::ranges::any_of(identifier.scopes, [&](size_t scope) { return alias_it->second.contains(scope); });
+    });
+}
+
 NameSet RequiredSourceColumnsData::requiredColumns() const
 {
     NameSet required;
@@ -65,12 +84,8 @@ NameSet RequiredSourceColumnsData::requiredColumns() const
         if (array_join_columns.contains(name) || array_join_columns.contains(table_name))
             continue;
 
-        if (mask_subcolumns_of_aliases)
-        {
-            auto it = compound_identifier_prefixes.find(name);
-            if (it != compound_identifier_prefixes.end() && complex_aliases.contains(it->second) && !masked_columns.contains(it->second))
-                continue;
-        }
+        if (mask_subcolumns_of_aliases && isSubcolumnOfAliases(name, pr.second.appears))
+            continue;
 
         if (!complex_aliases.contains(name) || masked_columns.contains(name))
             required.insert(name);
