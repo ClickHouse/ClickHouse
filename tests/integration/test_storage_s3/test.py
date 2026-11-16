@@ -20,10 +20,11 @@ from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
-from helpers.test_tools import exec_query_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
+from minio.versioningconfig import ENABLED, VersioningConfig
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -1668,6 +1669,29 @@ def test_create_new_files_on_insert(started_cluster):
     result = instance.query("select count() from test_multiple_inserts")
     assert int(result) == 60
     instance.query("drop table test_multiple_inserts")
+
+
+def test_create_new_files_on_insert_multipart_gcs(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
+    instance.exec_in_container(
+        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
+        privileged=True,
+        user="root",
+    )
+    bucket = started_cluster.minio_bucket
+    name = f"gcs_new_file_{generate_random_string()}"
+    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
+    settings = {"s3_max_single_part_upload_size": 1048576}
+    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
+        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
+        instance.query(insert, settings=settings)
+        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
+
+    result = instance.query(
+        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
+    )
+    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
 
 
 def test_format_detection(started_cluster):
@@ -3668,6 +3692,47 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_schema_cache_key_includes_object_version(started_cluster):
+    # The schema and row-count caches must not answer a read of one version of an object with an entry of another.
+    instance = started_cluster.instances["dummy"]
+    minio_client = started_cluster.minio_client
+    bucket = "versioned"
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+    minio_client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    prefix = f"test_schema_cache_key_includes_object_version-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    def s3(key, format, structure=None, version_id=None):
+        url = f"http://{host}/{bucket}/{prefix}-{key}"
+        if version_id is not None:
+            url += f"?versionId={version_id}"
+        structure = f", '{structure}'" if structure else ""
+        return f"s3('{url}', {auth}, '{format}'{structure})"
+
+    def put_version(key, format, structure, query):
+        instance.query(f"INSERT INTO FUNCTION {s3(key, format, structure)} {query} SETTINGS s3_truncate_on_insert = 1")
+        return minio_client.stat_object(bucket, f"{prefix}-{key}")
+
+    # Versions of equal size, so that only the caches can tell them apart.
+    old_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 1 FROM numbers(200)")
+    new_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 100 FROM numbers(100)")
+    old_schema = put_version("schema.csv", "CSVWithNames", "a UInt64", "SELECT number FROM numbers(1, 2)")
+    new_schema = put_version("schema.csv", "CSVWithNames", "b UInt64", "SELECT number FROM numbers(3, 2)")
+    assert old_count.size == new_count.size and old_schema.size == new_schema.size
+    # An entry registered in the second the object was last modified is not used, which would hide a wrong hit.
+    assert_eq_with_retry(instance, f"SELECT now() > toDateTime({int(new_schema.last_modified.timestamp())})", "1")
+
+    for version_id, expected in [(old_count.version_id, "200\n"), (None, "100\n")]:
+        assert expected == instance.query(f"SELECT count() FROM {s3('count.csv', 'CSV', 'x UInt64', version_id)}")
+
+    for version_id, expected in [(None, "b\n3\n4\n"), (old_schema.version_id, "a\n1\n2\n")]:
+        assert expected == instance.query(
+            f"SELECT * FROM {s3('schema.csv', 'CSVWithNames', version_id=version_id)} FORMAT TSVWithNames"
+        )
 
 
 def test_gcs_decompressive_transcoding(started_cluster):

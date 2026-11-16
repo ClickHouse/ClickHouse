@@ -201,7 +201,7 @@ struct SinkBinding
     void * array = nullptr;
     uint32_t elem_size = 0;
 
-    bool isActive() const { return array != nullptr; }
+    [[nodiscard]] bool isActive() const { return array != nullptr; }
 };
 
 template <typename T>
@@ -691,7 +691,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    /// From here on the destructor/`resetParser` own the cleanup, after joining the workers.
+    /// From here on the destructor owns the cleanup, after joining the workers.
     initialized = true;
     opened = true;
 
@@ -1103,21 +1103,6 @@ Chunk DWARFBlockInputFormat::read()
 
         deliver_chunk.wait(lock);
     }
-}
-
-void DWARFBlockInputFormat::resetParser()
-{
-    stopThreads();
-
-    runner.reset();
-    releaseState();
-    background_exception = nullptr;
-    is_stopped = false;
-    units_in_progress = 0;
-    approx_bytes_read_for_chunk = 0;
-    initialized = false;
-
-    IInputFormat::resetParser();
 }
 
 DWARFSchemaReader::DWARFSchemaReader(ReadBuffer & in_)
