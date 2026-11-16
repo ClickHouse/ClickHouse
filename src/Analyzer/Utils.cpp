@@ -2251,8 +2251,6 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
     }
 
     std::erase_if(result.identity_by_ast, [&](const auto & table) { return counts.at(table.second) != 1; });
-    for (const auto & [_, identity] : result.identity_by_ast)
-        result.identities.insert(identity);
     return result;
 }
 

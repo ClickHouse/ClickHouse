@@ -39,7 +39,6 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <unordered_map>
 #include <unordered_set>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -605,16 +604,15 @@ VectorWithMemoryTracking<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Nod
     return reading_steps;
 }
 
-/// Where the read's table was written in the query, if that is certain to be the same occurrence in both plans: the
-/// read's table has an identity in its own plan's tree, `own`, which keeps only those no other table there has, and
-/// the other tree has it too, so exactly one table there.
-std::optional<UInt128> certainOccurrence(const ReadFromMergeTree & read, const TableOccurrences & own, const TableOccurrences & other)
+/// Where the read's table was written in the query, if no other table of its plan's tree, `own`, was written alike. A
+/// read of the other plan with the same identity is then certain to be the same occurrence: unique there too.
+std::optional<UInt128> certainOccurrence(const ReadFromMergeTree & read, const TableOccurrences & own)
 {
     const auto & table_expression = read.getQueryInfo().table_expression;
     if (!table_expression || !table_expression->getOriginalAST())
         return {};
     auto it = own.identity_by_ast.find(table_expression->getOriginalAST());
-    if (it == own.identity_by_ast.end() || !other.identities.contains(it->second))
+    if (it == own.identity_by_ast.end())
         return {};
     return it->second;
 }
@@ -640,13 +638,13 @@ FindSingleNodeReadByOccurrence makeSingleNodeReadFinder(QueryPlan::Node & single
         if (it->second.size() == 1)
             return it->second.front();
 
-        auto identity = certainOccurrence(read, *replicas_table_occurrences, *single_node_table_occurrences);
+        auto identity = certainOccurrence(read, *replicas_table_occurrences);
         if (!identity)
             return nullptr;
         const ReadFromMergeTree * found = nullptr;
         for (const auto * candidate : it->second)
         {
-            if (certainOccurrence(*candidate, *single_node_table_occurrences, *replicas_table_occurrences) != identity)
+            if (certainOccurrence(*candidate, *single_node_table_occurrences) != identity)
                 continue;
             if (found)
                 return nullptr;
@@ -665,14 +663,11 @@ FindSingleNodeReadByOccurrence makeSingleNodeReadFinder(QueryPlan::Node & single
 /// by the table they read, and a table read once by each plan leaves only one possible pairing. Only a
 /// table read more than once needs telling its occurrences apart.
 ///
-/// Neither the analyzer's name for the table expression nor the position in the plan can do that. The
-/// replicas plan's local plan is built from the tree `buildQueryTreeForShard` produces, which re-runs
-/// `createUniqueAliasesIfNecessary` and renumbers `__tableN` from 1 over a tree that passes such as
-/// `CrossToInnerJoinPass` may have reordered, so two reads of one table can swap names while every name
-/// still finds exactly one counterpart. The two plans are also optimized differently and may order a
-/// join's sides differently. Occurrences are told apart by where they were written in the query instead
-/// (`collectTableOccurrences`), and only by an identity that exactly one table has in each plan's tree;
-/// anything less certain declines.
+/// The analyzer's `__tableN` names cannot do that: `buildQueryTreeForShard` renumbers them over a join tree
+/// passes may have reordered, so two reads of one table can swap names. Nor can the position in the plan, as
+/// the plans are optimized differently. Occurrences are told apart by where they were written in the query
+/// (`collectTableOccurrences`), only when that is unique in both trees; anything less certain declines.
+/// Every read is paired before any analysis is handed over, so a pairing that fails leaves both plans untouched.
 ///
 /// Returns whether every read was paired. A read left unpaired keeps no analysis of its own either - the
 /// replicas plan is built with `query_plan_optimize_primary_key` off - so it would read every mark, which
@@ -735,7 +730,7 @@ bool transplantAnalysisToAllReads(
         UnorderedMapWithMemoryTracking<UInt128, ReadFromMergeTree *> single_node_by_occurrence;
         for (auto * read : single_node_reads_of_table)
         {
-            auto identity = certainOccurrence(*read, single_node_table_occurrences, replicas_table_occurrences);
+            auto identity = certainOccurrence(*read, single_node_table_occurrences);
             if (!identity || !single_node_by_occurrence.emplace(*identity, read).second)
             {
                 LOG_TRACE(
@@ -748,12 +743,12 @@ bool transplantAnalysisToAllReads(
             }
         }
 
-        UnorderedSetWithMemoryTracking<const ReadFromMergeTree *> claimed;
+        /// A paired read is taken out, so a second claim on it finds nothing.
         for (auto * read : reads_of_table)
         {
-            auto identity = certainOccurrence(*read, replicas_table_occurrences, single_node_table_occurrences);
+            auto identity = certainOccurrence(*read, replicas_table_occurrences);
             auto it = identity ? single_node_by_occurrence.find(*identity) : single_node_by_occurrence.end();
-            if (it == single_node_by_occurrence.end() || !claimed.insert(it->second).second)
+            if (it == single_node_by_occurrence.end())
             {
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
@@ -764,6 +759,7 @@ bool transplantAnalysisToAllReads(
                 return false;
             }
             paired_by_replicas_read.emplace(read, it->second);
+            single_node_by_occurrence.erase(it);
         }
     }
 
@@ -774,9 +770,7 @@ bool transplantAnalysisToAllReads(
         /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
         /// read either way, and this way it is done once and shared instead of being repeated by the
         /// replicas plan.
-        auto analyzed = single_node_read->getAnalyzedResult();
-        if (!analyzed)
-            analyzed = single_node_read->selectRangesToRead();
+        auto analyzed = single_node_read->getOrCreateAnalyzedResult();
 
         /// A read that a projection answered selects that projection's parts and columns. The
         /// candidate is built with `optimize_projection` off, so its reads are of the base table and

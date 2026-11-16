@@ -14,7 +14,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -134,8 +133,6 @@ struct TableOccurrences
 {
     /// Keyed by the AST pointer itself, which also keeps it from being freed and its address reused.
     std::unordered_map<ASTPtr, UInt128> identity_by_ast;
-    /// The values of `identity_by_ast`.
-    std::unordered_set<UInt128> identities;
 };
 
 TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);
