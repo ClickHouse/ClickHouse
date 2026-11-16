@@ -1898,14 +1898,18 @@ def test_or_replace_checks_removed_settings_of_the_replaced_entity(start_cluster
         instance.query(f"CREATE SETTINGS PROFILE {hidden} IN memory SETTINGS {constraint}")
         instance.query(f"CREATE SETTINGS PROFILE {replaced} IN local_directory SETTINGS {constraint}")
 
-        # `local_directory` is looked up before `memory`, so it gets a new profile which hides the one in
-        # `memory` and replaces nothing.
-        instance.query(f"CREATE SETTINGS PROFILE OR REPLACE {hidden}", user=actor)
+        # `local_directory` is the destination storage, and a replacement replaces only an entity of the
+        # destination storage. The name is used in `memory`, so the replacement is refused instead of
+        # creating a second profile with the same name.
+        error = instance.query_and_get_error(
+            f"CREATE SETTINGS PROFILE OR REPLACE {hidden}", user=actor
+        )
+        assert "ACCESS_ENTITY_ALREADY_EXISTS" in error, error
         assert (
             instance.query(
                 f"SELECT storage FROM system.settings_profiles WHERE name = '{hidden}' ORDER BY storage"
             )
-            == "local_directory\nmemory\n"
+            == "memory\n"
         )
 
         # A profile replaced in place must keep the constrained setting.

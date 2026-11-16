@@ -1,6 +1,6 @@
 <clickhouse>
-    <!-- Follows the LDAP directory of `ldap_with_role_mapping.xml`, so that a login by LDAP credentials reaches LDAP
-         even if this directory has a user with the same name. -->
+    <!-- Follows the LDAP directory of `ldap_with_role_mapping.xml`, so that a login by LDAP credentials would reach LDAP
+         first if this directory has a user with the same name. -->
     <user_directories>
         <memory/>
     </user_directories>

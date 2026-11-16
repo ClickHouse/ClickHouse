@@ -16,6 +16,7 @@ instance1 = cluster.add_instance(
     main_configs=[
         "configs/ldap_with_role_mapping.xml",
         "configs/memory_user_directory.xml",
+        "configs/http_handler_with_user.xml",
         "configs/remote_servers.xml",
     ],
     user_configs=["configs/users.xml"],
@@ -320,7 +321,8 @@ def user_storages(name):
 def test_same_name_user_in_other_directory(ldap_cluster):
     """
     A user authenticated by LDAP must not share its name with a user from another user directory.
-    The `memory` directory follows the LDAP one, so a login by LDAP credentials reaches LDAP first.
+    The `memory` directory follows the LDAP one, so a login by LDAP credentials would reach LDAP first
+    if the user were not looked up in all directories before.
     """
     # A unique name, so that the LDAP user is not yet known to the server even if the test is retried.
     name = f"same_name_{uuid.uuid4().hex[:8]}"
@@ -339,16 +341,17 @@ def test_same_name_user_in_other_directory(ldap_cluster):
         ) == TSV([[name]])
         assert user_storages(name) == ["memory"]
 
-        # The LDAP directory recognizes the user, but the name is already used in the `memory` directory.
+        # The LDAP directory would recognize the user, but the name is already used in the `memory` directory,
+        # so only that directory authenticates the user, and LDAP does not introduce a second user with this name.
         assert f"{name}: Authentication failed" in instance1.query_and_get_error(
             "SELECT currentUser()", user=name, password="ldap_password"
         )
-        assert user_storages(name) == ["ldap", "memory"]
+        assert user_storages(name) == ["memory"]
 
-        # Now both directories have a user with this name, so neither can log in.
-        assert f"{name}: Authentication failed" in instance1.query_and_get_error(
+        # The local user can still log in.
+        assert instance1.query(
             "SELECT currentUser()", user=name, password="local_password"
-        )
+        ) == TSV([[name]])
 
         instance1.query(
             f"DROP USER {name} FROM memory",
@@ -356,10 +359,11 @@ def test_same_name_user_in_other_directory(ldap_cluster):
             password="qwerty",
         )
 
-        # The LDAP user remains alone and can log in.
+        # Now the LDAP user can log in.
         assert instance1.query(
             "SELECT currentUser()", user=name, password="ldap_password"
         ) == TSV([[name]])
+        assert user_storages(name) == ["ldap"]
 
         # A new user with the same name cannot be created in another directory, whether it is specified or not.
         for query in [
@@ -378,3 +382,29 @@ def test_same_name_user_in_other_directory(ldap_cluster):
                 password="qwerty",
             )
         delete_ldap_user(ldap_cluster, name)
+
+
+def test_same_name_user_in_other_directory_always_allow_credentials(ldap_cluster):
+    """
+    An HTTP handler with a configured user authenticates it with `AlwaysAllowCredentials`, which the LDAP directory
+    accepts without contacting the LDAP server. If the user exists in another directory, LDAP must not introduce
+    a second user with the same name.
+    """
+    name = "http_handler_user"
+    try:
+        instance1.query(
+            f"CREATE USER {name} IN memory",
+            user="common_user",
+            password="qwerty",
+        )
+        for _ in range(2):
+            response = instance1.http_request("handler_with_user")
+            assert response.status_code == 200, response.text
+            assert response.text.strip() == name
+            assert user_storages(name) == ["memory"]
+    finally:
+        instance1.query(
+            f"DROP USER IF EXISTS {name} FROM memory",
+            user="common_user",
+            password="qwerty",
+        )
