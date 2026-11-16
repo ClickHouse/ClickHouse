@@ -8819,7 +8819,7 @@ Emit `TEST`-level log messages for every filesystem cache buffer refill (state o
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_cache_temporarily, false, R"(
 Use the filesystem cache as a temporary buffer for data that is not in it: a miss is read into the cache and served from it, and the cache removes it when nobody holds it anymore, unless a reader or writer outside this mode used it. Only the experimental `ReaderExecutor` supports it; other readers bypass the cache. `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` takes precedence.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting."}) \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
