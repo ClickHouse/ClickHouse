@@ -57,6 +57,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <map>
 #include <ranges>
 #include <vector>
 
@@ -2354,6 +2355,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// Defaults that still apply after every command of this statement. A later command that replaces
+    /// a default, drops its column, removes the property, or renames a column the expression names
+    /// updates this set, so the final check agrees with the metadata `apply` would commit.
+    struct PendingDefault
+    {
+        ASTPtr expression;
+        DataTypePtr type;
+        ColumnDefaultKind kind;
+    };
+    std::map<String, PendingDefault> pending_defaults;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2431,9 +2442,32 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
+            /// The description carries the default, comment, codec, and TTL, so a later `REMOVE`
+            /// in this statement sees the property this command added.
+            ColumnDescription added_column(column_name, command.data_type);
+            if (command.default_expression)
+            {
+                added_column.default_desc.kind = command.default_kind;
+                added_column.default_desc.expression = command.default_expression;
+                added_column.default_desc.ephemeral_default = command.ephemeral_default;
+            }
+            if (command.comment)
+                added_column.comment = *command.comment;
+            if (command.codec)
+                added_column.codec = command.codec;
+            added_column.ttl = command.ttl;
+
+            for (auto & col : columnsAddedByAlter(all_columns, std::move(added_column),
                                                   context, command.if_not_exists, share_nested))
                 all_columns.add(std::move(col));
+
+            if (command.default_expression)
+            {
+                pending_defaults[column_name] = PendingDefault{
+                    command.default_expression->clone(),
+                    command.data_type,
+                    command.default_kind};
+            }
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2561,6 +2595,63 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            /// The checks above read the column as the previous commands left it. Record this command's
+            /// own properties so the next command, and the final default check, see them too.
+            all_columns.modify(column_name, [&](ColumnDescription & column)
+            {
+                if (command.isRemovingProperty())
+                {
+                    if (command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                        || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                        || command.to_remove == AlterCommand::RemoveProperty::ALIAS)
+                        column.default_desc = ColumnDefault{};
+                    else if (command.to_remove == AlterCommand::RemoveProperty::CODEC)
+                        column.codec.reset();
+                    else if (command.to_remove == AlterCommand::RemoveProperty::COMMENT)
+                        column.comment = String{};
+                    else if (command.to_remove == AlterCommand::RemoveProperty::TTL)
+                        column.ttl.reset();
+                    else if (command.to_remove == AlterCommand::RemoveProperty::SETTINGS)
+                        column.settings.clear();
+                    return;
+                }
+
+                if (command.comment)
+                    column.comment = *command.comment;
+                if (command.codec)
+                    column.codec = command.codec;
+                if (command.ttl)
+                    column.ttl = command.ttl;
+                if (command.data_type)
+                    column.type = command.data_type;
+                if (command.default_expression)
+                {
+                    column.default_desc.kind = command.default_kind;
+                    column.default_desc.expression = command.default_expression;
+                    column.default_desc.ephemeral_default = command.ephemeral_default;
+                }
+            });
+
+            if (command.isRemovingProperty()
+                && (command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                    || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                    || command.to_remove == AlterCommand::RemoveProperty::ALIAS))
+            {
+                pending_defaults.erase(column_name);
+            }
+            else if (all_columns.has(column_name))
+            {
+                const auto & updated = all_columns.get(column_name);
+                if (updated.default_desc.expression
+                    && (command.default_expression || command.data_type || command.ttl))
+                {
+                    pending_defaults[column_name] = PendingDefault{
+                        updated.default_desc.expression->clone(),
+                        updated.type,
+                        updated.default_desc.kind};
+                }
+            }
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2597,7 +2688,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             }
                         }
                     }
+                    NameSet names_before_drop;
+                    for (const auto & column : all_columns)
+                        names_before_drop.insert(column.name);
                     all_columns.remove(command.column_name);
+                    for (const auto & name : names_before_drop)
+                    {
+                        if (!all_columns.has(name))
+                            pending_defaults.erase(name);
+                    }
+                    pending_defaults.erase(command.column_name);
                 }
             }
             else if (!command.if_exists)
@@ -2620,6 +2720,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
             }
+            else if (command.comment)
+            {
+                all_columns.modify(command.column_name, [&](ColumnDescription & column)
+                {
+                    column.comment = *command.comment;
+                });
+            }
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
@@ -2628,6 +2735,35 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
+           auto rewriteRenamedDefaults = [&]()
+           {
+               RenameColumnData rename_data{command.column_name, command.rename_to};
+               RenameColumnVisitor rename_visitor(rename_data);
+               Names column_names;
+               for (const auto & column : all_columns)
+                   column_names.push_back(column.name);
+               for (const auto & name : column_names)
+               {
+                   all_columns.modify(name, [&](ColumnDescription & column_to_modify)
+                   {
+                       if (column_to_modify.default_desc.expression)
+                           rename_visitor.visit(column_to_modify.default_desc.expression);
+                       if (column_to_modify.ttl)
+                           rename_visitor.visit(column_to_modify.ttl);
+                   });
+               }
+
+               if (auto it = pending_defaults.find(command.column_name); it != pending_defaults.end())
+               {
+                   auto node = pending_defaults.extract(it);
+                   node.key() = command.rename_to;
+                   pending_defaults.insert(std::move(node));
+               }
+
+               for (auto & pending : pending_defaults)
+                   rename_visitor.visit(pending.second.expression);
+           };
+
            for (size_t j = i + 1; j < size(); ++j)
            {
                auto next_command = (*this)[j];
@@ -2710,12 +2846,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                rewriteRenamedDefaults();
                 renamed_columns.emplace(command.column_name);
                 renamed_columns.emplace(command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
+                rewriteRenamedDefaults();
                 renamed_columns.emplace(command.column_name);
                 renamed_columns.emplace(command.rename_to);
             }
@@ -2733,70 +2871,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
         }
 
-        /// Collect default expressions for MODIFY and ADD commands
-        if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
-        {
-            /// A column TTL resets the column to its existing default in merges.
-            if (command.ttl && !command.default_expression && all_columns.has(column_name))
-            {
-                const auto & default_desc = all_columns.get(column_name).default_desc;
-                if (default_desc.expression
-                    && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
-                    background_default_expr_list->children.emplace_back(
-                        setAlias(default_desc.expression->clone(), column_name + "_tmp_ttl_default"));
-            }
+    }
 
-            if (command.default_expression)
-            {
-                DataTypePtr data_type_ptr;
-                /// If we modify default, but not type.
-                if (!command.data_type) /// it's not ADD COLUMN, because we cannot add column without type
-                    data_type_ptr = all_columns.get(column_name).type;
-                else
-                    data_type_ptr = command.data_type;
+    /// Check the defaults that survived the statement, at the types the statement left them.
+    /// The conversion holds its own copy of the default expression rather than referring to the
+    /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
+    /// referring to it made every error inside the default expression surface as a failure to
+    /// resolve a synthetic name the user has never seen.
+    for (const auto & [final_column_name, pending] : pending_defaults)
+    {
+        const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+        default_expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(pending.expression->clone(), pending.type->getName()),
+            final_column_name));
+        default_expr_list->children.emplace_back(setAlias(pending.expression->clone(), tmp_column_name));
 
-                const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
-
-                /// The conversion holds its own copy of the default expression rather than referring to the
-                /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
-                /// referring to it made every error inside the default expression surface as a failure to
-                /// resolve a synthetic name the user has never seen.
-                default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(command.default_expression->clone(), data_type_ptr->getName()),
-                    final_column_name));
-
-                default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
-
-                if (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized)
-                    background_default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
-            } /// if we change data type for column with default
-            else if (all_columns.has(column_name) && command.data_type)
-            {
-                const auto & column_in_table = all_columns.get(column_name);
-                /// Column doesn't have a default, nothing to check
-                if (!column_in_table.default_desc.expression)
-                    continue;
-
-                const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
-                const auto data_type_ptr = command.data_type;
-
-                default_expr_list->children.emplace_back(setAlias(
-                    addTypeConversionToAST(column_in_table.default_desc.expression->clone(), data_type_ptr->getName()),
-                    final_column_name));
-
-                default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
-
-                if (defaults_evaluated_at_insert_time
-                    && (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized))
-                    insert_time_default_columns.insert(final_column_name);
-            }
-        }
+        const bool stored_default = pending.kind == ColumnDefaultKind::Default || pending.kind == ColumnDefaultKind::Materialized;
+        if (defaults_evaluated_at_insert_time && stored_default)
+            insert_time_default_columns.insert(final_column_name);
+        if (stored_default)
+            background_default_expr_list->children.emplace_back(setAlias(pending.expression->clone(), tmp_column_name));
     }
 
     /// Parameterized views do not have 'columns' in their metadata
