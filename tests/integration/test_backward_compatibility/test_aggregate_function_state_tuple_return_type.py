@@ -390,7 +390,16 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
 
     def run_checks(node, checks):
         """Run all checks on a node in a single round-trip and return results dict."""
-        return parse_batch_result(node.query(batch_query(checks)), checks)
+        # Every check opens connections between the nodes. With the default 1000 ms connect timeout,
+        # a network stall of a few seconds on the CI host fails all three connection attempts and the
+        # whole query, while a longer timeout lets the kernel retransmit the SYN and connect.
+        return parse_batch_result(
+            node.query(
+                batch_query(checks),
+                settings={"connect_timeout_with_failover_ms": 10000},
+            ),
+            checks,
+        )
 
     mixed_checks = build_checks(mixed_remote_tab)
     pre_nullable_only_checks = build_checks(pre_nullable_only_remote_tab)

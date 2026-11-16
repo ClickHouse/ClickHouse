@@ -44,6 +44,7 @@ SELECT p, toTypeName(p) FROM geo_point;
 ## MultiPoint {#multipoint}
 
 `MultiPoint` is a set of points stored as an array of points: [Array](/reference/data-types/array)([Point](#point)).
+A `Point` can be cast to `MultiPoint`; the result contains that point as its only element.
 
 **Example**
 
@@ -98,6 +99,7 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 ## MultiLineString {#multilinestring}
 
 `MultiLineString` is multiple lines stored as an array of `LineString`: [Array](/reference/data-types/array)([LineString](#linestring)).
+A `LineString` can be cast to `MultiLineString`; the result contains that line as its only element.
 
 **Example**
 
@@ -136,6 +138,7 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 ## MultiPolygon {#multipolygon}
 
 `MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](/reference/data-types/array)([Polygon](#polygon)).
+A `Polygon` can be cast to `MultiPolygon`; the result contains that polygon as its only element.
 
 **Example**
 

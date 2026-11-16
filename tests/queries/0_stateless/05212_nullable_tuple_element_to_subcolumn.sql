@@ -1,5 +1,4 @@
 SET enable_nullable_tuple_type = 1;
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET join_use_nulls = 0;
 

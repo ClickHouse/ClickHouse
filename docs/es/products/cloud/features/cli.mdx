@@ -1,167 +1,115 @@
 ---
-sidebarTitle: 'ClickHouse CLI'
+sidebarTitle: 'CLI de ClickHouse'
 slug: /cloud/features/cli
-title: 'ClickHouse CLI'
-description: 'Usa ClickHouse CLI para gestionar recursos de ClickHouse Cloud e instancias locales de ClickHouse'
-keywords: ['clickhousectl', 'CLI', 'gestión de la nube', 'desarrollo local']
-doc_type: 'referencia'
+title: 'CLI de ClickHouse'
+description: 'Use la CLI de ClickHouse (clickhousectl) para crear y administrar servicios de ClickHouse Cloud, Managed Postgres, ClickPipes y ClickStack desde una terminal'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'cloud management', 'command line']
+doc_type: 'guide'
 ---
 
-ClickHouse CLI (`clickhousectl`) es una herramienta de línea de comandos unificada para gestionar recursos de ClickHouse Cloud y trabajar con ClickHouse en entornos de desarrollo local. También permite gestionar servicios de [ClickHouse Cloud Postgres](/es/products/managed-postgres/overview).
+La CLI de ClickHouse (`clickhousectl`, alias `chctl`) permite administrar ClickHouse Cloud desde una terminal, un script o un agente de programación. Esta página trata la parte de la CLI dedicada a Cloud. Para obtener información sobre todos los grupos de comandos, el desarrollo local y el comportamiento completo, consulte la [referencia de clickhousectl](/es/concepts/features/interfaces/cli).
 
-<div id="installation">
-  ## Instalación
-</div>
+## Qué puede gestionar {#what-you-can-manage}
 
-```bash
-curl https://clickhouse.com/cli | sh
-```
+Los comandos `clickhousectl cloud` permiten:
 
-También se crea automáticamente un alias para `chctl` por comodidad.
+* **Servicios:** crear, escalar, iniciar y detener servicios de ClickHouse Cloud, así como ejecutar SQL sobre ellos mediante la API de consultas.
+* **[Managed Postgres](/es/products/managed-postgres/overview) (Beta):** crear servicios de Postgres, réplicas de lectura y restauraciones a un momento dado, y modificar su configuración.
+* **[ClickPipes](/es/integrations/clickpipes/home):** ingerir datos desde almacenamiento de objetos, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB y BigQuery.
+* **[ClickStack](/es/clickstack/overview):** gestionar fuentes, dashboards, alertas, webhooks, búsquedas guardadas y roles en un servicio de [Managed ClickStack](/es/clickstack/deployment/managed).
+* **Funciones definidas por el usuario:** probar UDF ejecutables en local y, después, desplegarlas en un servicio de Cloud.
+* **Copias de seguridad:** listar copias de seguridad, modificar su programación y restaurar una copia de seguridad en un nuevo servicio.
+* **Acceso a la organización:** organizaciones, miembros, invitaciones, claves de API y el registro de actividad.
 
-<div id="cloud-management">
-  ## Administración de Cloud
-</div>
+Ejecute `clickhousectl cloud <command> --help` para consultar las opciones de cualquier comando y los permisos de clave de API que necesita.
 
-Autentíquese con ClickHouse Cloud y administre sus servicios directamente desde la línea de comandos.
-
-<div id="authentication">
-  ### Autenticación
-</div>
+## Instalación {#installation}
 
 ```bash
-clickhousectl cloud auth
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-Esto te pide tu clave de API y tu secreto, y los guarda en `.clickhouse/credentials.json` (local del proyecto, ignorado por git).
+El script instala `~/.local/bin/clickhousectl` y un alias `chctl`. Asegúrese de que `~/.local/bin` esté incluido en su `PATH`. Para npm, pip, uv y los demás métodos de instalación, consulte [Instalación](/es/concepts/features/interfaces/cli#installation).
 
-También puedes usar variables de entorno:
+## Autenticación {#authentication}
+
+El inicio de sesión con OAuth desde el navegador es de solo lectura. Para crear o modificar recursos, se necesita una [clave de API](/es/products/cloud/features/admin-features/api/openapi) con un rol que permita realizar el cambio.
 
 ```bash
-export CLICKHOUSE_CLOUD_API_KEY=your-key
-export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+# Read-only: OAuth device flow in your browser
+clickhousectl cloud auth login
+
+# Read and write: prompts for the API key and secret, keeping the secret out of shell history
+clickhousectl cloud auth login --interactive
+
+# Alternative for scripts
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 ```
 
-<div id="services">
-  ### Servicios
-</div>
+Al iniciar sesión, se verifican las credenciales y se muestra la identidad. Puede comprobarla en cualquier momento con `clickhousectl cloud auth whoami`. Si pertenece a varias organizaciones, agregue `--org-id <org-id>` (o `--org-name <name>`) a los comandos de Cloud. En CI, configure `CLICKHOUSE_CLOUD_API_KEY` y `CLICKHOUSE_CLOUD_API_SECRET` en lugar de iniciar sesión. Consulte [Autenticación](/es/concepts/features/interfaces/cli#authentication) para conocer la precedencia de las credenciales y cómo cerrar sesión.
+
+## Ejemplos {#examples}
+
+### Crear y consultar un servicio {#create-and-query-a-service}
 
 ```bash
-# Listar servicios
-clickhousectl cloud service list
+# Create a service. Save the initial password; it is printed only once.
+# Omitting --ip-allow allows all addresses (0.0.0.0/0).
+clickhousectl cloud service create --name analytics \
+  --provider aws --region us-east-1 \
+  --ip-allow '203.0.113.10/32=Office'
 
-# Crear un servicio
-clickhousectl cloud service create --name my-service \
-  --provider aws \
-  --region us-east-1
-
-# Obtener detalles del servicio
-clickhousectl cloud service get <service-id>
-
-# Escalar un servicio
-clickhousectl cloud service scale <service-id> \
-  --min-replica-memory-gb 24 \
-  --max-replica-memory-gb 48 \
-  --num-replicas 3
-
-# Iniciar/detener un servicio
-clickhousectl cloud service start <service-id>
-clickhousectl cloud service stop <service-id>
-
-# Eliminar un servicio
-clickhousectl cloud service delete <service-id>
+# Look up the service ID, then run SQL over the Query API
+CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
+clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
 ```
 
-<div id="postgres-services">
-  ### Servicios de Postgres (beta)
-</div>
+La operación de creación devuelve el control antes de que el servicio esté en ejecución. Consulte periódicamente `clickhousectl cloud service get "$CH_ID"` hasta que `state` sea `running`.
 
-Cree y administre los servicios de [ClickHouse Cloud Postgres](/es/products/managed-postgres/overview).
+En la primera consulta autenticada con clave de API, clickhousectl añade su clave de API al Endpoint de la API de Consultas del servicio y, si es necesario, crea el endpoint; no se crea ninguna clave nueva. Use `--no-auto-enable` para que, en su lugar, la operación falle. Con OAuth, `service query` ejecuta sentencias `SELECT` de solo lectura. La API de consultas agota el tiempo de espera tras unos 30 segundos, así que utilice `clickhouse client` para consultas largas y cargas masivas.
+
+### Crear un servicio administrado de Postgres {#create-a-managed-postgres-service}
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
-
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
-
-# Get service details
-clickhousectl cloud postgres get <pg-id>
-
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.10/32:5432=Office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
 ```
 
-<div id="organizations">
-  ### Organizaciones
-</div>
+Solo `create` devuelve la contraseña y la cadena de conexión, así que guárdelas. Si se omite `--ip-allow`, los puertos 5432 y 6432 quedan abiertos a cualquier dirección. Espere a que `state` sea `running` y, a continuación, conéctese con `psql` utilizando el certificado de CA.
+
+### Inspeccionar ClickPipes, ClickStack y copias de seguridad {#inspect-clickpipes-clickstack-and-backups}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+clickhousectl cloud clickpipe list "$CH_ID"
+clickhousectl cloud clickstack source list <clickstack-service-id>
+clickhousectl cloud backup list "$CH_ID"
 ```
 
-<div id="api-keys">
-  ### Claves de la API
-</div>
+Estos comandos de lectura funcionan con OAuth. Para crear un ClickPipe o modificar un recurso de ClickStack se necesita una clave de API; consulte las guías del repositorio que se indican a continuación.
+
+### Desplegar una función definida por el usuario {#deploy-a-user-defined-function}
 
 ```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
+# Uploads clickhouse/udfs/my_udf/, waits for the build, then attaches that version to the service
+clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 ```
 
-<div id="members-and-invitations">
-  ### Miembros e invitaciones
-</div>
+Pruebe primero la función en un servidor local con `clickhousectl local udf deploy my_udf`.
 
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
+## Salida JSON y agentes de programación {#json-output}
 
-<div id="backups">
-  ### Copias de seguridad
-</div>
+Los comandos de Cloud aceptan `--json`, y la CLI selecciona JSON automáticamente cuando detecta un agente de programación. En ese caso, `cloud service query` usa `JSONEachRow` de forma predeterminada, por lo que los scripts que analicen su salida deben especificar `--format`, por ejemplo, `--format TabSeparated`. Consulte [Salida JSON](/es/concepts/features/interfaces/cli#json-output) y [Códigos de salida](/es/concepts/features/interfaces/cli#exit-codes). Instale las ClickHouse agent skills con `clickhousectl skills`.
 
-```bash
-clickhousectl cloud backup list <service-id>
-clickhousectl cloud backup get <service-id> <backup-id>
-```
+## Más información {#learn-more}
 
-<div id="json-output">
-  ### Salida JSON
-</div>
-
-Usa la opción `--json` para obtener respuestas en formato JSON de cualquier comando de la nube:
-
-```bash
-clickhousectl cloud --json service list
-```
-
-<div id="local-development">
-  ## Desarrollo local
-</div>
-
-La CLI también gestiona instalaciones y servidores locales de ClickHouse. Consulta la página de [clickhousectl (CLI)](/es/get-started/setup/self-managed/clickhousectl) para empezar a trabajar con el desarrollo local.
-
-<div id="requirements">
-  ## Requisitos
-</div>
-
-* macOS (aarch64, x86&#95;64) o Linux (aarch64, x86&#95;64)
-* Los comandos de Cloud requieren una [clave de API de ClickHouse Cloud](/es/products/cloud/features/admin-features/api/openapi)
+* [Referencia de clickhousectl](/es/concepts/features/interfaces/cli): todos los grupos de comandos, desarrollo local, habilidades, autoactualización y telemetría.
+* Guías del repositorio:
+  * [Servicios de ClickHouse Cloud](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)
+  * [ClickHouse Managed Postgres](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)
+  * [ClickPipes](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)
+  * [ClickStack](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)
+  * [Funciones definidas por el usuario](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)
+* Referencias del repositorio: [autenticación y acceso](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md), [SQL y la API de consultas](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md), [configuración de ClickPipe](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md) y [automatización y contratos de salida](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md).

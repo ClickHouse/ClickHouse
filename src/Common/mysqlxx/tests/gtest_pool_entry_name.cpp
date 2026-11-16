@@ -93,6 +93,9 @@ TEST(MySQLPoolEntryName, TLSCredentialsArePartOfTheKey)
     EXPECT_NE(
         with_tls("<replica><priority>1</priority><ssl_key_pem>a</ssl_key_pem></replica>"),
         with_tls("<replica><priority>1</priority><ssl_key_pem>b</ssl_key_pem></replica>"));
+    EXPECT_NE(
+        with_tls("<ssl_key_passphrase>first</ssl_key_passphrase>"),
+        with_tls("<ssl_key_passphrase>second</ssl_key_passphrase>"));
 }
 
 /// The hash of the credentials frames every field with its length, so distinct tuples that

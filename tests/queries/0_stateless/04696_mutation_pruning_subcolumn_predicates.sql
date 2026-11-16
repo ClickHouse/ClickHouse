@@ -9,9 +9,13 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_mutation_pruning_subcolumns;
 
+-- `number_of_free_entries_in_pool_to_execute_mutation = 0` keeps the mutations below from waiting for free slots in the
+-- server-global merges/mutations pool: when concurrent tests occupy it, the merge-selecting task retries only after its
+-- backoff, which the preceding mutations have already raised to `max_merge_selecting_sleep_ms` (60 s).
 CREATE TABLE t_mutation_pruning_subcolumns (d Date, x UInt32, y UInt32, t Tuple(a UInt32, b String), n Nullable(UInt32), j JSON)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_pruning_subcolumns', 'r1')
-PARTITION BY toYYYYMM(d) ORDER BY x;
+PARTITION BY toYYYYMM(d) ORDER BY x
+SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0;
 
 INSERT INTO t_mutation_pruning_subcolumns VALUES ('2024-01-01', 1, 100, (1, 'a'), NULL, '{"a": 1}');
 INSERT INTO t_mutation_pruning_subcolumns VALUES ('2024-02-01', 2, 200, (2, 'b'), 2, '{"a": 2}');

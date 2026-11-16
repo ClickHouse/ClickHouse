@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- A dynamic disk of a `system` table may use the server's own identity, for Azure as for S3. -->
+    <s3_allow_server_credentials_for_system_table_disks>1</s3_allow_server_credentials_for_system_table_disks>
+</clickhouse>

@@ -1,0 +1,32 @@
+-- key equality next to a direct condition
+dpsize	1	0
+dpsize,greedy	1	0
+dphyp,greedy	1	0
+dpsub,greedy	1	0
+greedy	1	0
+-- result
+dpsize	80	7960
+dpsize,greedy	80	7960
+dphyp,greedy	80	7960
+dpsub,greedy	80	7960
+greedy	80	7960
+without transitive predicates	80	7960
+-- column types
+String, FixedString	1	0
+Nullable(UInt32), UInt32	1	1
+LowCardinality(String), String	1	1
+-- Join engine
+1	1
+-- TPC-H Q02
+dpsize	1	0
+dpsize,greedy	1	0
+dphyp,greedy	1	0
+dpsub,greedy	1	0
+greedy	1	0
+-- TPC-H Q02 result
+dpsize	27	7859264837542448615
+dpsize,greedy	27	7859264837542448615
+dphyp,greedy	27	7859264837542448615
+dpsub,greedy	27	7859264837542448615
+greedy	27	7859264837542448615
+without transitive predicates	27	7859264837542448615

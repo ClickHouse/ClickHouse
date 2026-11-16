@@ -20,7 +20,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select toString(generateUUIDv4())")
 # The root span is the 'query' span that `query_id = ...` looks up.
 ${CLICKHOUSE_CLIENT} -q "
     insert into system.opentelemetry_span_log
-        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, finish_date, attribute)
+        (hostname, trace_id, span_id, parent_span_id, operation_name, kind, start_time_us, finish_time_us, event_date, attribute)
     values
         ('h', '$trace_id', 1, 0, 'query', 'SERVER',   1000, 5000, today(), map('clickhouse.query_id', '$query_id', 'secret', 'value')),
         ('h', '$trace_id', 2, 1, 'child', 'INTERNAL', 2000, 3000, today(), map())

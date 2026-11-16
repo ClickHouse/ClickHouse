@@ -30,9 +30,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -127,29 +125,26 @@ public:
     {
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (data_types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires single argument with type JSON", getName());
-
-        if (data_types[0]->getTypeId() != TypeIndex::Object)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires argument with type JSON, got: {}", getName(),data_types[0]->getName());
-
         if constexpr (Impl::with_types)
-            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+            return "(JSON) -> Map(String, String)";
+        return "(JSON) -> Array(String)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         const auto * column_object = typeid_cast<const ColumnObject *>(elem.column.get());
@@ -163,7 +158,7 @@ public:
     }
 
 private:
-    ColumnPtr executeWithoutTypes(const ColumnObject & column_object) const
+    [[nodiscard]] ColumnPtr executeWithoutTypes(const ColumnObject & column_object) const
     {
         if constexpr (Impl::paths_mode == PathsMode::SHARED_DATA_PATHS)
         {
@@ -253,7 +248,7 @@ private:
         return ColumnArray::create(std::move(data_column), std::move(offsets_column));
     }
 
-    ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
+    [[nodiscard]] ColumnPtr executeWithTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
         auto offsets_column = ColumnArray::ColumnOffsets::create();
         auto & offsets = offsets_column->getData();
@@ -401,7 +396,7 @@ private:
         return ColumnMap::create(ColumnPtr(std::move(paths_column)), ColumnPtr(std::move(types_column)), ColumnPtr(std::move(offsets_column)));
     }
 
-    String getDynamicValueType(const ColumnPtr & column, size_t i) const
+    [[nodiscard]] String getDynamicValueType(const ColumnPtr & column, size_t i) const
     {
         const ColumnDynamic * dynamic_column = checkAndGetColumn<ColumnDynamic>(column.get());
         const auto & variant_info = dynamic_column->getVariantInfo();
@@ -420,7 +415,7 @@ private:
         return variant_info.variant_names[global_discr];
     }
 
-    std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
+    [[nodiscard]] std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
     {
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);

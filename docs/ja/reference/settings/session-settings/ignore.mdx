@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="ignore_cold_parts_seconds">
-  ## ignore_cold_parts_seconds
-</div>
+## ignore_cold_parts_seconds {#ignore_cold_parts_seconds}
 
 <CloudOnlyBadge />
 
@@ -24,9 +22,11 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 ClickHouse Cloud でのみ有効です。新しいデータパーツは、事前にウォームアップされる ([cache&#95;populated&#95;by&#95;fetch](/ja/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) を参照) か、この秒数が経過するまで、SELECT クエリから除外されます。Replicated-/SharedMergeTree でのみ有効です。
 
-<div id="ignore_data_skipping_indices">
-  ## ignore_data_skipping_indices
-</div>
+## ignore_data_skipping_indexes {#ignore_data_skipping_indexes}
+
+**別名**: `ignore_data_skipping_indices`
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "設定 `ignore_data_skipping_indices` の別名を追加しました。"}]}]} />
 
 クエリで使用される指定のデータスキップ索引を無視します。
 
@@ -113,9 +113,7 @@ Expression ((Projection + Before ORDER BY))
 
 MergeTree familyのテーブルで使用できます。
 
-<div id="ignore_drop_queries_probability">
-  ## ignore_drop_queries_probability
-</div>
+## ignore_drop_queries_probability {#ignore_drop_queries_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -123,9 +121,7 @@ MergeTree familyのテーブルで使用できます。
 
 有効にすると、サーバーは指定した確率ですべての DROP table クエリを無視します (Memory および JOIN エンジンでは、DROP を TRUNCATE に置き換えます) 。テスト目的で使用します
 
-<div id="ignore_format_null_for_explain">
-  ## ignore_format_null_for_explain
-</div>
+## ignore_format_null_for_explain {#ignore_format_null_for_explain}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -134,9 +130,7 @@ MergeTree familyのテーブルで使用できます。
 有効な場合、`EXPLAIN` クエリでは `FORMAT Null` は無視され、代わりにデフォルトの出力フォーマットが使用されます。
 無効な場合、`FORMAT Null` を指定した `EXPLAIN` クエリでは何も出力されません (後方互換性のある動作) 。
 
-<div id="ignore_materialized_views_with_dropped_target_table">
-  ## ignore_materialized_views_with_dropped_target_table
-</div>
+## ignore_materialized_views_with_dropped_target_table {#ignore_materialized_views_with_dropped_target_table}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -23,6 +23,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <optional>
 
 
@@ -71,15 +72,25 @@ namespace
             res_matchers.emplace_back(std::move(res_matcher));
         }
 
+        /// RemoteRead matchers are not PromQL text, and the protocol permits matcher sets
+        /// such as job=~".*" that match an empty label value. TimeSeries rows always have
+        /// a non-empty metric name, so preserve that invariant when the matchers are later
+        /// serialized to PromQL and reparsed by timeSeriesSelector.
+        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
+            .label_name = "__name__",
+            .label_value = "",
+            .matcher_type = PrometheusQueryTree::MatcherType::NE});
+
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
-    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
+    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, 'samples')
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
+        bool table_has_bucketed_samples,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
         Int64 max_time_ms)
@@ -87,7 +98,7 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(samples) AS samples
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -95,10 +106,17 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            select_list_exp->children.push_back(makeASTFunction(
-                "timeSeriesGroupArray",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            if (table_has_bucketed_samples)
+            {
+                select_list_exp->children.push_back(makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)));
+            }
+            else
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            }
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
@@ -106,7 +124,7 @@ namespace
         }
 
         {
-            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
+            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time, return_columns)
             auto table_exp = make_intrusive<ASTTableExpression>();
             table_exp->table_function = makeASTFunction(
                 "timeSeriesSelector",
@@ -114,7 +132,8 @@ namespace
                 make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
                 make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
                 make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
-                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}));
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}),
+                make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
 
             table_exp->children.emplace_back(table_exp->table_function);
 
@@ -228,7 +247,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id, time_series_storage->getStorageSettings()->hasBucketedSamples(), label_matcher, start_timestamp_ms, end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
