@@ -19,6 +19,7 @@ bigint_formatting.xml                                    # UInt128 widened to De
 bitmap_cardinality.xml                                   # AggregateFunction column
 bitmap_contains.xml                                      # AggregateFunction column
 codecs_t64_select.xml                                    # loop() over the table
+columns_cache_prewhere_gaps.xml                          # FINAL
 compact_part_subcolumns.xml                              # JSON column
 distinct_json_paths.xml                                  # JSON column
 dotProduct.xml                                           # type BFloat16 in CREATE ... AS SELECT
