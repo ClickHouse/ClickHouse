@@ -7833,9 +7833,13 @@ Cloud default value: `none_only_active`.
 Compatibility version of distributed DDL (ON CLUSTER) queries. Use a lower value to keep older servers in the
 cluster able to execute the queries.
 
+Servers do not execute entries with versions `1` and `2`. Older servers write those for the setting values `1`, `2`
+and `3`, so before upgrading set this setting to at least `4` on all servers and wait until the distributed DDL
+queue is processed.
+
 Possible values:
-- `3` — The entry carries the settings changed in the session, and `CREATE` queries are normalized on the initiator.
-- `4` — Also carries the OpenTelemetry tracing context.
+- `3` — The same as `4`. It is written as `4`, because older servers reject entries with version `3`.
+- `4` — The entry carries the settings changed in the session and the OpenTelemetry tracing context, and `CREATE` queries are normalized on the initiator.
 - `5` — Also preserves the `initial_query_id` of the query.
 - `6` — Also carries whether the query is a part of `BACKUP` or `RESTORE`.
 - `7` — Also carries the UUID of the parent table, which a `Replicated` database uses to execute the query only if the table exists.

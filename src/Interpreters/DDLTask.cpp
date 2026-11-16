@@ -123,6 +123,9 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
                                                             "Supported versions are from {} to {}",
                         version, NORMALIZE_CREATE_ON_INITIATOR_VERSION, DDL_ENTRY_FORMAT_MAX_VERSION);
 
+    /// Older servers reject entry version 3, because they wrote the setting value 3 as version 2.
+    version = std::max(version, OPENTELEMETRY_ENABLED_VERSION);
+
     parent_table_uuid = context->getParentTable();
     if (parent_table_uuid.has_value())
         version = std::max(version, PARENT_TABLE_UUID_VERSION);
@@ -214,6 +217,17 @@ void DDLLogEntry::parse(const String & data)
 
     rb >> "version: " >> version >> "\n";
     rb >> "query: " >> escape >> query >> "\n";
+
+    if (version > 0 && version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && !query.empty())
+    {
+        /// Only to report the rejection under the host ID the initiator waits for; the entry is still rejected below.
+        Strings legacy_host_id_strings;
+        if (!rb.eof() && *rb.position() == 'h')
+            rb >> "hosts: " >> legacy_host_id_strings >> "\n";
+        hosts.resize(legacy_host_id_strings.size());
+        std::transform(legacy_host_id_strings.begin(), legacy_host_id_strings.end(), hosts.begin(), HostID::fromString);
+    }
+
     assertVersion();
 
     Strings host_id_strings;
