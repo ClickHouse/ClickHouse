@@ -6,3 +6,17 @@
 (false)	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 (false,'abcdefghijklmnop')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+reverse direction
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	149452120213688298009235146691947225697
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+dictionary
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+nested
+(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))	(\'abcdefghijklmnop\')
+((\'abcdefghijklmnop\'))	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+date range of a subcolumn
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+(false)	1970-01-01

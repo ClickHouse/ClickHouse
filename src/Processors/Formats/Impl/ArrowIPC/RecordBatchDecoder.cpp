@@ -25,6 +25,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
@@ -54,8 +57,29 @@ namespace DB::ArrowIPC
 
 namespace
 {
+/// The type of a leaf that a raw-byte type hint converted while decoding (see `rawByteTarget`): the
+/// leaf is declared by its Arrow type (`String` / `FixedString`) but physically holds `IPv6`, `UUID` or
+/// a big integer. Null when the declared type already describes the column.
+DataTypePtr convertedLeafType(const DataTypePtr & type, const IColumn & column)
+{
+    if (!isStringOrFixedString(type))
+        return nullptr;
+    switch (column.getDataType())
+    {
+        case TypeIndex::IPv6: return std::make_shared<DataTypeIPv6>();
+        case TypeIndex::UUID: return std::make_shared<DataTypeUUID>();
+        case TypeIndex::Int128: return std::make_shared<DataTypeInt128>();
+        case TypeIndex::UInt128: return std::make_shared<DataTypeUInt128>();
+        case TypeIndex::Int256: return std::make_shared<DataTypeInt256>();
+        case TypeIndex::UInt256: return std::make_shared<DataTypeUInt256>();
+        default: return nullptr;
+    }
+}
+
 /// Match the declared type to the decoded column, preserving tuple names. Nullable structs retain their
-/// null maps until conversion, including when schema inference produces a plain `Tuple`.
+/// null maps until conversion, including when schema inference produces a plain `Tuple`. Leaves that a
+/// raw-byte type hint converted are re-declared by their physical type, so every requested column taken
+/// from this decoded column (the whole column or any of its subcolumns) gets a type that describes it.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
     const bool is_nullable = column->isNullable();
@@ -86,6 +110,19 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
             matchColumnNullability(map_type->getKeyType(), entries.getColumnPtr(0)),
             matchColumnNullability(map_type->getValueType(), entries.getColumnPtr(1)));
     }
+    else if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+    {
+        /// A dictionary's values are decoded under the hint of the field that references them.
+        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(&nested_column))
+        {
+            const DataTypePtr & dictionary_type = low_cardinality_type->getDictionaryType();
+            if (DataTypePtr leaf = convertedLeafType(
+                    removeNullable(dictionary_type), *low_cardinality_column->getDictionary().getNestedNotNullableColumn()))
+                nested_type = std::make_shared<DataTypeLowCardinality>(dictionary_type->isNullable() ? makeNullable(leaf) : leaf);
+        }
+    }
+    else if (DataTypePtr leaf = convertedLeafType(nested_type, nested_column))
+        nested_type = std::move(leaf);
 
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
 }
@@ -449,11 +486,6 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// `n.d Array(Int32)` while this field's own type is the element); those layers are peeled so the hint
 /// matches this field, exactly as the parent-derived chain unwraps one Array per list. A type with fewer
 /// layers does not describe this field: no hint.
-/// The dotted name is not looked up when an enclosing field is requested itself (e.g. `t` along with `t.s`):
-/// the decoded column then serves that request too, whose type does not describe this field (otherwise
-/// the parent would have derived a hint), and the post-decode rewrite, which follows only the requested
-/// type of the column, could not reconcile a leaf converted by the dotted hint. The subcolumn is
-/// converted by that rewrite after it is extracted instead.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
@@ -462,9 +494,6 @@ DataTypePtr resolveHint(
         return parent_hint;
     if (!types)
         return nullptr;
-    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
-        if (types->contains(path.substr(0, pos)))
-            return nullptr;
     auto it = types->find(path);
     if (it == types->end())
         return nullptr;
@@ -1135,7 +1164,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// A type hint can request the raw bytes as an IPv6 or big integer (how the ClickHouse
             /// writer stores those types); convert here, where the invisible-rows mask still exempts
             /// hidden bytes from the width sniff (see `rawByteTargetType`).
-            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+            if (const DataTypePtr raw_target = rawByteTarget(target_hint, path, list_depth))
                 if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
                     return typed;
             break;
@@ -1187,7 +1216,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 }
             }
             /// Same raw-byte type-hint conversion as the Utf8/Binary branch above.
-            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+            if (const DataTypePtr raw_target = rawByteTarget(target_hint, path, list_depth))
                 if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
                     return typed;
             break;
@@ -2819,6 +2848,20 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
     return resolveHint(parent_hint, path, list_depth, target_types);
+}
+
+DataTypePtr RecordBatchDecoder::rawByteTarget(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
+{
+    DataTypePtr raw_target = rawByteTargetType(resolveTargetHint(parent_hint, path, list_depth));
+    if (!raw_target || !target_types)
+        return raw_target;
+
+    /// The requested columns this field is decoded for: its own dotted name and those of the enclosing
+    /// fields (`t` and `t.s` for the field `t.s`). With more than one, the hint follows only some of them.
+    size_t requests = target_types->contains(path) ? 1 : 0;
+    for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
+        requests += target_types->contains(path.substr(0, pos));
+    return requests < 2 ? raw_target : nullptr;
 }
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(

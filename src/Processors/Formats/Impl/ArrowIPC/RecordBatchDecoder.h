@@ -355,6 +355,14 @@ private:
     /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
     /// the dotted column name, `list_depth` lists below the top level.
     DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
+    /// The `IPv6` / big-integer type a variable binary field is converted to while decoding, or null to keep
+    /// its bytes: `rawByteTargetType` of the requested type, unless the field is decoded for several requested
+    /// columns (the field's own dotted name and an enclosing field, e.g. `t.s` and `t`, or `t` and `t.u` for
+    /// the field `t.u.s`). Their types can ask for different values of the same bytes, and each of these
+    /// columns is taken from the one decoded column, so the field keeps its bytes and the post-decode rewrite
+    /// converts every requested column by its own type. Other hints (e.g. `Date`) do not change the layout
+    /// and apply regardless.
+    DataTypePtr rawByteTarget(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 
