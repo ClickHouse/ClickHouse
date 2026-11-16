@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -2479,3 +2480,96 @@ def test_failed_commit_after_success_select(started_cluster):
         assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
+
+
+def test_concurrent_committing_selects_on_ordered_queue(started_cluster):
+    """
+    Committing SELECT queries on one unbucketed ordered queue have their own file
+    iterators and commit the single processed pointer on their own. A query that
+    takes a later file and commits it while an earlier file is still being read
+    by another query moves the pointer past that file, so the slower query fails
+    to commit (the file is already below the pointer) and its rows are lost for
+    the queue.
+
+    The first SELECT is parked by `object_storage_queue_sleep_in_generate` while
+    it reads the first file. The second SELECT starts meanwhile. Committing
+    SELECTs have to run one at a time: both must succeed and every file must be
+    returned exactly once.
+    """
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = f"test_concurrent_select_ordered_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    big_rows = 500000
+    small_rows = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1,
+            "enable_hash_ring_filtering": 0,
+        },
+    )
+
+    def s3_function(file_name):
+        return (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function('a.csv')} "
+        f"SELECT number, number, number FROM numbers({big_rows})"
+    )
+    node.query(
+        f"INSERT INTO FUNCTION {s3_function('b.csv')} "
+        f"SELECT number, number, number FROM numbers({small_rows})"
+    )
+
+    select = f"SELECT count() FROM {table_name}"
+    results = {}
+
+    def run_select(name):
+        results[name] = node.query_and_get_answer_with_error(select)
+
+    first = threading.Thread(target=run_select, args=("first",))
+    second = threading.Thread(target=run_select, args=("second",))
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+    try:
+        first.start()
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{table_name}%' "
+                    f"AND file_name ilike '%a.csv' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            ):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("the first SELECT did not start reading a.csv")
+
+        second.start()
+        first.join(timeout=120)
+        second.join(timeout=120)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    for name in ("first", "second"):
+        answer, error = results[name]
+        assert not error, f"{name} SELECT failed: {error}"
+
+    assert int(results["first"][0]) == big_rows
+    assert int(results["second"][0]) == small_rows
+    assert 0 == int(node.query(select))
+
+    node.query(f"DROP TABLE {table_name} SYNC")
