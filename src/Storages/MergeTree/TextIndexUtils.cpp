@@ -1141,6 +1141,11 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
     merged_doc_lengths.clear();
     merged_doc_lengths.resize(num_rows);
 
+    /// The doc lengths of rows [0, covered_part_rows[part_index]) of each source part are already read by its previous segments.
+    /// Without the offsets map all segments are segments of the merged part, so they share one entry.
+    std::vector<UInt64> covered_part_rows;
+    size_t total_doc_lengths = 0;
+
     for (size_t source_num = 0; source_num < segments.size(); ++source_num)
     {
         auto * header_stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::Regular);
@@ -1171,24 +1176,32 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
         }
 
         const size_t doc_lengths_size = source_doc_lengths.size();
-        if (doc_lengths_size == 0)
-            continue;
 
-        /// The doc lengths of a segment are those of its last rows, [num_docs - doc_lengths_size, num_docs).
-        /// Both bounds come from disk, so check the range against the rows of the source part before looking up or writing any row:
+        /// The doc lengths of a segment are those of its last rows, [num_docs - doc_lengths_size, num_docs), and the segments
+        /// of a source part come in the order of their rows. Both bounds come from disk, so before looking up or writing any row
+        /// check that the range continues the rows covered by the previous segments of the part and does not exceed its rows:
         /// the offsets map has an entry per row of the part, and without a map the rows of the segment are those of the merged part.
         const UInt64 num_docs = header.scoring_stats.num_docs;
         const size_t part_index = segments[source_num].part_index;
         const UInt64 part_rows = merged_part_offsets ? merged_part_offsets->getPartRowsCount(part_index) : num_rows;
 
-        if (num_docs < doc_lengths_size || num_docs > part_rows)
+        const size_t coverage_index = merged_part_offsets ? part_index : 0;
+        if (coverage_index >= covered_part_rows.size())
+            covered_part_rows.resize(coverage_index + 1, 0);
+
+        UInt64 & covered_rows = covered_part_rows[coverage_index];
+
+        if (num_docs < doc_lengths_size || num_docs - doc_lengths_size != covered_rows || num_docs > part_rows)
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupted data in text index: segment '{}' has {} document lengths ending at row {}, but the source part has {} rows",
-                segments[source_num].index_file_name, doc_lengths_size, num_docs, part_rows);
+                "Corrupted data in text index: segment '{}' has {} document lengths ending at row {}, "
+                "but the previous segments of the source part end at row {} and the part has {} rows",
+                segments[source_num].index_file_name, doc_lengths_size, num_docs, covered_rows, part_rows);
         }
 
-        const UInt64 segment_base = num_docs - doc_lengths_size;
+        const UInt64 segment_base = covered_rows;
+        covered_rows = num_docs;
+        total_doc_lengths += doc_lengths_size;
 
         if (merged_part_offsets)
         {
@@ -1212,6 +1225,15 @@ void MergeTextIndexesTask::buildDocLengthsAndStats()
             for (size_t i = 0; i < doc_lengths_size; ++i)
                 merged_doc_lengths[segment_base + i] = source_doc_lengths[i];
         }
+    }
+
+    /// The ranges of the segments are disjoint and the offsets map is injective, so every row of the merged part has
+    /// its doc length iff their total is the number of rows. Otherwise the rest of `merged_doc_lengths` is uninitialized.
+    if (total_doc_lengths != num_rows)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in text index: the source segments have {} document lengths, but the merged part has {} rows",
+            total_doc_lengths, num_rows);
     }
 }
 
