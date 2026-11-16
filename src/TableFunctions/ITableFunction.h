@@ -118,7 +118,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
-    virtual bool isClusterFunction() const { return false; }
+    [[nodiscard]] virtual bool isClusterFunction() const { return false; }
 
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
