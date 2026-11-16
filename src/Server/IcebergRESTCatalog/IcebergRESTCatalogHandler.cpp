@@ -70,7 +70,6 @@ namespace
 {
 
 constexpr size_t MAX_REQUEST_BODY_SIZE = 1_MiB;
-constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
 
 /// The Iceberg table property that names the codec of metadata files.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
@@ -108,16 +107,37 @@ IcebergNamespaceName splitNamespace(const String & value)
     return result;
 }
 
-/// The handler maps `BAD_ARGUMENTS` to a 400 response.
-void validateTableName(const String & name)
-{
-    if (name.empty() || name.size() > MAX_TABLE_NAME_LENGTH)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table name must be non-empty and at most {} bytes", MAX_TABLE_NAME_LENGTH);
-}
-
 String joinNamespace(const IcebergNamespaceName & name)
 {
     return fmt::format("{}", fmt::join(name, "."));
+}
+
+IcebergNamespaceName parseNamespaceArray(const Poco::JSON::Object & json)
+{
+    const auto namespace_array = json.getArray("namespace");
+    if (!namespace_array)
+        throw Poco::Exception("'namespace' must be an array");
+
+    IcebergNamespaceName result;
+    for (const auto & level : *namespace_array)
+        result.push_back(level.extract<String>());
+    return result;
+}
+
+struct TableIdentifier
+{
+    IcebergNamespaceName ns;
+    String name;
+};
+
+/// Parses a `TableIdentifier`: `namespace` is an array of levels, `name` is a string.
+TableIdentifier parseTableIdentifier(const Poco::JSON::Object::Ptr & json)
+{
+    if (!json)
+        throw Poco::Exception("table identifier must be an object");
+    if (!json->has("name") || !json->get("name").isString())
+        throw Poco::Exception("'name' must be a string");
+    return {parseNamespaceArray(*json), json->getValue<String>("name")};
 }
 
 Poco::JSON::Array stringsToJSONArray(const Strings & strings)
@@ -162,7 +182,7 @@ Poco::JSON::Object tableIdentifierToJSON(const IcebergNamespaceName & ns, const 
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_)
     : log(getLogger("IcebergRESTCatalogHandler"))
     , server(server_)
     , warehouses(std::move(warehouses_))
@@ -171,14 +191,18 @@ IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergR
 
 ContextMutablePtr IcebergRESTCatalogHandler::authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const
 {
-    /// Only the URI is parsed here, so the body stays available for the route handlers.
+    /// Only the URI is parsed here, so the body stays unread until the caller consumes it.
     HTMLForm params(server.context()->getSettingsRef(), request);
     /// No fixed user: every request must carry its own credentials.
     const HTTPHandlerConnectionConfig connection_config;
     /// Each request gets a fresh handler, so partial multi-step credentials do not survive a 401 anyway.
     std::unique_ptr<Credentials> request_credentials;
     if (!authenticateUserByHTTP(request, params, response, session, request_credentials, connection_config, server.context(), log))
+    {
+        /// Unauthenticated clients get no body read. The 401 is already sent, so close the connection instead.
+        response.setKeepAlive(false);
         return nullptr;
+    }
 
     auto context = session.makeQueryContext();
     context->setCurrentQueryId("");
@@ -213,7 +237,10 @@ void IcebergRESTCatalogHandler::sendJSON(
     setResponseDefaultHeaders(response);
     response.setStatus(status);
     response.setContentType("application/json");
-    *response.send() << toJSONString(json);
+    /// The declared length marks the end of the body, so the connection can stay open for the next request.
+    const auto body = toJSONString(json);
+    response.setContentLength(body.size());
+    *response.send() << body;
 }
 
 void IcebergRESTCatalogHandler::sendNoContent(HTTPServerResponse & response)
@@ -265,6 +292,17 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         auto context = authenticateUser(request, response, session);
         if (!context)
             return; /// 401 with `WWW-Authenticate` is already sent.
+
+        /// Consume the body here, before anything is sent. Handlers never read from the request.
+        /// Without `Content-Length` or chunked encoding the request has no body, and the raw socket must not be read.
+        String body;
+        if (request.getChunkedTransferEncoding() || request.hasContentLength())
+        {
+            auto read = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+            if (!read)
+                return;
+            body = std::move(*read);
+        }
 
         Poco::URI uri;
         std::vector<std::string> segments;
@@ -333,7 +371,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 handleListNamespaces(*warehouse, uri, response);
                 return;
             case IcebergRESTOperation::CreateNamespace:
-                handleCreateNamespace(*warehouse, request, response, *context);
+                handleCreateNamespace(*warehouse, body, response, *context);
                 return;
             case IcebergRESTOperation::LoadNamespace:
                 handleLoadNamespace(*warehouse, *match, response);
@@ -342,13 +380,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 handleNamespaceExists(*warehouse, *match, response);
                 return;
             case IcebergRESTOperation::UpdateNamespaceProperties:
-                handleUpdateNamespaceProperties(*warehouse, *match, request, response, *context);
+                handleUpdateNamespaceProperties(*warehouse, *match, body, response, *context);
                 return;
             case IcebergRESTOperation::ListTables:
                 handleListTables(*warehouse, *match, response);
                 return;
             case IcebergRESTOperation::CreateTable:
-                handleCreateTable(*warehouse, *match, request, response, *context);
+                handleCreateTable(*warehouse, *match, body, response, *context);
                 return;
             case IcebergRESTOperation::LoadTable:
                 handleLoadTable(*warehouse, *match, response);
@@ -360,7 +398,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 handleDropTable(*warehouse, *match, uri, response, *context);
                 return;
             case IcebergRESTOperation::UpdateTable:
-                handleUpdateTable(*warehouse, *match, request, response, *context);
+                handleUpdateTable(*warehouse, *match, body, response, *context);
+                return;
+            case IcebergRESTOperation::RenameTable:
+                handleRenameTable(*warehouse, body, response, *context);
+                return;
+            case IcebergRESTOperation::ReportMetrics:
+                handleReportMetrics(*warehouse, *match, response);
                 return;
             default:
                 sendError(
@@ -541,27 +585,18 @@ void IcebergRESTCatalogHandler::checkDDLAllowed(const Context & context, const S
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
 }
 
-void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
+void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, const String & body, HTTPServerResponse & response, const Context & context) const
 {
     checkDDLAllowed(context, "create namespace");
-
-    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
-    if (!body)
-        return;
 
     IcebergNamespaceName name;
     std::map<String, String> properties;
     try
     {
         Poco::JSON::Parser parser;
-        const auto json = parser.parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
 
-        const auto namespace_array = json->getArray("namespace");
-        if (!namespace_array)
-            throw Poco::Exception("'namespace' must be an array");
-
-        for (const auto & level : *namespace_array)
-            name.push_back(level.extract<String>());
+        name = parseNamespaceArray(*json);
 
         if (json->has("properties"))
         {
@@ -584,14 +619,24 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
 
     validateNamespaceLocation(warehouse, properties);
 
-    if (!warehouse.createNamespace(name, properties))
+    switch (warehouse.createNamespace(name, properties))
     {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_CONFLICT,
-            "AlreadyExistsException",
-            fmt::format("Namespace already exists: {}", joinNamespace(name)));
-        return;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::Created:
+            break;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::NamespaceExists:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "AlreadyExistsException",
+                fmt::format("Namespace already exists: {}", joinNamespace(name)));
+            return;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::ParentMissing:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "NotFoundException",
+                fmt::format("Parent of namespace {} does not exist", joinNamespace(name)));
+            return;
     }
     LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 
@@ -608,7 +653,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
 void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
-    HTTPServerRequest & request,
+    const String & body,
     HTTPServerResponse & response,
     const Context & context) const
 {
@@ -616,16 +661,12 @@ void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
 
     const auto ns = splitNamespace(match.path_params.at("namespace"));
 
-    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
-    if (!body)
-        return;
-
     std::map<String, String> updates;
     std::set<String> removals;
     try
     {
         Poco::JSON::Parser parser;
-        const auto json = parser.parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto json = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
 
         if (json->has("updates"))
         {
@@ -741,7 +782,6 @@ void IcebergRESTCatalogHandler::handleTableExists(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
     if (!warehouse.tableExists(*ns, table))
     {
         sendNoSuchTable(response, *ns, table);
@@ -759,7 +799,6 @@ void IcebergRESTCatalogHandler::handleLoadTable(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
     const auto pointer = warehouse.getTable(*ns, table);
     if (!pointer)
     {
@@ -773,16 +812,11 @@ void IcebergRESTCatalogHandler::handleLoadTable(
 void IcebergRESTCatalogHandler::handleCreateTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
-    HTTPServerRequest & request,
+    const String & body,
     HTTPServerResponse & response,
     const Context & context) const
 {
     checkDDLAllowed(context, "create table");
-
-    /// Read the body before any early return, so a keep-alive connection has no unread bytes left.
-    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
-    if (!body)
-        return;
 
     /// The properties double as the existence check.
     const auto ns = splitNamespace(match.path_params.at("namespace"));
@@ -803,11 +837,12 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     Poco::JSON::Object::Ptr metadata;
     try
     {
-        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto json = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
 
         if (!json->has("name") || !json->get("name").isString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'name' must be a string");
         name = json->getValue<String>("name");
+        /// The store checks the name too, but only after the metadata file is written. Reject it before that.
         validateTableName(name);
 
         /// TODO: Stage-create means "write the metadata, do not register it". Needed for CTAS.
@@ -917,7 +952,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 void IcebergRESTCatalogHandler::handleUpdateTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
-    HTTPServerRequest & request,
+    const String & body,
     HTTPServerResponse & response,
     const Context & context) const
 {
@@ -927,10 +962,6 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
     if (!ns)
         return;
     const auto & table = match.path_params.at("table");
-
-    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
-    if (!body)
-        return;
 
     const auto pointer = warehouse.getTable(*ns, table);
     if (!pointer)
@@ -943,7 +974,7 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
     CompressionMethod compression_method = CompressionMethod::None;
     try
     {
-        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto json = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
         const auto requirements = getArray(*json, "requirements");
         const auto updates = getArray(*json, "updates");
 
@@ -1075,6 +1106,80 @@ void IcebergRESTCatalogHandler::sendCommitRequestError(HTTPServerResponse & resp
             fmt::format("Malformed commit request: {}", message));
 }
 
+void IcebergRESTCatalogHandler::handleRenameTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const String & body,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkDDLAllowed(context, "rename table");
+
+    TableIdentifier source;
+    TableIdentifier dest;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(body).extract<Poco::JSON::Object::Ptr>();
+        source = parseTableIdentifier(json->getObject("source"));
+        dest = parseTableIdentifier(json->getObject("destination"));
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed rename table request: {}", e.displayText()));
+        return;
+    }
+
+    if (source.ns == dest.ns && source.name == dest.name)
+    {
+        sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "BadRequestException", "Source and destination are the same table");
+        return;
+    }
+
+    switch (warehouse.renameTable(source.ns, source.name, dest.ns, dest.name))
+    {
+        case IcebergRESTCatalogWarehouse::RenameTableResult::Renamed:
+            LOG_INFO(log, "Renamed table {}.{} to {}.{}", joinNamespace(source.ns), source.name, joinNamespace(dest.ns), dest.name);
+            sendNoContent(response);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::TableMissing:
+            sendNoSuchTable(response, source.ns, source.name);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::NamespaceMissing:
+            sendNoSuchNamespace(response, dest.ns);
+            return;
+        case IcebergRESTCatalogWarehouse::RenameTableResult::TargetExists:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "AlreadyExistsException",
+                fmt::format("Table already exists: {}.{}", joinNamespace(dest.ns), dest.name));
+            return;
+    }
+}
+
+/// Clients send scan and commit reports after each operation. The server has nothing to do with them yet.
+void IcebergRESTCatalogHandler::handleReportMetrics(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerResponse & response) const
+{
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+
+    const auto & table = match.path_params.at("table");
+    if (!warehouse.tableExists(*ns, table))
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+
+    sendNoContent(response);
+}
+
 void IcebergRESTCatalogHandler::handleDropTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
@@ -1089,7 +1194,6 @@ void IcebergRESTCatalogHandler::handleDropTable(
         return;
 
     const auto & table = match.path_params.at("table");
-    validateTableName(table);
 
     /// TODO: purge deletes every file the table owns: data files, manifests, manifest lists and metadata files.
     if (getBooleanQueryParameter(uri, "purgeRequested", /*default_value=*/ false))

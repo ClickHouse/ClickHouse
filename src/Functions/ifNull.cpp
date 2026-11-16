@@ -8,6 +8,8 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/MaskOperations.h>
 
 
 namespace DB
@@ -45,16 +47,26 @@ public:
             context, settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    {
+        /// The first argument is always needed, the second one is needed only for the rows
+        /// where the first argument is NULL, so it is evaluated lazily.
+        settings.arguments_with_disabled_lazy_execution.insert(0);
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
 
     /// Three shapes:
     /// 1. `ifNull(NULL, alt)`            -> alt's type (literal NULL always falls through).
@@ -66,7 +78,7 @@ public:
     /// auto-detection, so when the setting is off the third alternative goes
     /// through plain `leastSupertype` (and the runtime override stays
     /// authoritative when a Variant slips in).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if (use_variant_as_common_type)
             return "(Nothing, T) -> T"
@@ -77,9 +89,9 @@ public:
                " OR (T, Any) -> T";
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         /// ifNull() is identity when its first argument cannot be NULL, so it preserves ordering and thus monotonic.
         /// For Nullable types, ifNull() substitutes NULLs with the second argument and is not
@@ -96,7 +108,7 @@ public:
     /// the `(T, Any) -> T` signature alternative cannot express the Variant auto-expansion
     /// below, where `ifNull(Variant(...), alt)` widens the Variant to include `alt`'s type.
     /// The signature in `getSignatureString` is documentation-only.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->onlyNull())
             return arguments[1];
@@ -111,16 +123,25 @@ public:
         return getLeastSupertype(args, allow_lossy_numeric_supertype);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        ColumnsWithTypeAndName arguments = args;
+
+        /// The first argument is always needed, but it can still be lazily executed when `ifNull`
+        /// itself is an argument of an enclosing short-circuit function.
+        executeColumnIfNeeded(arguments[0]);
+
         /// Always null.
         if (arguments[0].type->onlyNull())
+        {
+            executeColumnIfNeeded(arguments[1]);
             return arguments[1].column;
+        }
 
         /// Could not contain nulls, so nullIf makes no sense.
         if (!canContainNull(*arguments[0].type))
@@ -135,6 +156,16 @@ public:
 
         auto assume_not_null_type = removeNullable(arguments[0].type);
         auto assume_not_null_res = assume_not_null->build(columns)->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
+
+        /// Short-circuit evaluation: the second argument is needed only for the rows where the first
+        /// one is NULL, so we execute it under the mask of exactly these rows. Mask extraction supports
+        /// only full and constant columns, while `isNotNull` keeps a sparse argument sparse.
+        if (checkShortCircuitArguments(arguments) > 0)
+        {
+            IColumn::Filter mask(input_rows_count, 1);
+            MaskInfo mask_info = extractInvertedMask(mask, recursiveRemoveSparse(is_not_null_res));
+            maskedExecute(arguments[1], mask, mask_info);
+        }
 
         ColumnsWithTypeAndName if_columns
         {
@@ -160,6 +191,16 @@ REGISTER_FUNCTION(IfNull)
 {
     FunctionDocumentation::Description description = R"(
 Returns an alternative value if the first argument is `NULL`.
+
+The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+
+If enabled, the `alt` expression is evaluated only on the rows where `x` is `NULL`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
+
+```sql
+SELECT ifNull(if(number = 0, toNullable(0), NULL), intDiv(42, number)) FROM numbers(10)
+```
     )";
     FunctionDocumentation::Syntax syntax = "ifNull(x, alt)";
     FunctionDocumentation::Arguments arguments = {
