@@ -76,8 +76,8 @@ struct StepAnalyzer
     JoinCardinalityReader join_cardinality;
 
     /// What a pass across steps asks of a step.
-    bool isJoin() const { return join_cardinality != nullptr; }
-    bool isCreatingSet() const { return is_creating_set; }
+    [[nodiscard]] bool isJoin() const { return join_cardinality != nullptr; }
+    [[nodiscard]] bool isCreatingSet() const { return is_creating_set; }
 };
 
 }

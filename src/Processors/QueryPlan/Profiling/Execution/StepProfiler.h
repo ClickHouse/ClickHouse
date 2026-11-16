@@ -9,7 +9,6 @@
 #include <base/types.h>
 
 #include <atomic>
-#include <Common/MapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -35,9 +34,9 @@ class StepProfiler
 public:
     StepProfiler(const PlanWalk & walk, bool collect_work_intervals_);
 
-    StepWallClock * findClockForStep(const String & step_id, size_t group) const;
+    [[nodiscard]] StepWallClock * findClockForStep(const String & step_id, size_t group) const;
 
-    const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
+    [[nodiscard]] const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 
     /// Stamped by the executor, so the duration is the execution alone: the pipeline is already
     /// built when it starts, and the result is sent after it ends.
@@ -45,8 +44,8 @@ public:
     void markExecutionFinished();
 
     /// How long the query executed. Zero until the executor has finished.
-    UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
-    UInt64 getExecutionStartNs() const { return execution_start_ns.load(std::memory_order_acquire); }
+    [[nodiscard]] UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
+    [[nodiscard]] UInt64 getExecutionStartNs() const { return execution_start_ns.load(std::memory_order_acquire); }
 
     [[nodiscard]] bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);

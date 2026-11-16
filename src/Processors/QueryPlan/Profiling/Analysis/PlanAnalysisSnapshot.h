@@ -27,9 +27,9 @@ struct PlanAnalysisSnapshot
 
     /// Children before parents, so that a pass accumulating over a step's subtree -- the cost of a
     /// join's branch, the time of one -- finds its children already retired when it reaches it.
-    std::vector<const StepAnalyzer *> stepsInPostOrder() const;
+    [[nodiscard]] std::vector<const StepAnalyzer *> stepsInPostOrder() const;
 
-    const StepAnalyzer * find(const String & step_id) const;
+    [[nodiscard]] const StepAnalyzer * find(const String & step_id) const;
 };
 
 }

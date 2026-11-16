@@ -25,7 +25,7 @@ public:
     /// Takes the plan's shape from the snapshot, so it runs once the plan is gone.
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot);
 
-    const StepTimeAndConcurrency * findTiming(const String & step_id) const;
+    [[nodiscard]] const StepTimeAndConcurrency * findTiming(const String & step_id) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
     [[nodiscard]] ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
@@ -40,7 +40,7 @@ private:
     /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
     void computeBranchTime(const PlanAnalysisSnapshot & plan_snapshot, TimeIntervalsByStep time_intervals_by_step);
 
-    VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(
+    [[nodiscard]] VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(
         TimeIntervals && current_step_intervals,
         const std::vector<String> & children,
         TimeIntervalsByStep & branch_intervals_by_step) const;

@@ -63,14 +63,14 @@ public:
 
     /// The analysis of one step, format-neutral: the ASCII rendering below and the JSON one in
     /// `FlatJSONPlanRenderer` are two readings of this. Must run while the pipeline is alive.
-    AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
+    [[nodiscard]] AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
     /// The same, for a caller that no longer has the step -- the logged plan, after execution.
-    AnalyzedStepData analyzeStep(const String & step_id) const;
+    [[nodiscard]] AnalyzedStepData analyzeStep(const String & step_id) const;
 
     /// How long the query executed, and the thread count that caps how parallel any stage could be.
-    UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
-    UInt64 getMaxThreads() const { return max_num_threads_per_query; }
+    [[nodiscard]] UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
+    [[nodiscard]] UInt64 getMaxThreads() const { return max_num_threads_per_query; }
 
 private:
     void collectIOStats(const Processors & processors);
@@ -79,7 +79,7 @@ private:
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts();
 
-    StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer) const;
+    [[nodiscard]] StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;

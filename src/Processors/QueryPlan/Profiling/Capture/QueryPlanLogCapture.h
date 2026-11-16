@@ -39,7 +39,7 @@ public:
 
     /// The captured plan, if there is one. Rendering it is the caller's business: this captures,
     /// and only the places that write a plan out decide in what form.
-    const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
+    [[nodiscard]] const std::optional<CapturedPlan> & getCapturedPlan() const { return captured; }
 
 private:
     /// The plan, as values. Taken when the structure is captured and valid from then on, so the

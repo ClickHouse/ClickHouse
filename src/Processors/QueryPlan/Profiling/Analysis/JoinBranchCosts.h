@@ -18,7 +18,7 @@ class JoinBranchCosts
 public:
     JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step);
 
-    std::optional<UInt64> getBranchCost(const String & step_id) const;
+    [[nodiscard]] std::optional<UInt64> getBranchCost(const String & step_id) const;
 
 private:
     UnorderedMapWithMemoryTracking<String, std::optional<UInt64>> cost_by_join_step;
