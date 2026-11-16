@@ -8,6 +8,7 @@
 #if USE_AWS_S3
 
 #include <Common/HistogramMetrics.h>
+#include <Common/Silk/FiberMutex.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
@@ -188,7 +189,7 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(std::move(stream));
     }
 
-    Aws::IOStream & GetResponseBody() const override
+    [[nodiscard]] Aws::IOStream & GetResponseBody() const override
     {
         return body_stream.GetUnderlyingStream();
     }
@@ -321,7 +322,7 @@ private:
     const String google_adc_refresh_token;
     const String google_service_account_key;
 
-    mutable std::mutex mutex;
+    mutable Silk::FiberMutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
