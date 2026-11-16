@@ -17,9 +17,7 @@ ClickHouse는 macOS 10.15 (Catalina) 이상에서 macOS x86&#95;64 (Intel) 및 a
 
 컴파일러는 Homebrew의 Clang만 지원됩니다.
 
-<div id="install-prerequisites">
-  ## 필수 구성 요소 설치
-</div>
+## 필수 구성 요소 설치 {#install-prerequisites}
 
 먼저, 일반적인 [사전 요구 사항 문서](/ko/resources/develop-contribute/introduction/developer-instruction)를 참조하세요.
 
@@ -33,13 +31,21 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
 ```
 
 <Note>
+  `llvm`과 마찬가지로 Homebrew의 `rustup`은 keg-only이므로 해당 `bin` 디렉터리가 `PATH`에 자동으로 추가되지 않습니다. [ClickHouse 빌드](#build-clickhouse)에서 `llvm`의 `PATH`를 설정한 것과 같은 방식으로 내보내십시오:
+
+  ```bash
+  export PATH=$(brew --prefix rustup)/bin:$PATH
+  ```
+
+  또한 ClickHouse는 `corrosion` contrib 모듈에서 사용하는 Rust 툴체인 버전을 고정해 두고 있습니다. Linux 빌드 가이드의 [Rust 컴파일러 설치](/ko/development/build#install-the-rust-compiler-optional) 섹션에 따라 해당 툴체인을 설치하고 선택하십시오. 이 작업을 하지 않으면 `cmake`가 `corrosion` contrib 모듈 단계에서 `Cannot find nightly-<date> Rust toolchain` 오류를 내며 실패합니다.
+</Note>
+
+<Note>
   Apple은 기본적으로 대소문자를 구분하지 않는 파일 시스템을 사용합니다. 일반적으로는 컴파일에 영향을 주지 않으며(특히 scratch 빌드는 문제없이 동작함), `git mv`와 같은 파일 작업에서는 혼란을 초래할 수 있습니다.
   macOS에서 본격적으로 개발하려면 소스 코드가 대소문자를 구분하는 디스크 볼륨에 저장되도록 하십시오. 예를 들어 [이 안내](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830)를 참조하십시오.
 </Note>
 
-<div id="build-clickhouse">
-  ## ClickHouse 빌드
-</div>
+## ClickHouse 빌드 {#build-clickhouse}
 
 빌드하려면 Homebrew의 Clang 컴파일러를 사용해야 합니다:
 
@@ -49,16 +55,18 @@ mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
 cmake -S . -B build
 cmake --build build
-# 빌드된 바이너리는 build/programs/clickhouse에 생성됩니다
+# The resulting binary will be created at: build/programs/clickhouse
 ```
+
+<Note>
+  `brew install llvm`만 실행하면 항상 Homebrew의 최신 LLVM 릴리스가 설치되며, 이 버전은 CI 및 Linux 빌드용으로 고정된 Clang 버전보다 최신일 수 있습니다([Clang 컴파일러 설치](/ko/development/build#install-the-clang-compiler) 참조). 최신 Clang에서는 빌드에서 아직 억제되지 않은 `-Weverything` 진단이 활성화되어 `-Werror` 설정 때문에 빌드가 실패할 수 있습니다. 이 경우 경고를 비활성화하지 말고, 고정된 메이저 버전을 설치하십시오. 예를 들어 Homebrew에서 아직 제공한다면 버전이 지정된 formula(`brew install llvm@<version>`)를 사용할 수 있습니다.
+</Note>
 
 <Note>
   링크 중에 `ld: archive member '/' not a mach-o file in ...` 오류가 발생한다면 `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar` 플래그를 설정해 llvm-ar를 사용해야 할 수 있습니다.
 </Note>
 
-<div id="caveats">
-  ## 유의 사항
-</div>
+## 유의 사항 {#caveats}
 
 `clickhouse-server`를 실행할 계획이라면 시스템의 `maxfiles` 변수를 늘려야 합니다.
 

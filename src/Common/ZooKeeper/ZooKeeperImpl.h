@@ -38,6 +38,12 @@
 #include <utility>
 #include <vector>
 
+#include "config.h"
+
+#if USE_SILK
+#include <silk/fibers/event.h>
+#endif
+
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
   *
@@ -127,6 +133,7 @@ public:
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
+    silk::FiberEvent & getExpiredEvent() override;
 
     std::optional<int8_t> getConnectedNodeIdx() const override;
     String getConnectedHostPort() const override;
@@ -168,6 +175,12 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
+
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void exists(
         const String & path,
@@ -260,6 +273,11 @@ public:
         return last_received_timestamp_us.load(std::memory_order_relaxed);
     }
 
+    UInt64 getLastReceivedCycles() const override
+    {
+        return last_received_cycles.load(std::memory_order_relaxed);
+    }
+
 private:
     const Int32 send_receive_os_threads_nice_value;
 
@@ -317,6 +335,9 @@ private:
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
+#if USE_SILK
+    silk::FiberEvent expired_event;
+#endif
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -414,6 +435,10 @@ private:
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
+    bool resolveSystemLogs();
+    enum class SystemLogsState { Unresolved, InProgress, Resolved };
+    std::atomic<SystemLogsState> system_logs_state{SystemLogsState::Unresolved};
+
     std::atomic<int64_t> last_zxid_seen;
 
     /// Timestamp of the last data received from the server (any kind: response,
@@ -421,6 +446,7 @@ private:
     /// Updated by `receiveThread` after each `receiveEvent` call.
     /// Read by sync wrappers via `getLastReceivedTimestamp` for progress-based timeout.
     std::atomic<Int64> last_received_timestamp_us{0};
+    std::atomic<UInt64> last_received_cycles{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
     /// Server-advertised max request size in bytes, resolved at connect; 0 == unlimited/unset.

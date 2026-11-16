@@ -8,21 +8,14 @@ from typing import List, Optional
 from ._environment import _Environment
 from .info import Info
 
-try:
-    import requests
-except ImportError as ex:
-    if not Info().is_local_run:
-        raise ex
-    else:
-        print(
-            "WARNING: 'requests' module is not installed: "
-            f"{ex}. CIDB will not work - ok for local runs only."
-        )
-
 from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
+
+
+class CIDBTimeoutError(RuntimeError):
+    """Every attempt of a CIDB request timed out on the client side."""
 
 
 class CIDB:
@@ -330,6 +323,12 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # Imported here so that local runs, which never post to CI DB, work without `requests`.
+        import requests
+
+        # At `max_concurrent_queries` the server waits this long for a free slot
+        # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
+        params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}
         retry = 0
         while True:
             retry += 1
@@ -343,21 +342,26 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
+                timed_out = False
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
+                timed_out = isinstance(ex, requests.exceptions.Timeout)
                 error = f"{what} failed, exception [{ex}]"
 
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
+                if timed_out:
+                    raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)
 
-    def query(self, query: str, retries: int = 5, log_level="warning"):
+    def query(self, query: str, retries: int = 5, log_level="warning", timeout=None):
         """
         Executes a SELECT query on CI DB with retry support.
 
         :param query: SQL query string
         :param retries: Number of retry attempts on failure
+        :param timeout: Per-attempt timeout in seconds, `Settings.CI_DB_QUERY_TIMEOUT_SEC` by default
         :return: Response text if successful
         """
         params = {
@@ -370,7 +374,7 @@ ORDER BY day DESC
         return self._post_with_retries(
             params=params,
             data=query.encode(),
-            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+            timeout=timeout or Settings.CI_DB_QUERY_TIMEOUT_SEC,
             retries=retries,
             what="query",
         ).text

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/ActionsDAG.h>
+#include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <span>
 #include <string_view>
 #include <variant>
@@ -14,13 +15,15 @@
 namespace DB
 {
 
+class ActionsDAG;
+
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- must match `Processors` in `IProcessor_fwd.h`
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -28,7 +31,7 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
-using QueryPlanRawPtrs = std::list<QueryPlan *>;
+using QueryPlanRawPtrs = ListWithMemoryTracking<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
 
@@ -36,6 +39,10 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+/// Defined in Processors/QueryPlan/Serialization.h.
+struct QueryPlanStepSerialization;
+struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
 
@@ -52,8 +59,8 @@ public:
 
     virtual ~IQueryPlanStep() = default;
 
-    virtual String getName() const = 0;
-    virtual String getSerializationName() const { return getName(); }
+    [[nodiscard]] virtual String getName() const = 0;
+    [[nodiscard]] virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -63,29 +70,29 @@ public:
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const SharedHeaders & getInputHeaders() const { return input_headers; }
+    [[nodiscard]] const SharedHeaders & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputHeader() const { return output_header != nullptr; }
-    const SharedHeader & getOutputHeader() const;
+    [[nodiscard]] bool hasOutputHeader() const { return output_header != nullptr; }
+    [[nodiscard]] const SharedHeader & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
-    std::string_view getStepDescription() const;
+    [[nodiscard]] std::string_view getStepDescription() const;
     void setStepDescription(std::string description, size_t limit);
     void setStepDescription(const IQueryPlanStep & step);
 
     template <size_t size>
     ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
-    struct Serialization;
-    struct Deserialization;
+    using Serialization = QueryPlanStepSerialization;
+    using Deserialization = QueryPlanStepDeserialization;
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
-    virtual bool isSerializable() const { return false; }
+    [[nodiscard]] virtual bool isSerializable() const { return false; }
 
-    virtual QueryPlanStepPtr clone() const;
+    [[nodiscard]] virtual QueryPlanStepPtr clone() const;
 
-    virtual const SortDescription & getSortDescription() const;
+    [[nodiscard]] virtual const SortDescription & getSortDescription() const;
 
     using FormatSettings = ExplainFormatSettings;
 
@@ -111,14 +118,17 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
-    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
+    /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
+    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const;
+    [[nodiscard]] String getUniqID() const;
+    /// The number in `getUniqID`, unique within the query.
+    [[nodiscard]] size_t getStepIndex() const { return step_index.value; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -131,54 +141,80 @@ public:
     /// override this to check its expressions. Otherwise correlated subqueries may
     /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
-    virtual bool hasCorrelatedExpressions() const;
+    [[nodiscard]] virtual bool hasCorrelatedExpressions() const;
 
     /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
     /// and no statistics are collected. A step that returns true must also attach a
     /// `RuntimeDataflowStatisticsCollector` in `transformPipeline` when `dataflow_cache_updater` is set,
     /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
     /// the transfer to the initiator is priced at zero.
-    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+    [[nodiscard]] virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
-    /// Returns true if the step has implemented removeUnusedColumns.
-    virtual bool canRemoveUnusedColumns() const { return false; }
+    /// Removing unused columns. Every list of positions below is a sorted list of positions in a header.
 
+    /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
+    /// and getUnneededColumns unless it has no children to ask about.
+    [[nodiscard]] virtual bool canRemoveUnusedColumns() const { return false; }
+
+    /// What removeUnusedColumns did. The default is the answer when nothing changes.
     struct RemoveUnusedColumnsResult
     {
-        /// Sentinel for kept_output_positions entries that were added
-        /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
-        static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
+        /// Whether the step itself changed: its expressions, its input headers, or the columns it outputs.
+        bool step_changed = false;
 
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
-
-        /// Required input positions per child (outer index = child_id).
-        /// Empty outside vector means no inputs were changed.
-        /// Empty inside vector means the step doesn't require any inputs from the child.
-        std::vector<std::vector<size_t>> required_input_positions;
-
-        /// Which original output positions survived, in order.
-        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
-        /// Maps new output position to the original output position.
-        /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        std::vector<size_t> kept_output_positions;
+        /// The positions of the step's former output header that went away.
+        /// They are the subset of the given unneeded positions that the step can remove.
+        /// For example, a `FINAL` read keeps the columns of its sorting key.
+        /// The new output header has the remaining columns first, in their former order,
+        /// and may append columns of its own after them, such as the dummy column a join adds.
+        /// Appended columns are not in `dropped_output_positions`; only the header shows them.
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
     };
 
-    /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
-    /// required_output_positions must be a sorted vector of indices into the step's current output header.
-    /// Each position uniquely identifies a column even when names are duplicated.
-    /// It is guaranteed that the output header of the step will contain all columns at those positions
-    /// and might contain some other columns too.
-    /// Can be used only if canRemoveUnusedColumns returns true.
-    /// The order of the remaining outputs must be preserved.
-    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
+    /// Per child: the positions of the child's current output header the step does not need.
+    /// Always one entry per child; an empty entry means the step needs every column of that child.
+    using UnneededInputPositions = VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>>;
 
-    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
-    virtual bool canRemoveColumnsFromOutput() const;
+    /// What one column of a step's input header is to the step once the unused columns are gone.
+    enum class InputColumnUsage : uint8_t
+    {
+        ReadNeeded,           /// an input reads it, and what that input feeds is still needed
+        ReadDropped,          /// an input reads it, and nothing needs that input any more
+        PassesThroughNeeded,  /// no input reads it, and the caller asked for the column itself
+        PassesThroughDropped, /// no input reads it, and nobody asked for it
+    };
+
+    /// What a child produces once its own unused columns are gone:
+    /// its `dropped_output_positions` and its new output header.
+    /// The header has the remaining columns first, in their order, and may append new ones after them,
+    /// such as the dummy column a join adds.
+    /// The positions say what the child no longer produces, not what it was asked for:
+    /// a child that cannot drop columns drops none, and the step consumes the ones it does not need.
+    struct PrunedInput
+    {
+        VectorWithMemoryTracking<size_t> dropped_positions;
+        SharedHeader header;
+
+        /// A child that did not change.
+        static PrunedInput unchanged(const SharedHeader & header);
+    };
+
+    /// Removes what the step no longer needs once nobody needs the columns at `unneeded_output_positions`
+    /// of its current output header.
+    /// `inputs` has one `PrunedInput` per child: the children are pruned first, since columns are dropped bottom-up.
+    /// A column a child keeps that the step does not need is consumed by the step.
+    /// A column the child dropped must be one the step does not need.
+    /// The order of the remaining outputs is preserved.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    virtual RemoveUnusedColumnsResult removeUnusedColumns(
+        const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & /*inputs*/);
+
+    /// What removeUnusedColumns would not need of each child once nobody needs these outputs.
+    /// The children are to be pruned by that before the step itself is.
+    /// Can be used only if canRemoveUnusedColumns returns true, for a step with children.
+    [[nodiscard]] virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
@@ -189,12 +225,21 @@ public:
     /// In order for EXPLAIN ANALYZE to track all the time for every step
     /// redefine the methods below when adding a new step with several stages
     /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual std::vector<size_t> getStepGroups() const { return {0}; }
-    virtual String getStepGroupName(size_t) const { return {}; }
+    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
+    [[nodiscard]] virtual String getStepGroupName(size_t) const { return {}; }
 
-    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
+    [[nodiscard]] virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
+    /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned
+    /// already, in line with the child's new header. An input reading a column the child keeps stays, also
+    /// where nothing needs it any more, and one reading a column the child dropped goes. A column the child
+    /// keeps or appends that the step neither reads nor passes on is consumed by a new input, so that it
+    /// stops here. `usages` says what each column of `old_header` is to the step. Returns whether anything
+    /// changed.
+    static bool alignInputsWithPrunedChild(
+        ActionsDAG & dag, const VectorWithMemoryTracking<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned);
+
     virtual void updateOutputHeader() = 0;
 
     SharedHeaders input_headers;
@@ -214,7 +259,17 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    /// A copy is a separate step, so it takes a new index; a move keeps it.
+    struct StepIndex
+    {
+        size_t value = 0;
+
+        StepIndex();
+        StepIndex(const StepIndex &) : StepIndex() {}
+        StepIndex(StepIndex &&) = default;
+    };
+
+    StepIndex step_index;
 };
 
 }

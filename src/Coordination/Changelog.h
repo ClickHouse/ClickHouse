@@ -273,7 +273,7 @@ struct ReadAheadSettings
     uint64_t chunk_size = 16; /// shared fill chunk size for peer and commit readers alike
     /// Maximum bytes of decoded entries buffered ahead of the commit thread. 0 disables commit
     /// read-ahead entirely, independent of `enabled`. Deliberately defaults to inert here (unlike
-    /// the coordination setting's 500 MiB default) so tests building a log store directly opt in.
+    /// the coordination setting's 16 MiB default) so tests building a log store directly opt in.
     uint64_t commit_window_bytes = 0;
 };
 
@@ -417,19 +417,19 @@ private:
 
         void popOldestEntry();
 
-        bool containsEntry(uint64_t index) const;
+        [[nodiscard]] bool containsEntry(uint64_t index) const;
 
-        LogEntryPtr getEntry(uint64_t index) const;
+        [[nodiscard]] LogEntryPtr getEntry(uint64_t index) const;
 
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
 
-        bool empty() const;
-        size_t numberOfEntries() const;
-        bool hasSpaceAvailable(size_t entry_bytes) const;
+        [[nodiscard]] bool empty() const;
+        [[nodiscard]] size_t numberOfEntries() const;
+        [[nodiscard]] bool hasSpaceAvailable(size_t entry_bytes) const;
         void clear();
 
-        bool hasUnlimitedSpace() const;
+        [[nodiscard]] bool hasUnlimitedSpace() const;
 
         /// Mapping log_id -> log_entry
         IndexToLogEntry cache;

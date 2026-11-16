@@ -15,7 +15,7 @@ window sliding past a large value keeps the small ones (all 1):
 1	1	1
 compensated sum and avg keep the small samples beside a large one (all 1):
 1	1
-Array(Nullable(Float32))
-Array(Nullable(Float32))
-Array(Nullable(Float32))
 Array(Nullable(Float64))
+Array(Nullable(Float64))
+Array(Nullable(UInt64))
+Array(Nullable(UInt64))

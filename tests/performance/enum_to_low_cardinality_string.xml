@@ -1,0 +1,16 @@
+<test>
+    <!-- An `Enum16` with 2000 values, similar to the metric names in `system.metric_log`. -->
+    <create_query>
+        CREATE TABLE enum16_map ENGINE = MergeTree ORDER BY tuple() AS
+        SELECT CAST(mapFromArrays(arrayMap(i -> (number + i * 11) % 2000, range(200)), range(200)),
+            assumeNotNull((SELECT 'Map(Enum16(' || arrayStringConcat(arrayMap(i -> '''ProfileEvent_SomeMetricName' || toString(i) || ''' = ' || toString(i), range(2000)), ', ') || '), Int64)'))) AS m
+        FROM numbers(200000)
+    </create_query>
+    <create_query>CREATE TABLE enum16_plain ENGINE = MergeTree ORDER BY tuple() AS SELECT arrayJoin(mapKeys(m)) AS e FROM enum16_map</create_query>
+
+    <query>SELECT CAST(e AS LowCardinality(String)) FROM enum16_plain FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT CAST(m AS Map(LowCardinality(String), Int64)) FROM enum16_map FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS enum16_map</drop_query>
+    <drop_query>DROP TABLE IF EXISTS enum16_plain</drop_query>
+</test>

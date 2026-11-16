@@ -55,14 +55,14 @@ public:
     static constexpr auto name = "arraySlice";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -98,7 +98,7 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -111,6 +111,12 @@ public:
         /// The array argument is the one worth keeping lazy: it is consumed by a ReplicatedSource
         const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
         const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
+
+        if (isColumnConst(*offset_column)
+            && !offset_column->onlyNull()
+            && offset_column->getUInt(0) == 1
+            && (!length_column || length_column->onlyNull()))
+            return arguments[0].column;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -179,10 +185,10 @@ public:
         return sink;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// When set to true, materializes the columns whenever the offset or length is a full column.
-    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     struct QBitSliceBounds
@@ -200,7 +206,7 @@ private:
     /// `require_constants` must be true during type inference but false during execution:
     /// useDefaultImplementationForConstants may have unwrapped the all-constant case into non-const single-row columns
     /// by the time executeImpl runs, while the values read via `(*column)[0]` are still correct.
-    QBitSliceBounds getQBitSliceBounds(const DataTypeQBit & qbit_type, const ColumnsWithTypeAndName & arguments, bool require_constants) const
+    [[nodiscard]] QBitSliceBounds getQBitSliceBounds(const DataTypeQBit & qbit_type, const ColumnsWithTypeAndName & arguments, bool require_constants) const
     {
         const size_t dimension = qbit_type.getDimension();
 
@@ -310,7 +316,7 @@ private:
         return std::make_shared<DataTypeQBit>(qbit_type.getElementType(), bounds.length, bounds.length);
     }
 
-    ColumnPtr executeQBitSlice(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeQBitSlice(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
         const QBitSliceBounds bounds = getQBitSliceBounds(qbit_type, arguments, /*require_constants=*/false);
@@ -323,7 +329,8 @@ private:
         if (bounds.start == 0 && bounds.length == dimension)
             return arguments[0].column;
 
-        ColumnPtr column = arguments[0].column;
+        /// The bit-plane streams are read directly and QBit has no replicated source, so a replicated argument is materialized.
+        ColumnPtr column = arguments[0].column->convertToFullColumnIfReplicated();
 
         bool is_const = false;
         if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
@@ -479,6 +486,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the res
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySlice>(documentation);
+    factory.registerAlias("slice", "arraySlice", FunctionFactory::Case::Insensitive);
 }
 
 

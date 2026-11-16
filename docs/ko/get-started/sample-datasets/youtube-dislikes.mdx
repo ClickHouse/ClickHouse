@@ -4,30 +4,32 @@ sidebarTitle: 'YouTube 싫어요'
 slug: /getting-started/example-datasets/youtube-dislikes
 title: 'YouTube 싫어요 데이터셋'
 doc_type: 'guide'
-keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분석', '싫어요']
+keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'dislikes']
 ---
 
 2021년 11월, YouTube는 모든 동영상의 공개 ***싫어요*** 수를 없앴습니다. 제작자는 여전히 싫어요 수를 확인할 수 있지만, 시청자는 동영상이 받은 ***좋아요*** 수만 볼 수 있습니다.
 
 <Warning>
-  이 데이터셋에는 45억 5천만 개가 넘는 레코드가 있으므로, 리소스가 이 정도 규모를 감당할 수 없다면 아래 명령을 그대로 복사해 붙여넣을 때 주의하십시오. 아래 명령은 [ClickHouse Cloud](https://clickhouse.cloud)의 **production** 인스턴스에서 실행되었습니다.
+  이 데이터셋에는 45억 5천만 개가 넘는 레코드가 있으므로, 리소스가 이 정도 규모를 감당할 수 없다면 아래 명령을 그대로 복사해 붙여넣을 때 주의하십시오. 이 명령은 적절한 규모의 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro) 서비스에서 실행되었습니다.
 </Warning>
+
+<Tip>
+  이 명령을 직접 실행해 보려면 무료 [ClickHouse Cloud 평가판](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes)에 가입하거나 [자체 호스팅 ClickHouse](/ko/get-started/setup/install)를 설정하십시오.
+</Tip>
 
 데이터는 JSON 포맷이며 [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files)에서 다운로드할 수 있습니다. 동일한 데이터를 S3에도 제공하므로 ClickHouse Cloud 인스턴스로 더 효율적으로 가져올 수 있습니다.
 
 다음은 ClickHouse Cloud에서 테이블을 생성하고 데이터를 삽입하는 단계입니다.
 
 <Note>
-  아래 단계는 ClickHouse 로컬 설치 환경에서도 쉽게 작동합니다. 유일한 차이점은 `s3cluster` 대신 `s3` 함수를 사용해야 한다는 점입니다(클러스터가 구성되어 있다면 예외이며, 이 경우 `default`를 클러스터 이름으로 변경하십시오).
+  아래 단계는 ClickHouse 로컬 설치 환경에서도 작동합니다.
 </Note>
 
-<div id="step-by-step-instructions">
-  ## 단계별 안내
-</div>
+## 단계별 안내 {#step-by-step-instructions}
 
 <Steps>
   <Step title="데이터 탐색" id="data-exploration">
-    데이터가 어떤 형태인지 살펴보겠습니다. `s3cluster` 테이블 함수는 테이블을 반환하므로 결과를 `DESCRIBE`할 수 있습니다:
+    데이터가 어떤 형태인지 살펴보겠습니다. `s3` 테이블 함수는 테이블을 반환하므로 결과를 `DESCRIBE`할 수 있습니다:
 
     ```sql
     DESCRIBE s3(
@@ -241,13 +243,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
   </Step>
 </Steps>
 
-<div id="questions">
-  ## 질문
-</div>
+## 질문 {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### 누군가 댓글을 비활성화하면 사람들이 실제로 좋아요나 싫어요를 누를 가능성이 낮아질까요?
-</div>
+### 누군가 댓글을 비활성화하면 사람들이 실제로 좋아요나 싫어요를 누를 가능성이 낮아질까요? {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 댓글이 비활성화되면 사람들은 영상에 대한 감정을 표현하기 위해 좋아요나 싫어요를 누를 가능성이 더 높아질까요?
 
@@ -302,9 +300,7 @@ ORDER BY
 
 댓글 활성화는 더 높은 참여율과 연관이 있는 것으로 보입니다.
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### 시간에 따라 동영상 수는 어떻게 변하나요 - 주목할 만한 이벤트는 무엇인가요?
-</div>
+### 시간에 따라 동영상 수는 어떻게 변하나요 - 주목할 만한 이벤트는 무엇인가요? {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 코로나19 전후로 [업로더가 급증한 점이 눈에 띕니다](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
-<div id="more-subtitles-over-time-and-when">
-  ### 시간이 지나면서 자막이 더 많아진 시점은 언제인가
-</div>
+### 시간이 지나면서 자막이 더 많아진 시점은 언제인가 {#more-subtitles-over-time-and-when}
 
 음성 인식 기술의 발전으로 동영상 자막을 만드는 일이 그 어느 때보다 쉬워졌고, YouTube는 2009년 말 자동 자막 기능을 추가했습니다. 그렇다면 증가 폭이 커진 시점이 바로 그때였을까요?
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 데이터 결과를 보면 2009년에 급증한 것이 나타납니다. 당시 YouTube가 다른 사람의 동영상에 자막을 업로드할 수 있게 해 주던 커뮤니티 자막 기능을 없애고 있었던 것으로 보입니다.
 이로 인해 청각장애인 및 난청 시청자를 위해 제작자가 자신의 동영상에 자막을 추가하도록 하는 매우 성공적인 캠페인이 촉발되었습니다.
 
-<div id="top-uploaders-over-time">
-  ### 시간에 따른 상위 업로더
-</div>
+### 시간에 따른 상위 업로더 {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### 조회수가 늘어날수록 좋아요 비율은 어떻게 달라집니까?
-</div>
+### 조회수가 늘어날수록 좋아요 비율은 어떻게 달라집니까? {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### 조회수는 어떻게 분산되나요?
-</div>
+### 조회수는 어떻게 분산되나요? {#how-are-views-distributed}
 
 ```sql
 SELECT

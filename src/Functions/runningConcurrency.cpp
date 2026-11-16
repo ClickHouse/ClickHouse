@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -25,24 +26,29 @@ namespace DB
     class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
-        String getName() const override
+        [[nodiscard]] String getName() const override
         {
             return "runningConcurrency";
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             return executeForType(arguments, input_rows_count);
         }
 
-        bool useDefaultImplementationForConstants() const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override
         {
             return true;
         }
 
+        [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
     private:
         template <typename ArgDataType>
-        ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        [[nodiscard]] ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -89,7 +95,7 @@ namespace DB
             return col_concurrency;
         }
 
-        ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        [[nodiscard]] ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             WhichDataType which(arguments[0].type);
             if (which.isDate())
@@ -170,15 +176,20 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
+            /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
+            /// otherwise the checks below reject a `LowCardinality(DateTime)` pair the function handles.
+            const auto begin_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto end_type = recursiveRemoveLowCardinality(arguments[1].type);
+
             // The type of the second argument must match with that of the first one.
-            if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
+            if (unlikely(!end_type->equals(*begin_type)))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             // Validate the argument type early so that unsupported types
             // (e.g. NULL literals) are rejected before execution.
-            WhichDataType which(arguments[0].type);
+            WhichDataType which(begin_type);
             if (!which.isDate() && !which.isDateTime() && !which.isDateTime64())
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -189,9 +200,9 @@ namespace DB
             return std::make_unique<FunctionBaseRunningConcurrency>(argument_types, return_type);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+        String getSignatureString() const override
         {
-            return std::make_shared<DataTypeUInt32>();
+            return "(DateOrDateTime, DateOrDateTime) -> UInt32";
         }
 
         size_t getNumberOfArguments() const override

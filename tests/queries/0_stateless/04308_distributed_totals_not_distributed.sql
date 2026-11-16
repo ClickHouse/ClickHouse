@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: WITH TOTALS produces a totals stream that the distributed exchange protocol
 -- does not carry. make_distributed_plan rejects such plans rather than silently running them
 -- single-node.

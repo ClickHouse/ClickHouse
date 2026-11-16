@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -61,7 +62,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
 
     take_sets_and_splice_out(root);
 
-    std::vector<QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push_back(root);
     while (!stack.empty())
     {
@@ -76,7 +77,7 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
         /// Some steps own whole subplans (e.g. `ReadFromMerge` children). The root node of such
         /// a subplan cannot be removed from here, so only its sets are taken out; an emptied
         /// `DelayedCreatingSetsStep` does nothing and the serializer skips it.
-        for (auto * child_plan : node->step->getChildPlans())
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
         {
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)
@@ -105,11 +106,14 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
     /// values, so task serialization checks it against the actual columns. A truncated set
     /// would change results, so the mode is throw.
     const auto & settings = context->getSettingsRef();
-    SizeLimits transfer_limits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
+    /// Default-constructed step settings: this internal `DISTINCT` must not depend on the user's `DISTINCT`
+    /// limits or spill to disk; only the transfer limit applies.
+    DistinctStep::Settings distinct_settings;
+    distinct_settings.set_size_limits = SizeLimits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
 
     auto header = source_plan.getCurrentHeader();
     source_plan.addStep(
-        std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
+        std::make_unique<DistinctStep>(header, std::move(distinct_settings), 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
     /// An unsupported set source (e.g. `WITH TOTALS` inside the subquery) builds the set locally

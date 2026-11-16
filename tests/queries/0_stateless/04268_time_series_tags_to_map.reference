@@ -14,3 +14,5 @@ An empty separate value does not conflict with the same tag in the array (the ar
 {'__name__':'bar','x':'1'}
 Empty input produces an empty map:
 {}
+FixedString values in the tags array are normalized:
+1	1	1

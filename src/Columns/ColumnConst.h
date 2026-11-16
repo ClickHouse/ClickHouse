@@ -82,6 +82,11 @@ public:
         return data->getDataAt(0);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return data->supportsGetDataAt();
+    }
+
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -350,6 +355,8 @@ public:
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
     std::string_view getRawData() const override { return data->getRawData(); }
+    /// `getRawData` holds one row, not `size()` rows, so there are no planes to read by number.
+    ColumnPlanes getPlanes() const override { return ColumnPlanes(ColumnPlanes::Shape::Rows, this); }
 
     /// Not part of the common interface.
 

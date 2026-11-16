@@ -22,6 +22,9 @@ SELECT tokens('%abc%', 'ngrams', 3), tokensForLikePattern('%abc%', 'ngrams', 3);
 SELECT tokens('abcd%', 'ngrams', 2), tokensForLikePattern('abcd%', 'ngrams', 2);
 SELECT tokens('%ab_cd%', 'ngrams', 2), tokensForLikePattern('%ab_cd%', 'ngrams', 2);
 SELECT tokens('%ab\_cd%', 'ngrams', 2), tokensForLikePattern('%ab\_cd%', 'ngrams', 2);
+SELECT tokens('%ab\\\\\\\\%cd%', 'ngrams', 2), tokensForLikePattern('%ab\\\\\\\\%cd%', 'ngrams', 2);
+SELECT tokens('%ab\\\\%cd%', 'ngrams', 2), tokensForLikePattern('%ab\\\\%cd%', 'ngrams', 2);
+SELECT tokens('%ab\\\\%cd%', 'ngrams', 1), tokensForLikePattern('%ab\\\\%cd%', 'ngrams', 1);
 
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';

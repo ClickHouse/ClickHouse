@@ -356,6 +356,8 @@ std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 }
 
 
+/// Shared with `MergeTreeData::checkMutationIsPossible`, so of the commands that reach the
+/// heavyweight mutation path, the ones answering here are exactly the ones it refuses.
 bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
@@ -374,6 +376,11 @@ bool MutationCommands::hasAnyUpdateCommand() const
 bool MutationCommands::hasOnlyUpdateCommands() const
 {
     return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
+}
+
+bool MutationCommands::hasRewritePartsCommand() const
+{
+    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::REWRITE_PARTS; });
 }
 
 bool MutationCommands::containBarrierCommand() const

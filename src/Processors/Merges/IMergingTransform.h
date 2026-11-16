@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 
 #include <Core/Block_fwd.h>
@@ -34,9 +35,10 @@ public:
 
     OutputPort & getOutputPort();
 
-    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
-    void addInput();
-    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
+    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
+    /// from the output header when the algorithm changes the column layout.
+    void addInput(const Block & input_header);
+    /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
 
     Status prepare() override;
@@ -58,7 +60,7 @@ protected:
 
         /// Inputs to ask for data without waiting for it (read-ahead for sources
         /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
-        std::vector<size_t> inputs_to_prefetch;
+        VectorWithMemoryTracking<size_t> inputs_to_prefetch;
 
         IMergingAlgorithm::Inputs init_chunks;
     };
@@ -74,7 +76,7 @@ private:
         bool is_initialized = false;
     };
 
-    std::vector<InputState> input_states;
+    VectorWithMemoryTracking<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
@@ -153,6 +155,7 @@ public:
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
+            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -176,6 +179,9 @@ public:
     }
 
 protected:
+    /// Is called for every chunk the merge produces, before it is pushed to the output.
+    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
+
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 
