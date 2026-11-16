@@ -1,7 +1,8 @@
-<test>
+<test iceberg="0">
     <!-- Plan-time cost of the skip index conditions on a table with many implicit `minmax` indexes, for filters that read
          other columns. `EXPLAIN PLAN` excludes execution and eight `UNION ALL` branches repeat the analysis per statement.
-         The last query is a control: a top-K query, whose cost is not dominated by the index conditions. -->
+         The last query is a control: a top-K query, whose cost is not dominated by the index conditions. Not on Iceberg
+         tables: they have no skip indexes. -->
 
     <create_query>
         CREATE TABLE skip_index_planning AS hits_10m_single ENGINE = MergeTree
