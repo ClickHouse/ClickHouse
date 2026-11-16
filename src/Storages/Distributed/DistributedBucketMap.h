@@ -68,7 +68,7 @@ class DistributedBucketMapWatcher : WithContext
 {
 public:
     /// `zookeeper_path_` may start with the name of an auxiliary ZooKeeper, as the path of `ReplicatedMergeTree`.
-    /// `buckets_` is the `bucket_map_buckets` setting of the table: 0 accepts any number of buckets in the first loaded map.
+    /// `buckets_` is the `bucket_map_buckets` setting of the table, the only number of buckets it accepts in a map.
     DistributedBucketMapWatcher(ContextPtr context_, const StorageID & storage_id, const String & zookeeper_path_, UInt64 buckets_);
 
     /// Creates the map with `buckets` buckets split evenly between `num_shards` shards if the node does not exist.
