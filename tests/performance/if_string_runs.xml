@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they widen the `UInt8` conditions to `Int32`, which `if` does not accept. -->
     <create_query>CREATE TABLE if_string_runs_referer (c_nat UInt8, c_64 UInt8, c_rand UInt8, Referer String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE if_string_runs_short (c_rand UInt8, SearchPhrase String, MobilePhoneModel String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE if_string_runs_16 (c_alt UInt8, c_rand UInt8, s16 String, t16 String) ENGINE = Memory</create_query>
