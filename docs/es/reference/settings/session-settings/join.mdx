@@ -100,7 +100,7 @@ La segmentación por hash según las join keys se aplica únicamente a joins de 
 * Lados que ya están ordenados (una lectura de MergeTree en orden o cualquier entrada preordenada): una dispersión que preserve el orden en los merges por segmento puede bloquear la canalización. En su lugar se conservan la lectura en orden y su optimización `read_in_order_use_virtual_row`.
 * Mientras el iniciador crea un plan distribuido (`make_distributed_plan`), porque la ordenación dispersa no se puede serializar para la ejecución remota. El plan local de un solo fragmento y los fragmentos por trabajador se vuelven a optimizar con esa configuración desactivada, por lo que aún pueden segmentarse.
 
-Omitirla desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados MergeTree que leen en orden aún pueden segmentarse en el origen mediante rangos de clave primaria (que se ordenan por la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) cuando `query_plan_join_shard_by_pk_ranges` está habilitado.
+Omitirla desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados MergeTree que leen en orden aún pueden segmentarse en el origen mediante rangos de clave primaria (que se ordenan por la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) gracias a `query_plan_join_shard_by_pk_ranges` (habilitado de forma predeterminada).
 
 * prefer&#95;partial&#95;merge
 

@@ -41,25 +41,28 @@ ColumnDependencies getAllColumnDependencies(
     const StorageInMemoryMetadata::HasDependencyCallback & has_dependency);
 
 /// Return false if the data isn't going to be changed by mutations.
+/// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception
 );
 
 /// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row.
 /// If the part has no lightweight delete, the counts are calculated by `count()` queries that are answered without reading the part
-/// data if possible.
+/// data if possible. `on_exception` is the same as for `isStorageTouchedByMutations`.
 std::vector<UInt64> countDeletedRowsByCommands(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::vector<MutationCommand> & commands,
     bool has_lightweight_delete,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled);
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception);
 
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
@@ -144,25 +147,35 @@ public:
 
     void validate();
 
-    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
-    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter`, which requires the predicate to be
-    /// analyzable.
+    /// Throws if the mutation contains non-deterministic functions, subqueries or virtual columns on a
+    /// Replicated* storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter`. Functions and subqueries are checked first,
+    /// so they are reported even when the predicate is not analyzable.
     static void validateNonDeterministicMutationsForStorage(
         const StoragePtr & storage,
         const MutationCommands & commands,
         ContextPtr context);
 
+    /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
+    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns,
+    /// or if a projection that the mutation may rebuild reads it. The mutation is checked against
+    /// `metadata_snapshot`, the metadata it will be executed with, or the current metadata of `storage` if it is null.
+    static std::optional<String> findNonDeterministicVirtualColumn(
+        const StoragePtr & storage,
+        const MutationCommands & commands,
+        ContextPtr context,
+        StorageMetadataHandle metadata_snapshot = nullptr);
+
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
 
     /// Only changed columns.
-    Block getUpdatedHeader() const;
+    [[nodiscard]] Block getUpdatedHeader() const;
 
-    const ColumnDependencies & getColumnDependencies() const;
+    [[nodiscard]] const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
-    bool isAffectingAllColumns() const;
+    [[nodiscard]] bool isAffectingAllColumns() const;
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
@@ -184,11 +197,11 @@ public:
         void set(const MutationKindEnum & kind);
     };
 
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
+    [[nodiscard]] MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands.
-    std::vector<MutationActions> getMutationActions() const;
+    [[nodiscard]] std::vector<MutationActions> getMutationActions() const;
 
     /// The number of rows affected by each `DELETE` and `UPDATE` command. A row is counted for the
     /// first command that deletes it, and for each command that updates it.
@@ -200,21 +213,21 @@ public:
     /// Additionally we propagate some storage properties.
     struct Source
     {
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+        [[nodiscard]] StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
 
-        StoragePtr getStorage() const;
-        const MergeTreeData * getMergeTreeData() const;
-        AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
-        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
-        bool isMutatingDataPart() const;
+        [[nodiscard]] StoragePtr getStorage() const;
+        [[nodiscard]] const MergeTreeData * getMergeTreeData() const;
+        [[nodiscard]] AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
+        [[nodiscard]] MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        [[nodiscard]] bool isMutatingDataPart() const;
 
-        bool supportsLightweightDelete() const;
-        bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
-        bool hasProjection(const String & name) const;
-        bool hasBrokenProjection(const String & name) const;
-        bool hasUnloadedProjection(const String & name) const;
-        bool isCompactPart() const;
+        [[nodiscard]] bool supportsLightweightDelete() const;
+        [[nodiscard]] bool materializeTTLRecalculateOnly() const;
+        [[nodiscard]] bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
+        [[nodiscard]] bool hasProjection(const String & name) const;
+        [[nodiscard]] bool hasBrokenProjection(const String & name) const;
+        [[nodiscard]] bool hasUnloadedProjection(const String & name) const;
+        [[nodiscard]] bool isCompactPart() const;
 
         void read(
             Stage & first_stage,
@@ -250,7 +263,7 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-    std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
@@ -356,7 +369,7 @@ private:
         bool is_readonly = false;
 
         /// Check that stage affects all storage columns
-        bool isAffectingAllColumns(const Names & storage_columns) const;
+        [[nodiscard]] bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
     /// The columns this mutation writes into the new part. Assigned at the end of `execute` and

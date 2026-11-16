@@ -176,17 +176,17 @@ SELECT count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON cityHash64(p.k) 
 SYSTEM FLUSH LOGS query_log;
 
 -- One pass over the query log for all the marked queries. Per marker:
---   dropped_most: the refiner dropped almost all of the ~6250 marks at task-cut time (the 5
---                 join keys live in at most a few granules); expected for every gated query
---                 including the LIMIT ones (with only a few surviving granules the in-order
---                 pool drains and drops the rest of its queue), 0 for the ungated/fail-open
---                 shapes and for the empty build side (an empty inner hash table
---                 short-circuits the probe before anything is cut). A join sharded by
---                 primary key ranges keeps its plain-hash-join plan for this tiny build side,
---                 so its row matches the plainly gated one.
---   few_rows/all_rows: the read volume contrast (gated reads touch a few granules; the
---                 ungated shape reads the whole probe table; FINAL reads its own 40k-row
---                 table, so both flags are 0 there).
+--   dropped_most: the refiner dropped almost all of the ~6250 marks at task-cut time;
+--                 expected for every gated query, 0 for the ungated/fail-open shapes and
+--                 for the empty build side. Exception: when the in-order LIMIT queries
+--                 really read in order (they need `read_in_order_use_virtual_row`, which
+--                 CI randomizes), the LIMIT cancel races with the task cuts and the
+--                 magnitude varies even under identical settings, so such rows assert
+--                 only that the refiner engaged (> 0).
+--   few_rows/all_rows: the read volume contrast. Gated reads touch only the granules kept
+--                 by the refiner (a few hundred rows at most - a property of the data,
+--                 stable where the dropped magnitude is not); the ungated shape reads the
+--                 whole probe table; FINAL reads its own 40k-row table (both flags 0).
 --   read_time_considered: granules examined by the read-time index analysis; stays 0 for
 --                 seal_gated_suppresses_read_time because the gated read skips it as
 --                 redundant (and for the rest because the analysis is disabled).
@@ -194,8 +194,11 @@ SYSTEM FLUSH LOGS query_log;
 -- depends on the task sizing regime, which is environment-dependent and randomized in CI.
 SELECT
     extract(query, '/\\* (seal_[a-z_]+) \\*/') AS marker,
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_most,
-    read_rows < 20000 AS few_rows,
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks']
+        > if(marker IN ('seal_gated_in_order', 'seal_gated_reverse_order')
+                 AND Settings['read_in_order_use_virtual_row'] != '0',
+             0, 6000) AS dropped_most,
+    read_rows < 2000 AS few_rows,
     read_rows >= 50000 AS all_rows,
     ProfileEvents['RuntimeFilterGranulesConsidered'] AS read_time_considered
 FROM system.query_log

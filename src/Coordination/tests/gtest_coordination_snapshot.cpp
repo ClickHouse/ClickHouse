@@ -469,7 +469,7 @@ struct IntNode
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
     IntNode copyFromSnapshotNode() { return *this; }
-    [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
+    [[nodiscard]] [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
 };
@@ -2279,7 +2279,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
 
-    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 

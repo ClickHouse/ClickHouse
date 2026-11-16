@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -144,7 +145,7 @@ static void skipQuery(ReadBuffer & in)
 }
 
 
-static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
+static bool skipUntilRowStartedWithOneOfKeywords(const UnorderedSetWithMemoryTracking<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
 {
     while (true)
     {
@@ -214,8 +215,13 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
 
+            /// A dump writes `SET` values as strings of comma-separated members, e.g. 'a,b'. `SET` is also a ClickHouse
+            /// alias of `UInt64`, so name the type explicitly, as the `mysql` table engine reads it.
             if (type_name_upper == "SET")
+            {
+                data_type_node->name = "String";
                 data_type_node->resetArguments();
+            }
 
             /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
@@ -271,7 +277,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+static void tryReadColumnNames(ReadBuffer & in, Names * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -312,7 +318,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
     String keyword;
     MySQLQueryType type = MySQLQueryType::NONE;
     /// In MySQL dumps INSERT queries might be replaced with REPLACE queries.
-    std::unordered_set<String> keywords = {"insert", "replace"};
+    UnorderedSetWithMemoryTracking<String> keywords = {"insert", "replace"};
     if (!skip_create_query)
         keywords.insert("create");
 
@@ -349,7 +355,7 @@ static bool skipToInsertQuery(String & table_name, ReadBuffer & in)
     return skipToInsertOrCreateQuery(table_name, in, true) != MySQLQueryType::NONE;
 }
 
-static void skipToDataInInsertQuery(ReadBuffer & in, std::vector<String> * column_names = nullptr)
+static void skipToDataInInsertQuery(ReadBuffer & in, Names * column_names = nullptr)
 {
     tryReadColumnNames(in, column_names);
     skipWhitespaceIfAny(in);
@@ -446,7 +452,11 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
                         table_name.empty() ? "" : " for table " + table_name);
 
-    skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
+    /// The values are in the order of the INSERT column list, which can differ from CREATE (mysqldump omits generated columns).
+    Names insert_column_names;
+    skipToDataInInsertQuery(in, &insert_column_names);
+    if (!insert_column_names.empty())
+        column_names = std::move(insert_column_names);
 }
 
 void MySQLDumpRowInputFormat::readPrefix()
@@ -482,7 +492,7 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     }
     skipEndOfRow(*in, table_name);
 
-    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, types, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)
@@ -509,7 +519,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;

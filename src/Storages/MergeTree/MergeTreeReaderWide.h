@@ -95,37 +95,6 @@ private:
 
     FileStreams streams;
 
-    struct StreamInfo
-    {
-        /// The name of the stream, or `std::nullopt` if the part doesn't have it.
-        std::optional<String> name;
-        /// The element of `avg_value_size_hints` for the stream, found on first use.
-        double * avg_value_size_hint = nullptr;
-    };
-
-    /// The fields of a substream that the name of its stream may depend on.
-    struct SubstreamKey
-    {
-        ISerialization::Substream::Type type;
-        String variant_element_name;
-        String name_of_substream;
-        String object_path_name;
-        size_t bucket;
-    };
-
-    struct StreamInfoEntry
-    {
-        String column_name;
-        std::vector<SubstreamKey> substream_path;
-        StreamInfo info;
-    };
-
-    /// Guards `streams_info`: substreams of a single column can be deserialized in parallel.
-    std::mutex streams_info_mutex;
-    /// Keyed by a hash of the column name and the substream path, the entries are compared exactly.
-    /// The elements are never moved or erased, so references to them stay valid.
-    std::unordered_multimap<UInt64, StreamInfoEntry> streams_info;
-
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
     using ColumnReadSelector = std::function<std::optional<bool>(size_t pos)>;
@@ -144,30 +113,27 @@ private:
         bool deserialize_prefixes,
         const ColumnReadSelector & selector);
 
+    struct ColumnKind;
+
+    /// Open the streams of a column that is read, and classify it in `kind`.
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const SerializationPtr & serialization);
+        const SerializationPtr & serialization,
+        ColumnKind & kind);
+
+    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
+    bool isReadWithTypeInPart(const NameAndTypePair & name_and_type) const;
 
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
-        const std::optional<String> & stream_name,
+        const MergeTreeDataPartChecksums & checksums,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
     MergeTreeReaderStream & getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
-
-    /// Returns the information about the stream for the substream of the column.
-    /// Building the name of a stream is expensive (escaping, splitting of nested names, lookups in checksums) and the name is
-    /// requested several times for every substream on every read, so the results are memoized for the lifetime of the reader.
-    StreamInfo & getStreamInfo(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
-    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
-    {
-        return getStreamInfo(name_and_type, substream_path).name;
-    }
-    double & getAvgValueSizeHint(StreamInfo & stream_info);
 
     void readData(
         const NameAndTypePair & name_and_type,
@@ -224,16 +190,12 @@ private:
     bool read_without_marks = false;
     LoggerPtr log;
 
-    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
-    /// Filled by `addStreams`.
-    NameSet columns_absent_from_part;
-
-    /// Columns that are not cacheable, see `isColumnNotCacheable`. Such a column is read from the
-    /// part by every read, like a partially read column. Filled by `addStreams`.
-    NameSet columns_not_cacheable;
-
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
-    /// served from the cache: a partially read column or a column that is not cacheable.
+    /// served from the cache: a partially read column - only some of its streams are in the part,
+    /// in practice a `Nested` member added by an `ALTER`, whose offsets are read from the shared
+    /// stream of its group while its elements stay empty; `fillMissingColumns` takes those offsets
+    /// to size every re-added member of the group - or a column that is not cacheable, see
+    /// `isColumnNotCacheable`.
     bool isColumnReadOnlyFromPart(size_t pos) const;
     bool hasColumnsReadOnlyFromPart() const;
 
@@ -249,16 +211,23 @@ private:
     /// and both paths leave it null for `fillMissingColumns`.
     bool isColumnAbsentFromPart(size_t pos) const;
 
-    /// Only some of the streams of the column at `pos` are in the part - in practice a `Nested`
-    /// member added by an `ALTER`, whose offsets are read from the shared stream of its group
-    /// while its elements stay empty. Reading it does produce data: `fillMissingColumns`
-    /// discards its values but takes those offsets to size every re-added member of the group,
-    /// so it has to be read from the part even when the rest of the granule is served from cache.
-    bool isColumnPartiallyRead(size_t pos) const;
-
     /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
     /// system column. Both paths leave it null.
     bool isColumnSkipped(size_t pos) const;
+
+    /// The answers of the predicates above per result column, computed once by the constructor:
+    /// the columns cache path asks them for every granule.
+    struct ColumnKind
+    {
+        bool skipped = false;
+        bool absent_from_part = false;
+        bool read_only_from_part = false;
+        /// Read from the part and cacheable: none of the above.
+        bool regular = false;
+    };
+    std::vector<ColumnKind> column_kinds;
+    size_t num_regular_columns = 0;
+    bool has_columns_read_only_from_part = false;
 
     /// The columns cache.
     ///
@@ -296,9 +265,9 @@ private:
     bool partial_columns_started = false;
 
     /// The entries of the range, per result column, per stripe of the range (nullptr when the
-    /// stripe has no entry), and per granule whether every regular column of it is cached.
+    /// stripe has no entry), and per granule how many regular columns of it are cached.
     std::vector<std::vector<ColumnsCache::MappedPtr>> cached_entries;
-    std::vector<bool> granule_served_from_cache;
+    std::vector<UInt32> granule_cached_columns;
 
     const ColumnsCache::MappedPtr & cachedEntryFor(size_t pos, size_t mark) const;
     bool isGranuleColumnCached(size_t pos, size_t mark) const;
@@ -316,15 +285,18 @@ private:
     std::vector<bool> accumulated_from_disk;
     MutableColumns accumulated_columns;
 
-    /// Begin a new contiguous mark range at `from_mark`: write what the previous range left,
-    /// look the stripes of the new one up in the cache and reset the state.
+    /// Begin a new contiguous mark range at `from_mark`, or re-enter the current one there: write
+    /// what was read so far, look the stripes of a new range up in the cache and reset the cursor.
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
 
     /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
-    /// the entries per column and per stripe, and per granule whether it can be served as a whole.
+    /// the entries per column and per stripe, and per granule how many regular columns are cached.
     void lookupColumnsCache(
         size_t first_mark, size_t end_mark, size_t num_columns,
-        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable);
+        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns);
+
+    /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.
+    bool allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const;
 
     /// Whether the first mark range of this reader can be served from the cache as a whole
     /// *without touching a single stream of it*, and so need not be prefetched.
@@ -347,14 +319,16 @@ private:
 
     /// Copy the rows [offset, offset + rows) of granule `mark`, just read from the part, for the
     /// cache: they are at `sizes_before_reading[pos] + row_in_run` of every result column read
-    /// from the part (`from_disk`). A run of granules read to their end becomes an entry when
-    /// its stripe ends, when the range ends, or when the run is broken.
+    /// from the part (`from_disk`), followed by `rows_left_in_run - rows` more rows of the run read
+    /// from the part by this call. A run of granules read to their end becomes an entry when its
+    /// stripe ends, when the range ends, or when the run is broken.
     void accumulateRowsForColumnsCache(
         size_t mark,
         size_t offset,
         size_t rows,
         size_t granule_rows,
         size_t row_in_run,
+        size_t rows_left_in_run,
         const std::vector<bool> & from_disk,
         const std::vector<size_t> & sizes_before_reading,
         const MutableColumns & res_columns);

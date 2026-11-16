@@ -130,18 +130,18 @@ public:
 
     explicit ColorConversionFromSRGBBase(ContextPtr context_) : ITupleFunction(context_) {}
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple(Number, Number, Number), [Number]) -> Tuple(Float64, Float64, Float64)";
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto float64_type = std::make_shared<DataTypeFloat64>();
         auto tuple_f64_ptr = std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
@@ -199,17 +199,17 @@ class ColorConversionToSRGBBase : public ITupleFunction
 public:
     explicit ColorConversionToSRGBBase(ContextPtr context_) : ITupleFunction(context_) {}
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Tuple(Number, Number, Number), [Number]) -> Tuple(Float64, Float64, Float64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto float64_type = std::make_shared<DataTypeFloat64>();
         auto tuple_f64_type = std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));

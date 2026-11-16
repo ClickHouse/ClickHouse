@@ -136,6 +136,9 @@ def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_ur
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+        "CREATE TABLE azure_blocked_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = 'http://127.0.0.1:1', "
+        "container_name = 'container', account_name = 'account', account_key = 'YQ==')",
     ],
 )
 def test_azure_host_filter_before_client_creation(start_cluster, query):
@@ -148,6 +151,79 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
     assert "UNACCEPTABLE_URL" in error
     # The host check must run before even a container existence probe.
     assert node5.query(container_requests) == before
+
+
+@pytest.mark.parametrize(
+    "endpoint, rejected_url",
+    [
+        (
+            "storage_account_url = 'https://onelake.blob.fabric.microsoft.com', "
+            "account_name = 'account', account_key = 'YQ=='",
+            "https://onelake.dfs.fabric.microsoft.com",
+        ),
+        (
+            "connection_string = 'BlobEndpoint=https://onelake.blob.fabric.microsoft.com/;"
+            "DfsEndpoint=http://127.0.0.1:1;SharedAccessSignature=sv=2022&sig=c2FzY2FuYXJ5'",
+            "http://127.0.0.1:1",
+        ),
+        (
+            "endpoint = 'BlobEndpoint=http://host:80/account/container', "
+            "connection_string = 'BlobEndpoint=http://127.0.0.1:1'",
+            "http://127.0.0.1:1",
+        ),
+    ],
+)
+def test_azure_disk_client_host(start_cluster, endpoint, rejected_url):
+    # Each disk names a host that node2 allows, but sends requests to one that node2 does not allow.
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node2.query(container_requests)
+    error = node2.query_and_get_error(
+        "CREATE TABLE azure_client_host_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = disk(type = azure_blob_storage, {endpoint}, container_name = 'container')",
+        settings={"azure_sdk_max_retries": 0},
+    )
+    assert f'URL "{rejected_url}" is not allowed' in error
+    assert node2.query(container_requests) == before
+
+
+def test_object_storage_queue_move_destination_host_filter(start_cluster):
+    # The source is on an allowed host (`host:80`), so only the move destination can be rejected. `node1` has no
+    # Keeper, so a rejection with "not allowed" must come from the settings validation, which runs before any
+    # Keeper access.
+    s3_queue = (
+        "CREATE TABLE s3queue_move_host (x UInt8) "
+        "ENGINE = S3Queue('http://host:80/bucket/data/', 'key', 'secret', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_uri = '{}', "
+        "after_processing_move_access_key_id = 'key', after_processing_move_secret_access_key = 'secret'"
+    )
+    azure_queue = (
+        "CREATE TABLE azurequeue_move_host (x UInt8) "
+        "ENGINE = AzureQueue('http://host:80', 'container', '*', 'account', 'YQ==', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_connection_string = "
+        "'DefaultEndpointsProtocol=http;AccountName=account;AccountKey=YQ==;BlobEndpoint=http://host:123/account;', "
+        "after_processing_move_container = 'dst'"
+    )
+
+    try:
+        error = node1.query_and_get_error(s3_queue.format("http://host:123/bucket/"))
+        assert "not allowed" in error, error
+
+        error = node1.query_and_get_error(
+            azure_queue, settings={"azure_sdk_max_retries": 0}
+        )
+        assert "not allowed" in error, error
+
+        # Control: an allowed destination passes the host check and only fails later, on the missing Keeper.
+        error = node1.query_and_get_error(s3_queue.format("http://host:80/bucket/"))
+        assert "not allowed" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS s3queue_move_host SYNC")
+        node1.query("DROP TABLE IF EXISTS azurequeue_move_host SYNC")
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -293,6 +369,34 @@ def test_mysql_dictionary_host_filter(start_cluster):
     )
     assert "not allowed" in error, f"Expected host filter error, got: {error}"
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_host_filter")
+
+
+def test_mysql_database_host_filter(start_cluster):
+    # node5 denies all hosts; the check runs before any connection attempt.
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('10.0.0.1:3306', 'db', 'u', 'p')"
+    )
+    node5.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nc AS "
+        "host = '10.0.0.1', port = 3306, database = 'db', user = 'u', password = 'p'"
+    )
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nc)"
+    )
+    node5.query("DROP NAMED COLLECTION test_mysql_db_filter_nc")
+
+    # node1's suffix rule would match the whole string, but the connector stops at the NUL; reject it.
+    assert "not allowed" in node1.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('127.0.0.1\\0.allowed.example:1', 'db', 'u', 'p')"
+    )
+    node1.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nul_nc AS "
+        "host = '127.0.0.1\\0.allowed.example', port = 1, database = 'db', user = 'u', password = 'p'"
+    )
+    assert "not allowed" in node1.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nul_nc)"
+    )
+    node1.query("DROP NAMED COLLECTION test_mysql_db_filter_nul_nc")
 
 
 def test_mysql_dictionary_replica_host_filter(start_cluster):
@@ -594,7 +698,7 @@ def test_hive_catalog_host_filter(start_cluster):
         "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
         "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
     )
-    settings = {"allow_experimental_database_hms_catalog": 1}
+    settings = {"enable_database_hms_catalog": 1}
     try:
         # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
         # uninitialized and allows everything - the same statement gets past the check and fails at
@@ -619,7 +723,7 @@ def test_hive_catalog_host_filter_rejects_nul(start_cluster):
         return node1.query_and_get_error(
             f"CREATE DATABASE test_hive_host_filter_nul ENGINE = DataLakeCatalog('{url}') "
             "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
-            settings={"allow_experimental_database_hms_catalog": 1},
+            settings={"enable_database_hms_catalog": 1},
         )
 
     try:

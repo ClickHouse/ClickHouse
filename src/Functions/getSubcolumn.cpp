@@ -19,23 +19,23 @@ public:
     static constexpr auto name = "getSubcolumn";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetSubcolumn>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForDynamic() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Declarative signature — looks up the named subcolumn's type on the
     /// first argument via the `subcolumnTypeOf` type function.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(T : Any, const name String) -> subcolumnTypeOf(T, name)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         auto subcolumn_name = getSubcolumnName(arguments);
         return arguments[0].type->getSubcolumn(subcolumn_name, arguments[0].column);

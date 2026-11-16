@@ -47,7 +47,7 @@ public:
 
 private:
     /// Returns the size of a file, or the total size of all files contained in a directory recursively.
-    UInt64 computeSize(const DiskWithPath & disk, const String & path) const
+    [[nodiscard]] UInt64 computeSize(const DiskWithPath & disk, const String & path) const
     {
         UInt64 total = 0;
         std::stack<String> stack;

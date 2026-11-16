@@ -4,8 +4,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -29,13 +30,6 @@ namespace DB::QueryPlanOptimizations
 bool dependsOnItsBlock(const ActionsDAG & actions)
 {
     return actions.hasNonDeterministicOrStatefulFunctions();
-}
-
-/// True if a value of this type can contain a floating-point number anywhere inside it - directly,
-/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ...
-static bool typeCanContainFloat(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 /// A deterministic hash of the planning-time parameters of a TopK. The query condition cache keys
@@ -87,9 +81,9 @@ static size_t tryTopKForFormatSource(
     if (!settings.use_top_k_dynamic_filtering)
         return 0;
 
-    /// Same eligibility as the MergeTree dynamic-filtering path below: Dynamic and Variant
-    /// columns cannot be reliably compared by `__topKFilter`.
-    if (isDynamic(sort_column.type) || isVariant(sort_column.type))
+    /// A Field threshold loses the runtime type of a Dynamic, Variant or JSON value anywhere in the
+    /// type, which their columns compare first.
+    if (hasRuntimeTypedType(sort_column.type))
         return 0;
 
     /// `PartialSortingTransform` stops filtering rows by its own threshold once a tracker is set.
@@ -101,17 +95,6 @@ static size_t tryTopKForFormatSource(
             return 0;
         filter_rows = false;
     }
-
-    /// `ORDER BY` sorts `nan` together with `NULL` (see `SortColumnDescription::nulls_direction`),
-    /// but the comparison functions behind `__topKFilter` do not: a `nan` can become the published
-    /// threshold and then reject every finite value, or be dropped under `NULLS FIRST`. That is a
-    /// pre-existing defect of the `MergeTree` path, tracked in
-    /// https://github.com/ClickHouse/ClickHouse/issues/116705. Formats add a second, independent
-    /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
-    /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
-    /// sort keys off this path until both are `nan`-aware.
-    if (typeCanContainFloat(sort_column.type))
-        return 0;
 
     /// The resolved sort column must be one of the source's outputs with an unchanged type: the
     /// source compares its own column against thresholds the sorting transforms above produce
@@ -157,18 +140,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
 
     QueryPlan::Node * node = parent_node;
 
+    /// `topKThroughArrayJoin` moves the sort below `ARRAY JOIN` without a `LIMIT` step, after it checked the `LIMIT`
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
-    if (!limit_step)
+    if (!limit_step && !typeid_cast<ArrayJoinStep *>(node->step.get()))
         return 0;
     if (node->children.size() != 1)
         return 0;
 
     /// Cannot support LIMIT 10 WITH TIES because we don't know how many rows will be output
-    if (limit_step->withTies())
+    if (limit_step && limit_step->withTies())
         return 0;
 
     /// TopK filtering can skip source rows, so it is incompatible with exact rows_before_limit_at_least.
-    if (limit_step->alwaysReadTillEnd())
+    if (limit_step && limit_step->alwaysReadTillEnd())
         return 0;
 
     node = node->children.front();
@@ -222,7 +206,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     if (read_from_mergetree_step && read_from_mergetree_step->isQueryWithFinal())
         return 0;
 
-    size_t n = limit_step->getLimitForSorting();
+    size_t n = limit_step ? limit_step->getLimitForSorting() : sorting_step->getLimit();
     if (!n || (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization))
         return 0;
 
@@ -302,11 +286,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     /// The skip-index top-k path ranks granules via raw Field comparison
     /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
     /// or collation. Restrict it to types where raw Field ordering matches
-    /// ORDER BY semantics. This check mirrors the guard in
-    /// ReadFromMergeTree::buildIndexes for defense-in-depth.
+    /// ORDER BY semantics: a float only under ASC NULLS LAST, where NaN ranks last as in Field.
+    /// ReadFromMergeTree::buildIndexes repeats the check for a read published by dynamic filtering alone.
     bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
         && !sort_column.type->isNullable()
-        && !sort_col_desc.collator;
+        && !sort_col_desc.collator
+        && (!hasTypeThatCanContainFloat(sort_column.type) || (sort_col_desc.direction == 1 && sort_col_desc.nulls_direction == 1));
 
     bool use_skip_index = settings.use_skip_indexes_for_top_k
         && skip_index_type_eligible

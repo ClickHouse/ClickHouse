@@ -37,7 +37,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
-    extern const SettingsBool allow_experimental_paimon_storage_engine;
+    extern const SettingsBool enable_paimon_storage_engine;
 }
 
 namespace DataLakeStorageSetting
@@ -282,9 +282,9 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 #### Partition strategy {#partition-strategy}
 
@@ -292,7 +292,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern that skips hidden paths (segments starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), following the Hive ecosystem convention. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -373,6 +373,8 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `upload_checksum_algorithm` - Optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.
+- `delete_checksum_algorithm` - Optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -408,9 +410,9 @@ There are two ways to define cache in configuration file.
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 #### Partition strategy {#partition-strategy}
 
@@ -418,7 +420,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`, except that hidden paths (segments below the table root starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) are skipped, following the Hive ecosystem convention. For plain glob paths without a partition strategy, the same filtering is available via the `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` settings.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -887,9 +889,9 @@ ENGINE = HDFS(URI, format)
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 **Example:**
 
@@ -1278,13 +1280,14 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
-| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
-| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
 | `decimal(P, S)` | `Decimal(P, S)` | |
+| `unknown` | `Nullable(Nothing)` | Always `NULL`, not stored in data files (since Iceberg v3 only) |
 
 ### Complex types {#complex-types}
 
@@ -1302,7 +1305,7 @@ The data type mappings above apply to reads. The following limitations apply whe
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
-- For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
+- For data files containing types whose bounds ClickHouse cannot serialize, such as `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1310,6 +1313,7 @@ ClickHouse supports reading Iceberg tables whose schema has evolved over time. T
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P.
+* unknown -> any primitive type (since Iceberg v3 only)
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
@@ -1325,7 +1329,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. With `iceberg_insert_single_manifest_for_all_partitions` enabled, each insert stream of an `INSERT` writes the files of all partitions it received into one manifest (exactly one manifest per `INSERT` with `max_insert_threads = 1`), so a partition written by the same `INSERT` as other partitions cannot be dropped. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
@@ -1605,7 +1609,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
 
 - the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
-- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
 
 The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
 
@@ -1770,11 +1774,11 @@ void registerStoragePaimon(StorageFactory & factory)
     auto check_paimon_storage_engine_enabled = [](const StorageFactory::Arguments & args)
     {
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_paimon_storage_engine])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_paimon_storage_engine])
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Paimon table engines are experimental. Set `allow_experimental_paimon_storage_engine` setting to enable them");
+                "Paimon table engines are experimental. Set `enable_paimon_storage_engine` setting to enable them");
         }
     };
 
@@ -1854,10 +1858,10 @@ It supports snapshot reads, incremental reads, and basic partition pruning provi
 ## Create table {#create-table}
 
 Note that the Paimon table must already exist in the storage, this command does not take DDL parameters to create a new table.
-Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
+Creating `Paimon*` tables is gated by `enable_paimon_storage_engine` (disabled by default), so enable it before running `CREATE TABLE`.
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
     ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
@@ -1910,12 +1914,16 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Partition pruning when `use_paimon_partition_pruning` is enabled.
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
+- Schema evolution: each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
 
 ## Primary-key tables {#primary-key-tables}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable. Incremental
+reads of primary-key tables are not supported.
 
 ## Tables with deletion vectors {#deletion-vectors}
 
@@ -1942,9 +1950,10 @@ Either way, the rows that those deletion vectors removed stay in what the increm
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
 
-- `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
+- `enable_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
 - `use_paimon_metadata_files_cache` — enables the Paimon metadata files cache (caches deserialized manifest lists and manifests). Set to `1` to enable, `0` to disable. Default: `0`. How this setting takes effect differs between table functions and persistent table engines — see the note below.
 - `paimon_incremental_read` — enable incremental read mode.
+- `paimon_incremental_read_append_overwrite` — the incremental read also delivers the rows that `OVERWRITE` snapshots write, like Paimon's `streaming-read-append-overwrite`. Default: `0`.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
@@ -1952,7 +1961,7 @@ This engine uses the same settings as the corresponding object storage engines a
 Example (enable experimental Paimon engine and metadata files cache):
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 SET use_paimon_metadata_files_cache = 1;
 
 CREATE TABLE paimon_cached
@@ -2064,7 +2073,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
-SET allow_experimental_paimon_storage_engine = 1;
+SET enable_paimon_storage_engine = 1;
 
 -- Local storage
 CREATE TABLE paimon_mv_source
@@ -2128,8 +2137,10 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - Incremental read uses at-most-once delivery: the committed snapshot is advanced when data files are collected, before the data is actually consumed. If the query fails after file collection, the skipped snapshots will not be re-read on retry.
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
+- The first incremental read returns every row of the current snapshot. After that, an incremental read delivers the rows of `APPEND` snapshots only, like Paimon's streaming read of an append table: `COMPACT`, `OVERWRITE` and `ANALYZE` snapshots are skipped. Paimon commits every write that deletes or rewrites data files as `OVERWRITE` (`INSERT OVERWRITE`, `TRUNCATE`, and the copy-on-write rewrites of `DELETE`, `UPDATE` and of a `MERGE INTO` that updates or deletes rows), so the rows such a commit writes, such as the new versions of updated rows, are not delivered, and a warning is logged for every skipped `OVERWRITE` snapshot. With `paimon_incremental_read_append_overwrite = 1` they are delivered, like with Paimon's `streaming-read-append-overwrite`, together with the unchanged rows of every data file the commit rewrote, except for the data files that a later snapshot read by the same query removes. `COMPACT` snapshots are not read, so a query that reads an `APPEND` snapshot, a `COMPACT` that merges the file it added and an `OVERWRITE` that rewrites the merged file returns the rows of both the original and the rewritten file: the unchanged rows appear twice in its result, and the changed ones in their old and new versions. `paimon_target_snapshot_id` still returns the delta of any snapshot.
+- After the first incremental read, a snapshot with a commit kind that ClickHouse does not know fails the incremental read, and every later one fails too until ClickHouse is upgraded or the cursor is moved past the snapshot in Keeper, as the error message describes.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
-- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
+- Fields inside a `ROW` column are matched to data files by name, not by Paimon field id. Reading a data file written before a field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed field and the dropped field's values for the re-added one. Adding and dropping fields is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -2155,7 +2166,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2164,6 +2175,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 
@@ -2229,7 +2241,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Amazon S3 or S3-compatible object storage. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonS3(url [, access_key_id, secret_access_key])",
             .related = {"Paimon"}});
 #endif
@@ -2277,7 +2289,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Microsoft Azure Blob Storage. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"Paimon"}});
 #endif
@@ -2303,7 +2315,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in HDFS. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonHDFS(uri)",
             .related = {"Paimon"}});
 #endif
@@ -2350,7 +2362,7 @@ Data types supported in Paimon partition keys:
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored on the local filesystem. "
-                "This engine is experimental: enable it with the `allow_experimental_paimon_storage_engine` setting.",
+                "This engine is experimental: enable it with the `enable_paimon_storage_engine` setting.",
             .syntax = "ENGINE = PaimonLocal(path)",
             .related = {"Paimon"}});
 }
@@ -2733,6 +2745,10 @@ Using named collections:
 ```sql
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
+
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
 
 ## See also {#see-also}
 

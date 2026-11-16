@@ -42,6 +42,7 @@ enum class RestoreAccessCreationMode : uint8_t
 };
 
 using RestoreUDFCreationMode = RestoreAccessCreationMode;
+using RestoreNamedCollectionCreationMode = RestoreAccessCreationMode;
 
 using RestoreWorkloadsAndResourcesCreationMode = RestoreAccessCreationMode;
 
@@ -155,6 +156,14 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
+    /// Whether to restore SQL-created named collections. If not set, defaults to true - even under
+    /// `structure_only`: a table whose engine references a named collection (e.g.
+    /// `ENGINE = URL(collection)`) cannot be created without it.
+    std::optional<bool> restore_named_collections;
+
+    /// How the RESTORE command will handle if a named collection which it's going to restore already exists.
+    RestoreNamedCollectionCreationMode create_named_collection = RestoreNamedCollectionCreationMode::kCreateIfNotExists;
+
     /// How the RESTORE command will handle if a workload or resource which it's going to restore already exists.
     /// WORKLOAD and RESOURCE entities are intertwined (a workload may reference a resource via SETTINGS ... FOR
     /// <resource> and workloads form a parent/child hierarchy), so they are always restored together and share a
@@ -207,15 +216,18 @@ struct RestoreSettings
     SettingsChanges core_settings;
 
     /// Effective values: explicit setting takes priority, otherwise structure_only inverts the default.
-    bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
-    bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
-    bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreTableData() const { return restore_table_data.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreAccessEntities() const { return restore_access_entities.value_or(!structure_only); }
+    [[nodiscard]] bool shouldRestoreFunctions() const { return restore_functions.value_or(!structure_only); }
+
+    /// Named collections are restored even under `structure_only`, see `restore_named_collections`.
+    [[nodiscard]] bool shouldRestoreNamedCollections() const { return restore_named_collections.value_or(true); }
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
     /// Returns the restore-specific settings as a string map for observability (see `system.backups`).
-    std::map<String, String> getSerializedSettings() const;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const;
 
     /// Returns only the non-restore-specific settings from a `RESTORE` query.
     /// In contrast to `fromRestoreQuery`, this helper does not touch the

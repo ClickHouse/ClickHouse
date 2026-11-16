@@ -232,7 +232,7 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
-في حالة IdP مخصص، مرّر مُصدِر OIDC عبر `--oauth-url`. ويؤدي تمرير أي خيار من خيارات `--oauth-*` إلى اعتماد مسار IdP المخصص، حتى مع مضيفي ClickHouse Cloud (على سبيل المثال، عند تفعيل [مصادقة JWT باستخدام موفّر هوية مخصص](#enabling-jwt-authentication-for-your-service) للخدمة). يكتشف العميل `device_authorization_endpoint` و`token_endpoint` من `/.well-known/openid-configuration` الخاص بالمُصدِر (ومن عناوين URL الأخرى ذات الصلة الخاصة ببيانات OAuth الوصفية). وإذا كان `grant_types_supported` موجودًا، فيجب أن يتضمن `urn:ietf:params:oauth:grant-type:device_code`. أما إذا فشل الاكتشاف، فيُبلغ العميل عن error؛ لذا اضبط كلًّا من `--oauth-device-uri` و`--oauth-token-uri` صراحةً عند عدم توفر البيانات الوصفية.
+في حالة IdP مخصص، مرّر الجهة المُصدِرة لـ OIDC عبر `--oauth-url`. ويؤدي تمرير أي خيار من خيارات `--oauth-*` إلى اعتماد مسار IdP المخصص، حتى مع مضيفي ClickHouse Cloud (على سبيل المثال، عند تفعيل [المصادقة باستخدام JWT باستخدام موفّر هوية مخصص](#enabling-jwt-authentication-for-your-service) للخدمة). يكتشف العميل `device_authorization_endpoint` و`token_endpoint` من `/.well-known/openid-configuration` الخاص بالجهة المُصدِرة (ومن عناوين URL الأخرى ذات الصلة الخاصة ببيانات OAuth الوصفية). وإذا كان `grant_types_supported` موجودًا، فيجب أن يتضمن `urn:ietf:params:oauth:grant-type:device_code`. أما إذا فشل الاكتشاف، فيُبلغ العميل عن error؛ لذا اضبط كلًّا من `--oauth-device-uri` و`--oauth-token-uri` صراحةً عند عدم توفر البيانات الوصفية.
 
 أثناء تسجيل الدخول، يطبع العميل `verification_uri` المختصر و`user_code` (RFC 8628). وإذا أعاد IdP أيضًا `verification_uri_complete`، يُطبع عنوان URL المختصر هذا ويُفتح في المتصفح، كما يُعرض رمز QR في الطرفية إذا كانت أداة `qrencode` متوفرة. أما مع IdP الخاص بـ ClickHouse Cloud، فلا يُطبع سوى `verification_uri_complete` و`user_code`. ويمكن للعملاء السريين تمرير `--oauth-client-secret` مع `--oauth-client-auth basic|post`.
 
@@ -251,7 +251,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
   --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
 ```
 
-يُقدَّم رمز الوصول الناتج إلى ClickHouse بصيغة JWT. ويظل ربط الأدوار والأذونات معتمدًا على تهيئة أداة مصادقة JWT على جانب الخادم (مثل مطالبات `clickhouse:roles`).
+يُقدَّم رمز الوصول الناتج إلى ClickHouse بصيغة JWT. ويظل ربط الأدوار والأذونات معتمدًا على تهيئة مُصادِق JWT على جانب الخادم (مثل مطالبات `clickhouse:roles`). ولمعرفة إعدادات تطبيق Entra ID التي يتطلبها هذا المسار على ClickHouse Cloud، راجع [المصادقة باستخدام JWT مع Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id).
 
 <div id="clickhouse-cloud-built-in">
   ## مُصادِق JWT المضمّن في ClickHouse Cloud
@@ -275,7 +275,7 @@ clickhouse-client --host your-clickhouse-host --secure --login \
 
 <EnterprisePlanFeatureBadge feature="المصادقة باستخدام JWT باستخدام موفّر هوية مخصّص" />
 
-بالإضافة إلى المُصادِق المضمّن، يمكنك تهيئة خدمة ClickHouse Cloud لقبول رموز مميزة JWT الصادرة عن موفّر الهوية الخاص بك، مثل Microsoft Entra أو Okta. تتوفر هذه الميزة ضمن خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse ‏26.4 أو أحدث. يمكنك تهيئتها بنفسك من وحدة تحكم Cloud ضمن **الإعدادات ← الأمان ← المصادقة باستخدام JWT** — راجع [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) للحصول على إرشادات خطوة بخطوة. يُعرَّف كل موفّر بما يلي:
+بالإضافة إلى المُصادِق المضمّن، يمكنك تهيئة خدمة ClickHouse Cloud لقبول رموز مميزة JWT الصادرة عن موفّر الهوية الخاص بك، مثل Microsoft Entra أو Okta. تتوفر هذه الميزة ضمن خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse ‏26.4 أو أحدث. يمكنك تهيئتها بنفسك من وحدة تحكم Cloud ضمن **الإعدادات ← الأمان ← المصادقة باستخدام JWT** — راجع [إعداد المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) للحصول على إرشادات خطوة بخطوة، و[المصادقة باستخدام JWT مع Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) للاطلاع على إعداد متكامل لـ Entra ID من البداية إلى النهاية. يُعرَّف كل موفّر بما يلي:
 
 | المَعلمة                  | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
