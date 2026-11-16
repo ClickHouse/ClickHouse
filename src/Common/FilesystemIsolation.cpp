@@ -860,6 +860,7 @@ std::vector<std::string> getNameServices()
     }
     return services;
 }
+#endif
 
 /// The entries of the dynamic section of an ELF file that tell which shared libraries it needs and where they are.
 struct DynamicEntries
@@ -1048,6 +1049,7 @@ std::vector<std::string> findLibraries(
     return libraries;
 }
 
+#if defined(__GLIBC__)
 /// The modules of the Name Service Switch for the services in `/etc/nsswitch.conf`, such as `libnss_files.so.2`
 /// and `libnss_dns.so.2`, and the libraries they need. The C library loads them on the first lookup of a host, a
 /// user or a group, which can happen after the isolation, so they are not among the mapped files. A service without a
@@ -1059,6 +1061,7 @@ std::vector<std::string> getNameServiceModules(const std::vector<std::string> & 
         names.push_back(fmt::format("libnss_{}.so.2", service));
     return findLibraries(names, getLibraryDirectories(mapped_files));
 }
+#endif
 
 /// The dynamic loader and the shared libraries of an executable that the server starts after the isolation, such as
 /// `clickhouse-odbc-bridge`, which can need libraries that the server itself does not map. Nothing for a file that is
@@ -1089,6 +1092,7 @@ std::vector<std::string> getExecutableDependencies(const std::string & path, con
     return dependencies;
 }
 
+#if defined(__GLIBC__)
 /// The directories of the sockets of the services that the modules of the Name Service Switch for the services in
 /// `/etc/nsswitch.conf` connect to, which `DT_NEEDED` does not tell: `avahi-daemon` for `nss-mdns`, `sssd` for
 /// `sss`, `nslcd` for `ldap` of `nss-pam-ldapd`, and the services of the user database of `systemd` for `systemd`.
@@ -1336,9 +1340,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     /// The libraries of the programs that are started later, with the links that name them, as for the mapped files.
-    /// Only with glibc: a build with musl is linked statically, as the programs it starts are.
+    /// Also when the server itself is linked statically: the programs it starts, such as a bridge or the interpreter
+    /// of an executable user-defined function, can be linked dynamically against the C library of the system.
     std::vector<std::string> executable_dependencies;
-#if defined(__GLIBC__)
     for (const auto & path : std::vector<FilesystemIsolationPath>(all_paths))
         if (path.executable)
             for (auto & dependency : getExecutableDependencies(path.path, mapped_files))
@@ -1346,12 +1350,14 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
                 all_paths.push_back({dependency, FilesystemIsolationPath::Access::ReadOnly, fmt::format("needed by {}", path.path)});
                 executable_dependencies.push_back(std::move(dependency));
             }
-#endif
-    if (const auto interpreter = getInterpreter())
+    const auto interpreter = getInterpreter();
+    /// The dynamic loader of the server or of a program it starts looks up the libraries there.
+    if (interpreter || !executable_dependencies.empty())
+        all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
+    if (interpreter)
     {
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
 #if defined(__GLIBC__)
-        all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
         for (auto & module : getNameServiceModules(mapped_files))
             all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
         for (auto & directory : getNameServiceSocketDirectories())
