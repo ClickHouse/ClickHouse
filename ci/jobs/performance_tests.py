@@ -3403,7 +3403,7 @@ def main():
         # refuse it: re-run the whole workflow instead.
         if res and not info.is_local_run:
             link_flags = Shell.get_output_or_raise(
-                f"{ch_path}/clickhouse local --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""
+                f"{local_command(f'{ch_path}/clickhouse')} --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""
             )
             results.append(
                 Result(
