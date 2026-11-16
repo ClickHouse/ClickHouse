@@ -147,3 +147,43 @@ SELECT 'totals except', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NU
 SELECT 'totals except off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
 SELECT 'totals intersect', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'totals intersect off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+
+-- The filter cloned into each branch keeps the `optimize_constant_columns_after_filter` value of the query it
+-- was planned in, so the subquery SETTINGS decide for every branch whether its filter emits a Const column.
+DROP TABLE IF EXISTS t_intex_const_l;
+DROP TABLE IF EXISTS t_intex_const_r;
+CREATE TABLE t_intex_const_l (x UInt64) ENGINE = Memory;
+CREATE TABLE t_intex_const_r (x UInt64) ENGINE = Memory;
+INSERT INTO t_intex_const_l SELECT number % 2 FROM numbers(1000);
+INSERT INTO t_intex_const_r SELECT number % 3 FROM numbers(1000);
+
+SELECT 'const inner disabled', count() FROM
+(
+    SELECT x FROM (SELECT x FROM t_intex_const_l INTERSECT ALL SELECT x FROM t_intex_const_r) WHERE x = 1
+    SETTINGS optimize_constant_columns_after_filter = 0
+)
+SETTINGS optimize_constant_columns_after_filter = 1, query_plan_filter_push_down = 1, log_processors_profiles = 1,
+    log_comment = '04401_const_inner_disabled';
+
+SELECT 'const inner enabled', count() FROM
+(
+    SELECT x FROM (SELECT x FROM t_intex_const_l INTERSECT ALL SELECT x FROM t_intex_const_r) WHERE x = 1
+    SETTINGS optimize_constant_columns_after_filter = 1
+)
+SETTINGS optimize_constant_columns_after_filter = 0, query_plan_filter_push_down = 1, log_processors_profiles = 1,
+    log_comment = '04401_const_inner_enabled';
+
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+
+-- Per branch filter: a full UInt64 column takes 8 bytes per row, a Const one much less.
+SELECT q.log_comment, countIf(p.output_bytes < 8 * p.output_rows) AS const_branches, countIf(p.output_bytes = 8 * p.output_rows) AS full_branches
+FROM system.processors_profile_log AS p
+INNER JOIN system.query_log AS q ON p.query_id = q.query_id
+WHERE q.current_database = currentDatabase() AND q.type = 'QueryFinish' AND q.event_date >= yesterday()
+    AND q.log_comment IN ('04401_const_inner_disabled', '04401_const_inner_enabled')
+    AND p.event_date >= yesterday() AND p.name = 'FilterTransform' AND p.output_rows > 0
+GROUP BY q.log_comment
+ORDER BY q.log_comment;
+
+DROP TABLE t_intex_const_l;
+DROP TABLE t_intex_const_r;

@@ -1563,11 +1563,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         /// The same width and types are not enough: the new set key must be a permutation of the
         /// original, so every column resolves to a branch input and each input is used exactly once.
-        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> output_by_name;
         for (const auto * out : filter->getExpression().getOutputs())
             output_by_name.emplace(out->result_name, out);
 
-        std::unordered_set<const ActionsDAG::Node *> used_inputs;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> used_inputs;
         for (const auto & col : *expected_output)
         {
             auto it = output_by_name.find(col.name);
@@ -1604,11 +1604,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            filter_node.step = std::make_unique<FilterStep>(
+            auto new_filter = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
+            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
+            filter_node.step = std::move(new_filter);
         }
 
         ///                - Filter - Something

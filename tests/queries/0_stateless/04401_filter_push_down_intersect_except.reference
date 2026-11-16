@@ -31,3 +31,7 @@ totals except	0
 totals except off	0
 totals intersect	0
 totals intersect off	0
+const inner disabled	333
+const inner enabled	333
+04401_const_inner_disabled	0	2
+04401_const_inner_enabled	2	0
