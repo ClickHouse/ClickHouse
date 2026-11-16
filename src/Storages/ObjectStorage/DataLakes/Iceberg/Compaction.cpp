@@ -1220,6 +1220,7 @@ static bool writeMetadataFiles(
     }
 
     /// Restore the current snapshot of the source table.
+    /// TODO: Map the source `snapshot-log` to the kept snapshots. Timestamp reads use the log and miss a rollback to a dropped snapshot.
     Int64 source_current_snapshot_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (auto it = nearest_kept.find(source_current_snapshot_id); it != nearest_kept.end() && it->second >= 0)
     {
