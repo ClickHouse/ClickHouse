@@ -3,7 +3,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseRegistry.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 #include <Common/logger_useful.h>
@@ -25,7 +25,7 @@ class Session;
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_);
+    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -65,7 +65,7 @@ private:
     static std::optional<IcebergNamespaceName> getNamespaceOrSendNotFound(
         const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response);
 
-    Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
+    [[nodiscard]] Poco::JSON::Object::Ptr readTableMetadata(const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const;
 
     static void sendLoadTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
     static void sendCommitTableResult(const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response);
@@ -84,7 +84,7 @@ private:
 
     LoggerPtr log;
     IServer & server;
-    IcebergRESTCatalogWarehousesPtr warehouses;
+    IcebergRESTCatalogWarehouseRegistryPtr warehouses;
 };
 
 }

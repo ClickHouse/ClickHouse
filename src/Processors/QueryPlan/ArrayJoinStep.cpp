@@ -14,6 +14,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 namespace DB
 {
 
@@ -94,7 +95,7 @@ bool ArrayJoinStep::canRemoveUnusedColumns() const
     });
 }
 
-IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     auto unneeded = unneeded_output_positions;
     for (const auto & name : getReadColumns())
@@ -103,7 +104,7 @@ IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const s
 }
 
 IQueryPlanStep::RemoveUnusedColumnsResult
-ArrayJoinStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+ArrayJoinStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & inputs)
 {
     const auto & pruned = inputs.at(0);
 

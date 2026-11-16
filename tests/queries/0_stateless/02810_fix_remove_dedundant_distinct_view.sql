@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the test counts the DISTINCT steps in EXPLAIN, and with parallel replicas EXPLAIN also prints
+-- the preliminary DISTINCT that runs on the replicas.
+
 SET explain_query_plan_default = 'legacy';
 drop table if exists tab_v;
 drop table if exists tab;

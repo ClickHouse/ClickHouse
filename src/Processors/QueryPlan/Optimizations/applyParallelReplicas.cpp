@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -495,6 +496,37 @@ public:
             return;
         }
 
+        /// Run preliminary DISTINCT on replicas; the final DISTINCT stays on the initiator.
+        const auto * distinct_step = typeid_cast<const DistinctStep *>(parent_step);
+        if (distinct_step && distinct_step->isPreliminary())
+        {
+            std::swap(current_node->step, parent_node->step);
+            parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
+
+            /// The limit hint only makes the preliminary DISTINCT stop reading its streams once each has enough distinct rows.
+            /// The last chunk still passes through whole, so the hint does not bound what a replica sends. A final DISTINCT and
+            /// a LIMIT, added below, limit the number of rows sent to the initiator: the final DISTINCT deduplicates the rows of
+            /// all streams, and the LIMIT cuts them to the hint.
+            if (const UInt64 limit_hint = distinct_step->getLimitHint())
+            {
+                const auto & header = current_node->step->getOutputHeader();
+
+                auto & final_distinct_node = nodes.emplace_back();
+                final_distinct_node.step = std::make_unique<DistinctStep>(
+                    header, distinct_step->getSettings(), limit_hint, distinct_step->getColumnNames(), /*pre_distinct_=*/ false);
+                final_distinct_node.step->setStepDescription("local DISTINCT");
+                final_distinct_node.children = {current_node};
+
+                auto & local_limit_node = nodes.emplace_back();
+                local_limit_node.step = std::make_unique<LimitStep>(header, limit_hint, 0);
+                local_limit_node.step->setStepDescription("local LIMIT");
+                local_limit_node.children = {&final_distinct_node};
+
+                parent_node->children = {&local_limit_node};
+            }
+            return;
+        }
+
         const auto * aggregating_step = typeid_cast<const AggregatingStep *>(parent_step);
         if (aggregating_step)
         {
@@ -625,7 +657,7 @@ public:
 
 private:
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
-    bool mustReadTillEnd() const
+    [[nodiscard]] bool mustReadTillEnd() const
     {
         for (const auto & frame : stack)
             if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))

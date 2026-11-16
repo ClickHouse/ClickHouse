@@ -41,7 +41,7 @@ private:
     OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
 
     /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
-    String getURIForLogging(const HTTPServerRequest & request) const;
+    [[nodiscard]] String getURIForLogging(const HTTPServerRequest & request) const;
 
     IServer & server;
     const PrometheusRequestHandlerConfig config;

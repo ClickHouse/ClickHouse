@@ -39,20 +39,20 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YTsarususDictionarySource");
     }
 
-    bool supportsSelectiveLoad() const override;
+    [[nodiscard]] bool supportsSelectiveLoad() const override;
 
     BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-    bool isModified() const override { return true; }
+    [[nodiscard]] bool isModified() const override { return true; }
 
     /// Not yet supported
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<YTsarususDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<YTsarususDictionarySource>(*this); }
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
 private:
     ContextPtr context;

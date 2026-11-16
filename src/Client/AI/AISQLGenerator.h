@@ -22,10 +22,10 @@ public:
     std::string generateSQL(const std::string & prompt);
 
     /// Check if the generator is available and properly configured
-    bool isAvailable() const;
+    [[nodiscard]] bool isAvailable() const;
 
     /// Get the provider name
-    std::string getProviderName() const;
+    [[nodiscard]] std::string getProviderName() const;
 
 private:
     AIConfiguration config;
@@ -34,16 +34,16 @@ private:
     std::ostream & output_stream;
 
     /// Build the system prompt for SQL generation
-    std::string buildSystemPrompt() const;
+    [[nodiscard]] std::string buildSystemPrompt() const;
 
     /// Build the complete prompt with context
-    std::string buildCompletePrompt(const std::string & user_prompt) const;
+    [[nodiscard]] std::string buildCompletePrompt(const std::string & user_prompt) const;
 
     /// Clean SQL from markdown formatting and whitespace
     static std::string cleanSQL(const std::string & sql);
 
     /// Get the appropriate model string for the provider
-    std::string getModelString() const;
+    [[nodiscard]] std::string getModelString() const;
 };
 
 }

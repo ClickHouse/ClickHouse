@@ -24,7 +24,7 @@ public:
 
     void registerMetadataStorageType(const std::string & metadata_type, Creator creator);
 
-    MetadataStoragePtr create(
+    [[nodiscard]] MetadataStoragePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
