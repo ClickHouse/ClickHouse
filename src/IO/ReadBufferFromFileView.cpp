@@ -28,6 +28,9 @@ ReadBufferFromFileView::ReadBufferFromFileView(
         ByteRangeSet slice;
         slice.add({left_bound, right_bound - left_bound});
         impl->setRequestMap(std::move(slice));
+        /// A cache below must not download the bytes of the neighbors in the archive, which a read of this file never
+        /// needs.
+        impl->setReadBounds(left_bound, right_bound);
     }
 
     /// Seek to the begin of file.
@@ -65,6 +68,15 @@ void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
     if (right_bound == left_bound)
         return;
     executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
+}
+
+void ReadBufferFromFileView::setReadBounds(size_t left, size_t right)
+{
+    /// A view inside this one (a region of a file inside an archive) narrows the bounds this view set.
+    left = std::min(left_bound + left, right_bound);
+    right = std::min(left_bound + right, right_bound);
+    if (left < right)
+        impl->setReadBounds(left, right);
 }
 
 ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const

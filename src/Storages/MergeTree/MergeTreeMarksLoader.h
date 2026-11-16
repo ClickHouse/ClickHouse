@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <future>
+#include <optional>
 
 namespace DB
 {
@@ -14,6 +15,7 @@ namespace DB
 struct MergeTreeIndexGranularityInfo;
 using MarksPtr = MarkCache::MappedPtr;
 class Threadpool;
+class ReadBuffer;
 
 /// Class that helps to get marks by indexes.
 /// Always immutable and thread safe.
@@ -34,6 +36,14 @@ private:
 
 using MergeTreeMarksGetterPtr = std::unique_ptr<const MergeTreeMarksGetter>;
 
+/// Marks stored as a byte range of a file rather than as a marks file of their own: compressed blocks of non-adaptive
+/// marks, whatever the part's mark type.
+struct MergeTreeMarksSlice
+{
+    size_t begin = 0;
+    size_t end = 0;
+};
+
 /// Class that helps to load marks on demand.
 /// Thread safe, but locks while loading marks.
 class MergeTreeMarksLoader
@@ -49,7 +59,8 @@ public:
         const ReadSettings & read_settings_,
         ThreadPool * load_marks_threadpool_,
         size_t num_columns_in_mark_,
-        bool use_streaming_compression_);
+        bool use_streaming_compression_,
+        std::optional<MergeTreeMarksSlice> slice_ = {});
 
     ~MergeTreeMarksLoader();
 
@@ -67,13 +78,26 @@ private:
     const ReadSettings read_settings;
     const size_t num_columns_in_mark;
     const bool use_streaming_compression;
+    const std::optional<MergeTreeMarksSlice> slice;
 
     std::mutex load_mutex;
     MarkCache::MappedPtr marks;
 
+    /// The decompressed marks and their format.
+    struct OpenedMarks
+    {
+        std::unique_ptr<ReadBuffer> reader;
+        bool adaptive = false;
+        size_t mark_size = 0;
+        String path_for_errors;
+    };
+    /// Opens the marks file, or the slice of it.
+    OpenedMarks openMarksReader();
+    String getMarkCacheKey() const;
+
+    MarkCache::MappedPtr loadMarksImpl();
     MarkCache::MappedPtr loadMarksSync();
     std::future<MarkCache::MappedPtr> loadMarksAsync();
-    MarkCache::MappedPtr loadMarksImpl();
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;

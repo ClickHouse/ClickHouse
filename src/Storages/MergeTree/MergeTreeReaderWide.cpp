@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SubstreamView.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -45,10 +46,20 @@ namespace
         return column.getTypeInStorage()->hasDynamicStructure()
             || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
     }
+
+    /// The key of a stream in the reader's stream map. It is the data file name, except that several views of one file
+    /// are told apart by the keys of the views.
+    String getStreamKey(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+    {
+        if (auto view = ISerialization::getStreamView(substream_path))
+            return stream_name + ":" + view->key;
+        return stream_name;
+    }
 }
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -183,33 +194,44 @@ void MergeTreeReaderWide::prefetchForColumns(
     if (settings.filesystem_prefetches_limit && num_columns > settings.filesystem_prefetches_limit)
         return;
 
-    if (deserialize_prefixes)
-        deserializePrefixForAllColumnsWithPrefetch(num_columns, from_mark, priority);
-
     /// Request reading of data in advance,
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
-    for (size_t pos = 0; pos < num_columns; ++pos)
+    auto prefetch_columns = [&]
     {
-        if (isColumnSkipped(pos))
-            continue;
-
-        const auto continue_reading = selector(pos);
-        if (!continue_reading)
-            continue;
-
-        try
+        for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-            prefetchForColumn(
-                priority, columns_to_read[pos], serializations[pos], from_mark, *continue_reading, cache);
+            if (isColumnSkipped(pos))
+                continue;
+
+            const auto continue_reading = selector(pos);
+            if (!continue_reading)
+                continue;
+
+            try
+            {
+                auto & cache = caches[columns_to_read[pos].getNameInStorage()];
+                prefetchForColumn(
+                    priority, columns_to_read[pos], serializations[pos], from_mark, *continue_reading, cache);
+            }
+            catch (Exception & e)
+            {
+                /// Better diagnostics.
+                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
+                throw;
+            }
         }
-        catch (Exception & e)
-        {
-            /// Better diagnostics.
-            e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
-            throw;
-        }
+    };
+
+    if (deserialize_prefixes)
+    {
+        /// The streams known without the prefixes are prefetched first, so that their reads overlap with reading the
+        /// prefixes; the streams only the prefixes list are prefetched after them.
+        if (deserialize_binary_bulk_state_map.empty())
+            prefetch_columns();
+        deserializePrefixForAllColumnsWithPrefetch(num_columns, from_mark, priority);
     }
+
+    prefetch_columns();
 }
 
 size_t MergeTreeReaderWide::readRows(
@@ -973,14 +995,35 @@ void MergeTreeReaderWide::addStreams(
             return;
         }
 
-        getOrAddStream(substream_path, *stream_name);
+        getOrAddStream(substream_path, *stream_name, name_and_type);
         has_any_stream = true;
     };
 
     serialization->enumerateStreams(callback);
 
+    /// The streams only the prefixes list, such as those read through views, are known from the part's listing of the
+    /// subcolumn: opening them now starts loading their marks together with the others. The listing is of the subcolumn
+    /// read alone; a read that takes another layout (with the whole column, or a sub-object read from the plain layout)
+    /// loads the marks of these streams and prefetches them for nothing.
+    if (!settings.read_only_column_sample && name_and_type.isSubcolumn())
+    {
+        if (auto cached_streams = data_part_info_for_read->tryGetCachedSubcolumnStreams(name_and_type.name))
+        {
+            for (const auto & stream : cached_streams->streams)
+            {
+                if (!ISerialization::isMetadataStream(stream.substream_path))
+                    getOrAddStream(stream.substream_path, stream.name, name_and_type);
+            }
+        }
+    }
+
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (has_derived_stream)
+        columns_with_derived_streams.insert(name_and_type.name);
+#endif
 
     /// Not a single stream of the column is in the part: it was added by an `ALTER` after the
     /// part was written, and the read produces nothing for it. `partially_read_columns` records
@@ -1063,13 +1106,93 @@ void MergeTreeReaderWide::FileStreams::clearPrefetched()
     prefetched.clear();
 }
 
-MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+size_t MergeTreeReaderWide::getStreamDataSize(const ISerialization::SubstreamPath & substream_path, const String & stream_name) const
 {
-    return streams.getOrCreate(stream_name, [&]() -> std::unique_ptr<MergeTreeReaderStream>
+    if (auto view = ISerialization::getStreamView(substream_path))
+        return view->end - view->begin;
+    return data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION);
+}
+
+MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(
+    const ISerialization::SubstreamPath & substream_path, const String & stream_name, const NameAndTypePair & name_and_type)
+{
+    /// A stream read through a view lives in a slice of a file shared with other streams of the column; the key of
+    /// the view tells them apart in the map while they all name one file.
+    const auto view = ISerialization::getStreamView(substream_path);
+
+    return streams.getOrCreate(getStreamKey(substream_path, stream_name), [&]() -> std::unique_ptr<MergeTreeReaderStream>
     {
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
         size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
+
+        auto stream_settings = settings;
+        stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
+        stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
+        stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
+
+        size_t data_file_size = getStreamDataSize(substream_path, stream_name);
+
+        if (view)
+        {
+            /// The marks of the view are a slice of the shared file's marks stream, in the format the view describes.
+            auto marks_substream_path = ISerialization::getStreamViewFilePath(substream_path, view->marks_stream);
+            auto marks_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, marks_substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
+            if (!marks_stream_name)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Marks stream of a view of column {} is not found", name_and_type.name);
+
+            /// The stream's mark indexes come from the part's mark ranges, while the view's marks count comes from the
+            /// serialization's metadata: a view covering fewer granules would be read past its loaded marks. A view has a
+            /// mark per granule and the final mark.
+            size_t num_granules_in_part = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
+            if (view->marks_count != num_granules_in_part + 1)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "A view of column {} has {} marks, the part has {} granules",
+                    name_and_type.name, view->marks_count, num_granules_in_part);
+
+            auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+                data_part_info_for_read,
+                mark_cache,
+                *marks_stream_name + DATA_FILE_EXTENSION,
+                view->marks_count,
+                data_part_info_for_read->getIndexGranularityInfo(),
+                settings.save_marks_in_cache,
+                settings.read_settings,
+                load_marks_threadpool,
+                /*num_columns_in_mark=*/ 1,
+                settings.use_streaming_marks_compression,
+                MergeTreeMarksSlice{.begin = view->marks_begin, .end = view->marks_end});
+
+            auto file_view = MergeTreeReaderStream::FileView{.begin = view->begin, .end = view->end, .key = view->key};
+
+            /// A read of the whole part reads the view from its start to its end and loads no marks; its marks count is
+            /// the part's, which the part's single mark range ends at.
+            if (read_without_marks)
+            {
+                auto stream = std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+                    data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+                    num_marks_in_part, all_mark_ranges, stream_settings,
+                    uncompressed_cache, data_file_size,
+                    std::move(marks_loader), profile_callback, clock_type,
+                    std::move(file_view));
+                stream->updateReadRequestMap(read_request_map);
+                return stream;
+            }
+
+            auto stream = std::make_unique<MergeTreeReaderStreamSingleColumn>(
+                data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+                view->marks_count, all_mark_ranges, stream_settings,
+                uncompressed_cache, data_file_size,
+                marks_loader, profile_callback, clock_type,
+                std::move(file_view));
+            stream->updateReadRequestMap(read_request_map);
+            /// As below: a metadata stream is read whole from its start.
+            if (data_file_size != 0 && !stream_settings.is_metadata_file)
+                marks_loader->startAsyncLoad();
+            return stream;
+        }
 
         auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
             data_part_info_for_read,
@@ -1082,13 +1205,6 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
             load_marks_threadpool,
             /*num_columns_in_mark=*/ 1,
             settings.use_streaming_marks_compression);
-
-        auto stream_settings = settings;
-        stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
-        stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
-        stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
-
-        size_t data_file_size = data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION);
 
         auto create_stream = [&]<typename Stream>()
         {
@@ -1107,7 +1223,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
 
         /// Nothing is read from an empty data file (for example, a variant of a `Dynamic` column that has no values
         /// in this part), and all its marks point to the beginning of the file, so its marks file is not needed.
-        if (data_file_size != 0)
+        /// Neither are the marks of a metadata stream, which the prefixes read whole from its start.
+        if (data_file_size != 0 && !stream_settings.is_metadata_file)
             marks_loader->startAsyncLoad();
 
         return create_stream.operator()<MergeTreeReaderStreamSingleColumn>();
@@ -1126,6 +1243,10 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     /// If substream have already been read.
     if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
         return nullptr;
+
+    /// A shared file is read only through the views of the streams living in it, never opened as a whole.
+    if (ISerialization::isStreamReadThroughViews(substream_path))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream of column {} read through views is requested as a whole", name_and_type.name);
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
@@ -1146,10 +1267,20 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         return nullptr;
     }
 
-    /// If we didn't create requested stream, but file with this path exists, create a stream for it.
-    /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
-    /// only after deserializing of binary bulk prefix.
-    auto & stream = getOrAddStream(substream_path, *stream_name);
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Once the prefixes are known, every stream a read uses is open: one opened now was missed by
+    /// addStreamsWithDeserializedPrefixes, and the read loads its marks synchronously. The streams of a prefix and the
+    /// parent streams of an ephemeral subcolumn are opened on demand.
+    if (streams_discovered && !seek_to_start && !columns_with_derived_streams.contains(name_and_type.name)
+        && !streams.find(getStreamKey(substream_path, *stream_name)))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Stream {} of column {} is opened by a read after the streams were discovered",
+            *stream_name, name_and_type.name);
+#endif
+
+    /// Open a stream that is not open yet: the stream of a prefix, or the parent stream of an ephemeral subcolumn.
+    auto & stream = getOrAddStream(substream_path, *stream_name, name_and_type);
     stream.adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)
@@ -1176,6 +1307,8 @@ void MergeTreeReaderWide::deserializePrefix(
         deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
+        deserialize_settings.object_shared_data_max_sub_object_paths_to_read_separately
+            = settings.object_shared_data_max_sub_object_paths_to_read_separately;
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -1185,7 +1318,7 @@ void MergeTreeReaderWide::deserializePrefix(
             /// If we do not read from the first mark, we should unmark this stream as prefetched
             /// to prefetch it again starting from the current mark after prefix is deserialized.
             if (stream_name && from_mark != 0)
-                streams.unmarkPrefetched(*stream_name);
+                streams.unmarkPrefetched(getStreamKey(substream_path, *stream_name));
 
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, cache);
         };
@@ -1196,28 +1329,17 @@ void MergeTreeReaderWide::deserializePrefix(
                 return;
 
             if (from_mark != 0)
-                streams.unmarkPrefetched(*stream_name);
+                streams.unmarkPrefetched(getStreamKey(substream_path, *stream_name));
 
-            auto & stream = getOrAddStream(substream_path, *stream_name);
+            auto & stream = getOrAddStream(substream_path, *stream_name, name_and_type);
             stream.adjustRightMark(last_mark_to_read);
             stream.seekToStart();
-        };
-        /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
-        deserialize_settings.dynamic_subcolumns_callback = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            /// Don't create streams for ephemeral subcolumns that don't store any real data.
-            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                return;
-
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (stream_name)
-                getOrAddStream(substream_path, *stream_name);
         };
         deserialize_settings.release_stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name)
-                streams.release(*stream_name);
+                streams.release(getStreamKey(substream_path, *stream_name));
         };
         deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
@@ -1227,35 +1349,42 @@ void MergeTreeReaderWide::deserializePrefix(
             return stream_name.has_value();
         };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
-        deserialize_settings.has_uniform_marks_callback =
-            [&](const ISerialization::SubstreamPath & substream_path,
-                size_t max_transitions) -> bool
+        /// A sample read only lists the streams and their sizes, so it must not enable this callback's prefix-time
+        /// optimizations: they read column data a sample read never uses.
+        if (!settings.read_only_column_sample)
         {
-            /// Wide parts with a final mark have a trailing position after the
-            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
-            /// positions in the dictionary stream (data mark + final mark).
-            /// Without a final mark, the same check must be stricter: a true
-            /// single-dictionary part has only one distinct position, while a part
-            /// with one dictionary in the main stream and another in the suffix can
-            /// still look like "2 positions".
-            /// This is only a necessary condition; `SerializationLowCardinality`
-            /// still checks the `DictionaryKeys` stream reaches EOF after the
-            /// first dictionary.
-            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
-            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
-                ? max_transitions
-                : max_transitions - 1;
+            deserialize_settings.has_uniform_marks_callback =
+                [&](const ISerialization::SubstreamPath & substream_path,
+                    size_t max_transitions) -> bool
+            {
+                /// Wide parts with a final mark have a trailing position after the
+                /// suffix, so a single per-part dictionary shows up as <= 2 distinct
+                /// positions in the dictionary stream (data mark + final mark).
+                /// Without a final mark, the same check must be stricter: a true
+                /// single-dictionary part has only one distinct position, while a part
+                /// with one dictionary in the main stream and another in the suffix can
+                /// still look like "2 positions".
+                /// This is only a necessary condition; `SerializationLowCardinality`
+                /// still checks the `DictionaryKeys` stream reaches EOF after the
+                /// first dictionary.
+                /// The marks of a view always end with a final mark.
+                const bool has_final_mark = ISerialization::getStreamView(substream_path)
+                    || data_part_info_for_read->getIndexGranularity().hasFinalMark();
+                const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
+                    ? max_transitions
+                    : max_transitions - 1;
 
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                name_and_type, substream_path, ".bin",
-                data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return false;
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type, substream_path, ".bin",
+                    data_part_info_for_read->getChecksums(), storage_settings);
+                if (!stream_name)
+                    return false;
 
-            /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
-            auto & stream = getOrAddStream(substream_path, *stream_name);
-            return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
-        };
+                /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
+                auto & stream = getOrAddStream(substream_path, *stream_name, name_and_type);
+                return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
+            };
+        }
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
@@ -1303,6 +1432,43 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         deserialize_binary_bulk_state_map = deserialization_prefixes_cache->getOrSet(deserialize);
     else
         deserialize_binary_bulk_state_map = deserialize();
+
+    addStreamsWithDeserializedPrefixes(num_columns);
+}
+
+void MergeTreeReaderWide::addStreamsWithDeserializedPrefixes(size_t num_columns)
+{
+    /// A read that only lists the streams and their sizes reads no data, so it loads no marks.
+    if (streams_discovered || settings.read_only_column_sample)
+        return;
+    streams_discovered = true;
+
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            continue;
+
+        const auto & name_and_type = columns_to_read[pos];
+        auto state_it = deserialize_binary_bulk_state_map.find(name_and_type.name);
+        if (state_it == deserialize_binary_bulk_state_map.end())
+            continue;
+
+        auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            /// Ephemeral substreams have no file; metadata streams are read only by the prefixes, which are read already.
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()) || ISerialization::isMetadataStream(substream_path))
+                return;
+
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (stream_name)
+                getOrAddStream(substream_path, *stream_name, name_and_type);
+        };
+
+        auto data = ISerialization::SubstreamData(serializations[pos]).withType(name_and_type.type).withDeserializeState(state_it->second);
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        serializations[pos]->enumerateStreams(enumerate_settings, callback, data);
+    }
 }
 
 void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, size_t from_mark)
@@ -1321,13 +1487,16 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
         return [&, column_cache](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name || streams.isPrefetched(*stream_name))
+            if (!stream_name)
+                return;
+            auto stream_key = getStreamKey(substream_path, *stream_name);
+            if (streams.isPrefetched(stream_key))
                 return;
 
             if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, *column_cache))
             {
                 buf->prefetch(priority);
-                streams.markPrefetched(*stream_name);
+                streams.markPrefetched(stream_key);
             }
         };
     };
@@ -1365,18 +1534,20 @@ void MergeTreeReaderWide::prefetchForColumn(
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        /// Several view streams of one column share one file, told apart in the prefetched set by the keys of their views.
+        auto stream_key = stream_name ? std::optional{getStreamKey(substream_path, *stream_name)} : std::nullopt;
 
-        if (stream_name && !streams.isPrefetched(*stream_name))
+        if (stream_name && !streams.isPrefetched(*stream_key))
         {
-            /// There is nothing to prefetch from an empty data file, and its marks are not needed.
-            if (data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION) == 0)
+            /// There is nothing to prefetch from an empty stream, and its marks are not needed.
+            if (getStreamDataSize(substream_path, *stream_name) == 0)
                 return;
 
             bool seek_to_mark = !continue_reading && !read_without_marks;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
             {
                 buf->prefetch(priority);
-                streams.markPrefetched(*stream_name);
+                streams.markPrefetched(*stream_key);
             }
         }
     };
@@ -1387,6 +1558,12 @@ void MergeTreeReaderWide::prefetchForColumn(
         auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
         ISerialization::EnumerateStreamsSettings settings;
         serialization->enumerateStreams(settings, callback, data);
+    }
+    else if (auto cached_streams = name_and_type.isSubcolumn() ? data_part_info_for_read->tryGetCachedSubcolumnStreams(name_and_type.name) : nullptr)
+    {
+        /// The streams the part listed for the subcolumn with its prefixes, which the enumeration without them may miss.
+        for (const auto & stream : cached_streams->streams)
+            callback(stream.substream_path);
     }
     else
     {
@@ -1416,7 +1593,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        bool was_prefetched = stream_name && streams.isPrefetched(*stream_name);
+        bool was_prefetched = stream_name && streams.isPrefetched(getStreamKey(substream_path, *stream_name));
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
@@ -1431,11 +1608,25 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        auto * stream = streams.find(*stream_name);
+        auto * stream = streams.find(getStreamKey(substream_path, *stream_name));
         if (!stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} is not found", *stream_name, name_and_type.name);
 
         stream->seekToMark(mark);
+    };
+
+    deserialize_settings.seek_stream_to_granule_callback = [&](const ISerialization::SubstreamPath & substream_path, size_t granule) -> ReadBuffer *
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+        if (!stream_name)
+            return nullptr;
+
+        auto * stream = streams.find(getStreamKey(substream_path, *stream_name));
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} is not found", *stream_name, name_and_type.name);
+
+        stream->seekToMark(granule);
+        return stream->getDataBuffer();
     };
 
     /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a
@@ -1452,7 +1643,7 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        if (auto * stream = streams.find(*stream_name))
+        if (auto * stream = streams.find(getStreamKey(substream_path, *stream_name)))
             stream->seekToMark(from_mark);
     };
 
@@ -1463,7 +1654,7 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return 0.0;
 
-        return avg_value_size_hints[*stream_name];
+        return avg_value_size_hints[getStreamKey(substream_path, *stream_name)];
     };
 
     deserialize_settings.update_avg_value_size_hint_callback
@@ -1473,7 +1664,7 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
+        IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[getStreamKey(substream_path, *stream_name)]);
     };
 
     deserialize_settings.continuous_reading = continue_reading;
@@ -1510,13 +1701,20 @@ std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide:
             if (!stream_name)
                 return;
 
-            /// A file shared by several subcolumns is reported once per subcolumn: their hints add up, a stream without
+            /// A stream shared by several subcolumns is reported once per subcolumn: their hints add up, a stream without
             /// a hint counts its file once.
             const auto & size_hint = substream_path.back().size_hint;
-            auto [it, inserted] = stream_positions.try_emplace(*stream_name, streams_of_column.size());
+            auto [it, inserted] = stream_positions.try_emplace(getStreamKey(substream_path, *stream_name), streams_of_column.size());
             if (inserted)
             {
-                streams_of_column.push_back({*stream_name, size_hint});
+                /// Naming and opening a stream use only the types and names of the path's elements and the view.
+                auto path = substream_path;
+                for (auto & element : path)
+                {
+                    element.data = {};
+                    element.creator = nullptr;
+                }
+                streams_of_column.push_back({*stream_name, size_hint, std::move(path)});
             }
             else if (size_hint && streams_of_column[it->second].size_hint)
             {

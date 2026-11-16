@@ -994,7 +994,8 @@ FileCache::getOrSet(
     const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit,
     const OriginInfo & origin_info,
-    std::optional<size_t> boundary_alignment_)
+    std::optional<size_t> boundary_alignment_,
+    std::optional<FileSegment::Range> alignment_bounds)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -1008,10 +1009,18 @@ FileCache::getOrSet(
     FileSegment::Range result_range = initial_range;
 
     const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
-    const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
+    auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
     auto aligned_end_offset = (file_size
         ? std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size)
         : FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment)) - 1;
+
+    /// The segments stay within the bounds of the caller's reads, cut at their edges, and keep the alignment inside
+    /// them. A request outside the bounds is still covered whole.
+    if (alignment_bounds)
+    {
+        aligned_offset = std::max(aligned_offset, std::min(alignment_bounds->left, initial_range.left));
+        aligned_end_offset = std::min(aligned_end_offset, std::max(alignment_bounds->right, initial_range.right));
+    }
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);

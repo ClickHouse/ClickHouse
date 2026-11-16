@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsBool merge_tree_prefetch_json_shared_data_substreams;
+    extern const SettingsUInt64 object_shared_data_max_sub_object_paths_to_read_separately;
     extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
@@ -66,6 +67,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_target_chunk_rows;
     extern const MergeTreeSettingsMergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version;
+    extern const MergeTreeSettingsUInt64 serialization_spill_max_bytes_to_buffer;
+    extern const MergeTreeSettingsUInt64 serialization_spill_max_temporary_data_size;
+    extern const MergeTreeSettingsMergeTreeSerializationSpillErrorMode serialization_spill_error_mode;
+    extern const MergeTreeSettingsBool serialization_spill_to_part_disk_only;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsNonZeroUInt64 max_buckets_in_map;
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
@@ -112,6 +117,10 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , object_shared_data_target_chunk_rows((*storage_settings)[MergeTreeSetting::object_shared_data_target_chunk_rows])
     , object_typed_shared_data_serialization_version((*storage_settings)[MergeTreeSetting::object_typed_shared_data_serialization_version])
+    , serialization_spill_max_bytes_to_buffer((*storage_settings)[MergeTreeSetting::serialization_spill_max_bytes_to_buffer])
+    , serialization_spill_max_temporary_data_size((*storage_settings)[MergeTreeSetting::serialization_spill_max_temporary_data_size])
+    , serialization_spill_error_mode((*storage_settings)[MergeTreeSetting::serialization_spill_error_mode])
+    , serialization_spill_to_part_disk_only((*storage_settings)[MergeTreeSetting::serialization_spill_to_part_disk_only])
     , max_buckets_in_map((*storage_settings)[MergeTreeSetting::max_buckets_in_map])
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
     , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
@@ -150,6 +159,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
+    result.object_shared_data_max_sub_object_paths_to_read_separately = settings[Setting::object_shared_data_max_sub_object_paths_to_read_separately];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indexes_enable_bulk_filtering];
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];

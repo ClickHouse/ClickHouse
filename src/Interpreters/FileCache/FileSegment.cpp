@@ -1400,7 +1400,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         {
             chassert(getDownloaderUnlocked(lock).empty());
             chassert(!fs::exists(getPath()));
-            chassert(!queue_iterator);
+            /// A temporary file may hold a reservation before its first write; its holder keeps it from eviction.
+            chassert(!queue_iterator || segment_kind == FileSegmentKind::Ephemeral);
             break;
         }
         case State::DOWNLOADED:

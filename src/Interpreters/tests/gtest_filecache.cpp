@@ -1847,6 +1847,137 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
     }
 }
 
+/// A temporary buffer created with a reservation in the cache: the space is taken before anything is written, the data
+/// reads back, and the file and its reservation go with the buffer. A reservation the cache cannot hold is refused with
+/// nothing created or reserved.
+TEST_F(FileCacheTest, TemporaryDataWithReservation)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    DB::FileCache file_cache("temporary_data_with_reservation", settings);
+    file_cache.initialize();
+
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, &file_cache);
+
+    {
+        auto reserved = TemporaryDataBuffer::tryCreateWithReservation(tmp_data_scope, 4_KiB);
+        ASSERT_EQ(reserved.result, TemporaryDataReserveResult::Reserved);
+        ASSERT_TRUE(reserved.buffer);
+        ASSERT_GE(file_cache.getUsedCacheSize(), 4_KiB);
+        ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 4_KiB);
+
+        reserved.buffer->write("1234567890", 10);
+        reserved.buffer->write("abcde", 5);
+        auto read_buf = reserved.buffer->read();
+
+        char buf[15];
+        ASSERT_EQ(read_buf->read(buf, 15), 15);
+        ASSERT_EQ(std::string(buf, 15), "1234567890abcde");
+        ASSERT_EQ(read_buf->read(buf, 15), 0);
+    }
+
+    ASSERT_EQ(file_cache.getUsedCacheSize(), 0);
+    ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 0);
+
+    {
+        auto reserved = TemporaryDataBuffer::tryCreateWithReservation(tmp_data_scope, 20_KiB);
+        ASSERT_NE(reserved.result, TemporaryDataReserveResult::Reserved);
+        ASSERT_FALSE(reserved.buffer);
+        ASSERT_EQ(file_cache.getUsedCacheSize(), 0);
+        ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 0);
+    }
+}
+catch (...)
+{
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    throw;
+}
+
+/// A limit of temporary data in bytes wins over a ratio; a ratio applies to a known total size only.
+TEST(TemporaryDataLimit, BytesOrRatioOfTotalSize)
+{
+    ASSERT_EQ(getTemporaryDataLimit(100, 0.5, 1000), 100);
+    ASSERT_EQ(getTemporaryDataLimit(100, 0.5, std::nullopt), 100);
+    ASSERT_EQ(getTemporaryDataLimit(0, 0.3, 1000), 300);
+    ASSERT_EQ(getTemporaryDataLimit(0, 0.3, std::nullopt), 0);
+    ASSERT_EQ(getTemporaryDataLimit(0, 0, 1000), 0);
+    /// A ratio that rounds down to nothing still limits, since 0 means no limit.
+    ASSERT_EQ(getTemporaryDataLimit(0, 0.001, 10), 1);
+}
+
+/// The reservation of a temporary buffer in the cache grows while it is written. A refusal by a limit of the scopes
+/// changes nothing; a refusal by the cache makes the file unwritable, but what it holds is finished and reads back.
+TEST_F(FileCacheTest, TemporaryDataReserveMore)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    DB::FileCache file_cache("temporary_data_reserve_more", settings);
+    file_cache.initialize();
+
+    /// The limit of the scopes is above the cache's size, so that the cache is the one to refuse at the end.
+    TemporaryDataOnDiskSettings root_settings;
+    root_settings.max_size_on_disk = 32_KiB;
+    auto root_scope = std::make_shared<TemporaryDataOnDiskScope>(root_settings, &file_cache);
+    auto tmp_data_scope = root_scope->childScope({});
+    /// The limit of the parent counts for the child.
+    ASSERT_EQ(tmp_data_scope->getRemainingSize(), 32_KiB);
+
+    const std::string first(100, 'a');
+    const std::string second(100, 'b');
+    {
+        auto reserved = TemporaryDataBuffer::tryCreateWithReservation(tmp_data_scope, 2_KiB);
+        ASSERT_EQ(reserved.result, TemporaryDataReserveResult::Reserved);
+        auto & buffer = *reserved.buffer;
+        ASSERT_EQ(tmp_data_scope->getRemainingSize(), 30_KiB);
+
+        buffer.write(first.data(), first.size());
+        buffer.flushToFile();
+        ASSERT_EQ(buffer.tryReserveMore(2_KiB), TemporaryDataReserveResult::Reserved);
+        ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 4_KiB);
+        ASSERT_GE(file_cache.getUsedCacheSize(), 4_KiB);
+
+        /// The limit of the parent refuses before the cache is asked.
+        ASSERT_EQ(buffer.tryReserveMore(40_KiB), TemporaryDataReserveResult::NotEnoughSpace);
+        ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 4_KiB);
+
+        buffer.write(second.data(), second.size());
+        buffer.flushToFile();
+        /// More than the cache can hold: the cache refuses, and the segment takes no more writes.
+        ASSERT_NE(buffer.tryReserveMore(8_KiB), TemporaryDataReserveResult::Reserved);
+        ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 4_KiB);
+
+        auto read_buf = buffer.read();
+        std::string read_back(first.size() + second.size(), '\0');
+        ASSERT_EQ(read_buf->read(read_back.data(), read_back.size()), read_back.size());
+        ASSERT_EQ(read_back, first + second);
+        char extra;
+        ASSERT_EQ(read_buf->read(&extra, 1), 0);
+    }
+
+    ASSERT_EQ(file_cache.getUsedCacheSize(), 0);
+    ASSERT_EQ(tmp_data_scope->currentCompressedSize(), 0);
+    ASSERT_EQ(root_scope->currentCompressedSize(), 0);
+}
+catch (...)
+{
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    throw;
+}
+
 TEST_F(FileCacheTest, SLRUPolicy)
 try
 {

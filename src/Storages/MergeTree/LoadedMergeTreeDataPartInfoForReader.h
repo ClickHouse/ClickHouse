@@ -83,8 +83,14 @@ public:
     CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
 
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
+    SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String & subcolumn_name) const override
+    {
+        return data_part->tryGetCachedSubcolumnStreams(subcolumn_name);
+    }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
+
+    void registerMarkCacheKey(UInt128 key) const override { data_part->registerMarkCacheKey(key); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 

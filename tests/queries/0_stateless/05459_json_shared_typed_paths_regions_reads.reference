@@ -1,0 +1,22 @@
+-- without adaptive granularity
+json.a	1
+json.c.size0	1
+json.a mbs=1	1
+json.b WHERE	1
+1
+-- caches and marks
+uncompressed cache	1
+uncompressed cache again	1
+no uncompressed cache	1
+synchronous marks	1
+asynchronous marks	1
+-- v1 and v2 parts
+json.a	1
+json	1
+merged parts	1
+merged json.a	1
+merged json.c	1
+1
+-- detached and attached
+json.b	1
+json	1

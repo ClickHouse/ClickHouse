@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <IO/ReadBufferFromFileView.h>
 #include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
@@ -33,7 +34,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     size_t file_size_,
     MergeTreeMarksLoaderPtr marks_loader_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_)
+    clockid_t clock_type_,
+    std::optional<FileView> file_view_)
     : profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , all_mark_ranges(all_mark_ranges_)
@@ -44,6 +46,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , settings(settings_)
     , marks_count(marks_count_)
     , file_size(file_size_)
+    , file_view(std::move(file_view_))
     , marks_loader(std::move(marks_loader_))
 {
 }
@@ -75,24 +78,43 @@ void MergeTreeReaderStream::init()
     if (settings.adjust_read_buffer_size && max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
+    /// A view never reads past its end, so no buffer of it is larger, also not the floor of a read through the filesystem
+    /// cache: the pipeline caps the buffers by the size of the shared file, which does not bound the view.
+    if (file_view)
+    {
+        read_settings = read_settings.adjustBufferSize(file_view->end - file_view->begin);
+        read_settings.remote_fs_settings.large_buffer_size
+            = std::min(std::max<size_t>(1, file_view->end - file_view->begin), read_settings.remote_fs_settings.large_buffer_size);
+    }
+
     //// Empty buffer does not makes progress.
     if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
+
+    /// A view stream reads the slice [begin, end) of the shared file; its buffer and its cache key name it by that slice.
+    const String data_file_name = path_prefix + data_file_extension;
+    const String view_file_name = file_view ? data_file_name + "#" + std::to_string(file_view->begin) : data_file_name;
 
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
         data_part_storage->prepareRead(
-            path_prefix + data_file_extension,
+            data_file_name,
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
 
-        return pipeline.build();
+        auto buffer = pipeline.build();
+        if (file_view)
+            return std::make_unique<ReadBufferFromFileView>(
+                std::move(buffer), view_file_name, file_view->begin, file_view->end);
+        return buffer;
     };
 
-    /// The same for every part of the table, so that the read streams of a column share decoder statistics.
-    const UInt64 statistics_hint = sipHash64((fs::path(data_part_storage->getFullRootPath()) / (path_prefix + data_file_extension)).string()) | 1;
+    /// The same for every part of the table, so that the read streams of a column share decoder statistics: a view is
+    /// named by its key, as its range differs from part to part.
+    const String statistics_name = file_view ? data_file_name + ":" + file_view->key : data_file_name;
+    const UInt64 statistics_hint = sipHash64((fs::path(data_part_storage->getFullRootPath()) / statistics_name).string()) | 1;
 
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
@@ -109,19 +131,23 @@ void MergeTreeReaderStream::init()
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            std::string(fs::path(data_part_storage->getFullPath()) / view_file_name),
+            [this, estimated_sum_mark_range_bytes, read_settings, data_file_name, view_file_name]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
                 ReadPipeline pipeline;
                 data_part_storage->prepareRead(
-                    path_prefix + data_file_extension,
+                    data_file_name,
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
 
-                return pipeline.build();
+                auto inner = pipeline.build();
+                if (file_view)
+                    return std::make_unique<ReadBufferFromFileView>(
+                        std::move(inner), view_file_name, file_view->begin, file_view->end);
+                return inner;
             },
             uncompressed_cache,
             /* allow_different_codecs */ true);
@@ -195,6 +221,16 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
     {
+        seekToMark(MarkInCompressedFile{0, 0});
+        return;
+    }
+
+    /// The prefixes read a metadata stream whole from its start, so its marks are not loaded and it is only ever
+    /// positioned at the start.
+    if (settings.is_metadata_file)
+    {
+        if (row_index != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata stream {} is positioned at mark {}, not at its start", path_prefix, row_index);
         seekToMark(MarkInCompressedFile{0, 0});
         return;
     }
@@ -340,6 +376,20 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     if (file_size == 0)
         return 0;
 
+    /// Special case for streams with dynamic/object structure.
+    /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
+    /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
+    /// whole file size.
+    if (settings.is_metadata_file)
+        return file_size;
+
+    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
+    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
+    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
+    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
+    if (settings.is_single_value_per_part)
+        return file_size;
+
     chassert(right_mark <= marks_count);
     loadMarks();
 
@@ -381,20 +431,6 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 
         right_mark = next_different_mark;
     }
-
-    /// Special case for streams with dynamic/object structure.
-    /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
-    /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
-    /// whole file size.
-    if (settings.is_metadata_file)
-        return file_size;
-
-    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
-    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
-    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
-    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
-    if (settings.is_single_value_per_part)
-        return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,
     /// and previous mark was different.
@@ -450,6 +486,10 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBy
     if (file_size == 0)
         return {0, 0};
 
+    /// The prefixes read a metadata stream whole, once.
+    if (settings.is_metadata_file)
+        return {file_size, file_size};
+
     loadMarks();
 
     size_t max_range_bytes = 0;
@@ -493,6 +533,14 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumnWholePart::estimateMa
 
 void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t row_index)
 {
+    /// A stream read through a view is also positioned at the granules that marks inside its data refer to, so it
+    /// loads its marks for that.
+    if (file_view)
+    {
+        seekToMarkAndColumn(row_index, 0);
+        return;
+    }
+
     /// The only mark of the whole part is the start of the file.
     if (row_index != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to mark {}", row_index);

@@ -39,6 +39,8 @@ public:
 
     void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
+    void setReadBounds(size_t left, size_t right) override;
+
     std::optional<size_t> tryGetFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
@@ -60,6 +62,9 @@ public:
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);
+
+    /// Gives an object's buffer the part of the read bounds within the object, in the object's offsets.
+    void passReadBounds(SeekableReadBuffer & buf, const StoredObject & object, size_t start_offset) const;
 
     bool nextImpl() override;
 
@@ -83,6 +88,8 @@ private:
     /// `std::nullopt` means "no right bound". A plain `0` sentinel could not tell an unbounded read
     /// apart from an empty range at the start of the file.
     std::optional<size_t> read_until_position;
+    /// [left, right) in the offsets of the file.
+    std::optional<std::pair<size_t, size_t>> read_bounds;
     size_t file_offset_of_buffer_end = 0;
 
     StoredObject current_object;

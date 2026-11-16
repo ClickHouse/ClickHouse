@@ -568,20 +568,6 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
 
     settings.path.push_back(Substream::ObjectData);
 
-    /// Call callback for newly discovered dynamic subcolumns if needed.
-    if (settings.dynamic_subcolumns_callback)
-    {
-        EnumerateStreamsSettings enumerate_settings;
-        enumerate_settings.path = settings.path;
-        for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
-        {
-            enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
-            enumerate_settings.path.back().object_path_name = path;
-            dynamic_serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(dynamic_serialization));
-            enumerate_settings.path.pop_back();
-        }
-    }
-
     /// Check if we need to start prefetches of streams containing prefixes before deserializing.
     if (settings.prefixes_prefetch_callback)
     {

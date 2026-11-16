@@ -126,7 +126,11 @@ private:
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
-    MergeTreeReaderStream & getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
+    MergeTreeReaderStream & getOrAddStream(
+        const ISerialization::SubstreamPath & substream_path, const String & stream_name, const NameAndTypePair & name_and_type);
+
+    /// The bytes of a stream: of its view when it is read through one, of its data file otherwise.
+    size_t getStreamDataSize(const ISerialization::SubstreamPath & substream_path, const String & stream_name) const;
 
     void readData(
         const NameAndTypePair & name_and_type,
@@ -161,6 +165,15 @@ private:
 
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
+
+    /// Opens the streams that only the deserialized prefixes list, such as those of dynamic paths and of streams read
+    /// through views, before any of them is read, so that their marks load in parallel.
+    void addStreamsWithDeserializedPrefixes(size_t num_columns);
+    bool streams_discovered = false;
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Columns read from streams of ephemeral subcolumns, whose parent streams are opened on demand.
+    std::unordered_set<String> columns_with_derived_streams;
+#endif
 
     /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
     /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).

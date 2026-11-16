@@ -128,7 +128,33 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     if (pass_bound)
         buf->setReadUntilPosition(*read_until_position - start_offset);
 
+    passReadBounds(*buf, object, start_offset);
     return buf;
+}
+
+void ReadBufferFromRemoteFSGather::passReadBounds(SeekableReadBuffer & buf, const StoredObject & object, size_t start_offset) const
+{
+    if (!read_bounds)
+        return;
+
+    /// An object of unknown size is the only one of its file (see createImplementationBuffer).
+    size_t object_end = object.bytes_size == StoredObject::UnknownSize ? read_bounds->second : start_offset + object.bytes_size;
+    size_t left = std::max(read_bounds->first, start_offset);
+    size_t right = std::min(read_bounds->second, object_end);
+    if (left < right)
+        buf.setReadBounds(left - start_offset, right - start_offset);
+}
+
+void ReadBufferFromRemoteFSGather::setReadBounds(size_t left, size_t right)
+{
+    read_bounds.emplace(left, right);
+    if (!current_buf || current_buf_idx >= blobs_to_read.size())
+        return;
+
+    size_t start_offset = 0;
+    for (size_t i = 0; i != current_buf_idx; ++i)
+        start_offset += blobs_to_read[i].bytes_size;
+    passReadBounds(*current_buf, blobs_to_read[current_buf_idx], start_offset);
 }
 
 void ReadBufferFromRemoteFSGather::initialize()

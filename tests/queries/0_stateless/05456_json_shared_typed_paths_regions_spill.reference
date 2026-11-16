@@ -1,0 +1,16 @@
+inserts spilled	0	4
+-- cap: the temporary storage and the part disk
+spilled	1	1
+parts	1
+1
+j1	1
+j2.b	1
+j1.c	1
+-- the part disk only
+spilled	1	1
+parts	1
+1
+j1	1
+j2.a	1
+05456_cap_region_read	1
+05456_part_disk_region_read	1

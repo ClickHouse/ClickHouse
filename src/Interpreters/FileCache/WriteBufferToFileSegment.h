@@ -23,6 +23,10 @@ public:
 
     void nextImpl() override;
 
+    /// Reserves `size` bytes of the segment ahead of the writes, which then take their space from the reservation
+    /// instead of reserving it. Returns false on a refusal, after which the segment is not to be written.
+    static bool reserveAhead(FileSegment & file_segment, size_t size, FileCacheReserveStat & reserve_stat, std::string & failure_reason);
+
     std::string getFileName() const override { return file_segment->getPath(); }
 
     void sync() override;

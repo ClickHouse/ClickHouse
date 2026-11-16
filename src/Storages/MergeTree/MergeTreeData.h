@@ -77,6 +77,10 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 class MergeTreeTransaction;
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+struct TemporaryDataOnDiskSettings;
+
 struct MergeTreeSettings;
 struct WriteSettings;
 enum class MergeTreePartMinMaxIndexColumns : uint64_t;
@@ -1709,6 +1713,11 @@ public:
     /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
     /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
     scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
+
+    /// A root scope of temporary data of a part write on `disk`, in a directory of its own in the table's data directory,
+    /// beside the parts rather than inside one. The directory is claimed as a temporary one, so that the cleanup of old
+    /// temporary directories skips it while it is in use, and the scope removes it when destroyed.
+    TemporaryDataOnDiskScopePtr createPartDiskTemporaryDataScope(const DiskPtr & disk, const TemporaryDataOnDiskSettings & settings) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;

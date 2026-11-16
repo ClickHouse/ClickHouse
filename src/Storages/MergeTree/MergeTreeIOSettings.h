@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <Compression/ICompressionCodec.h>
@@ -18,6 +19,9 @@ struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct Settings;
 class IMergeTreeDataPart;
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+struct TemporaryDataOnDiskSettings;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 class MMappedFileCache;
@@ -137,6 +141,9 @@ struct MergeTreeReaderSettings
     /// String values that do not match are replaced with empty strings during deserialization.
     /// Set only for reading with PREWHERE that is guaranteed to filter the rows (see `StringValueFilter`).
     StringValueFiltersPtr string_value_filters;
+    /// Sub-objects of a JSON column with at most this many SHARED typed paths read each path from its own region
+    /// in a v2 part; wider sub-objects read from the plain layout.
+    size_t object_shared_data_max_sub_object_paths_to_read_separately = 32;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
@@ -196,6 +203,16 @@ struct MergeTreeWriterSettings
     /// 0 is reserved, so the field is not value-initialized.
     MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
         = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
+    size_t serialization_spill_max_bytes_to_buffer = 0;
+    size_t serialization_spill_max_temporary_data_size = 0;
+    MergeTreeSerializationSpillErrorMode serialization_spill_error_mode = MergeTreeSerializationSpillErrorMode::THROW;
+    bool serialization_spill_to_part_disk_only = false;
+    /// The server's temporary storage a serialization can spill data to while writing, with the server's limit of the
+    /// spills of all part writes; null when there is none.
+    TemporaryDataOnDiskScopePtr temporary_data_scope;
+    /// Creates a scope of temporary data on the part's disk, outside the part's directory; not set when the write
+    /// cannot place temporary data there.
+    std::function<TemporaryDataOnDiskScopePtr(const TemporaryDataOnDiskSettings &)> create_part_disk_temporary_data_scope;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
