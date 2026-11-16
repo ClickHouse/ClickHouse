@@ -636,6 +636,14 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
 
+        /// Nothing below can shorten a one-row batch: `hasEnoughRows` has just checked the block limits, and there is no row limit.
+        if (initial_batch_size == 1 && !limit && !current.impl->isLast())
+        {
+            insertRow(*current.impl);
+            queue.next(1);
+            continue;
+        }
+
         bool batch_skip_last_row = false;
         if (current.impl->isLast(initial_batch_size) && current_inputs[current.impl->order].skip_last_row)
         {
@@ -658,17 +666,25 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             updated_batch_size -= merged_rows + updated_batch_size - merged_data.maxBlockSize();
         }
 
-        const size_t insertable_rows = updated_batch_size - static_cast<size_t>(batch_skip_last_row);
-        const size_t rows_before_flush = merged_data.rowsToInsertBeforeFlush(
-            current.impl->all_columns,
-            current.impl->getRow(),
-            insertable_rows,
-            current.impl->rows);
+        /// A chunk moved whole ignores the byte limit, so its rows are measured only for the row limit.
+        const bool insert_whole_chunk = current.impl->isFirst()
+            && current.impl->isLast(initial_batch_size)
+            && !current_inputs[current.impl->order].skip_last_row;
 
-        if (rows_before_flush < insertable_rows)
+        if (!insert_whole_chunk || limit)
         {
-            batch_skip_last_row = false;
-            updated_batch_size = rows_before_flush;
+            const size_t insertable_rows = updated_batch_size - static_cast<size_t>(batch_skip_last_row);
+            const size_t rows_before_flush = merged_data.rowsToInsertBeforeFlush(
+                current.impl->all_columns,
+                current.impl->getRow(),
+                insertable_rows,
+                current.impl->rows);
+
+            if (rows_before_flush < insertable_rows)
+            {
+                batch_skip_last_row = false;
+                updated_batch_size = rows_before_flush;
+            }
         }
 
         bool limit_reached = false;
@@ -685,9 +701,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             limit_reached = true;
         }
 
-        if (unlikely(current.impl->isFirst() &&
-            current.impl->isLast(initial_batch_size) &&
-            !current_inputs[current.impl->order].skip_last_row))
+        if (unlikely(insert_whole_chunk))
         {
             /** This is special optimization if current cursor is totally less than next cursor.
               * We want to insert current cursor chunk directly in merged data.

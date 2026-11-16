@@ -1,0 +1,42 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: OPTIMIZE DRY RUN is only supported for MergeTree family tables. -->
+    <!-- The sorting keys of the parts interleave row by row in the first table and are disjoint in the second, where the merge moves whole chunks. -->
+    <settings>
+        <optimize_dry_run_check_part>0</optimize_dry_run_check_part>
+    </settings>
+
+    <create_query>CREATE TABLE t_merge_batch_interleaved (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY b SETTINGS merge_use_batch_sorting_queue = 1</create_query>
+    <create_query>CREATE TABLE t_merge_batch_disjoint (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS merge_use_batch_sorting_queue = 1</create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_merge_batch_interleaved</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_merge_batch_disjoint</fill_query>
+
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 0 * 1000000 + number, intHash64(0 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 1 * 1000000 + number, intHash64(1 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 2 * 1000000 + number, intHash64(2 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 3 * 1000000 + number, intHash64(3 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 4 * 1000000 + number, intHash64(4 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 5 * 1000000 + number, intHash64(5 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 6 * 1000000 + number, intHash64(6 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 7 * 1000000 + number, intHash64(7 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 8 * 1000000 + number, intHash64(8 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_interleaved SELECT 9 * 1000000 + number, intHash64(9 * 1000000 + number) FROM numbers(1000000)</fill_query>
+
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 0 * 1000000 + number, intHash64(0 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 1 * 1000000 + number, intHash64(1 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 2 * 1000000 + number, intHash64(2 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 3 * 1000000 + number, intHash64(3 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 4 * 1000000 + number, intHash64(4 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 5 * 1000000 + number, intHash64(5 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 6 * 1000000 + number, intHash64(6 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 7 * 1000000 + number, intHash64(7 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 8 * 1000000 + number, intHash64(8 * 1000000 + number) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO t_merge_batch_disjoint SELECT 9 * 1000000 + number, intHash64(9 * 1000000 + number) FROM numbers(1000000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_merge_batch_interleaved DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0', 'all_7_7_0', 'all_8_8_0', 'all_9_9_0', 'all_10_10_0'</query>
+    <query>OPTIMIZE TABLE t_merge_batch_disjoint DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0', 'all_7_7_0', 'all_8_8_0', 'all_9_9_0', 'all_10_10_0'</query>
+    <query>SELECT * FROM t_merge_batch_interleaved ORDER BY b FORMAT Null SETTINGS optimize_read_in_order = 1, max_threads = 4</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_merge_batch_interleaved</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_merge_batch_disjoint</drop_query>
+</test>
