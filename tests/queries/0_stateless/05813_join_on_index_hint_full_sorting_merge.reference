@@ -1,0 +1,17 @@
+or like chain
+a	x
+b	y
+c	
+d	
+explicit indexHint
+a	x
+b	y
+c	z
+d	w
+global right join swapped to left
+	w
+a	x
+a	x
+b	y
+b	y
+	z

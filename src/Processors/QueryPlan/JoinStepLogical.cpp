@@ -34,6 +34,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/if.h>
+#include <Functions/indexHint.h>
 #include <Functions/isNotDistinctFrom.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
@@ -2019,6 +2020,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     auto & join_expression = join_operator.expression;
+
+    /// `indexHint` is always 1 and only index analysis reads its argument, which a condition still in `ON` never reaches.
+    /// It reads no column, so kept here it would be a left side condition, which e.g. `full_sorting_merge` does not support.
+    std::erase_if(join_expression, [](const JoinActionRef & condition)
+    {
+        const auto * node = condition.getNode();
+        return node->type == ActionsDAG::ActionType::FUNCTION && FunctionIndexHint::tryGet(node->function_base);
+    });
 
     const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
