@@ -16,6 +16,7 @@ namespace DB
   * From type String to type LowCardinality(String) returns true.
   * From type LowCardinality(String) to type String returns true.
   * From type String to type UInt8 returns false.
+  * From type Decimal(38, 0) to type Decimal(38, 30) returns false: 10^9 does not fit at scale 30.
   */
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type);
 

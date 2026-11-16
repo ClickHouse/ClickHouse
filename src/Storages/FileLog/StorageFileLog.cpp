@@ -631,6 +631,14 @@ void StorageFileLog::openFilesAndSetPos()
             }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            /// The file was renamed and another file took its name. Skip it: the rename events, processed in this or a later
+            /// pass, will move the offset to the new name.
+            if (!file_ctx.open_failed && isTrackedByDirectoryEvents(file) && getInode(getFullDataPath(file)) != file_ctx.inode)
+            {
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                continue;
+            }
             if (file_ctx.open_failed)
             {
                 /// The path may lead to another file now: read it from the start.
@@ -1070,6 +1078,7 @@ void registerStorageFileLog(StorageFactory & factory)
         SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         },
         Documentation{
@@ -1103,7 +1112,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Engine arguments:
 
 - `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
-- `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
+- `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it. A line is read once it ends with a newline, so a last line that is still being written is read on a later poll, after it is completed.
 
 Optional parameters:
 
@@ -1111,8 +1120,8 @@ Optional parameters:
 - `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
 - `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
-- `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
-- `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
+- `poll_directory_watch_events_backoff_init` - The initial sleep value for the streaming task of the table, which backs off while there are no new data. On macOS it is also the initial sleep value of the thread that watches the directory. Default: `500`.
+- `poll_directory_watch_events_backoff_max` - The max sleep value for the streaming task of the table. On macOS it is also the max sleep value of the thread that watches the directory. Default: `32000`.
 - `poll_directory_watch_events_backoff_factor` - The speed of backoff, exponential by default. Default: `2`.
 - `handle_error_mode` — How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (the exception message and raw record will be saved in virtual columns `_error` and `_raw_record`).
 

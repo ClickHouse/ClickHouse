@@ -31,7 +31,6 @@ namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
@@ -130,6 +129,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
+        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -157,6 +157,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
+
+    /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
+    /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
+    is_relative_url = !StorageURL::isAbsoluteURL(filename);
 
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
@@ -327,6 +331,15 @@ bool TableFunctionURL::hasStaticStructure() const
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
 }
 
+bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A relative URL is rejected conservatively: the backend it dispatches to depends on the `url_base` setting
+    /// of the replica executing the query, which can differ across replicas of a `Replicated` database.
+    if (is_relative_url)
+        return true;
+    return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
+}
+
 void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
 {
     if (delegate)
@@ -348,15 +361,12 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
-    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed()
+    const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas)
+    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -365,7 +375,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            is_structure_not_overridable ? ColumnsDescription{} : columns,
             ConstraintsDescription{},
             configuration);
     }

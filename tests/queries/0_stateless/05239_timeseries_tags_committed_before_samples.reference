@@ -2,13 +2,13 @@
 0
 --- the same without the tags cache ---
 0
---- a failed bounds insert leaves no samples a time-bounded selector would miss ---
+--- a failed time ranges insert leaves no samples a time-bounded selector would miss ---
 0
 0
---- each block commits its tags and bounds before its samples ---
+--- each block commits its tags and time ranges before its samples ---
 1	8	8	1	1
 1	1
---- with a deduplication token, the tags and bounds of later blocks are kept, and a retry is deduplicated ---
+--- with a deduplication token, the tags and time ranges of later blocks are kept, and a retry is deduplicated ---
 4
 4	1
 4	8	4	8

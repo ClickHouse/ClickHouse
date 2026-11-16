@@ -1,7 +1,7 @@
 <test>
-    <!-- Benchmarks Map subcolumn reads with optimize_functions_to_subcolumns enabled.
-         When multiple Map subcolumn conditions appear in PREWHERE, they should be grouped
-         into a single read step to avoid redundant deserialization of the same Map data.
+    <!-- Benchmarks many key lookups of one Map column with optimize_functions_to_subcolumns enabled.
+         The Maps use the default basic serialization, so `tags['kN']` is not rewritten to a key
+         subcolumn: every condition reads the Map, and the conditions in PREWHERE share one read step.
          Tests SELECT of multiple keys, count() with WHERE, and count() with PREWHERE
          for both Wide and Compact part formats. -->
 
@@ -108,8 +108,8 @@
 
     <!-- Wide: count() with PREWHERE over conditions that the read step splitter treats as a step
          boundary, because they report true from isSuitableForShortCircuitArgumentsExecution.
-         Each such condition gets its own step, but all their Map keys are read by the first step,
-         so the Map is deserialized once. These two queries measure the remaining cost against the
+         Each such condition gets its own step, but the Map they all read is read by the first step,
+         so it is deserialized once. These two queries measure the remaining cost against the
          `!= ''` shapes above, which stay in a single step. -->
     <query>
         SELECT count() FROM map_subcol_pw_wide
@@ -130,7 +130,7 @@
     </query>
 
     <!-- Table with an extra column to test WHERE optimizer grouping.
-         When Map subcolumn conditions are interleaved with another column in WHERE,
+         When Map conditions are interleaved with a condition on another column in WHERE,
          the optimizer should group Map conditions together to avoid redundant reads. -->
     <create_query>
         CREATE TABLE map_subcol_pw_mixed (id UInt64, tags Map(String, String), value UInt32)
@@ -149,7 +149,7 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE map_subcol_pw_mixed FINAL SETTINGS mutations_sync=1</fill_query>
 
-    <!-- WHERE with interleaved Map subcolumns and another column.
+    <!-- WHERE with Map conditions interleaved with a condition on another column.
          The optimizer should group all Map conditions together even though
          the 'value' condition appears between them in the original WHERE. -->
     <query>

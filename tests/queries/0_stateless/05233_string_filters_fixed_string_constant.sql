@@ -30,7 +30,9 @@ SELECT count() FROM t_string_filter_fixed_string PREWHERE endsWith(s, toFixedStr
 
 -- A plain `String` constant is still filtered during the scan, so the guard is not too wide.
 SELECT 'control';
-SELECT count() FROM t_string_filter_fixed_string PREWHERE s = 'hello' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05233_string_filters_control';
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
+SELECT count() FROM t_string_filter_fixed_string PREWHERE s = 'hello' SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05233_string_filters_control';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['StringValueFilterValuesChecked']) > 0

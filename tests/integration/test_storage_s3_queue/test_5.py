@@ -1434,6 +1434,77 @@ def test_select_after_failed_startup(started_cluster):
     assert_reports_table_is_dropped(node, table_name)
 
 
+def test_rename_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    suffix = generate_random_string()
+    database = f"rename_after_failed_startup_{suffix}"
+    renamed_database = f"{database}_renamed"
+    failed = f"failed_{suffix}"
+    healthy = f"healthy_{suffix}"
+
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        create_table(
+            started_cluster,
+            node,
+            healthy,
+            "unordered",
+            f"{healthy}_data",
+            database_name=database,
+        )
+        node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+        try:
+            assert "Failed to startup" in create_table(
+                started_cluster,
+                node,
+                failed,
+                "unordered",
+                f"{failed}_data",
+                database_name=database,
+                expect_error=True,
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+        # Precondition: the failed table stays attached but is no longer registered.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Unregistered table: {database}.{failed}"
+        )
+
+        node.query(f"RENAME TABLE {database}.{failed} TO {database}.{failed}_2")
+        node.query(f"RENAME DATABASE {database} TO {renamed_database}")
+        uuids = dict(
+            row.split("\t")
+            for row in node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}'"
+            ).splitlines()
+        )
+        node.query(
+            f"EXCHANGE TABLES {renamed_database}.{failed}_2 AND {renamed_database}.{healthy}"
+        )
+
+        assert (
+            node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}' ORDER BY name"
+            )
+            == f"{failed}_2\t{uuids[healthy]}\n{healthy}\t{uuids[failed + '_2']}\n"
+        )
+        # The running table is still tracked under each new name.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {database}.{healthy}"
+        )
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {renamed_database}.{healthy} ({uuids[healthy]})"
+            f" -> {renamed_database}.{failed}_2 ({uuids[healthy]})"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {renamed_database} SYNC")
+
+    assert node.query("SELECT 1") == "1\n"
+    assert not node.contains_in_log(f"Table with storage id {database}.{failed}")
+
+
 def test_select_after_failed_drop(started_cluster):
     node = started_cluster.instances["instance"]
     suffix = generate_random_string()
@@ -1481,37 +1552,37 @@ def test_select_after_failed_drop(started_cluster):
 
 def test_select_racing_drop(started_cluster):
     node = started_cluster.instances["instance"]
+    table_name = f"test_select_racing_drop_{generate_random_string()}"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        f"{table_name}_data",
+        format="column1 UInt32, column2 String",
+        additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+    )
 
-    for i in range(10):
-        table_name = f"test_select_racing_drop_{generate_random_string()}"
-        create_table(
-            started_cluster,
-            node,
-            table_name,
-            "unordered",
-            f"{table_name}_data",
-            format="column1 UInt32, column2 String",
-            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
-        )
-
-        # DROP shuts the storage down without waiting for readers, so it can drop the
-        # metadata handle while this SELECT is still building its query plan. The
-        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
+    # DROP shuts the storage down without waiting for readers. Hold the SELECT in `read()`, after it
+    # opened the table and before it takes the metadata handle, until the DROP has returned.
+    failpoint = "object_storage_queue_pause_in_direct_select"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
         select = node.get_query_request(
-            f"SELECT count() FROM {table_name} "
-            f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
-            f"SETTINGS stream_like_engine_allow_direct_select=1"
+            f"SELECT count() FROM {table_name} SETTINGS stream_like_engine_allow_direct_select=1"
         )
-        time.sleep(1.2)
-        node.query(f"DROP TABLE {table_name} SYNC")
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        # Not SYNC: that waits for the paused SELECT to release the table.
+        node.query(f"DROP TABLE {table_name}")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
-        # Also accepting a clean result would make this arm pass against the unfixed
-        # server: a SELECT that finished first never reads the dropped metadata.
-        _, error = select.get_answer_and_error()
-        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+    # A clean result would mean the SELECT read the metadata of a dropped table.
+    _, error = select.get_answer_and_error()
+    assert "TABLE_IS_DROPPED" in error, error
 
-        assert node.query("SELECT 1") == "1\n"
-        assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+    assert node.query("SELECT 1") == "1\n"
+    assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
 def test_create_or_replace_table(started_cluster):
@@ -1891,8 +1962,10 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     sizeof_file_status = cache_size_bytes
     logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
 
-    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
+    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields.
+    # The weight also includes the capacity of the path string, which depends on the allocation
+    # rounding of the standard library (libc++ from LLVM 23 rounds long strings to 16 bytes instead of 8).
+    assert 200 <= sizeof_file_status <= 320, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
 
     # Process 19 more files
     files_to_generate = 19

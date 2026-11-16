@@ -81,7 +81,7 @@ def setup():
         )
         node.query(
             "CREATE TABLE prometheus_no_bounds ENGINE=TimeSeries "
-            "SETTINGS store_min_time_and_max_time = 0"
+            "SETTINGS store_time_ranges = 0"
         )
         node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
@@ -221,14 +221,6 @@ def test_label_values_time_range():
     assert get_json_from_api("/api/v1/label/region/values?end=1000")["data"] == ["eu"]
 
 
-def test_label_values_time_range_without_metric_name_matcher():
-    data = get_json_from_api(
-        "/api/v1/label/__name__/values",
-        params={"match[]": '{host="server1"}', "start": "1030", "end": "1040"},
-    )["data"]
-    assert data == ["cpu_usage"]
-
-
 def test_label_values_rejects_inverted_time_range():
     get_bad_data_from_api("/api/v1/label/host/values?start=1030&end=1000")
 
@@ -239,7 +231,7 @@ def test_label_values_empty_optional_parameters_are_ignored():
 
 
 def test_label_values_time_range_is_ignored_without_stored_time_bounds():
-    # Without stored min_time/max_time the time range is ignored (a superset is allowed by Prometheus).
+    # Without stored time ranges the time range is ignored (a superset is allowed by Prometheus).
     data = get_json_from_api("/no_bounds/api/v1/label/host/values?start=2000&end=3000")["data"]
     assert data == ["server1"]
 

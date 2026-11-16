@@ -9,7 +9,7 @@ module_name="test_04299_module_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 replacement_module_name="test_04299_replacement_module_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 function_name="test_04299_wasm_identity_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 DROP VIEW IF EXISTS test_04299_wasm_mv;
 DROP TABLE IF EXISTS test_04299_wasm_mv_dst;
 DROP TABLE IF EXISTS test_04299_wasm_mv_src;
@@ -21,7 +21,7 @@ EOF
 cat ${CUR_DIR}/wasm/identity_int.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT '${module_name}', code FROM input('code String') FORMAT RawBlob"
 cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT '${replacement_module_name}', code FROM input('code String') FORMAT RawBlob"
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 CREATE FUNCTION ${function_name}
     LANGUAGE WASM ABI ROW_DIRECT
     FROM '${module_name}' :: 'identity_raw'
@@ -47,7 +47,7 @@ INSERT INTO test_04299_wasm_mv_src VALUES (1), (2), (3);
 SELECT groupArray(value) FROM (SELECT value FROM test_04299_wasm_mv_dst ORDER BY value);
 EOF
 
-${CLICKHOUSE_CLIENT} --enable_analyzer=1 << EOF
+${CLICKHOUSE_CLIENT} << EOF
 DROP VIEW test_04299_wasm_mv;
 DROP TABLE test_04299_wasm_mv_dst;
 DROP TABLE test_04299_wasm_mv_src;

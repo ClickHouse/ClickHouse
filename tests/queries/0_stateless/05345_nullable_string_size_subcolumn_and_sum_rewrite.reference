@@ -1,0 +1,29 @@
+string functions
+20	60	20	60	114	20	20	20
+20	60	20	60	114	20	20	20
+0	1.9	20
+1	1.9	20
+2	1.9	20
+0	1.9	20
+1	1.9	20
+2	1.9	20
+Nullable(UInt64)	Nullable(UInt8)	Nullable(UInt8)
+the size subcolumn is read
+SELECT\n    __table1.`s.size` AS `length(s)`,\n    equals(__table1.`s.size`, 0) AS `empty(s)`,\n    notEquals(__table1.`s.size`, 0) AS `notEmpty(s)`\nFROM db.t_nullable_string AS __table1\nWHERE notEquals(__table1.`s.size`, 0)
+sum of an expression with a constant
+75	-75	75	750	Nullable(Int64)	Nullable(Int64)
+75	-75	75	750	Nullable(Int64)	Nullable(Int64)
+0	\N	\N
+0	\N	\N
+SELECT plus(sum(__table1.x), multiply(1, count(__table1.x))) AS `sum(plus(x, 1))`\nFROM db.t_nullable_string AS __table1
+empty and notEmpty of a Nullable key use the primary key
+a
+b
+a
+b
+1
+uniqExact over Nullable
+857142	857142
+comparison of a Nullable(FixedString) key with an empty string uses the primary key
+a
+b

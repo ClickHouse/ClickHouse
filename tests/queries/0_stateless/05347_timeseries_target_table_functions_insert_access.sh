@@ -26,9 +26,9 @@ function try_inserts()
     phase=$((phase + 1))
     echo "-- with ${1}:"
     for insert in \
-        "timeSeriesSamples(${db}.ts) (timestamp, value) VALUES (${phase}, 1)" \
+        "timeSeriesSamples(${db}.ts) (id, bucket, samples) VALUES ((${phase}, '00000000-0000-0000-0000-000000000001'), 0, [(${phase}, 1)])" \
         "timeSeriesTags(${db}.ts) (metric_name, tags) VALUES ('m${phase}', {'job': 'api'})" \
-        "timeSeriesTagsMinMax(${db}.ts) (metric_name, min_time, max_time) VALUES ('m${phase}', 1000, 2000)" \
+        "timeSeriesTimeRanges(${db}.ts) (id, min_time, max_time) VALUES ((${phase}, '00000000-0000-0000-0000-000000000001'), 1000, 2000)" \
         "timeSeriesMetricFamilies(${db}.ts) (metric_family, type) VALUES ('m${phase}', 'gauge')"
     do
         error=$(${CLICKHOUSE_CLIENT} --user "${user}" --async_insert 0 -q "INSERT INTO FUNCTION ${insert}" 2>&1 \
@@ -38,7 +38,7 @@ function try_inserts()
     done
     ${CLICKHOUSE_CLIENT} -q "
         SELECT (SELECT count() FROM timeSeriesSamples(${db}.ts)), (SELECT count() FROM timeSeriesTags(${db}.ts)),
-               (SELECT count() FROM timeSeriesTagsMinMax(${db}.ts)), (SELECT count() FROM timeSeriesMetricFamilies(${db}.ts))
+               (SELECT count() FROM timeSeriesTimeRanges(${db}.ts)), (SELECT count() FROM timeSeriesMetricFamilies(${db}.ts))
     "
 }
 

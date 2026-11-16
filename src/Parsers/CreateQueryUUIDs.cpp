@@ -7,9 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/getTimeSeriesSettingVersion.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -63,7 +62,7 @@ namespace
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
 {
     if (query.is_time_series_table)
-        time_series_version = getTimeSeriesSettingVersion(query);
+        time_series_version = getTimeSeriesVersion(query);
 
     if (!generate_random || !for_restore)
     {
@@ -117,28 +116,11 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::MetricFamilies);
 
-                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
-                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
-                {
-                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
-                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
-                    /// so a fresh UUID is not stamped on RESTORE.
-                    recent_samples_enabled = false;
-                }
-                if (recent_samples_enabled)
+                if (isTimeSeriesRecentSamplesTargetEnabled(query, for_restore))
                     generate_target_uuid(ViewTarget::RecentSamples);
 
-                bool tags_min_max_enabled = (*time_series_version >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
-                    && getTimeSeriesSettingStoreMinTimeAndMaxTime(query)
-                    && query.getTargetTableID(ViewTarget::Tags).empty();
-                if (for_restore && !hasExplicitTimeSeriesSettingVersion(query))
-                {
-                    /// A query restored from a backup can come from a version before the `version` setting existed,
-                    /// where the absent setting means version 0, which keeps min_time and max_time in the tags table.
-                    tags_min_max_enabled = false;
-                }
-                if (tags_min_max_enabled)
-                    generate_target_uuid(ViewTarget::TagsMinMax);
+                if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
+                    generate_target_uuid(ViewTarget::TimeRanges);
             }
         }
     }

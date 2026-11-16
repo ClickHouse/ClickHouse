@@ -3,6 +3,15 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/AsynchronousReadBufferFromFileDescriptor.h>
+#include <IO/AsynchronousReader.h>
+#include <IO/MMapReadBufferFromFileWithCache.h>
+#include <IO/MMappedFileCache.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
@@ -11,8 +20,12 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <map>
+#include <mutex>
 #include <optional>
+#include <stdexcept>
+#include <vector>
 
 
 using namespace DB;
@@ -26,6 +39,12 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsUInt64 background_download_threads;
+}
+
+namespace ProfileEvents
+{
+    extern const Event CreatedReadBufferDirectIO;
+    extern const Event CreatedReadBufferDirectIOFailed;
 }
 
 namespace
@@ -135,6 +154,34 @@ StoredObject testObject(size_t size = 100)
     return StoredObject("test/object", "local/object", size);
 }
 
+std::unique_ptr<Poco::TemporaryFile> createLocalFileWithContent(const String & content)
+{
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(content, out);
+        out.finalize();
+    }
+    return tmp_file;
+}
+
+/// Build a legacy local read pipeline. The reader executor and Direct I/O are
+/// disabled so the test exercises the shared EOF guard on any kernel.
+std::unique_ptr<ReadBufferFromFileBase> buildLocalPipeline(const String & path, size_t reported_size)
+{
+    ReadSettings settings;
+    settings.reader_executor.enabled = false;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 0;
+
+    ReadPipeline pipeline;
+    pipeline.setLocalFileSource(
+        path,
+        StoredObjects{testObject(path, reported_size)},
+        settings);
+    return pipeline.build();
+}
+
 FileCachePtr createTestFileCache(const String & name)
 {
     const auto cache_path = fs::current_path() / (name + "_cache");
@@ -173,6 +220,372 @@ try
     String result;
     readStringUntilEOF(result, *buf);
     EXPECT_EQ(result, "hello world");
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+/// -- Local source: preserve the known size and its EOF guard --
+
+TEST(ReadPipeline, LocalFileSourceKnownSizeBoundsEOF)
+{
+    auto tmp_file = createLocalFileWithContent("hello");
+
+    /// The file is 5 bytes, but the reported size is 3. Using the real size would
+    /// make the fixed and unfixed paths indistinguishable on modern kernels, where
+    /// a read at EOF returns 0 instead of EINVAL.
+    auto buf = buildLocalPipeline(tmp_file->path(), 3);
+    ASSERT_NE(buf, nullptr);
+
+    buf->seek(3, SEEK_SET);
+    EXPECT_TRUE(buf->eof());
+}
+
+TEST(ReadPipeline, LocalFileSourceUnknownSizeDoesNotBoundEOF)
+{
+    /// An unknown size must not impose an EOF boundary at the reported offset.
+    auto tmp_file = createLocalFileWithContent("hello");
+    auto buf = buildLocalPipeline(tmp_file->path(), StoredObject::UnknownSize);
+    ASSERT_NE(buf, nullptr);
+
+    buf->seek(3, SEEK_SET);
+    EXPECT_FALSE(buf->eof());
+}
+
+TEST(ReadPipeline, LocalFileSourceZeroSizeStillOpensPath)
+{
+    auto tmp_file = createTemporaryFile((fs::current_path() / "tmp").string());
+    const String path = tmp_file->path();
+
+    /// Zero is treated as unknown, so the missing file is still opened and reports
+    /// an open-time error instead of being silently treated as an empty file.
+    fs::remove(path);
+    ASSERT_FALSE(fs::exists(path));
+
+    EXPECT_THROW(buildLocalPipeline(path, 0), DB::Exception);
+}
+
+/// The known size is forwarded for the EOF guard only. It must not change reader selection.
+TEST(ReadPipeline, LocalFileSourceKeepsReaderSelection)
+try
+{
+    auto tmp_file = createLocalFileWithContent("hello");
+
+    ReadSettings settings;
+    settings.reader_executor.enabled = false;
+    settings.local_fs_settings.method = LocalFSReadMethod::mmap;
+    settings.local_fs_settings.mmap_threshold = 1;
+    settings.local_fs_settings.direct_io_threshold = 0;
+
+    MMappedFileCache mmap_cache(1024);
+    settings.local_fs_settings.mmap_cache = &mmap_cache;
+
+    auto build = [&](std::optional<size_t> read_hint)
+    {
+        ReadPipeline pipeline;
+        pipeline.setLocalFileSource(
+            tmp_file->path(),
+            StoredObjects{testObject(tmp_file->path(), 5)},
+            settings,
+            read_hint);
+        return pipeline.build();
+    };
+
+    /// No hint and a size above the mmap threshold: selection must stay on the old buffered
+    /// reader, otherwise forwarding the size would silently change cache behavior.
+    auto without_hint = build(std::nullopt);
+    ASSERT_NE(without_hint, nullptr);
+    EXPECT_EQ(dynamic_cast<MMapReadBufferFromFileWithCache *>(without_hint.get()), nullptr);
+
+    /// An explicit hint must still select the mmap reader, exactly as before.
+    auto with_hint = build(5);
+    ASSERT_NE(with_hint, nullptr);
+    EXPECT_NE(dynamic_cast<MMapReadBufferFromFileWithCache *>(with_hint.get()), nullptr);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+/// The same rule must hold for the Direct I/O branch: a forwarded size without a hint must not
+/// attempt O_DIRECT; an explicit hint keeps the old attempt.
+TEST(ReadPipeline, LocalFileSourceKeepsDirectIOSelection)
+try
+{
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    auto tmp_file = createLocalFileWithContent("hello");
+
+    ReadSettings settings;
+    settings.reader_executor.enabled = false;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.mmap_threshold = 0;
+    settings.local_fs_settings.direct_io_threshold = 1;
+
+    auto build = [&](std::optional<size_t> read_hint)
+    {
+        ReadPipeline pipeline;
+        pipeline.setLocalFileSource(
+            tmp_file->path(),
+            StoredObjects{testObject(tmp_file->path(), 5)},
+            settings,
+            read_hint);
+        return pipeline.build();
+    };
+
+    /// Count both successful O_DIRECT opens and rejected attempts: the test must distinguish
+    /// "not attempted" from "attempted but the filesystem refused it".
+    auto direct_io_attempts = []
+    {
+        return ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIO]
+            + ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIOFailed];
+    };
+
+    auto before = direct_io_attempts();
+    auto without_hint = build(std::nullopt);
+    ASSERT_NE(without_hint, nullptr);
+    EXPECT_EQ(direct_io_attempts(), before);
+
+    before = direct_io_attempts();
+    auto with_zero_hint = build(0);
+    ASSERT_NE(with_zero_hint, nullptr);
+    EXPECT_EQ(direct_io_attempts(), before);
+
+    before = direct_io_attempts();
+    auto with_hint = build(5);
+    ASSERT_NE(with_hint, nullptr);
+    EXPECT_GT(direct_io_attempts(), before);
+#endif
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+namespace
+{
+
+/// Serves the given data in memory and records the offsets of submitted requests.
+/// With `enforce_known_eof`, a request at or past the end is a test failure: that is exactly
+/// what the EOF guard must prevent for a reader with a known file size.
+class RecordingAsyncReader : public IAsynchronousReader
+{
+public:
+    explicit RecordingAsyncReader(String data_, bool enforce_known_eof_ = true)
+        : data(std::move(data_)), enforce_known_eof(enforce_known_eof_)
+    {
+    }
+
+    std::future<Result> submit(Request request) override
+    {
+        std::lock_guard lock(mutex);
+        request_offsets.push_back(request.offset);
+        request_ignores.push_back(request.ignore);
+        if (enforce_known_eof)
+            EXPECT_LT(request.offset, data.size()) << "read submitted at or past the known EOF";
+        EXPECT_LE(request.offset, data.size());
+
+        size_t available = request.offset < data.size()
+            ? std::min(request.size, data.size() - request.offset)
+            : 0;
+        if (available > 0)
+            memcpy(request.buf, data.data() + request.offset, available);
+
+        /// Match the real reader contract: the ignored prefix is included in `size`, and
+        /// `offset` tells the buffer where the usable data starts.
+        EXPECT_LE(request.ignore, available);
+
+        std::promise<Result> promise;
+        Result result;
+        result.buf = request.buf;
+        result.size = available;
+        result.offset = request.ignore;
+        result.file_offset_of_buffer_end = request.offset + available;
+        promise.set_value(std::move(result));
+        return promise.get_future();
+    }
+
+    Result execute(Request) override
+    {
+        throw std::runtime_error("execute is not supported by the test reader");
+    }
+
+    void wait() override {}
+
+    String data;
+    bool enforce_known_eof;
+    std::mutex mutex;
+    std::vector<size_t> request_offsets;
+    std::vector<size_t> request_ignores;
+};
+
+std::unique_ptr<AsynchronousReadBufferFromFileDescriptor> makeAsyncBuffer(
+    RecordingAsyncReader & reader,
+    size_t file_size,
+    size_t alignment = 0)
+{
+    return std::make_unique<AsynchronousReadBufferFromFileDescriptor>(
+        reader,
+        Priority{},
+        /* fd = */ -1,
+        /* buf_size = */ 4096,
+        /* flags = */ -1,
+        /* existing_memory = */ nullptr,
+        alignment,
+        file_size);
+}
+
+}
+
+
+TEST(ReadPipeline, AsynchronousReaderDoesNotSubmitAtKnownEOF)
+try
+{
+    const String data(58, 'x');
+    RecordingAsyncReader reader(data);
+
+    auto buf = makeAsyncBuffer(reader, data.size());
+
+    String result;
+    while (buf->next())
+    {
+        result.append(buf->position(), buf->available());
+        buf->position() += buf->available();
+    }
+
+    EXPECT_EQ(result, data);
+
+    /// Only the data read was submitted; reaching EOF must not submit another request.
+    ASSERT_EQ(reader.request_offsets.size(), 1u);
+    EXPECT_EQ(reader.request_offsets.front(), 0u);
+
+    /// Prefetch must also stay silent at a known EOF.
+    buf->prefetch(Priority{});
+    EXPECT_EQ(reader.request_offsets.size(), 1u);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+TEST(ReadPipeline, AsynchronousReaderConsumesPendingPrefetchAtEOF)
+try
+{
+    const String data(58, 'x');
+    RecordingAsyncReader reader(data);
+
+    auto buf = makeAsyncBuffer(reader, data.size());
+
+    /// The prefetch is submitted before EOF and must be consumed normally.
+    buf->prefetch(Priority{});
+    ASSERT_EQ(reader.request_offsets.size(), 1u);
+
+    String result;
+    while (buf->next())
+    {
+        result.append(buf->position(), buf->available());
+        buf->position() += buf->available();
+    }
+
+    EXPECT_EQ(result, data);
+    EXPECT_EQ(reader.request_offsets.size(), 1u);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+TEST(ReadPipeline, AsynchronousReaderDoesNotSubmitAfterAlignedSeekToEOF)
+try
+{
+    const String data(58, 'x');
+    RecordingAsyncReader reader(data);
+
+    /// The seek rounds the physical offset down to the alignment and records the difference in
+    /// bytes_to_ignore. The logical position is EOF, so no physical read is needed.
+    auto buf = makeAsyncBuffer(reader, data.size(), /* alignment = */ 4096);
+
+    EXPECT_EQ(buf->seek(58, SEEK_SET), 58);
+    EXPECT_TRUE(buf->eof());
+    EXPECT_TRUE(reader.request_offsets.empty());
+
+    /// Prefetch at the logical EOF must stay silent as well.
+    buf->prefetch(Priority{});
+    EXPECT_TRUE(reader.request_offsets.empty());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+TEST(ReadPipeline, AsynchronousReaderReadsAfterAlignedSeekWithIgnore)
+try
+{
+    String data;
+    for (size_t i = 0; i < 58; ++i)
+        data.push_back(static_cast<char>('a' + i % 26));
+
+    RecordingAsyncReader reader(data);
+    auto buf = makeAsyncBuffer(reader, data.size(), /* alignment = */ 4096);
+
+    /// The physical offset is rounded down to 0; the first 17 bytes must be ignored.
+    EXPECT_EQ(buf->seek(17, SEEK_SET), 17);
+
+    /// The logical position is before EOF, so prefetch must submit with ignore = 17.
+    buf->prefetch(Priority{});
+    ASSERT_EQ(reader.request_offsets.size(), 1u);
+    ASSERT_EQ(reader.request_ignores.size(), 1u);
+    EXPECT_EQ(reader.request_offsets.front(), 0u);
+    EXPECT_EQ(reader.request_ignores.front(), 17u);
+
+    String result;
+    while (buf->next())
+    {
+        result.append(buf->position(), buf->available());
+        buf->position() += buf->available();
+    }
+
+    EXPECT_EQ(result, data.substr(17));
+
+    /// Reaching EOF must not submit another request.
+    EXPECT_EQ(reader.request_offsets.size(), 1u);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+TEST(ReadPipeline, AsynchronousReaderWithoutKnownSizeReliesOnRealEOF)
+try
+{
+    const String data(58, 'x');
+    RecordingAsyncReader reader(data, /* enforce_known_eof = */ false);
+
+    /// file_size is unknown: the reader cannot guard, so the read at offset 58 is submitted and
+    /// the real zero-length result reports EOF.
+    AsynchronousReadBufferFromFileDescriptor buf(
+        reader,
+        Priority{},
+        /* fd = */ -1,
+        /* buf_size = */ 4096,
+        /* flags = */ -1,
+        /* existing_memory = */ nullptr,
+        /* alignment = */ 0,
+        /* file_size_ = */ std::nullopt);
+
+    String result;
+    while (buf.next())
+    {
+        result.append(buf.position(), buf.available());
+        buf.position() += buf.available();
+    }
+
+    EXPECT_EQ(result, data);
+    ASSERT_EQ(reader.request_offsets.size(), 2u);
+    EXPECT_EQ(reader.request_offsets[0], 0u);
+    EXPECT_EQ(reader.request_offsets[1], data.size());
 }
 catch (...)
 {

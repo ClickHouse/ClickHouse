@@ -1,0 +1,7 @@
+1
+enable_adaptive_memory_spill_scheduler = 0
+24	95999891
+spilled: 0
+enable_adaptive_memory_spill_scheduler = 1
+24	95999891
+spilled: 1

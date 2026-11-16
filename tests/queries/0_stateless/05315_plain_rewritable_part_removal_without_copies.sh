@@ -42,7 +42,8 @@ function check()
     # Inserting a part and dropping a table unlink a few files outside of parts, so only the events after
     # `TRUNCATE` has started and before the table is dropped are checked.
     local truncate_time
-    truncate_time=$($CLICKHOUSE_CLIENT -q "SELECT now64(6)")
+    # A number, not local time text: the text is ambiguous in the hour repeated when DST ends.
+    truncate_time=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp64Micro(now64(6))")
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${table}"
 
     # Wait until the truncated parts are removed: `_state` makes `system.parts` show parts in every state.
@@ -59,7 +60,7 @@ function check()
         SYSTEM FLUSH LOGS blob_storage_log;
         SELECT countIf(event_type = 'Copy') AS copies, countIf(event_type = 'Delete') > 0 AS removed
         FROM system.blob_storage_log
-        WHERE event_date >= yesterday() AND disk_name = '${disk_name}' AND event_time_microseconds >= '${truncate_time}';
+        WHERE event_date >= yesterday() AND disk_name = '${disk_name}' AND toUnixTimestamp64Micro(event_time_microseconds) >= ${truncate_time};
         DROP TABLE ${table} SYNC;
     "
 }
@@ -73,6 +74,7 @@ check t_prr_encrypted "disk(
     disk = disk(
         type = cache,
         max_size = '16Mi',
+        max_file_segment_size = '4Mi',
         path = '05315_cache_${CLICKHOUSE_DATABASE}/',
         disk = $(plain_rewritable_disk "$encrypted_inner_disk")),
     key = '1234567812345678')" "$encrypted_inner_disk"

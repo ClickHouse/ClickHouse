@@ -17,7 +17,7 @@ Relevant changes for ClickHouse Cloud services based on the v24.8 release.
 
 - Metric KeeperOutstandingRequets was renamed to KeeperOutstandingRequests. This fixes a typo reported in [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
 
-- clickhouse-client and clickhouse-local now default to multi-query mode (instead single-query mode). As an example, clickhouse-client -q "SELECT 1; SELECT 2" now works, whereas users previously had to add --multiquery (or -n). The --multiquery/-n switch became obsolete. INSERT queries in multi-query statements are treated specially based on their FORMAT clause: If the FORMAT is VALUES (the most common case), the end of the INSERT statement is represented by a trailing semicolon ; at the end of the query. For all other FORMATs (e.g. CSV or JSONEachRow), the end of the INSERT statement is represented by two newlines \n\n at the end of the query. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+- clickhouse-client and clickhouse-local now default to multi-query mode (instead single-query mode). As an example, clickhouse-client -q "SELECT 1; SELECT 2" now works, whereas users previously had to add `--multiquery` (or -n). The `--multiquery`/-n switch became obsolete. INSERT queries in multi-query statements are treated specially based on their FORMAT clause: If the FORMAT is VALUES (the most common case), the end of the INSERT statement is represented by a trailing semicolon ; at the end of the query. For all other FORMATs (e.g. CSV or JSONEachRow), the end of the INSERT statement is represented by two newlines \n\n at the end of the query. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
 
 - In previous versions, it was possible to use an alternative syntax for LowCardinality data types by appending WithDictionary to the name of the data type. It was an initial working implementation, and it was never documented or exposed to the public. Now, it is deprecated. If you have used this syntax, you have to ALTER your tables and rename the data types to LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
 
@@ -53,7 +53,7 @@ Relevant changes for ClickHouse Cloud services based on the v24.8 release.
 
 - Automatically append a wildcard * to the end of a directory path with table function file. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-- Add --memory-usage option to client in non interactive mode. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+- Add `--memory-usage` option to client in non interactive mode. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 - Add _etag virtual column for S3 table engine. Fixes [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 

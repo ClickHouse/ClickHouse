@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="ignore_cold_parts_seconds">
-  ## ignore_cold_parts_seconds
-</div>
+## ignore_cold_parts_seconds {#ignore_cold_parts_seconds}
 
 <CloudOnlyBadge />
 
@@ -24,9 +22,11 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Действует только в ClickHouse Cloud. Исключает новые части данных из SELECT-запросов, пока они не будут предварительно прогреты (см. [cache&#95;populated&#95;by&#95;fetch](/ru/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch)) или пока не пройдет указанное число секунд с момента их создания. Только для Replicated-/SharedMergeTree.
 
-<div id="ignore_data_skipping_indices">
-  ## ignore_data_skipping_indices
-</div>
+## ignore_data_skipping_indexes {#ignore_data_skipping_indexes}
+
+**Псевдонимы**: `ignore_data_skipping_indices`
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Добавлен псевдоним для настройки `ignore_data_skipping_indices`."}]}]} />
 
 Игнорирует указанные индексы пропуска данных, если они применяются в запросе.
 
@@ -113,9 +113,7 @@ Expression ((Projection + Before ORDER BY))
 
 Применяется к таблицам семейства MergeTree.
 
-<div id="ignore_drop_queries_probability">
-  ## ignore_drop_queries_probability
-</div>
+## ignore_drop_queries_probability {#ignore_drop_queries_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -123,9 +121,7 @@ Expression ((Projection + Before ORDER BY))
 
 Если включено, сервер будет с указанной вероятностью игнорировать все запросы DROP TABLE (для движков Memory и JOIN заменяя DROP на TRUNCATE). Используется в целях тестирования
 
-<div id="ignore_format_null_for_explain">
-  ## ignore_format_null_for_explain
-</div>
+## ignore_format_null_for_explain {#ignore_format_null_for_explain}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -134,9 +130,7 @@ Expression ((Projection + Before ORDER BY))
 Если включено, для запросов `EXPLAIN` параметр `FORMAT Null` будет игнорироваться, и вместо него будет использоваться формат вывода по умолчанию.
 Если выключено, запросы `EXPLAIN` с `FORMAT Null` не будут выводить результат (поведение для обратной совместимости).
 
-<div id="ignore_materialized_views_with_dropped_target_table">
-  ## ignore_materialized_views_with_dropped_target_table
-</div>
+## ignore_materialized_views_with_dropped_target_table {#ignore_materialized_views_with_dropped_target_table}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

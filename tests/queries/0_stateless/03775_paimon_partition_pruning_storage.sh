@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE=paimon_pruning_storage
 
-$CLICKHOUSE_CLIENT --allow_experimental_paimon_storage_engine=1 --query "
+$CLICKHOUSE_CLIENT --enable_paimon_storage_engine=1 --query "
     DROP TABLE IF EXISTS $TABLE;
     CREATE TABLE $TABLE ENGINE = PaimonS3(s3_conn, filename='paimon_all_types');
 "

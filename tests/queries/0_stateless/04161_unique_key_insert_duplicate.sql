@@ -1,15 +1,12 @@
--- Tags: no-fasttest, no-ordinary-database, no-async-insert, no-object-storage, no-s3-storage
--- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
---
--- UNIQUE KEY: duplicate key values within one INSERT block are rejected with a
--- defined error at SST-write time (interim fail-closed stance: INSERT-time
--- dedup is not yet implemented), and no part is published. Covers both writer
--- paths: UK = sort prefix (sorted writer) and UK not a sort prefix (unsorted
--- writer, where the duplicates are only adjacent after the writer's UK sort).
+-- Tags: no-fasttest, no-ordinary-database
+-- UNIQUE KEY: an INSERT block with a duplicate key is rejected and publishes nothing.
+--   1. sorted writer: UK is a sort prefix, duplicates are adjacent
+--   2. unsorted writer: UK is not a sort prefix, duplicates meet only after the UK sort
+-- no-fasttest: a UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 
 SET enable_unique_key = 1;
-SET async_insert = 0;
 
+-- 1. sorted writer: red if the dense-index writer accepts a repeated key.
 DROP TABLE IF EXISTS uk_dup_sorted;
 CREATE TABLE uk_dup_sorted (k UInt64, v String)
 ENGINE = MergeTree ORDER BY (k, v) UNIQUE KEY (k);
@@ -17,19 +14,16 @@ ENGINE = MergeTree ORDER BY (k, v) UNIQUE KEY (k);
 SELECT 'dup_sorted_rejected' AS step;
 INSERT INTO uk_dup_sorted VALUES (1, 'a'), (1, 'b'); -- { serverError SUPPORT_IS_DISABLED }
 
--- Nothing was published: no rows, no active part.
 SELECT count() FROM uk_dup_sorted;
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'uk_dup_sorted' AND active;
 
--- The table stays usable: distinct keys insert fine.
 SELECT 'distinct_sorted_ok' AS step;
 INSERT INTO uk_dup_sorted VALUES (1, 'a'), (2, 'b');
 SELECT count() FROM uk_dup_sorted;
 
 DROP TABLE uk_dup_sorted;
 
--- UK not a sort prefix -> unsorted writer. The duplicate values are not
--- adjacent in the inserted block (sorted by id), only after the UK sort.
+-- 2. unsorted writer: red if the same check is skipped when the writer sorts the block by the key.
 DROP TABLE IF EXISTS uk_dup_unsorted;
 CREATE TABLE uk_dup_unsorted (id UInt64, k UInt64)
 ENGINE = MergeTree ORDER BY (id) UNIQUE KEY (k);

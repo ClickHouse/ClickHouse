@@ -5,13 +5,13 @@ user_name="user_04510_a_${CLICKHOUSE_DATABASE}"
 query_as_user()
 {
     local query="$1"
-    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --enable_analyzer=1 --query="$query"
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --query="$query"
 }
 
 error_as_user()
 {
     local query="$1"
-    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --enable_analyzer=1 --query="$query" 2>&1 || true
+    $CLICKHOUSE_CLIENT_BINARY --database="${CLICKHOUSE_DATABASE}" --user="${user_name}" --query="$query" 2>&1 || true
 }
 
 cleanup_objects()

@@ -5,7 +5,6 @@
 -- Before the fix, ALTER validation re-resolved the implicit index against physical columns only,
 -- so _block_number could not be resolved and the ALTER threw UNKNOWN_IDENTIFIER.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 
 DROP TABLE IF EXISTS t_imv_alter;

@@ -1,7 +1,6 @@
 -- Reproducer for a bug where MaterializingCTETransform didn't drop totals/extremes,
 -- causing Block structure mismatch when uniting CTE pipelines.
 SET enable_materialized_cte = 1;
-SET enable_analyzer = 1;
 
 WITH
     cte1 AS MATERIALIZED (SELECT sum(number) FROM numbers(3) GROUP BY number % 2 WITH TOTALS),

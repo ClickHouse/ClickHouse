@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações são usadas para configurar o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="vector_similarity_index_cache_max_entries">
-  ## vector_similarity_index_cache_max_entries
-</div>
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />Tamanho do cache do índice de similaridade vetorial, em entradas. Zero significa que está desabilitado.
 
-<div id="vector_similarity_index_cache_policy">
-  ## vector_similarity_index_cache_policy
-</div>
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="Não" />Nome da política de cache usada pelo cache do índice de similaridade vetorial.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção usada pelo cache do índice de similaridade vetorial. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="vector_similarity_index_cache_size">
-  ## vector_similarity_index_cache_size
-</div>
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />Tamanho do cache de índices de similaridade vetorial. Zero significa desativado.
 
@@ -34,9 +28,7 @@ Essas configurações são usadas para configurar o servidor ClickHouse e são g
   Esta configuração pode ser modificada em tempo de execução e passará a valer imediatamente.
 </Note>
 
-<div id="vector_similarity_index_cache_size_ratio">
-  ## vector_similarity_index_cache_size_ratio
-</div>
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache do índice de similaridade vetorial, em relação ao tamanho total do cache.
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortCursor.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
@@ -59,7 +60,7 @@ private:
     const size_t max_block_size_rows;
     Inputs current_inputs;
     SortCursorImpls cursors;
-    std::vector<Source> sources;
+    VectorWithMemoryTracking<Source> sources;
     SortingQueueBatch<SortCursor> queue;
     MergedData merged_data;
 

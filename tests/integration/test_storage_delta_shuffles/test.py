@@ -48,6 +48,7 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -179,7 +180,6 @@ def create_delta_table(
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
-    use_delta_kernel=False,
     **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
@@ -198,21 +198,18 @@ def create_delta_table(
             assert table_function
             instance.query(
                 f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-                f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
             )
         else:
             if table_function:
                 instance.query(
                     f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-                    f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"
                 )
             else:
                 instance.query(
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
-                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
+                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
     else:
@@ -251,10 +248,10 @@ def create_initial_data_file(
 
 
 @pytest.mark.parametrize(
-    "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3")],
+    "storage_type",
+    ["s3"],
 )
-def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
+def test_single_log_file(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_single_log_file")
@@ -288,7 +285,6 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel=use_delta_kernel,
     )
 
     # A bare `count()` is answered by the trivial-count optimization from
@@ -322,11 +318,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         inserted_data
     )
 
-@pytest.mark.parametrize(
-    "use_delta_kernel",
-    ["0", "1"],
-)
-def test_partition_columns(started_cluster, use_delta_kernel):
+def test_partition_columns(started_cluster):
     pytest.skip("Not stable with some JAVA stack traces")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -399,7 +391,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     assert len(files) > 0
     print(f"Uploaded files: {files}")
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
     result = instance.query(f"describe table {table_function}").strip()
     assert (
@@ -450,23 +442,11 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     )
     assert result == 4
 
-    if use_delta_kernel == 1:
-        instance.query("SYSTEM FLUSH LOGS")
-        assert num_rows - 1 == int(
-            instance.query(
-                f"""
-            SELECT ProfileEvents['DeltaLakePartitionPrunedFiles']
-            FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'
-        """
-            )
-        )
-
     instance.query(
         f"""
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), h Nullable(Bool))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
-       SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
         """
     )
     assert (
@@ -497,7 +477,6 @@ def test_partition_columns(started_cluster, use_delta_kernel):
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (b Nullable(String), c Nullable(Date32), d Nullable(Int32))
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
-       SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
        """
     )
     assert (
