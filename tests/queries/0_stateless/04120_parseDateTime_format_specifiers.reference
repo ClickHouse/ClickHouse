@@ -45,6 +45,29 @@
 2024-11-02 00:00:00
 2024-11-06 00:00:00.000000
 2024-11-02 00:00:00.000000
+--- Fixed-width date and time fields require ASCII digits ---
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
 --- mysqlDayOfMonth: %d requires two digits ---
 2024-11-06 10:00:00
 2024-11-06 10:00:00
