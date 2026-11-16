@@ -1832,7 +1832,7 @@ void HashJoin::selectAutoFingerprints(const ScatteredBlock & block)
         if (AutoFingerprintPolicy::select(estimated_probe_rows, build_keys, capacity, AutoFingerprintPolicy::initial_sample_rows, 0)
             != AutoFingerprintPolicy::Reason::Selected)
             return;
-        std::array<UInt64, AutoFingerprintPolicy::initial_sample_rows> sampled_keys;
+        std::array<UInt64, AutoFingerprintPolicy::initial_sample_rows> sampled_keys{};
         const auto [samples, hits] = sampleAutoFingerprintKeys(
             block, *keys, *maps.key64, AutoFingerprintPolicy::initial_sample_rows, &sampled_keys);
         std::sort(sampled_keys.begin(), sampled_keys.begin() + samples);

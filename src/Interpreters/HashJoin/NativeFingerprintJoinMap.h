@@ -45,12 +45,12 @@ public:
         this->impls[0] = std::move(prepared);
     }
 
-    bool fingerprintsEnabled() const
+    [[nodiscard]] bool fingerprintsEnabled() const
     {
         return this->impls[0].fingerprintsEnabled();
     }
 
-    bool disableFingerprints() const
+    [[nodiscard]] bool disableFingerprints() const
     {
         return this->impls[0].disableFingerprints();
     }
@@ -65,7 +65,7 @@ public:
         this->impls[0].prepareFingerprints();
     }
 
-    size_t fingerprintBytes() const
+    [[nodiscard]] size_t fingerprintBytes() const
     {
         return this->impls[0].fingerprintBytes();
     }
