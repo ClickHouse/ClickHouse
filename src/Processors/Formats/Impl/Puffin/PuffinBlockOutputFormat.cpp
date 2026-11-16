@@ -1,5 +1,5 @@
-#include <Processors/Formats/Impl/PuffinBlockOutputFormat.h>
-#include <Processors/Formats/Impl/PuffinWriter.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlockOutputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Formats/FormatFactory.h>
 

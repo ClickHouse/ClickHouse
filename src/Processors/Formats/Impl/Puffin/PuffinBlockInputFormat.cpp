@@ -30,8 +30,8 @@
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
-#include <Processors/Formats/Impl/PuffinCommon.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <IO/ReadBufferFromMemory.h>
 
 #include <IO/ReadHelpers.h>

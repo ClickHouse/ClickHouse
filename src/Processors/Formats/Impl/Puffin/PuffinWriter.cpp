@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/PuffinWriter.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Common/Exception.h>
 #include <Common/config_version.h>

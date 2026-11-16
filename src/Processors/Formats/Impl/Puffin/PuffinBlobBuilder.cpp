@@ -1,7 +1,7 @@
-#include <Processors/Formats/Impl/PuffinBlobBuilder.h>
-#include <Processors/Formats/Impl/PuffinCommon.h>
-#include <Processors/Formats/Impl/PuffinDeletionVector.h>
-#include <Processors/Formats/Impl/PuffinThetaSketch.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlobBuilder.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
+#include <Processors/Formats/Impl/Puffin/PuffinDeletionVector.h>
+#include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
 
 #include <Common/Exception.h>
 #include <Formats/FormatSettings.h>

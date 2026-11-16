@@ -1,8 +1,8 @@
-#include <Processors/Formats/Impl/PuffinThetaSketch.h>
+#include <Processors/Formats/Impl/Puffin/PuffinThetaSketch.h>
 
 #if USE_DATASKETCHES
 
-#include <Processors/Formats/Impl/PuffinWriter.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>

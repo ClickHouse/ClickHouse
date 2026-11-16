@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/Impl/PuffinBlobBuilder.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlobBuilder.h>
 
 namespace DB
 {

@@ -4,8 +4,8 @@
 
 #if USE_DATASKETCHES
 
-#include <Processors/Formats/Impl/PuffinBlobBuilder.h>
-#include <Processors/Formats/Impl/PuffinCommon.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlobBuilder.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 #include <DataTypes/IDataType.h>
 
 #include <theta_sketch.hpp>

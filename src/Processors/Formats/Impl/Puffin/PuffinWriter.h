@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Formats/Impl/PuffinCommon.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 
 #include <string_view>
 

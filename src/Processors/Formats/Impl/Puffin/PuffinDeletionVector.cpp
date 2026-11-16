@@ -1,5 +1,5 @@
-#include <Processors/Formats/Impl/PuffinDeletionVector.h>
-#include <Processors/Formats/Impl/PuffinWriter.h>
+#include <Processors/Formats/Impl/Puffin/PuffinDeletionVector.h>
+#include <Processors/Formats/Impl/Puffin/PuffinWriter.h>
 
 #include <Columns/ColumnArray.h>
 #include <Common/Exception.h>

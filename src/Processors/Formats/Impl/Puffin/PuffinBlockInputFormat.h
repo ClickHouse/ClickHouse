@@ -6,7 +6,7 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Formats/Impl/PuffinCommon.h>
+#include <Processors/Formats/Impl/Puffin/PuffinCommon.h>
 
 #include <functional>
 
