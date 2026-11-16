@@ -23,7 +23,7 @@ SET explain_query_plan_default = 'legacy';
 SET max_rows_to_group_by = 0;
 SET max_rows_in_join = 0;
 SET max_bytes_in_join = 0;
-SET param__internal_cascades_cluster_node_count = 8;
+SET param__internal_cascades_cluster_node_count = 3;
 -- A large cost of a hash table makes the broadcast joins too expensive, so the joins shuffle.
 SET param__internal_cascades_cost_config = '{"hash_table_build_factor":1000000}';
 
