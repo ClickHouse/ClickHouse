@@ -294,7 +294,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter `min_x` must be less than `max_x`");
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "sparkbar";
     }
@@ -324,7 +324,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * /*arena*/) const override
     {
