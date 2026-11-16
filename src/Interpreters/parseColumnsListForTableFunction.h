@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
@@ -10,7 +9,6 @@ namespace DB
 {
 
 class Context;
-class ITableFunction;
 struct Settings;
 
 struct DataTypeValidationSettings
@@ -43,16 +41,11 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
 void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
-/// Name of the column of `table_function` that the identifier with `identifier_parts` from the `SELECT` list reads, to use it
-/// in the structure hint. A compound identifier keeps its full name if the source has such a column or its structure cannot be
-/// read, otherwise the first part is stripped if it is `table_function_alias`. Empty if the identifier does not read a top-level
-/// column of `table_function`, like a subcolumn or a column of another table. The source structure is cached in `source_columns`.
-String getStructureHintColumnName(
-    const Strings & identifier_parts,
-    const String & table_function_alias,
-    const ITableFunction & table_function,
-    const ContextPtr & context,
-    std::optional<ColumnsDescription> & source_columns);
+/// Name of the column to use in the structure hint for the identifier with `identifier_parts` from the `SELECT` list.
+/// A single part is kept as it is, and `<table_function_alias>.<column>` becomes `<column>`. It is decided from the identifier
+/// alone, because looking up the source structure would run the schema inference that the hint is there to avoid. Empty for
+/// any other compound identifier, like a subcolumn or a column of another table, which must not be hinted.
+String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias);
 
 /// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
 String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns);

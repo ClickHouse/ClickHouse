@@ -3637,7 +3637,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto insert_column_name_it = insert_column_names.begin();
             auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-            std::optional<ColumnsDescription> source_columns;
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
             auto expression = expression_list.begin();
@@ -3648,12 +3647,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    auto column_name = getStructureHintColumnName(
-                        identifier->name_parts,
-                        table_expression->tryGetAlias(),
-                        *table_function_ptr,
-                        shared_from_this(),
-                        source_columns);
+                    auto column_name = getStructureHintColumnName(identifier->name_parts, table_expression->tryGetAlias());
 
                     if (column_name.empty())
                     {

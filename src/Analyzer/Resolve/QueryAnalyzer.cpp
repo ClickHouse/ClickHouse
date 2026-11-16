@@ -5755,7 +5755,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         auto insert_column_name_it = insert_column_names.begin();
         auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
         auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-        std::optional<ColumnsDescription> source_columns;
         bool asterisk = false;
         const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
         auto expression = expression_list.begin();
@@ -5766,12 +5765,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
-                auto column_name = getStructureHintColumnName(
-                    identifier_node->getIdentifier().getParts(),
-                    table_function_node->getAlias(),
-                    *table_function_ptr,
-                    scope_context,
-                    source_columns);
+                auto column_name = getStructureHintColumnName(identifier_node->getIdentifier().getParts(), table_function_node->getAlias());
 
                 if (column_name.empty())
                 {
