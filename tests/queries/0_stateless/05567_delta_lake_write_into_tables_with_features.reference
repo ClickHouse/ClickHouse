@@ -1,0 +1,25 @@
+-- deletion_vectors: inserted
+113	9739	1
+-- v2_checkpoint_parquet: inserted
+50	2220	1
+-- change_data_feed_deletion_vectors: inserted
+11	1049	1
+-- the change data feed of the appended rows
+insert	1000	new
+-- row tracking and in-commit timestamps: inserted
+22	391
+1	1
+1
+1
+1
+-- unsupported features
+type_widening: (DELTA_KERNEL_ERROR)
+liquid_clustering: (DELTA_KERNEL_ERROR)
+iceberg_compat_v2: (NOT_IMPLEMENTED)
+column_mapping_id: (NOT_IMPLEMENTED)
+writer_features: (DELTA_KERNEL_ERROR)
+type_widening	4
+liquid_clustering	35
+iceberg_compat_v2	3
+column_mapping_id	8
+writer_features	4

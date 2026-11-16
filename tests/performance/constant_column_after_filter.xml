@@ -1,0 +1,52 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS constant_column_after_filter</create_query>
+    <create_query>
+        CREATE TABLE constant_column_after_filter
+        (
+            k1 UInt64,
+            k2 UInt64,
+            k3 UInt64,
+            k4 UInt64,
+            k5 UInt64,
+            k6 UInt64,
+            k7 UInt64,
+            k8 UInt64,
+            v UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO constant_column_after_filter
+        SELECT 42, 43, 44, 45, 46, 47, 48, 49, number
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query tag="group_by_const_keys_after_filter"><![CDATA[
+        SELECT count(), sum(v)
+        FROM constant_column_after_filter
+        WHERE k1 = 42 AND k2 = 43 AND k3 = 44 AND k4 = 45 AND k5 = 46 AND k6 = 47 AND k7 = 48 AND k8 = 49
+        GROUP BY k1, k2, k3, k4, k5, k6, k7, k8
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, query_plan_optimize_lazy_materialization = 0
+    ]]></query>
+
+    <query tag="expressions_on_const_columns_after_filter"><![CDATA[
+        SELECT
+            sum(length(toString(k1))),
+            sum(length(toString(k2))),
+            sum(length(toString(k3))),
+            sum(length(toString(k4))),
+            sum(length(toString(k5))),
+            sum(length(toString(k6))),
+            sum(length(toString(k7))),
+            sum(length(toString(k8)))
+        FROM constant_column_after_filter
+        WHERE k1 = 42 AND k2 = 43 AND k3 = 44 AND k4 = 45 AND k5 = 46 AND k6 = 47 AND k7 = 48 AND k8 = 49
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, query_plan_optimize_lazy_materialization = 0
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS constant_column_after_filter</drop_query>
+</test>

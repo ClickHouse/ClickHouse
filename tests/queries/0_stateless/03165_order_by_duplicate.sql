@@ -12,5 +12,4 @@ WHERE id IN (
     LIMIT 4
 )
 ORDER BY id ASC
-LIMIT 1 BY id
-SETTINGS enable_analyzer = 1;
+LIMIT 1 BY id;

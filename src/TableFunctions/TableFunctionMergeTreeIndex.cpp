@@ -1,6 +1,9 @@
 #include <Storages/StorageMergeTreeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
@@ -37,6 +40,11 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
+    {
+        checkSourceTableAccess(context, source_table_id, for_structure ? AccessType::SHOW_COLUMNS : AccessType::SHOW_TABLES);
+    }
+
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -50,6 +58,21 @@ private:
         /// Technically it's MergeTreeIndex but it doesn't register itself
         return "";
     }
+
+    struct ResolvedSource
+    {
+        StoragePtr table;
+        /// The metadata the result structure is built from.
+        StorageMetadataPtr metadata;
+    };
+
+    /// Resolves the source table and checks that the user may see it.
+    ResolvedSource resolveSource(ContextPtr context) const;
+
+    /// The result structure for the given source. The structure and the storage are built from the same metadata
+    /// snapshot, so the access check in `StorageMergeTreeIndex::readImpl` resolves the requested names against the schema
+    /// they were exposed from, even if the table is altered concurrently.
+    ColumnsDescription getColumns(const ResolvedSource & source) const;
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
@@ -152,10 +175,25 @@ static NameSet getAllPossibleStreamNames(
     return all_streams;
 }
 
+TableFunctionMergeTreeIndex::ResolvedSource TableFunctionMergeTreeIndex::resolveSource(ContextPtr context) const
+{
+    /// Otherwise `DESCRIBE` and the errors below would reveal the existence, the engine and the key of a table the user cannot see.
+    context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    const auto metadata_handle = source_table->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr metadata_snapshot = metadata_handle;
+    return {std::move(source_table), std::move(metadata_snapshot)};
+}
+
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    return getColumns(resolveSource(context));
+}
+
+ColumnsDescription TableFunctionMergeTreeIndex::getColumns(const ResolvedSource & source) const
+{
+    const auto & source_table = source.table;
+    const auto & metadata_snapshot = source.metadata;
 
     const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
@@ -206,14 +244,14 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto source = resolveSource(context);
+    auto columns = getColumns(source);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeIndex>(
-        std::move(storage_id), std::move(source_table), std::move(columns), with_marks, with_minmax);
+        std::move(storage_id), std::move(source.table), std::move(source.metadata), std::move(columns), with_marks, with_minmax);
 
     res->startup();
     return res;
@@ -240,6 +278,8 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `table`       | The table name to read index and marks from.      |
 | `with_marks`  | Whether include columns with marks to the result. |
 | `with_minmax` | Whether include min-max index to the result.      |
+
+Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the columns being read.
 
 ## Returned value {#returned-value}
 

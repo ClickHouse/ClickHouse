@@ -2,8 +2,6 @@
 -- of the tokens, a row per posting. They must match the tokens of the rows of the table for all kinds of posting lists:
 -- embedded, raw, compressed and split into several segments (whose bounds do not match the blocks of the positions).
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab_postings;
 DROP TABLE IF EXISTS tab_postings_plain;
 

@@ -21,7 +21,7 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
 {
-    std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
+    [[nodiscard]] std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
             return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
@@ -38,7 +38,7 @@ public:
     {
     }
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
+    [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
         /// A sketch of a proof of why this method actually works:
         ///
@@ -157,7 +157,7 @@ public:
         return {};
     }
 
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (auto result = checkCanMergePartsPreconditions(name, info); !result)
             return result;
@@ -183,7 +183,7 @@ public:
         return {};
     }
 
-    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
     {
         if (range.empty())
             return {};
