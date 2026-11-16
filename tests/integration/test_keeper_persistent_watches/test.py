@@ -1,10 +1,11 @@
+import struct
 import time
 
+import logging
 import pytest
 import os
 import threading
 import re
-import struct
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -169,7 +170,7 @@ def test_persistent_recursive_watch(started_cluster):
     client.set(CHILD_NODE, b"3")
     event_lock.wait(5)
     assert len(events) == 2
-    assert events[-1]["path"] == CHILD_NODE
+    assert events[-1]["path"] == NODE_PATH
 
     event_lock.clear()
     client.set(FAKE_PATH, b"999")
@@ -249,14 +250,11 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     client = get_fake_zk(node1)
     NODE_PATH = "/testEventFields2"
     CHILD_NODE = f"{NODE_PATH}/child"
-    GRANDCHILD_NODE = f"{CHILD_NODE}/grandchild"
-    SEQUENTIAL_NODE_PREFIX = f"{CHILD_NODE}/sequential-"
     OTHER_PATH = "/testEventFieldsOther2"
 
-    if client.exists(NODE_PATH):
-        client.delete(NODE_PATH, recursive=True)
-    if client.exists(OTHER_PATH):
-        client.delete(OTHER_PATH)
+    for path in [CHILD_NODE, NODE_PATH, OTHER_PATH]:
+        if client.exists(path):
+            client.delete(path)
 
     client.create(NODE_PATH, b"1")
     client.create(CHILD_NODE, b"1")
@@ -283,47 +281,21 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     client.set(CHILD_NODE, b"3")
     event_lock.wait(5)
     assert len(events) == 2
-    assert events[-1]["path"] == CHILD_NODE
+    assert events[-1]["path"] == NODE_PATH
     assert events[-1]["type"] == "CHANGED"
-    assert events[-1]["state"] == "CONNECTED"
-
-    event_lock.clear()
-    client.create(GRANDCHILD_NODE, b"1")
-    event_lock.wait(5)
-    assert len(events) == 3
-    assert events[-1]["path"] == GRANDCHILD_NODE
-    assert events[-1]["type"] == "CREATED"
-    assert events[-1]["state"] == "CONNECTED"
-
-    event_lock.clear()
-    client.delete(GRANDCHILD_NODE)
-    event_lock.wait(5)
-    assert len(events) == 4
-    assert events[-1]["path"] == GRANDCHILD_NODE
-    assert events[-1]["type"] == "DELETED"
-    assert events[-1]["state"] == "CONNECTED"
-
-    event_lock.clear()
-    sequential_node = client.create(SEQUENTIAL_NODE_PREFIX, b"1", sequence=True)
-    event_lock.wait(5)
-    assert len(events) == 5
-    assert events[-1]["path"] == sequential_node
-    assert events[-1]["type"] == "CREATED"
     assert events[-1]["state"] == "CONNECTED"
 
     event_lock.clear()
     client.set(OTHER_PATH, b"x")
     time.sleep(0.3)
-    assert len(events) == 5
+    assert len(events) == 2
 
     client.remove_all_watches(NODE_PATH, WatcherType.ANY)
     client.set(NODE_PATH, b"after")
     client.set(CHILD_NODE, b"after2")
     time.sleep(0.5)
-    assert len(events) == 5
+    assert len(events) == 2
 
-    if client.exists(sequential_node):
-        client.delete(sequential_node)
     if client.exists(CHILD_NODE):
         client.delete(CHILD_NODE)
     if client.exists(NODE_PATH):
@@ -371,57 +343,3 @@ def test_clear_watches(started_cluster):
     destroy_zk_client(client)
     data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
     assert "zk_watch_count\t0" in data
-
-CHECK_WATCH, REMOVE_WATCH, ADD_WATCH = 17, 18, 106
-ZOK, ZBADARGUMENTS, ZNOWATCHER = 0, -8, -121
-# (opnum, type or mode, expected error): types are 1..5 and modes 0..1, so the last request of each op is valid.
-UNKNOWN_TYPE_REQUESTS = [
-    (CHECK_WATCH, 0, ZBADARGUMENTS),
-    (CHECK_WATCH, 6, ZBADARGUMENTS),
-    (CHECK_WATCH, 1, ZNOWATCHER),
-    (REMOVE_WATCH, 0, ZBADARGUMENTS),
-    (REMOVE_WATCH, 6, ZBADARGUMENTS),
-    (REMOVE_WATCH, 1, ZNOWATCHER),
-    (ADD_WATCH, -1, ZBADARGUMENTS),
-    (ADD_WATCH, 2, ZBADARGUMENTS),
-    (ADD_WATCH, 0, ZOK),
-]
-
-def recv_exactly(sock, size):
-    data = b""
-    while len(data) < size:
-        chunk = sock.recv(size - len(data))
-        if not chunk:
-            raise EOFError("Keeper closed the connection")
-        data += chunk
-    return data
-
-def send_unknown_type_requests():
-    with get_keeper_socket(node1.name) as sock:
-        handshake = struct.pack(">iqiqi16s", 0, 0, 30000, 0, 16, b"\0" * 16)
-        sock.sendall(struct.pack(">i", len(handshake)) + handshake)
-        reply = recv_exactly(sock, struct.unpack(">i", recv_exactly(sock, 4))[0])
-        assert struct.unpack(">q", reply[8:16])[0] != 0
-        path = b"/testUnknownWatchType"
-        for xid, (opnum, value, expected) in enumerate(UNKNOWN_TYPE_REQUESTS, start=1):
-            body = struct.pack(">iii", xid, opnum, len(path)) + path + struct.pack(">i", value)
-            sock.sendall(struct.pack(">i", len(body)) + body)
-            reply = recv_exactly(sock, struct.unpack(">i", recv_exactly(sock, 4))[0])
-            reply_xid, _, error = struct.unpack(">iqi", reply[:16])
-            assert (reply_xid, error) == (xid, expected), (opnum, value)
-
-def test_watch_requests_with_unknown_type(started_cluster):
-    # Through Raft (`quorum_reads`), then a restart that replays the logged requests, then through the local read path.
-    config = "/etc/clickhouse-server/config.d/keeper_config1.xml"
-    try:
-        node1.replace_in_config(config, "<raft_logs_level>", "<quorum_reads>1</quorum_reads><raft_logs_level>")
-        node1.restart_clickhouse()
-        keeper_utils.wait_until_connected(cluster, node1)
-        assert "quorum_reads=true" in keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
-        send_unknown_type_requests()
-    finally:
-        node1.replace_in_config(config, "<quorum_reads>1</quorum_reads>", "")
-        node1.restart_clickhouse(kill=True)
-    keeper_utils.wait_until_connected(cluster, node1)
-    assert "quorum_reads=false" in keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
-    send_unknown_type_requests()

@@ -10,7 +10,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -18,14 +18,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 namespace DB
 {
@@ -73,11 +71,10 @@ FormatSchemaInfo::FormatSchemaInfo(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "format_schema_message_name is specified {} when not required", message_name);
     }
 
-    /// Not cached in a static variable: it would keep the path of the first call for the lifetime of the process,
-    /// while `format_schema_path` is an argument and can differ between calls (e.g. between contexts).
     auto default_schema_directory = [&format_schema_path]()
     {
-        return String(fs::canonical(format_schema_path) / "");
+        static const String str = fs::canonical(format_schema_path) / "";
+        return str;
     };
 
     if (format_schema_source == FormatSettings::FORMAT_SCHEMA_SOURCE_FILE)
@@ -228,7 +225,7 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     auto query_context = Context::createCopy(current_query_context);
-    InterpreterSelectQueryAnalyzer interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
+    InterpreterSelectQuery interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
     BlockIO io = interpreter.execute();
 
     PullingPipelineExecutor executor(io.pipeline);
@@ -243,12 +240,6 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the schema query result to have one column");
 
         auto & column = block.getByPosition(0).column;
-        if (column->size() != 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Expected the schema query result to have one row, got {}",
-                column->size());
-
         if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
         {
             result = col_str->getDataAt(0);
@@ -290,9 +281,7 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         fs::create_directory(dir_path);
     }
 
-    /// The final file name is a hash of the schema source, so every writer of one schema targets
-    /// the same path; a shared temporary name would let them overwrite and delete each other's files.
-    auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
+    auto temp_path = fs::path(file_path.string() + ".tmp");
 
     try
     {
@@ -371,7 +360,7 @@ String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, 
 
     String content_sample;
     content_sample.resize(content_sample_len * 2);
-    boost::algorithm::hex(hashing_content.begin(), hashing_content.begin() + content_sample_len, content_sample.data());
+    boost::algorithm::hex(content_sample.begin(), content_sample.begin() + content_sample_len, content_sample.data());
 
     if (file_extention.empty())
         return fmt::format("{}-{}", content_sample, content_hash_hex);

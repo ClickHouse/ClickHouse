@@ -83,7 +83,7 @@ enum class IndexMode
 template <typename T>
 struct NpvCalculator
 {
-    using FloatType = double;
+    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
 
     explicit NpvCalculator(std::span<T> cashflows_)
         : cashflows(cashflows_)
@@ -162,7 +162,7 @@ double npv(double rate, std::span<T> cashflows)
 template <typename T, typename D, DayCountType day_count>
 struct XnpvCalculator
 {
-    using FloatType = double;
+    using FloatType = std::conditional_t<std::floating_point<T>, T, double>;
 
     XnpvCalculator(std::span<T> cashflows_, std::span<D> dates_)
         : cashflows(cashflows_)
@@ -334,6 +334,21 @@ std::expected<double, SolverErrorCode> calculateIrr(std::span<T> cashflows, doub
     return solver(npv_function, npv_derivative, guess);
 }
 
+bool isCashFlowColumn(const IDataType & type)
+{
+    if (isArray(type))
+    {
+        const auto & nested = checkAndGetDataType<DataTypeArray>(type).getNestedType();
+        return isNativeInt(nested) || isNativeFloat(nested);
+    }
+    return false;
+}
+
+bool isXirrDateColumn(const IDataType & type)
+{
+    return isArray(type) && isDateOrDate32(checkAndGetDataType<DataTypeArray>(type).getNestedType());
+}
+
 // Similar dispatch is needed in two of the functions below, so we define it here
 template <typename T, typename F>
 void dispatchDate(const T * cashflow_data, const IColumn * date_data, F && f)
@@ -365,7 +380,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
-class FunctionXirr final : public IFunction
+class FunctionXirr : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturnExtended";
@@ -378,28 +393,30 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Keep this aligned with `dispatchCashflowDate` / `dispatchDate`:
-        /// cashflow accepts Int8/16/32/64 and Float32/64 (no UInt, no Decimal,
-        /// no Nullable), date accepts Date or Date32. Without these
-        /// restrictions, unsupported nested types pass analyzer-time
-        /// validation and fail at runtime with `LOGICAL_ERROR`.
-        ///
-        /// The optional `guess` (`NativeFloat`) and `daycount` (`String`) are positional:
-        /// execution treats argument 3 as `guess` and argument 4 as `daycount`. Spell the legal
-        /// arities as explicit alternatives rather than two independent optional groups
-        /// `[NativeFloat], [String]`, which would let a three-argument call skip `guess` and bind a
-        /// `daycount` string in the `guess` position (then fail at execution reading it as a float).
-        return "(Array(NativeInt | NativeFloat), Array(Date | Date32)) -> Float64"
-               " OR (Array(NativeInt | NativeFloat), Array(Date | Date32), NativeFloat) -> Float64"
-               " OR (Array(NativeInt | NativeFloat), Array(Date | Date32), NativeFloat, String) -> Float64";
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date/Date32]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-        auto date_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
+        auto date_col = arguments[1].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
@@ -481,7 +498,7 @@ public:
     }
 };
 
-class FunctionIRR final : public IFunction
+class FunctionIRR : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturn";
@@ -494,16 +511,27 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Cashflow array must contain only Int8/16/32/64 or Float32/64; see
-        /// the inline dispatch in `executeImpl`.
-        return "(Array(NativeInt | NativeFloat), [NativeFloat]) -> Float64";
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow argument must be an array");
@@ -566,7 +594,7 @@ public:
     }
 };
 
-class FunctionXnpv final : public IFunction
+class FunctionXnpv : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValueExtended";
@@ -580,19 +608,31 @@ public:
     bool isDeterministic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
-        /// Float32/64; date accepts Date or Date32. See `dispatchCashflowDate`
-        /// and the rate dispatch in `executeImpl`.
-        return "(NativeFloat, Array(NativeInt | NativeFloat), Array(Date | Date32), [String]) -> Float64";
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+            {"date", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isXirrDateColumn), nullptr, "Array[Date|Date32]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-        auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-        auto date_col = arguments[2].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto rate_col = arguments[0].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
+        auto date_col = arguments[2].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
@@ -634,7 +674,7 @@ public:
                     if (current_offset != date_offsets[i])
                         throw Exception(
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cashflow and date arrays must have the same size for each row");
-                    const double rate = static_cast<double>(rate_pod[i]);
+                    const auto rate = rate_pod[i];
 
                     const auto length = current_offset - previous_offset;
                     auto cashflow_span = std::span<CashFlowType>(cashflow_values->getData().data() + previous_offset, length);
@@ -672,7 +712,7 @@ public:
     }
 };
 
-class FunctionNPV final : public IFunction
+class FunctionNPV : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValue";
@@ -685,17 +725,29 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
-        /// Float32/64. See the dispatch tree in `executeImpl`.
-        return "(NativeFloat, Array(NativeInt | NativeFloat), [Integer]) -> Float64";
+        auto mandatory_args = FunctionArgumentDescriptors{
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"cashflow",
+             static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
+             nullptr,
+             "Array[Float64|Float32|Int64|Int32|Int16|Int8]"},
+        };
+
+        auto optional_args = FunctionArgumentDescriptors{
+            {"start_from_zero", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Bool"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-        auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto rate_col = arguments[0].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
@@ -724,7 +776,7 @@ public:
                 {
                     const auto current_offset = cashflow_offsets[i];
                     const auto length = current_offset - previous_offset;
-                    const double rate = static_cast<double>(rate_pod[i]);
+                    const auto rate = rate_pod[i];
                     auto cashflow_span = std::span(cashflow_values->getData().data() + previous_offset, length);
 
                     result_data[i] = npv<index_mode, CashFlowType>(rate, cashflow_span);
@@ -801,7 +853,7 @@ Optional day count convention (default 'ACT_365F'). Supported values:
         }
     };
     FunctionDocumentation::ReturnedValue returned_value{
-        "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/reference/data-types/float)"};
+        "Returns the XIRR value. If the calculation cannot be performed, it returns NaN. [`Float64`](/sql-reference/data-types/float)"};
     FunctionDocumentation::Examples examples = {
         {"simple_example",
          R"(

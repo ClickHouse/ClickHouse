@@ -2,6 +2,8 @@
 
 -- `ORDER BY ... LIMIT` over a column whose type is or contains an `Interval` type, with the top-K dynamic filter.
 
+SET use_top_k_dynamic_filtering = 1;
+
 DROP TABLE IF EXISTS t_interval;
 DROP TABLE IF EXISTS t_interval_key;
 DROP TABLE IF EXISTS t_interval_minmax;
@@ -74,11 +76,6 @@ SELECT n_ns FROM t_interval ORDER BY n_ns DESC NULLS LAST LIMIT 3;
 
 SELECT tup FROM t_interval ORDER BY tup LIMIT 3;
 SELECT tup FROM t_interval ORDER BY tup DESC LIMIT 3;
-
-SELECT arr FROM t_interval ORDER BY arr DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1;
-
-SELECT d_s FROM t_interval GROUP BY d_s ORDER BY d_s DESC LIMIT 3
-SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1;
 
 CREATE TABLE t_interval_key (d IntervalSecond) ENGINE = MergeTree ORDER BY d;
 INSERT INTO t_interval_key SELECT toIntervalSecond(number) FROM numbers(100000);

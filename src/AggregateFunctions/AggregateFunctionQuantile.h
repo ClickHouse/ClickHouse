@@ -6,10 +6,12 @@
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Core/ProtocolDefines.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 
@@ -30,19 +32,6 @@ namespace ErrorCodes
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
 template <typename> class QuantileDD;
-
-/** Latest serialization version of a quantile data structure, or 0 for the ones that never changed
-  * their state format. A data structure opts in by declaring `static constexpr size_t state_version`,
-  * and then takes the version as the second argument of `serialize` and `deserialize`.
-  */
-template <typename Data>
-constexpr size_t quantileStateVersion()
-{
-    if constexpr (requires { Data::state_version; })
-        return Data::state_version;
-    else
-        return 0;
-}
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -71,14 +60,9 @@ class AggregateFunctionQuantile final
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>;
 
-    static constexpr bool has_add_many = std::is_same_v<SecondArgumentType, void>
-        && requires(Data & data, const Value * values) { data.addMany(values, size_t{}); };
-
-    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
-    static constexpr size_t state_version = quantileStateVersion<Data>();
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -257,115 +241,19 @@ public:
             this->data(place).add(value);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if constexpr (has_add_many)
-        {
-            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
-            if (if_argument_pos >= 0)
-            {
-                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
-                this->data(place).template addManyFiltered<true>(values, row_end - row_begin, if_flags);
-            }
-            else
-                this->data(place).addMany(values, row_end - row_begin);
-        }
-        else
-            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if constexpr (has_add_many)
-        {
-            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
-            const size_t count = row_end - row_begin;
-            if (if_argument_pos >= 0)
-            {
-                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
-                auto keep = std::make_unique_for_overwrite<UInt8[]>(count);
-                for (size_t i = 0; i < count; ++i)
-                    keep[i] = !null_map[row_begin + i] & !!if_flags[i];
-                this->data(place).template addManyFiltered<true>(values, count, keep.get());
-            }
-            else
-                this->data(place).template addManyFiltered<false>(values, count, null_map + row_begin);
-        }
-        else
-            Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
-    }
-
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    bool isVersioned() const override { return state_version > 0; }
-
-    /// The default version - the one used when the type carries no explicit version - must stay 0.
-    /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
-    /// data written before the version was introduced: in the `columns.txt` of old parts, in old
-    /// `Native` files, and in the type lists and shared-variant values of old `Dynamic` columns.
-    /// None of these media record a default version, so the writer and the reader of an unversioned
-    /// type can only agree on the layout if it never changes: an unversioned type has to keep the
-    /// byte layout that unversioned data always had. The new version applies only where it is
-    /// spelled out explicitly - in the type name (`AggregateFunction(1, ...)`) and in the version
-    /// field of the binary type encoding - or derived from the negotiated revision on the `Native`
-    /// wire. To that end `getStateType` below returns the explicitly versioned type, so every fresh
-    /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
-    /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
-    /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    size_t getDefaultVersion() const override { return 0; }
-
-    /// The state type spells the version out, so that the type name and the payload stay consistent
-    /// on every medium the state can travel through - including the generic formats, which serialize
-    /// query results with the state type as-is (only the `Native` wire re-derives versions from the
-    /// negotiated revision).
-    DataTypePtr getStateType() const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (state_version > 0)
-            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
-        else
-            return IAggregateFunction::getStateType();
+        this->data(place).serialize(buf);
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        if constexpr (state_version >= 1)
-        {
-            if (revision >= DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE)
-                return 1;
-        }
-        return 0;
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
-    {
-        if constexpr (state_version > 0)
-            this->data(place).serialize(buf, version.value_or(getDefaultVersion()));
-        else
-            this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
-    {
-        if constexpr (state_version > 0)
-            this->data(place).deserialize(buf, version.value_or(getDefaultVersion()));
-        else
-            this->data(place).deserialize(buf);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
