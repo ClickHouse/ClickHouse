@@ -104,6 +104,16 @@ struct Cost
     [[nodiscard]] String dump(const CostConfig & config) const;
 };
 
+/// The cost of an exchange that sends `rows` rows of `bytes_per_row` bytes, as seen by one node: a shuffle among N nodes
+/// moves 1/N of the bytes per node (`network_divisor` = N), and a gather or a scatter pushes `funnel_rows` rows through one
+/// node. The join order search costs exchanges with it too (`query_plan_join_order_distribution`).
+Cost exchangeTransferCost(Float64 rows, Float64 bytes_per_row, Float64 network_divisor, Float64 funnel_rows, const CostConfig & config);
+
+/// The cost of a hash join as seen by one node: probing and the output divided by the parallelism of the probe side,
+/// and the hash table by that of the build side, which is 1 for a broadcast join.
+Cost hashJoinWorkCost(Float64 probe_rows, Float64 build_rows, Float64 build_bytes_per_row, Float64 output_rows,
+    Float64 probe_parallelism, Float64 build_parallelism, const CostConfig & config);
+
 struct ExpressionCost
 {
     Cost cost;          /// Cost of this expression only

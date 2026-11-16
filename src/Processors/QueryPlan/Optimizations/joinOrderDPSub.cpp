@@ -235,41 +235,37 @@ private:
         return state != replicated_state || relations != all_relations;
     }
 
-    /// The costs of the hash joins of two sides on the nodes, in the units of the Cascades cost model (`CostConfig`): the
-    /// work per node, the bytes an exchange moves per node, and a fixed cost per exchange. Each side is first moved to the
-    /// state a join needs with the exchanges Cascades uses for it.
+    /// The costs of the hash joins of two sides on the nodes, with the cost functions of Cascades (`exchangeTransferCost`,
+    /// `hashJoinWorkCost`). Each side is first moved to the state a join needs with the exchanges Cascades uses for it.
     struct DistributedJoinCost
     {
         const CostConfig & config;
         double nodes = 1;
 
         static constexpr double impossible = std::numeric_limits<double>::infinity();
-        double fixedCost() const { return config.exchange_fixed_overhead * config.sequential_weight; }
-        double network(double rows, double bytes) const { return rows * bytes * config.network_weight; }
-        /// A gather or a scatter sends every row through one node.
-        double funnel(double rows) const { return config.funnel_sequential_cost_per_row * rows * config.sequential_weight; }
+        /// A shuffle among the nodes, or a gather or a scatter, which send every row through one node.
+        double shuffle(double rows, double bytes) const { return exchangeTransferCost(rows, bytes, nodes, 0, config).total(config); }
+        double funnel(double rows, double bytes) const { return exchangeTransferCost(rows, bytes, 1, rows, config).total(config); }
 
         /// To partitioned in any way.
         double toPartitioned(Int8 state, double rows, double bytes) const
         {
             return state == replicated_state || state == single_node_state ? toNewPartitioning(state, rows, bytes) : 0;
         }
-        /// To a partitioning that no plan has yet: a shuffle moves 1/N of the rows per node, a scatter from one node sends
-        /// them all. Copies cannot be split without multiplying the rows.
+        /// To a partitioning that no plan has yet: a shuffle, or a scatter from one node. Copies cannot be split without
+        /// multiplying the rows.
         double toNewPartitioning(Int8 state, double rows, double bytes) const
         {
             if (state == replicated_state)
                 return impossible;
-            if (state == single_node_state)
-                return network(rows, bytes) + fixedCost() + funnel(rows);
-            return network(rows, bytes) / nodes + fixedCost();
+            return state == single_node_state ? funnel(rows, bytes) : shuffle(rows, bytes);
         }
         /// To a copy on every node: a broadcast from one node, after a gather when the rows are on several nodes.
         double toReplicated(Int8 state, double rows, double bytes) const
         {
             if (state == replicated_state)
                 return 0;
-            const double broadcast = network(rows, bytes) + fixedCost();
+            const double broadcast = exchangeTransferCost(rows, bytes, 1, 0, config).total(config);
             return state == single_node_state ? broadcast : broadcast + toSingleNode(state, rows, bytes);
         }
         /// To one node: a gather.
@@ -279,15 +275,13 @@ private:
                 return 0;
             if (state == replicated_state)
                 return impossible;
-            return network(rows, bytes) + fixedCost() + funnel(rows);
+            return funnel(rows, bytes);
         }
-        /// The work of a hash join: probing and the output divided by the parallelism of the probe side, and the hash
-        /// table by that of the build side.
         double joinWork(double probe_rows, double build_rows, double build_bytes, double joined_rows, double probe_parallelism,
             double build_parallelism) const
         {
-            const double build = (config.hash_table_build_factor + build_bytes) * build_rows;
-            return config.work_weight * ((probe_rows + joined_rows) / probe_parallelism + build / build_parallelism);
+            return hashJoinWorkCost(probe_rows, build_rows, build_bytes, joined_rows, probe_parallelism, build_parallelism, config)
+                .total(config);
         }
     };
     DistributedJoinCost distributedJoinCost() const

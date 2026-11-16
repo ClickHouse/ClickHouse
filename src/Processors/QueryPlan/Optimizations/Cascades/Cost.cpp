@@ -131,26 +131,34 @@ static const ExpressionStatistics & inputStats(const CostInputs & inputs, size_t
     return *inputs.input_stats[input_index];
 }
 
-/// Hash join: left probe + right build + output. The build side is materialized fully per node
-/// for a broadcast join and 1/N per node otherwise. Network is modeled by the exchange steps.
+Cost exchangeTransferCost(Float64 rows, Float64 bytes_per_row, Float64 network_divisor, Float64 funnel_rows, const CostConfig & config)
+{
+    Cost cost;
+    cost.network = rows * bytes_per_row / std::max(1.0, network_divisor);
+    cost.sequential = config.exchange_fixed_overhead + config.funnel_sequential_cost_per_row * funnel_rows;
+    return cost;
+}
+
+Cost hashJoinWorkCost(Float64 probe_rows, Float64 build_rows, Float64 build_bytes_per_row, Float64 output_rows,
+    Float64 probe_parallelism, Float64 build_parallelism, const CostConfig & config)
+{
+    Cost cost;
+    cost.work = (probe_rows + output_rows) / probe_parallelism;
+    /// The build is work, not a sequential phase: `parallel_hash` shards the hash table across threads within a node.
+    /// Hash table materialization: memory allocation + cache pressure.
+    const Float64 build_rows_per_node = build_rows / build_parallelism;
+    cost.work += config.hash_table_build_factor * build_rows_per_node + build_rows_per_node * build_bytes_per_row;
+    return cost;
+}
+
+/// Hash join: left probe + right build + output. The build side is materialized fully on every node for a broadcast
+/// join (the nodes build concurrently) and 1/N per node otherwise. Network is modeled by the exchange steps.
 static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
 {
     const auto & left_stats = inputStats(inputs, 0);
     const auto & right_stats = inputStats(inputs, 1);
-
-    Cost cost;
-    cost.work = (left_stats.estimated_row_count + inputs.output_stats.estimated_row_count) / inputs.parallelism;
-
-    /// The build side is materialized fully on every node for a broadcast join (the nodes build
-    /// concurrently) and 1/N per node otherwise. The build is work, not a sequential phase:
-    /// `parallel_hash` shards the hash table across threads within a node.
-    const Float64 build_rows_per_node = is_broadcast
-        ? right_stats.estimated_row_count
-        : right_stats.estimated_row_count / inputs.parallelism;
-    /// Hash table materialization: memory allocation + cache pressure.
-    cost.work += inputs.config.hash_table_build_factor * build_rows_per_node
-        + build_rows_per_node * right_stats.estimated_bytes_per_row;
-    return cost;
+    return hashJoinWorkCost(left_stats.estimated_row_count, right_stats.estimated_row_count, right_stats.estimated_bytes_per_row,
+        inputs.output_stats.estimated_row_count, inputs.parallelism, is_broadcast ? 1.0 : inputs.parallelism, inputs.config);
 }
 
 /// One node reads the whole table.
@@ -271,15 +279,12 @@ static Cost mergingAggregatedCost(const CostInputs & inputs)
 
 static Cost broadcastExchangeCost(const CostInputs & inputs)
 {
-    Cost cost;
     /// The network term is wall-clock per node, like the work term (which is divided by
     /// parallelism): every receiving node ingests the full payload, all of them concurrently,
     /// and the senders each ship their share of the copies in parallel. So one full payload
     /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
     /// a shuffle of the same data.
-    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row;
-    cost.sequential += inputs.config.exchange_fixed_overhead;
-    return cost;
+    return exchangeTransferCost(inputs.output_stats.estimated_row_count, inputs.output_stats.estimated_bytes_per_row, 1, 0, inputs.config);
 }
 
 static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
@@ -287,16 +292,11 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
     /// not the group's trimmed L; the caller resolves that override from the memo.
     const Float64 rows = inputs.input_physical_rows.value_or(inputs.output_stats.estimated_row_count);
-    Cost cost;
     /// The network term is wall-clock per node, like the work term. A shuffle (N->N) moves
     /// 1/N of the data per node, all nodes concurrently; without the division one node
     /// scanning the whole table is priced the same as the cluster shuffling it, and the
     /// optimizer keeps big scans on a single node.
-    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row;
-    if (dynamic_cast<const ShuffleExchangeStep *>(&step))
-        network_bytes /= std::max(1.0, inputs.node_count);
-    cost.network += network_bytes;
-    cost.sequential += inputs.config.exchange_fixed_overhead;
+    const Float64 network_divisor = dynamic_cast<const ShuffleExchangeStep *>(&step) ? inputs.node_count : 1.0;
     /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
     /// sends or receives them sequentially, so their transfer stays undivided and each row
     /// pays the funnel cost. Without it a gather of a large input looks as cheap as a
@@ -304,14 +304,15 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// A sorted gather under a limit funnels only the consumed rows: the receiver pulls
     /// merged rows until the limit is satisfied and cancels the senders. The network term
     /// above keeps the shipped rows - the senders push eagerly until the cancel arrives.
+    Float64 funnel_rows = 0;
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
     {
-        Float64 funnel_rows = rows;
+        funnel_rows = rows;
         if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
             sorted_gather && sorted_gather->getMaintainSortDescription())
             funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnel_rows;
     }
+    Cost cost = exchangeTransferCost(rows, inputs.output_stats.estimated_bytes_per_row, network_divisor, funnel_rows, inputs.config);
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())
     {
