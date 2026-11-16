@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <roaring/roaring.hh>
+#include <roaring/roaring64map.hh>
 
 namespace DB
 {
@@ -13,25 +11,20 @@ namespace DB
 class PuffinBlockOutputFormat final : public IOutputFormat
 {
 public:
-    PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_);
 
     String getName() const override { return "PuffinBlockOutputFormat"; }
 
 private:
-    void writePrefix() override;
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
-    void addPositions(const IColumn & positions, size_t begin, size_t end);
+    void addPositions(roaring::Roaring64Map & bitmap, const IColumn & positions, size_t begin, size_t end) const;
 
-    String referenced_data_file;
-    Int64 snapshot_id;
-    Int64 sequence_number;
-    VectorWithMemoryTracking<Int32> field_ids;
     bool positions_are_arrays = false;
     bool positions_are_unsigned = false;
-    MapWithMemoryTracking<UInt32, roaring::Roaring> bitmaps;
+    MapWithMemoryTracking<String, roaring::Roaring64Map> deletion_vectors;
 };
 
 class FormatFactory;

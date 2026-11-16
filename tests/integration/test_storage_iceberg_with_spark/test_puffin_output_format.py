@@ -10,8 +10,7 @@ def write_puffin(instance, relative_path, referenced_data_file, positions_sql):
     instance.query(
         f"""
         INSERT INTO FUNCTION file('{relative_path}', Puffin)
-        SELECT arrayJoin({positions_sql}) AS position
-        SETTINGS output_format_puffin_referenced_data_file = '{referenced_data_file}'
+        SELECT '{referenced_data_file}' AS referenced_data_file, arrayJoin({positions_sql}) AS position
         """
     )
     offset, length, cardinality = (
@@ -161,3 +160,49 @@ def test_iceberg_reads_multi_bitmap_deletion_vector_written_by_clickhouse(starte
         assert index.isDeleted(position)
     for position in [0, 999, 200000, 4294967300, 4294967302, 12884901887, 12884901889]:
         assert not index.isDeleted(position)
+
+
+def test_iceberg_reads_several_deletion_vectors_in_one_puffin_file_written_by_clickhouse(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    jvm = started_cluster_iceberg_with_spark.spark_session._jvm
+
+    prefix = f"{USER_FILES}/iceberg_data/default/nonexistent_{get_uuid_str()}/data"
+    deletes = {
+        f"{prefix}/00000-0-data.parquet": [1, 7, 4294967296],
+        f"{prefix}/00001-0-data.parquet": [0, 65536],
+    }
+    relative_path = f"iceberg_data/{get_uuid_str()}-deletes.puffin"
+    rows = ", ".join(f"('{path}', {positions})" for path, positions in deletes.items())
+    instance.query(
+        f"""
+        INSERT INTO FUNCTION file('{relative_path}', Puffin)
+        SELECT * FROM values('referenced_data_file String, deleted_rows Array(UInt64)', {rows})
+        """
+    )
+    container_path = f"{USER_FILES}/{relative_path}"
+    os.makedirs(os.path.dirname(container_path), exist_ok=True)
+    instance.copy_file_from_container(container_path, container_path)
+
+    reader = jvm.org.apache.iceberg.puffin.Puffin.read(jvm.org.apache.iceberg.Files.localInput(container_path)).build()
+    try:
+        blobs = reader.fileMetadata().blobs()
+        assert blobs.size() == len(deletes)
+        iterator = reader.readAll(blobs).iterator()
+        for blob in blobs:
+            referenced_data_file = blob.properties().get("referenced-data-file")
+            positions = deletes[referenced_data_file]
+            assert blob.properties().get("cardinality") == str(len(positions))
+            blob_bytes = jvm.org.apache.iceberg.util.ByteBuffers.toByteArray(iterator.next().second())
+            delete_file = build_delete_file(
+                jvm, jvm.org.apache.iceberg.PartitionSpec.unpartitioned(), container_path,
+                referenced_data_file, blob.offset(), blob.length(), len(positions),
+            )
+            index = jvm.org.apache.iceberg.deletes.PositionDeleteIndex.deserialize(blob_bytes, delete_file)
+            assert index.cardinality() == len(positions)
+            for position in positions:
+                assert index.isDeleted(position)
+            for position in [2, 6, 65535, 4294967295]:
+                assert not index.isDeleted(position)
+        assert not iterator.hasNext()
+    finally:
+        reader.close()

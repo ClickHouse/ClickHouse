@@ -6,23 +6,12 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/PuffinCommon.h>
 
 #include <functional>
 
 namespace DB
 {
-
-struct PuffinBlob
-{
-    String type;
-    Int64 snapshot_id = 0;
-    Int64 sequence_number = 0;
-    VectorWithMemoryTracking<Int32> fields;
-    Int64 offset = 0;
-    Int64 length = 0;
-    String compression_codec;
-    MapWithMemoryTracking<String, String> properties;
-};
 
 struct PuffinFooter
 {
