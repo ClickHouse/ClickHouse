@@ -1,3 +1,15 @@
 whole table	200000	0	0	0
 prewhere	38816	0	0	0
 sub-object cached	1
+cached	json.j.k	8	12
+cached	x	8	12
+whole column after a cached subcolumn	1
+cached	json	8	12
+cached	x	8	12
+path after the cached whole column	1
+cached	json.j.k	8	12
+cached	x	8	12
+compact path after a cached subcolumn	1
+cached	json.b	8	12
+cached	x	8	12
+sub-object after a cached path	1

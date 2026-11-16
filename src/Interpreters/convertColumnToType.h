@@ -2,11 +2,12 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
+
+struct FormatSettings;
 
 /** Column-native counterpart of `convertFieldToType` (see `convertFieldToType.h` for the exact
   * semantics — `strict` / `convert_inexact_floats`, the "not representable -> Null" contract, etc.).
@@ -18,11 +19,12 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (currently: native and wide integers and floats to numeric, `Decimal` targets,
-  * native integers to `Date`/`Date32`/`DateTime`, and `Date`/`Date32` <-> `DateTime`) read the value
-  * straight from the column; the rest still delegate to `convertFieldToType` (same behavior, just not
-  * yet `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
-  * so more column-native fast paths can be added without changing results.
+  * column-natively (currently: native and wide integers and floats to numeric, in every `strict` /
+  * `convert_inexact_floats` mode, `Decimal` targets, native integers to `Date`/`Date32`/`DateTime`, and
+  * `Date`/`Date32` <-> `DateTime`) read the value straight from the column; the rest still delegate to
+  * `convertFieldToType` (same behavior, just not yet `Field`-free). The behavior is pinned by
+  * `gtest_convert_column_to_type` against `convertFieldToType`, so more column-native fast paths can be
+  * added without changing results.
   *
   * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
   * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
@@ -46,18 +48,20 @@ ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool strict = false,
     bool convert_inexact_floats = false);
+ColumnPtr convertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
 /// Same, but also returns `ColumnPtr{}` if conversion throws (twin of `tryConvertFieldToType`).
 ColumnPtr tryConvertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool strict = false,
     bool convert_inexact_floats = false);
+ColumnPtr tryConvertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
 /// Twin of `convertFieldToTypeOrThrow`: throws `TYPE_MISMATCH` for a NULL value that `to` cannot hold,
 /// and `ARGUMENT_OUT_OF_BOUND` for a non-NULL value that is not representable in `to`.
@@ -65,7 +69,8 @@ ColumnPtr convertColumnToTypeOrThrow(
     const IColumn & value,
     const DataTypePtr & from,
     const DataTypePtr & to,
-    const FormatSettings & format_settings = {},
+    const FormatSettings & format_settings,
     bool convert_inexact_floats = false);
+ColumnPtr convertColumnToTypeOrThrow(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
 }

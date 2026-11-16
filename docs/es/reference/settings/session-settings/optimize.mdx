@@ -390,6 +390,14 @@ Optimiza los predicados de Date y DateTime convirtiendo las funciones en compara
 
 Eliminar los elementos finales de ORDER BY una vez que todas las claves de GROUP BY queden incluidas en el prefijo de ORDER BY.
 
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para calcular un único `uniqExact` o `count(DISTINCT)` sin `GROUP BY` particionando los valores según su hash, en lugar de fusionar los conjuntos hash de cada thread."}]}]} />
+
+Calcula un único `uniqExact` (y `count(DISTINCT)`, que lo utiliza de forma predeterminada) en una consulta sin `GROUP BY` particionando los valores según su hash, en lugar de fusionar los conjuntos hash de cada thread. Cada thread dirige sus valores a las particiones; después, se eliminan los duplicados de las particiones en paralelo, cada una en un conjunto hash lo bastante pequeño como para caber en la caché de la CPU, y el resultado es la suma de sus tamaños. Se aplica a un solo argumento de un tipo numérico de hasta 64 bits, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, integers de 128 bits, `String`, `FixedString` o `Nullable` de cualquiera de ellos, cuando el resultado se finaliza en el mismo servidor. Cada thread sigue insertando en su propio conjunto pequeño, igual que en la agregación ordinaria, hasta que el conjunto excede el tamaño de la caché de la CPU, de modo que el enrutamiento solo se activa con entradas high-cardinality, y un thread vuelve a su propio conjunto si la mayoría de sus valores resultan ser repetidos.
+
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
