@@ -47,7 +47,7 @@ struct DatabaseReplicatedSettings
     /// `clamp_on_overflow`, replaced in place by the maximum with a warning in the logs.
     static void checkOrClampLogsToKeep(ASTSetQuery & settings, bool clamp_on_overflow);
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     static bool hasBuiltin(std::string_view name);
 
