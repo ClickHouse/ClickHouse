@@ -522,6 +522,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser(),
+            metadata->getKeeperMultireadBatchSize(),
             log);
 
     std::unordered_set<std::string> paths_set;

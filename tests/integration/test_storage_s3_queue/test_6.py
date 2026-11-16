@@ -839,42 +839,33 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue"])
-def test_regex_partitioning_reads_only_batch_watermarks(started_cluster, engine_name):
+def test_regex_partitioning_does_not_read_all_buckets(started_cluster, engine_name):
     """
     Ordered mode used to list `buckets/<i>/processed` of every bucket on each
-    poll to load the per-partition watermarks. With one writer and 16 buckets
-    that is 16 Keeper lists per poll, 15 of them for buckets that have nothing
-    to do with the files. Now only the nodes the batch maps to are read, so
-    processing the files must issue fewer lists than there are buckets.
+    poll, no matter which buckets the files belong to. With partition bucketing
+    3 writers use at most 3 of the 16 buckets, so reading their files must take
+    fewer Keeper lists than there are buckets.
+
+    A direct select runs the queue source in the foreground, so the Keeper
+    requests of the poll land in the query's own `query_log` row and nothing
+    from the background threads gets counted.
     """
     instance = started_cluster.instances["instance"]
-    table_name = f"test_batch_watermarks_{engine_name}_{generate_random_string()}"
-    dst_table_name = f"{table_name}_dst"
+    table_name = f"test_not_all_buckets_{engine_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
 
     partition_regex = r'(?P<hostname>server-\d+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
     buckets = 16
+    num_writers = 3
 
-    # One writer, so all files land in the same bucket and partition.
-    num_files = 5
-    expected_data = []
-    for seq in range(1, num_files + 1):
+    for writer in range(1, num_writers + 1):
         put_file_content(
             started_cluster,
             engine_name,
-            f"{files_path}/server-1_20251217T100000.000000Z_{seq:04d}.csv",
-            f"{seq},1,{seq}\n".encode(),
+            f"{files_path}/server-{writer}_20251217T100000.000000Z_0001.csv",
+            f"{writer},{writer},1\n".encode(),
         )
-        expected_data.append(f"{seq},1,{seq}")
-
-    def keeper_lists():
-        return int(
-            instance.query("SELECT value FROM system.events WHERE event = 'ZooKeeperList'")
-            or 0
-        )
-
-    lists_before = keeper_lists()
 
     create_table(
         started_cluster,
@@ -884,8 +875,6 @@ def test_regex_partitioning_reads_only_batch_watermarks(started_cluster, engine_
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 5000,
-            "polling_backoff_ms": 1000,
             "processing_threads_num": buckets,
             "buckets": buckets,
             "bucketing_mode": "partition",
@@ -895,19 +884,33 @@ def test_regex_partitioning_reads_only_batch_watermarks(started_cluster, engine_
         partition_regex=partition_regex,
         partition_component="hostname",
     )
-    create_mv(instance, table_name, dst_table_name)
 
-    for _ in range(60):
-        if int(instance.query(f"SELECT count() FROM {dst_table_name}")) == num_files:
-            break
-        time.sleep(1)
-    data = instance.query(
-        f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1 FORMAT CSV"
-    ).strip().split("\n")
-    assert data == expected_data, f"Expected {expected_data}, got {data}"
+    query_id = f"{table_name}_direct"
+    instance.query(
+        f"SELECT * FROM {table_name} FORMAT Null",
+        query_id=query_id,
+        settings={"stream_like_engine_allow_direct_select": 1},
+    )
+    instance.query("SYSTEM FLUSH LOGS query_log")
 
-    # The old code listed every bucket's processed node on the first poll alone.
-    lists = keeper_lists() - lists_before
-    assert lists < buckets, f"{lists} Keeper list requests while processing {num_files} files with {buckets} buckets"
+    read_rows, keeper_lists = map(
+        int,
+        instance.query(
+            f"""
+            SELECT read_rows, ProfileEvents['ZooKeeperList']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1
+            """
+        )
+        .strip()
+        .split("\t"),
+    )
+
+    # The select did read the files, so the filter did run.
+    assert read_rows == num_writers, read_rows
+    # The old code did one list per bucket here.
+    assert keeper_lists < buckets, f"{keeper_lists} Keeper lists to read files of {num_writers} writers"
 
     instance.query(f"DROP TABLE {table_name} SYNC")

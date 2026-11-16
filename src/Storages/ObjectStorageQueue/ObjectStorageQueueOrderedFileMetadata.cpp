@@ -1085,10 +1085,42 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser,
+    size_t keeper_multiread_batch_size,
     LoggerPtr log_)
 {
     if (paths.empty())
         return;
+
+    /// Reads Keeper nodes in batches of keeper_multiread_batch_size, like the
+    /// cleanup threads do, so a large listing never turns into one oversized
+    /// multi-read request.
+    auto multi_try_get = [&](const std::vector<std::string> & node_paths)
+    {
+        zkutil::ZooKeeper::MultiTryGetResponse all_responses;
+        all_responses.reserve(node_paths.size());
+        const size_t batch_size = std::max<size_t>(keeper_multiread_batch_size, 1);
+        for (size_t offset = 0; offset < node_paths.size(); offset += batch_size)
+        {
+            std::vector<std::string> batch(
+                node_paths.begin() + offset,
+                node_paths.begin() + std::min(offset + batch_size, node_paths.size()));
+
+            zkutil::ZooKeeper::MultiTryGetResponse responses;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
+            {
+                responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(batch);
+            });
+            if (responses.size() != batch.size())
+            {
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                    "Unexpected size of Keeper response, expected {}, got {}",
+                    batch.size(), responses.size());
+            }
+            all_responses.insert(all_responses.end(), responses.begin(), responses.end());
+        }
+        return all_responses;
+    };
 
     const bool use_buckets_for_processing = buckets_num > 1;
     buckets_num = std::max<size_t>(buckets_num, 1);
@@ -1139,18 +1171,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         watermark_paths.push_back(node_path);
     }
 
-    zkutil::ZooKeeper::MultiTryGetResponse watermark_responses;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
-    {
-        watermark_responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(watermark_paths);
-    });
-    if (watermark_responses.size() != watermark_paths.size())
-    {
-        throw Exception(
-            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-            "Unexpected size of Keeper response, expected {}, got {}",
-            watermark_paths.size(), watermark_responses.size());
-    }
+    const auto watermark_responses = multi_try_get(watermark_paths);
 
     /// Partition child nodes store the last processed path as is, the
     /// bucket-level node stores NodeMetadata.
@@ -1199,11 +1220,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             throw zkutil::KeeperException::fromPath(code, path);
     };
 
-    zkutil::ZooKeeper::MultiTryGetResponse responses;
-    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
-    {
-        responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(failed_paths);
-    });
+    const auto responses = multi_try_get(failed_paths);
     for (size_t i = 0; i < responses.size(); ++i)
     {
         const auto filename = std::move(paths[check_paths_indexes[i]]);

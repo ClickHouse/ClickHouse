@@ -107,6 +107,7 @@ public:
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
+        size_t keeper_multiread_batch_size,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
