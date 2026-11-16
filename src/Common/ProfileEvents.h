@@ -125,6 +125,11 @@ namespace ProfileEvents
 
         Count operator[] (Event event) const { return load(event); }
 
+        /// Add `amount` to this instance and all its parents. If this instance has a parent, only for events that are
+        /// happening now. Counts that have already been added to some chain (e.g. a snapshot of other counters) can be
+        /// added this way only to counters without a parent (to sum or log them). To show them in another chain, use
+        /// `addExceptCommonAncestors`: these methods would add them again to every level that the two chains share,
+        /// e.g. the global counters.
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
@@ -212,6 +217,7 @@ namespace ProfileEvents
 
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.
+    /// Like `increment`, only for events that are happening now, see `Counters::increment`.
     void incrementNoTrace(Event event, Count amount = 1);
 
     /// Async-signal-safe variant of `incrementNoTrace` (no `sched_getcpu`). Use ONLY from
