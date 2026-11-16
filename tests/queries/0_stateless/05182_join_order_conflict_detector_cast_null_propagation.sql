@@ -48,7 +48,7 @@ SELECT 'baseline           ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0
+        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 0
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
 
@@ -57,7 +57,7 @@ SELECT 'cast-int64    cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
-        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )
@@ -68,7 +68,7 @@ SELECT 'cast-int64    cd_c ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
-        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'c'
     )
@@ -79,7 +79,7 @@ SELECT 'cast-nullable cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Nullable(Int64)) = t3.k
-        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )
@@ -90,7 +90,7 @@ SELECT 'plain         cd_a ' AS arm, s AS step FROM (
         '^Join \(.*$', 'Join'), '^ReadFromMergeTree \([^.]+\.([^)]+)\).*$', 'Read(\1)') AS s
     FROM (
         EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-        SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+        SETTINGS enable_parallel_replicas = 0, join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
             query_plan_optimize_join_order_algorithm = 'dpsub',
             query_plan_optimize_join_order_conflict_detector = 'a'
     )

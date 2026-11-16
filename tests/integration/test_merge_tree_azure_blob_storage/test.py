@@ -84,6 +84,7 @@ def cluster():
                 path,
             ],
             with_azurite=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -671,6 +672,59 @@ def test_endpoint_new_container(cluster):
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
+
+
+def test_endpoint_host_filter_on_restart(cluster):
+    # A query-created disk is checked against `remote_url_allow_hosts`. As for S3, a table loaded from
+    # existing metadata is kept with a warning when its host is no longer allowed; a new one is rejected.
+    node = cluster.instances[NODE_NAME]
+    port = cluster.azurite_port
+    allow_hosts_config = "/etc/clickhouse-server/config.d/remote_url_allow_hosts.xml"
+
+    def azure_disk(container):
+        return f"""disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/devstoreaccount1/{container}/data_prefix',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')"""
+
+    azure_query(
+        node,
+        f"""
+    DROP TABLE IF EXISTS test_host_filter SYNC;
+
+    CREATE TABLE test_host_filter (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = {azure_disk('cont4')};
+
+    INSERT INTO test_host_filter SELECT number FROM numbers(10);
+    """,
+    )
+
+    try:
+        node.replace_config(
+            allow_hosts_config,
+            "<clickhouse><remote_url_allow_hosts><host>blocked.invalid</host></remote_url_allow_hosts></clickhouse>",
+        )
+        node.restart_clickhouse()
+        assert 10 == int(node.query("SELECT count() FROM test_host_filter"))
+        assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
+        assert 1 == int(
+            node.query(
+                f"SELECT count() FROM system.warnings WHERE message LIKE '%remote_url_allow_hosts%' AND message LIKE '%azurite1:{port}%'"
+            )
+        )
+        error = node.query_and_get_error(
+            f"CREATE TABLE test_host_filter_new (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS disk = {azure_disk('cont5')}"
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+    finally:
+        node.exec_in_container(["rm", "-f", allow_hosts_config])
+        node.restart_clickhouse()
+
+    assert 10 == int(node.query("SELECT count() FROM test_host_filter"))
+    node.query("DROP TABLE test_host_filter SYNC")
 
 
 def test_reject_zero_min_upload_part_size_in_disk_config(cluster):
