@@ -112,8 +112,8 @@ DROP TABLE tq_az_upper;
 DROP TABLE tq_az_sas;
 
 -- A table attached from its saved definition must not fail when it differs from keeper: it uses `after_processing`
--- from keeper and the server logs a warning. `send_logs_level` keeps these warnings, and the error of the refused
--- `CREATE` below, out of the test output.
+-- from keeper and the server logs a warning. `send_logs_level` keeps these warnings, and the errors of the refused
+-- queries below, out of the test output.
 SET send_logs_level = 'fatal';
 
 CREATE TABLE tq_a (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1;
@@ -144,19 +144,23 @@ ALTER TABLE tq_p MODIFY SETTING polling_max_timeout_ms = 2000;
 SELECT create_table_query LIKE '%parallel_inserts = 1%' FROM system.tables WHERE database = currentDatabase() AND name = 'tq_p';
 DROP TABLE tq_p;
 
--- Set `after_processing` to `keep` directly in keeper, as another server would. The in-memory metadata of this server
--- still has `delete`, and `tq_b` must still attach.
-INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"delete"', '"after_processing":"keep"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
-DETACH TABLE tq_b; ATTACH TABLE tq_b;
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tq_b';
--- A new table must also match the metadata of this server, so it fails instead of silently taking the outdated `delete`.
-CREATE TABLE tq_d (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_shared/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_shared', processing_threads_num = 1; -- { serverError METADATA_MISMATCH }
-DROP TABLE IF EXISTS tq_d;
--- An `ALTER` of another setting must take `keep` from keeper for both tables, and must not write the outdated `delete`
--- of this server back to keeper.
-ALTER TABLE tq_a MODIFY SETTING polling_max_timeout_ms = 2000;
-SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
-SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table IN ('tq_a', 'tq_b') AND name = 'after_processing' ORDER BY table;
+-- Set `after_processing` to `keep` directly in keeper, as another server would, while the copy of this server still has
+-- `delete`. Then a reattached table and a new table fail instead of taking the outdated `delete`, as on master. A table that
+-- fails this way stays attached without starting, which a `Replicated` database cannot detach, so this uses an `Atomic` one.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'delete';
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale', after_processing = 'delete';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"delete"', '"after_processing":"keep"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '_1/05366_stale' AND name = 'metadata';
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; -- { serverError METADATA_MISMATCH }
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_stale/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_stale'; -- { serverError METADATA_MISMATCH }
+-- An `ALTER` of another setting must take `keep` from keeper, and must not write the outdated `delete` of this server
+-- back to keeper. Then `tq_s2` attaches with `keep`.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s1 MODIFY SETTING polling_max_timeout_ms = 2000;
+SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '_1/05366_stale' AND name = 'metadata';
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2;
+SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() || '_1' AND table IN ('tq_s1', 'tq_s2') AND name = 'after_processing' ORDER BY table;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- Change the source in keeper: `tq_b` must still attach, with a warning.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_shared', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';

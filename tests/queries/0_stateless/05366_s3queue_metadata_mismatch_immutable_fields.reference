@@ -14,9 +14,8 @@ delete
 tq_a	1
 tq_b	1
 1
-1
 keep
-tq_a	keep
-tq_b	keep
+tq_s1	keep
+tq_s2	keep
 1
 http://localhost:11111	05366_shared/*

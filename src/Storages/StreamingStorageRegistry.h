@@ -68,7 +68,6 @@ public:
         const std::string & zookeeper_path,
         ObjectStorageQueueMetadataPtr metadata,
         const StorageID & storage_id,
-        bool strict,
         bool & created_new_metadata);
 
     /// Reduce ref count for the metadata instance.

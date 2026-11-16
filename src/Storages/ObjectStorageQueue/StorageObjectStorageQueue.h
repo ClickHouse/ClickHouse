@@ -39,7 +39,7 @@ public:
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
         ObjectStorageQueueTableMetadata::Source source,
-        bool strict_metadata_check_,
+        bool strict_metadata_check,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
@@ -239,7 +239,6 @@ private:
     /// with. Empty when the path does not depend on the database name.
     std::optional<String> keeper_path_database_name;
     const bool keep_data_in_keeper;
-    const bool strict_metadata_check;
 
     const bool use_hive_partitioning;
 
