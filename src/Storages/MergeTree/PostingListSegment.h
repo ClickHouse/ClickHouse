@@ -39,7 +39,7 @@ struct PostingListSegment
     /// Block codec used to compress this segment's packed blocks.
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 
-    size_t bytesAllocated() const
+    [[nodiscard]] size_t bytesAllocated() const
     {
         return sizeof(*this)
             + payload_buffer.allocated_bytes()

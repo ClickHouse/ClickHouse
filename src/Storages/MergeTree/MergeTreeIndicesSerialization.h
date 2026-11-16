@@ -71,7 +71,7 @@ struct MergeTreeIndexFormat
 
     explicit operator bool() const { return version != 0; }
 
-    bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    [[nodiscard]] bool hasSubstream(MergeTreeIndexSubstream::Type type) const
     {
         return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
     }

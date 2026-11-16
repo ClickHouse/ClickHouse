@@ -119,7 +119,7 @@ struct MergeTreeIndexTextParams
     ASTPtr postprocessor;
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 
-    bool hasScoring() const { return scoring != TextIndexScoringKind::None; }
+    [[nodiscard]] bool hasScoring() const { return scoring != TextIndexScoringKind::None; }
 };
 
 using PostingList = roaring::Roaring;
@@ -147,7 +147,7 @@ public:
     }
 
     ALWAYS_INLINE void addNewRow() { weights.push_back(1); }
-    std::span<const UInt32> getWeights() const { return {weights.data(), weights.size()}; }
+    [[nodiscard]] std::span<const UInt32> getWeights() const { return {weights.data(), weights.size()}; }
 
 private:
     PODArray<UInt32, 64> weights;
@@ -225,9 +225,9 @@ public:
     /// When positions are enabled, records the position of the token within the row.
     void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
 
-    bool isLarge() const { return std::holds_alternative<Large>(state); }
-    bool isInline() const { return std::holds_alternative<Inline>(state); }
-    bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
+    [[nodiscard]] bool isLarge() const { return std::holds_alternative<Large>(state); }
+    [[nodiscard]] bool isInline() const { return std::holds_alternative<Inline>(state); }
+    [[nodiscard]] bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
 
     Large & getLarge() { return std::get<Large>(state); }
     Inline & getInline() { return std::get<Inline>(state); }
@@ -302,8 +302,8 @@ struct PostingsSerialization
     /// per decoded row id is appended to it (`1` for every row if the posting list stores no weights).
     void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * weights);
 
-    const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
-    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
+    [[nodiscard]] const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
+    [[nodiscard]] MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
 
 private:
     const IPostingListCodec & resolveCodec(UInt64 header);
@@ -326,9 +326,9 @@ struct RowsRange
     RowsRange() = default;
     RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
 
-    bool intersects(const RowsRange & other) const;
-    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
-    RowsRange unionWith(const RowsRange & other) const;
+    [[nodiscard]] bool intersects(const RowsRange & other) const;
+    [[nodiscard]] std::optional<RowsRange> intersectWith(const RowsRange & other) const;
+    [[nodiscard]] RowsRange unionWith(const RowsRange & other) const;
 };
 
 /// Stores information about posting list for a token.
@@ -353,8 +353,8 @@ struct TokenPostingsInfo
     UInt64 position_bytes = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
-    std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
-    size_t bytesAllocated() const;
+    [[nodiscard]] std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+    [[nodiscard]] size_t bytesAllocated() const;
 };
 
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
@@ -365,8 +365,8 @@ struct DictionaryBlock
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
-    bool empty() const;
-    size_t size() const;
+    [[nodiscard]] bool empty() const;
+    [[nodiscard]] size_t size() const;
 
     ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
@@ -379,19 +379,19 @@ public:
     DictionarySparseIndex() = default;
     DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
 
-    bool empty() const { return size() == 0; }
-    size_t size() const;
-    size_t lowerBound(std::string_view token) const;
-    size_t upperBound(std::string_view token) const;
+    [[nodiscard]] bool empty() const { return size() == 0; }
+    [[nodiscard]] size_t size() const;
+    [[nodiscard]] size_t lowerBound(std::string_view token) const;
+    [[nodiscard]] size_t upperBound(std::string_view token) const;
 
-    std::string_view getToken(size_t idx) const;
-    UInt64 getOffsetInFile(size_t idx) const;
-    size_t memoryUsageBytes() const;
+    [[nodiscard]] std::string_view getToken(size_t idx) const;
+    [[nodiscard]] UInt64 getOffsetInFile(size_t idx) const;
+    [[nodiscard]] size_t memoryUsageBytes() const;
 
     /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
-    ColumnPtr getTokensColumn() const;
+    [[nodiscard]] ColumnPtr getTokensColumn() const;
     /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
-    ColumnPtr getOffsetsColumn() const;
+    [[nodiscard]] ColumnPtr getOffsetsColumn() const;
 
     /// Decomposes the tokens column into chars and bit-packed offsets
     /// and bit-packs the offsets in file to reduce memory usage.
@@ -499,24 +499,24 @@ public:
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override;
 
-    const MergeTreeIndexTextParams & getParams() const { return params; }
+    [[nodiscard]] const MergeTreeIndexTextParams & getParams() const { return params; }
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return is_empty; }
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] bool empty() const override { return is_empty; }
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
-    const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
+    [[nodiscard]] const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
-    const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
-    const String & getIndexIdForCaches() const { return index_id_for_caches; }
-    IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
-    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
-    UInt8 getPositionsCodec() const { return positions_codec; }
-    TextIndexScoringKind getScoringKind() const { return scoring; }
+    [[nodiscard]] const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
+    [[nodiscard]] const String & getIndexIdForCaches() const { return index_id_for_caches; }
+    [[nodiscard]] IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
+    [[nodiscard]] MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
+    [[nodiscard]] UInt8 getPositionsCodec() const { return positions_codec; }
+    [[nodiscard]] TextIndexScoringKind getScoringKind() const { return scoring; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -578,8 +578,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return sorted_tokens.empty(); }
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] bool empty() const override { return sorted_tokens.empty(); }
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
@@ -609,7 +609,7 @@ struct MergeTreeIndexTextGranuleBuilder
         const IPostingListCodec * posting_list_codec_);
 
     /// The context for `addDocument`/`addToken`; created once per batch of added documents.
-    PostingListBuildContext buildContext() const;
+    [[nodiscard]] PostingListBuildContext buildContext() const;
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document, const PostingListBuildContext & context);
     // Adds a document to the granule. The document is inserted directly as a single token.
@@ -626,7 +626,7 @@ struct MergeTreeIndexTextGranuleBuilder
     }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return is_empty; }
+    [[nodiscard]] bool empty() const { return is_empty; }
     void reset();
 
     void seedDropFilter();
@@ -671,11 +671,11 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 
     ~MergeTreeIndexAggregatorText() override = default;
 
-    bool empty() const override { return granule_builder.empty(); }
+    [[nodiscard]] bool empty() const override { return granule_builder.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
-    UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
+    [[nodiscard]] UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
@@ -710,22 +710,22 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
-    MergeTreeIndexTextParams getParams() const { return params; }
-    bool isTextIndex() const override { return true; }
+    [[nodiscard]] MergeTreeIndexTextParams getParams() const { return params; }
+    [[nodiscard]] bool isTextIndex() const override { return true; }
 
-    MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
+    [[nodiscard]] MergeTreeIndexSubstreams getSubstreams() const override;
+    [[nodiscard]] MergeTreeIndexSubstreams getPotentialSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
-    MergeTreeIndexFormat getPhysicalFormat(
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const override;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
+    [[nodiscard]] const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;

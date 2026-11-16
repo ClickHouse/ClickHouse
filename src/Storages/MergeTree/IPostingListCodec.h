@@ -46,7 +46,7 @@ public:
     virtual void finalize(WriteBuffer & out, TokenPostingsInfo & info) = 0;
 
     /// Total number of row ids accumulated so far.
-    virtual size_t cardinality() const = 0;
+    [[nodiscard]] virtual size_t cardinality() const = 0;
 };
 
 /// IPostingListCodec is an interface for serializing/deserializing text index posting lists.
@@ -68,12 +68,12 @@ public:
 
     virtual ~IPostingListCodec() = default;
 
-    Type getType() const { return type; }
+    [[nodiscard]] Type getType() const { return type; }
 
     /// Creates an accumulator that encodes segments of `segment_size` row ids into this codec's format.
     /// Codecs may round the requested size, e.g. up to a multiple of their physical block size.
     /// `scoring` is the scoring kind of the index, which determines the weights stored with the row ids.
-    virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const = 0;
+    [[nodiscard]] virtual std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const = 0;
 
     /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
     /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.

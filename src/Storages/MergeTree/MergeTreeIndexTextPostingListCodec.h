@@ -183,10 +183,10 @@ public:
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
     /// Total number of row ids added so far.
-    size_t cardinality() const { return total_row_ids; }
+    [[nodiscard]] size_t cardinality() const { return total_row_ids; }
 
     /// True if the posting list stores weights for scoring.
-    bool hasScoring() const;
+    [[nodiscard]] bool hasScoring() const;
 
     /// Deserialize a postings list from input `in` into `out`.
     ///
@@ -296,7 +296,7 @@ public:
 
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    size_t cardinality() const override { return impl.cardinality(); }
+    [[nodiscard]] size_t cardinality() const override { return impl.cardinality(); }
 
 private:
     SegmentedPostingListCodec impl;
@@ -319,7 +319,7 @@ public:
     explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
+    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
 
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
@@ -359,7 +359,7 @@ public:
 
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    size_t cardinality() const override { return total_row_ids; }
+    [[nodiscard]] size_t cardinality() const override { return total_row_ids; }
 
 private:
     void finishSegment();
@@ -380,7 +380,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
+    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size, TextIndexScoringKind scoring) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;
     void decodeWithWeights(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights, TextIndexScoringKind scoring, PaddedPODArray<char> & buffer) const override;

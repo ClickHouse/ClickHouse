@@ -106,14 +106,14 @@ public:
 private:
     void finalize();
     void cancelImpl() noexcept;
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
     void initializeTokensQueue();
 
     /// Cursor over the single String sort column with statically dispatched comparisons.
     using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const TokenSortCursor & cursor) const;
+    [[nodiscard]] bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
     /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,

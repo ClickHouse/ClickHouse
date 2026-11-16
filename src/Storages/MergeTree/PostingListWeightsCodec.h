@@ -33,7 +33,7 @@ public:
     virtual size_t skipBlock(std::span<const std::byte> & in, size_t count) = 0;
 
     /// Upper bound on the encoded size of one block (1..BLOCK_SIZE weights), in bytes.
-    virtual size_t maxBlockBytes() const = 0;
+    [[nodiscard]] virtual size_t maxBlockBytes() const = 0;
 };
 
 /// Creates the weights codec that stores `(weight - 1)` in the block format of the row ids codec `type`. Throws for `None`.

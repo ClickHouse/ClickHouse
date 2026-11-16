@@ -102,7 +102,7 @@ namespace
         }
 
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
-        size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
+        [[nodiscard]] size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
 
     private:
         /// Reads the bits byte of a block of `count` values and checks that its payload is in `in`.
@@ -191,7 +191,7 @@ namespace
             return skipped;
         }
 
-        size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
+        [[nodiscard]] size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);

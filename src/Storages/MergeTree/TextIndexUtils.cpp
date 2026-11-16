@@ -282,12 +282,12 @@ struct MergeTextIndexesTask::PostingsMergeCursor
     /// Filled with 1 if the source stores no weights. Empty if the merge is not scoring.
     PaddedPODArray<UInt32> weights;
 
-    UInt32 current() const { return row_ids[pos]; }
-    bool isValid() const { return pos < row_ids.size(); }
-    std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
+    [[nodiscard]] UInt32 current() const { return row_ids[pos]; }
+    [[nodiscard]] bool isValid() const { return pos < row_ids.size(); }
+    [[nodiscard]] std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
 
     /// Weights of the next `count` row ids, or an empty span if the merge is not scoring.
-    std::span<const UInt32> nextWeights(size_t count) const
+    [[nodiscard]] std::span<const UInt32> nextWeights(size_t count) const
     {
         if (weights.empty())
             return {};
@@ -323,7 +323,7 @@ public:
     }
 
     void push(const TokenSource & source);
-    bool isValid() const { return !active_cursors.empty(); }
+    [[nodiscard]] bool isValid() const { return !active_cursors.empty(); }
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
     /// Aligned runs of a single source are passed through without copying, the rest is buffered.
@@ -346,11 +346,11 @@ private:
         UInt64 end;
 
         /// Only the smallest source has row ids in the window.
-        bool hasOneSource() const { return second_head >= end; }
+        [[nodiscard]] bool hasOneSource() const { return second_head >= end; }
     };
 
     /// Selects the window of the smallest head from active cursors.
-    Window selectWindow() const;
+    [[nodiscard]] Window selectWindow() const;
 
     /// Sets a bit in window_bits for every row id of every cursor inside the window;
     /// on the scoring path also stores its weight in window_weights under the same bit.
