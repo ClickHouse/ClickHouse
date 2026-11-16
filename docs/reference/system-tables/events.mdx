@@ -140,7 +140,7 @@ Number of groups whose key columns were not materialized while a two-level bucke
 
 ### AggregationIndexedTables {#aggregationindexedtables}
 
-How many single-level aggregation hash tables had their cells indexed by partitions of the hashes, so that the merges read the cells of a part of a table without converting it to two-level or walking the whole table. The adaptive aggregation indexes the single-level table of each thread when the thread finishes, unless its key is a single `String` or `FixedString`.
+How many single-level aggregation hash tables had their cells indexed by partitions of the hashes, so that the merges read the cells of a part of a table without converting it to two-level or walking the whole table. The adaptive aggregation indexes the single-level table of each thread when the thread finishes.
 
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
@@ -488,7 +488,7 @@ Number of times automatic parallel replicas did not even build the plan with par
 
 ### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
 
-Number of times the rows read from storage differed from the cached statistics by more than 2x, so automatic parallel replicas recollected them instead of deciding
+Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding
 
 ### AzureClients {#azureclients}
 
