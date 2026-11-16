@@ -384,6 +384,16 @@ void checkDeserializedMergedAggregatesLayout(
                 "which is not a state of {}",
                 aggregate.column_name, column.type->getName(), aggregate.function->getName());
     }
+
+    /// The headers of the merge-only steps are built from the whole input, so a later column with the name
+    /// of a key or a state would also be there, but not in the merged chunks.
+    for (size_t i = keys_size + aggregates.size(); i < layout.size(); ++i)
+    {
+        if (names.contains(layout[i].name))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                layout[i].name);
+    }
 }
 
 }

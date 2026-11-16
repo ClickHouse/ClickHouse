@@ -118,6 +118,8 @@ forge("merged states are reordered", aggregating(FINAL | ONLY_MERGE, aggregates=
 forge("merged state is duplicated", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM[:1] * 2), [STATES[:1] * 2], VERSION, [("a", U64)] * 2)
 forge("merged key is after the states", aggregating(FINAL | ONLY_MERGE, keys=["k"], aggregates=ANY_SUM[:1]),
       [STATES[:1] + [("k", U64)]], VERSION, [("k", U64), ("a", U64)])
+forge("merged state is repeated after the states", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM),
+      [STATES + STATES[:1]], VERSION, AB)
 forge("well-formed merge", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES], VERSION, AB)
 PYEOF
 
