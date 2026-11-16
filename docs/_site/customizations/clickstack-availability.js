@@ -817,7 +817,7 @@
   ],
   "/clickstack/managed-onboarding/instrument-application-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/instrument-application-serverless"
     ]
   ],
@@ -833,7 +833,7 @@
   ],
   "/clickstack/managed-onboarding/migrating-from-datadog-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/migrating-from-datadog-serverless"
     ]
   ],
@@ -849,7 +849,7 @@
   ],
   "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless"
     ]
   ],
@@ -865,7 +865,7 @@
   ],
   "/clickstack/managed-onboarding/monitoring-kubernetes-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/monitoring-kubernetes-serverless"
     ]
   ],
@@ -881,7 +881,7 @@
   ],
   "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless": [
     [
-      "Open Source",
+      "ClickHouse Observability",
       "/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless"
     ]
   ],

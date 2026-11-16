@@ -32,6 +32,9 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
             relative = relative.removeprefix(prefix)
             product = label
             break
+    # Fully managed onboarding guides retain their legacy URLs.
+    if relative.startswith('managed-onboarding/') and relative.endswith('-serverless'):
+        product = 'ClickHouse Observability'
     key = re.sub(r'(^|/)index$', '', relative).rstrip('/')
     # Demo Days label availability per feature rather than per page.
     if re.match(r'demo-days/\d{4}/', key):
