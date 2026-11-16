@@ -5,6 +5,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -29,6 +30,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/BSONTypes.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
@@ -69,6 +71,25 @@ MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
 
 namespace
 {
+
+class CheckMongoDBLimitFunctionsVisitor : public ConstInDepthQueryTreeVisitor<CheckMongoDBLimitFunctionsVisitor>
+{
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * function = node->as<FunctionNode>())
+            unsafe = unsafe || function->isAggregateFunction() || function->isWindowFunction()
+                || getFunctionCanonicalNameIfAny(function->getFunctionName()) == "arrayJoin";
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child) const
+    {
+        return !unsafe && child->getNodeType() != QueryTreeNodeType::QUERY
+            && child->getNodeType() != QueryTreeNodeType::UNION;
+    }
+
+    bool unsafe = false;
+};
 
 std::pair<LogsLevel, Poco::Message::Priority> toServerLogLevel(mongocxx::log_level level)
 {
@@ -1209,9 +1230,15 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (limit || offset)
     {
-        /// Otherwise it was already checked above.
-        /// With `SHUFFLE`, the limit must be applied after shuffling all rows.
-        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
+        CheckMongoDBLimitFunctionsVisitor visitor;
+        visitor.visit(query.query_tree);
+        const auto & join_tree = query_tree.getJoinTreeNode();
+        const bool single_table = join_tree->as<TableNode>() || join_tree->as<TableFunctionNode>();
+
+        /// The source limit must not precede operations that filter, combine or expand its rows.
+        if (single_table && !visitor.unsafe && !query_tree.isDistinct() && !query_tree.hasGroupBy()
+            && !query_tree.hasHaving() && !query_tree.hasWindow() && !query_tree.hasQualify()
+            && !query_tree.hasPrewhere() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
         {
             auto limit_value = limit ? limit->getValue().safeGet<UInt64>() : 0;
             auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;

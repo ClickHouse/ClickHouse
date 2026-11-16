@@ -1920,6 +1920,69 @@ def test_where_nullable_null_limit(started_cluster):
         collection.drop()
 
 
+def test_limit_after_local_processing(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "limit_after_local_processing"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [
+            {"id": 1, "n": 1, "a": []},
+            {"id": 2, "n": 1, "a": []},
+            {"id": 3, "n": 2, "a": [2]},
+        ]
+    )
+    node = started_cluster.instances["node"]
+    structure = "id Int32, n Nullable(Int64), a Array(Int32)"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    node.query(f"CREATE TABLE {reference} ({structure}) ENGINE = Memory")
+    node.query(f"INSERT INTO {reference} SELECT * FROM {collection_name}")
+    try:
+        queries = (
+            ("SELECT count() FROM {source} WHERE isNotNull(n) LIMIT 1", "3\n"),
+            ("SELECT DISTINCT n FROM {source} WHERE isNotNull(n) LIMIT 2", "1\n2\n"),
+            ("SELECT arrayJoin(a) FROM {source} WHERE isNotNull(n) LIMIT 1", "2\n"),
+            (
+                "SELECT unnest(a) FROM {source} WHERE isNotNull(n) LIMIT 1 "
+                "SETTINGS normalize_function_names = 0",
+                "2\n",
+            ),
+            ("SELECT v FROM {source} ARRAY JOIN a AS v LIMIT 1", "2\n"),
+            (
+                "SELECT t.id FROM {source} AS t "
+                "INNER JOIN (SELECT toInt32(3) AS id) AS r ON t.id = r.id LIMIT 1",
+                "3\n",
+            ),
+            ("SELECT count() OVER () FROM {source} LIMIT 1", "3\n"),
+        )
+        results = {}
+        expected_results = {}
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for query, expected in queries:
+                settings = {"max_threads": 1}
+                assert (
+                    node.query(query.format(source=reference), settings=settings)
+                    == expected
+                )
+                results[source, query] = node.query(
+                    query.format(source=source), settings=settings
+                )
+                expected_results[source, query] = expected
+        assert results == expected_results
+    finally:
+        node.query(f"DROP TABLE {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
 def test_order_by_reader_values_limit(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
