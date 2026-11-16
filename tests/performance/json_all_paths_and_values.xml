@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they have no equivalent of the `JSON` type. -->
     <create_query>CREATE TABLE json_paths_src_sparse (data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE json_paths_src_dense (data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE json_paths_idx_sparse (data JSON, INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY tuple()</create_query>
