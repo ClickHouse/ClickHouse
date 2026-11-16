@@ -66,7 +66,7 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    TemporaryClonedPart clonePart(
+    [[nodiscard]] TemporaryClonedPart clonePart(
         const MergeTreeMoveEntry & moving_part,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,

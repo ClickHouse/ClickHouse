@@ -46,11 +46,11 @@ public:
         : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{}
     {}
 
-    String getName() const override { return "deltaSum"; }
+    [[nodiscard]] String getName() const override { return "deltaSum"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

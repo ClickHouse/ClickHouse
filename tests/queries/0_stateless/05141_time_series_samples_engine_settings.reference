@@ -1,6 +1,6 @@
 -- the defaults: one partition per month for the samples table, 5-hour partitions for the recent samples table
 recentsamples	AggregatingMergeTree PARTITION BY toStartOfInterval(toDateTime(bucket, \'UTC\'), toIntervalHour(5)) ORDER BY (id, bucket) TTL toDateTime(bucket) + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
-samples	AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+samples	AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 262144
 202601	1
 202602	2
 -- the settings define the partition keys and the index granularity

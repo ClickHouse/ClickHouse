@@ -45,10 +45,10 @@ public:
     /// key: a miss is `NotFound`, other errors throw (fail closed).
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const;
 
-    std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
+    [[nodiscard]] std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
 
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
-    rocksdb::Status verifyChecksum() const;
+    [[nodiscard]] rocksdb::Status verifyChecksum() const;
 
 private:
     /// Declared before `index_reader` so the Env outlives the reader.
@@ -82,8 +82,8 @@ public:
         const std::vector<std::string_view> & encoded_keys,
         std::vector<std::optional<UInt64>> & out) const override;
 
-    bool isRowDead(UInt64 row_number) const override;
-    const IMergeTreeDataPart * getUnderlyingPart() const override { return part; }
+    [[nodiscard]] bool isRowDead(UInt64 row_number) const override;
+    [[nodiscard]] const IMergeTreeDataPart * getUnderlyingPart() const override { return part; }
 
 private:
     const IMergeTreeDataPart * part;

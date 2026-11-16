@@ -19,7 +19,7 @@ struct IcebergRESTCatalogWarehouseCredential
 
     /// Shape of the `credential` object in the management API: `{"type": "aws_role", "role_arn": ..., ...}`.
     static IcebergRESTCatalogWarehouseCredential fromJSON(const Poco::JSON::Object & json);
-    Poco::JSON::Object::Ptr toJSON() const;
+    [[nodiscard]] Poco::JSON::Object::Ptr toJSON() const;
 };
 
 /// Definition of a warehouse of the Iceberg REST catalog (RFC: issue #114697), stored on its Keeper root node.
@@ -35,7 +35,7 @@ struct IcebergRESTCatalogWarehouseDefinition
     static IcebergRESTCatalogWarehouseDefinition fromJSON(const Poco::JSON::Object & json);
 
     /// Data of the warehouse root node: the JSON above plus the `format_version` and `uuid` fields.
-    String toKeeperData() const;
+    [[nodiscard]] String toKeeperData() const;
     static IcebergRESTCatalogWarehouseDefinition fromKeeperData(const String & data, const String & path);
 };
 
