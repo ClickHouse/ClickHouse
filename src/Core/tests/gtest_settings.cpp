@@ -220,6 +220,22 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
 }
 
+GTEST_TEST(SettingFieldNumber, NonConvertibleFieldIsRejected)
+{
+    /// Rejecting a Field with no text representation must not format its value into the message
+    /// (because it could throw `LOGICAL_ERROR` instead of the clean `CANNOT_CONVERT_TYPE`).
+    SettingFieldUInt64 setting;
+    try
+    {
+        setting = Field(AggregateFunctionStateData{.name = "uniq", .data = ""});
+        FAIL();
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+}
+
 GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
 {
     constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;

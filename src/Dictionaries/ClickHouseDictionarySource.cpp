@@ -241,11 +241,10 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         return result;
     }
 
-    /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
-    auto invalidate_sample_block = std::make_shared<const Block>(Block{});
-    QueryPipeline pipeline(std::make_shared<RemoteSource>(
-        std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
-    return readInvalidateQuery(pipeline);
+    /// The structure of the result is not known in advance, so the executor gets an empty header
+    /// and is read directly, not through a `RemoteSource`.
+    RemoteQueryExecutor executor(pool, request, std::make_shared<const Block>(Block{}), context_copy);
+    return readInvalidateQuery(executor);
 }
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);

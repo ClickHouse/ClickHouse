@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -42,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -101,9 +103,22 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
     readVarUInt(total_rows, istr);
+    if (total_rows == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bloom filter index granule has zero rows");
 
-    static size_t atom_size = 8;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    static constexpr size_t atom_size = 8;
+    size_t bits_size = 0;
+    if (common::mulOverflow(bits_per_row, total_rows, bits_size)
+        || common::addOverflow(bits_size, atom_size - 1, bits_size))
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Bloom filter index granule size overflows for {} rows and {} bits per row",
+            total_rows,
+            bits_per_row);
+    }
+
+    size_t bytes_size = bits_size / atom_size;
     size_t read_size = bytes_size;
     for (auto & filter : bloom_filters)
     {

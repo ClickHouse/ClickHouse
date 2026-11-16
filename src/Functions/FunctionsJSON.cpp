@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -698,7 +699,9 @@ public:
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+        /// Before 26.8 it followed `date_time_input_format`, which `compatibility` restores.
+        if (context->getSettingsRef()[Setting::json_extract_use_cast_string_to_date_time_mode])
+            format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
     }
 
     bool isVariadic() const override { return true; }
