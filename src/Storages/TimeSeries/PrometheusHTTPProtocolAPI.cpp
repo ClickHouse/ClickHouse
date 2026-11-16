@@ -318,16 +318,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (params.type == Type::Instant)
     {
         evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY;
+        /// The current time is taken once, so the annotations and the result are evaluated at the same time.
         if (params.time_param.empty())
-        {
-            evaluation_settings.use_current_time = true;
-        }
+            evaluation_settings.start_time = DecimalUtils::getCurrentDateTime64(time_scale);
         else
-        {
             evaluation_settings.start_time = parseTimeSeriesTimestamp(params.time_param, time_scale);
-            evaluation_settings.end_time = evaluation_settings.start_time;
-            evaluation_settings.step = 0;
-        }
+        evaluation_settings.end_time = evaluation_settings.start_time;
+        evaluation_settings.step = 0;
     }
     else if (params.type == Type::Range)
     {
