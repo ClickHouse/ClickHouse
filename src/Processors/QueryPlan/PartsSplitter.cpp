@@ -236,9 +236,9 @@ public:
         index = part.getIndex();
     }
 
-    bool isCopy() const { return is_copy; }
+    [[nodiscard]] bool isCopy() const { return is_copy; }
 
-    const IMergeTreeDataPart::IndexPtr & getIndex() const { return index; }
+    [[nodiscard]] const IMergeTreeDataPart::IndexPtr & getIndex() const { return index; }
 
     /// Replaces the index with a copy of the values for the marks of the ranges, which is accounted as memory usage of the query.
     void copyRanges(const MarkRanges & ranges, size_t max_columns)
@@ -303,10 +303,10 @@ public:
     }
 
     /// Some suffix of index columns might not be loaded, see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`.
-    size_t getColumns() const { return index->size(); }
+    [[nodiscard]] size_t getColumns() const { return index->size(); }
 
     /// Returns true if there are values for the marks of the ranges.
-    bool hasRanges(const MarkRanges & ranges_to_check) const
+    [[nodiscard]] bool hasRanges(const MarkRanges & ranges_to_check) const
     {
         if (has_all_values)
             return true;
@@ -320,7 +320,7 @@ public:
             });
     }
 
-    Values getValue(size_t mark, size_t columns) const
+    [[nodiscard]] Values getValue(size_t mark, size_t columns) const
     {
         chassert(index->size() >= columns);
         const size_t row = getRow(mark);
@@ -334,7 +334,7 @@ public:
         return values;
     }
 
-    std::optional<size_t> findRightmostMarkLessThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findRightmostMarkLessThanValueInRange(
         const Values & value, size_t range_begin, size_t range_end, size_t columns, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -356,7 +356,7 @@ public:
         return right - 1;
     }
 
-    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
         const Values & value, size_t range_begin, size_t range_end, size_t columns, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -385,13 +385,13 @@ private:
         size_t row;
     };
 
-    const CopiedRange * findRange(size_t mark) const
+    [[nodiscard]] const CopiedRange * findRange(size_t mark) const
     {
         auto next = std::ranges::upper_bound(copied_ranges, mark, {}, [](const CopiedRange & range) { return range.marks.begin; });
         return next == copied_ranges.begin() ? nullptr : &*std::prev(next);
     }
 
-    size_t getRow(size_t mark) const
+    [[nodiscard]] size_t getRow(size_t mark) const
     {
         if (has_all_values)
             return mark;
@@ -491,26 +491,26 @@ public:
         }
     }
 
-    Values getValue(size_t part_idx, size_t mark) const
+    [[nodiscard]] Values getValue(size_t part_idx, size_t mark) const
     {
         return indices[part_idx]->getValue(mark, loaded_columns);
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findRightmostMarkLessThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
     {
         return indices[part_index]->findRightmostMarkLessThanValueInRange(
             value, mark_range.begin, mark_range.end, loaded_columns, in_reverse_order);
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findLeftmostMarkGreaterThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
     {
         return indices[part_index]->findLeftmostMarkGreaterThanValueInRange(
             value, mark_range.begin, mark_range.end, loaded_columns, in_reverse_order);
     }
 
-    size_t getMarkRows(size_t part_idx, size_t mark) const
+    [[nodiscard]] size_t getMarkRows(size_t part_idx, size_t mark) const
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
@@ -663,7 +663,7 @@ struct PartsRangesIterator
         buffer << " value " << ::toString(value) << '\n';
     }
 
-    [[maybe_unused]] String toString() const
+    [[nodiscard]] [[maybe_unused]] String toString() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);
