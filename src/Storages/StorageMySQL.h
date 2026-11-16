@@ -92,7 +92,8 @@ public:
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
         ContextPtr context_, bool require_table_or_query = true);
 
-    /// Whether `processNamedCollectionResult` accepts a key of the named collection (an alias included).
+    /// Whether `processNamedCollectionResult` accepts a key of the named collection (an alias included) as an override in a
+    /// query: the paths of the TLS credentials are accepted only from the collection itself.
     static bool isNamedCollectionKey(std::string_view key, bool require_table_or_query);
 
     /// Reads the TLS/SSL credentials from a named collection.

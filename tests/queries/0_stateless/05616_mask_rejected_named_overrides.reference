@@ -30,6 +30,10 @@ SELECT * FROM s3(nc, format = 'CSV', '[HIDDEN]')
 SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
 --- key that is an expression
 SELECT * FROM postgresql(nc, schema = 's', '[HIDDEN]')
+--- mysql TLS path key
+SELECT * FROM mysql(nc, `table` = 't', '[HIDDEN]')
+--- postgresql TLS path key
+SELECT * FROM postgresql(nc, `table` = 't', '[HIDDEN]')
 --- aliases and case
 SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', '[HIDDEN]')
 --- s3 table function, explicit url
@@ -46,3 +50,6 @@ SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
 SELECT * FROM s3(nc_s3, filename = \'data.csv\', format = \'CSV\', \'[HIDDEN]\')	1	1
 SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
 SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1
+SELECT * FROM postgresql(nc_pg, \'[HIDDEN]\')	1	1
+SELECT * FROM mysql(nc_mysql, \'[HIDDEN]\')	1	1

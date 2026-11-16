@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMySQL.h>
+#include <algorithm>
 
 #if USE_MYSQL
 
@@ -527,6 +528,8 @@ struct MySQLNamedCollectionKeys
         = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
            "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
            "ssl_key_passphrase"};
+    /// Accepted from a collection, but `getSSLParams` rejects them as an override in a query.
+    static constexpr std::string_view query_rejected[] = {"ssl_ca", "ssl_cert", "ssl_key"};
 };
 
 }
@@ -534,6 +537,8 @@ struct MySQLNamedCollectionKeys
 bool StorageMySQL::isNamedCollectionKey(std::string_view key, bool require_table_or_query)
 {
     static const MySQLNamedCollectionKeys keys{MySQLSettings{}};
+    if (std::ranges::contains(MySQLNamedCollectionKeys::query_rejected, key))
+        return false;
     const NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet> validate_key{key};
     /// Accepts both `table` and `query`, although a collection with `query` rejects `table`: neither is a secret.
     return keys.required.contains(validate_key) || keys.optional.contains(validate_key)

@@ -86,8 +86,9 @@ public:
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 
-    /// Whether `processNamedCollectionResult` accepts a key of the named collection (an alias included), with non-null
-    /// `storage_settings` if `with_storage_settings`.
+    /// Whether `processNamedCollectionResult` accepts a key of the named collection (an alias included) as an override in a
+    /// query, with non-null `storage_settings` if `with_storage_settings`: the paths of the TLS credentials are accepted
+    /// only from the collection itself.
     static bool isNamedCollectionKey(std::string_view key, bool require_table, bool with_storage_settings);
 
     /// Reads the TLS/SSL parameters from a named collection: `sslmode`, the certificate and key

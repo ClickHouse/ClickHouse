@@ -92,7 +92,8 @@ namespace
             {
                 auto end = key.find(']', i);
                 if (end == std::string_view::npos)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
+                    /// Not repeated in the message: a key given in a query can be a secret typed in the wrong place.
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key: `[` without a matching `]`");
                 i = end;
             }
             else if (key[i] == '\\' && i + 1 < key.size())

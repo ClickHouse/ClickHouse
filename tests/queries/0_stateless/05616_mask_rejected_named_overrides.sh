@@ -59,6 +59,12 @@ format "secret appended to the key" \
 format "key that is an expression" \
     "SELECT * FROM postgresql(nc, schema = 's', concat('pass', 'word') = '${SECRET}')"
 
+# The paths of the TLS credentials are accepted from a collection, but not as an override in a query.
+format "mysql TLS path key" \
+    "SELECT * FROM mysql(nc, table = 't', ssl_key = '${SECRET}')"
+format "postgresql TLS path key" \
+    "SELECT * FROM postgresql(nc, table = 't', sslkey = '${SECRET}')"
+
 # A key is compared as the parser compares it: case-sensitively, with the aliases of `user`, `db` and `host`.
 format "aliases and case" \
     "SELECT * FROM mysql(nc, username = 'u', db = 'db', hostname = 'h', PASSWORD = '${SECRET}')"
@@ -87,6 +93,9 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM s3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_access_key_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM mysql(${NC_MYSQL}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
     SELECT * FROM postgresql(${NC_PG}, password_${SECRET} = 'x'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM mysql(${NC_MYSQL}, ssl_key = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM postgresql(${NC_PG}, sslkey = '${SECRET}'); -- { serverError BAD_ARGUMENTS }
+    SELECT * FROM mysql(${NC_MYSQL}, \`${SECRET}[\` = 'x'); -- { serverError BAD_ARGUMENTS }
 
     -- A valid table: the accepted non-secret override stays visible, the secret one is hidden.
     CREATE TABLE t_s3_valid (x Int32) ENGINE = S3(${NC_S3}, filename = 'data.csv', format = 'CSV', secret_access_key = '${SECRET}');

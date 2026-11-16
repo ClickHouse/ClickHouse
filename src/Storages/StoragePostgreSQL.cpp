@@ -1,4 +1,5 @@
 #include <Storages/StoragePostgreSQL.h>
+#include <algorithm>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -788,6 +789,8 @@ struct PostgreSQLNamedCollectionKeys
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional
         = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
            "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+    /// Accepted from a collection, but `getSSLParams` rejects them as an override in a query.
+    static constexpr std::string_view query_rejected[] = {"sslrootcert", "sslcert", "sslkey"};
 };
 
 }
@@ -797,6 +800,8 @@ bool StoragePostgreSQL::isNamedCollectionKey(std::string_view key, bool require_
     static const PostgreSQLNamedCollectionKeys keys_with_settings{std::make_unique<PostgreSQLSettings>().get()};
     static const PostgreSQLNamedCollectionKeys keys_without_settings{nullptr};
     const auto & keys = with_storage_settings ? keys_with_settings : keys_without_settings;
+    if (std::ranges::contains(PostgreSQLNamedCollectionKeys::query_rejected, key))
+        return false;
     const NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet> validate_key{key};
     /// Accepts both `table` and `query`, although a collection with `query` rejects `table`: neither is a secret.
     return keys.required.contains(validate_key) || keys.optional.contains(validate_key)
