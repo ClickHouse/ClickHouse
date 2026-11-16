@@ -1049,7 +1049,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
             IObjectStorage::ApplyNewSettingsOptions{
                 .allow_client_change = true,
                 .force_client_rebuild = true,
-                .validate_merged_settings = true,
+                .server_disk_reload = true,
             });
 
     {

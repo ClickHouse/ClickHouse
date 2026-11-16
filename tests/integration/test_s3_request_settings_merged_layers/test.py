@@ -177,12 +177,21 @@ def test_disk_reload_with_invalid_request_settings_applies_new_credentials(
 ):
     not_applied = "The new S3 request settings of disk merged_s3 were not applied"
     revoked = "<access_key_id>revoked</access_key_id><secret_access_key>revoked</secret_access_key>"
+    no_env = "<use_environment_credentials>false</use_environment_credentials>"
     configure()
     node.query("DROP TABLE IF EXISTS t_cred SYNC")
     node.query(
         "CREATE TABLE t_cred (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = 'merged_s3'"
     )
     node.query("INSERT INTO t_cred VALUES (1)")
+
+    # A reload that only removes the credentials.
+    configure(disk=no_env, restart=False, credentials="")
+    reload_config()
+    assert "Access Denied" in node.query_and_get_error("INSERT INTO t_cred VALUES (2)")
+    configure(restart=False)
+    reload_config()
+    node.query("INSERT INTO t_cred VALUES (2)")
 
     # Invalid merged with the endpoint section, then invalid in the disk section alone.
     for disk, s3 in [
@@ -196,17 +205,21 @@ def test_disk_reload_with_invalid_request_settings_applies_new_credentials(
         ),
         (f"<s3_max_upload_part_size>{8 * MIB}</s3_max_upload_part_size>", ""),
     ]:
-        configure(disk=disk, s3=s3, restart=False, credentials=revoked)
-        node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
-        # The disk no longer signs its requests with the previous credentials.
-        error = node.query_and_get_error("INSERT INTO t_cred VALUES (2)")
-        assert "The Access Key Id you provided does not exist" in error
+        # Replaced, then removed credentials.
+        for credentials, extra, error in [
+            (revoked, "", "The Access Key Id you provided does not exist"),
+            ("", no_env, "Access Denied"),
+        ]:
+            configure(disk=disk + extra, s3=s3, restart=False, credentials=credentials)
+            node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
+            # The disk no longer signs its requests with the previous credentials.
+            assert error in node.query_and_get_error("INSERT INTO t_cred VALUES (2)")
 
-        configure(disk=disk, s3=s3, restart=False)
-        node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
-        node.query("INSERT INTO t_cred VALUES (2)")
+            configure(disk=disk, s3=s3, restart=False)
+            node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
+            node.query("INSERT INTO t_cred VALUES (2)")
 
-    assert node.query("SELECT count() FROM t_cred").strip() == "3"
+    assert node.query("SELECT count() FROM t_cred").strip() == "6"
     node.query("DROP TABLE t_cred SYNC")
 
 

@@ -809,9 +809,12 @@ void S3ObjectStorage::applyNewSettings(
     /// A table and a disk reload are validated below.
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(),
-        /* validate_settings */ for_disk_s3 && !options.validate_merged_settings && validate_settings);
+        /* validate_settings */ for_disk_s3 && !options.server_disk_reload && validate_settings);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
+    /// Merging below only adds the fields a layer sets, so credentials removed from the config would be kept.
+    if (options.server_disk_reload)
+        modified_settings->auth_settings = S3::S3AuthSettings();
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     /// So does a restricted client: the parsing of a restricted query dropped the server's authentication material
@@ -854,7 +857,7 @@ void S3ObjectStorage::applyNewSettings(
 
     if (validate_settings)
     {
-        if (options.validate_merged_settings)
+        if (options.server_disk_reload)
         {
             try
             {

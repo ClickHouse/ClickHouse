@@ -419,8 +419,9 @@ public:
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
 
-        /// Validate the merged request settings, keep the current ones if they are invalid (disks: no query settings are applied on top).
-        bool validate_merged_settings = false;
+        /// The config reload of a server disk: the authentication settings are built from the current config only, and the
+        /// merged request settings are validated, keeping the current ones if they are invalid (no query settings are applied on top).
+        bool server_disk_reload = false;
 
         /// Request settings given as explicit arguments of the storage definition, by name. They take priority over the
         /// server config and the endpoint settings, which are re-applied on every call.
