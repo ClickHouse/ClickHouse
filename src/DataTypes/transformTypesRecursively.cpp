@@ -242,6 +242,8 @@ DataTypePtr replaceNestedTypesInPairImpl(
             : nullptr;
     }
 
+    auto mismatch = [&]() -> DataTypePtr { return as_json_text ? left : nullptr; };
+
     if (left_which.isNullable())
     {
         const DataTypePtr left_nested = removeNullable(left);
@@ -265,7 +267,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
     {
         const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
         if (!right_array)
-            return nullptr;
+            return mismatch();
         const DataTypePtr left_nested = assert_cast<const DataTypeArray &>(*left).getNestedType();
         auto nested = replaceNestedTypesInPairImpl(
             left_nested, right_array->getNestedType(), on_leaf, false, left_is_common_type, as_json_text);
@@ -278,7 +280,7 @@ DataTypePtr replaceNestedTypesInPairImpl(
     {
         const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
         if (!right_map)
-            return nullptr;
+            return mismatch();
         const auto & left_map = assert_cast<const DataTypeMap &>(*left);
         auto key = replaceNestedTypesInPairImpl(
             left_map.getKeyType(), right_map->getKeyType(), on_leaf, false, left_is_common_type, as_json_text);
@@ -296,14 +298,14 @@ DataTypePtr replaceNestedTypesInPairImpl(
         const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
         const auto & left_tuple = assert_cast<const DataTypeTuple &>(*left);
         if (!right_tuple || right_tuple->getElements().size() != left_tuple.getElements().size())
-            return nullptr;
+            return mismatch();
         /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
         /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
         /// disagrees on it is not interchangeable whether or not a child moves.
         if (!left_is_common_type && right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
-            return nullptr;
+            return mismatch();
         if (as_json_text && left_tuple.getElementNames() != right_tuple->getElementNames())
-            return nullptr;
+            return mismatch();
         DataTypes elements;
         elements.reserve(left_tuple.getElements().size());
         bool moved = false;

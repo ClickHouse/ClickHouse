@@ -15,12 +15,15 @@ SELECT tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(`t.d` DateTim
 SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d DateTime(''UTC'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
 -- Tuple elements are read by name.
 SELECT toUnixTimestamp(tupleElement(CAST('{"t":{"a":"2026-01-01 00:00:00","b":"2026-01-01 00:00:00"}}'::JSON(t Tuple(a DateTime('Asia/Tokyo'), b String)), 'JSON(t Tuple(b DateTime(''UTC''), a DateTime(''Asia/Tokyo'')))').t, 'a'));
+-- An element that does not pair keeps its text and does not hold back the ones that do.
+SELECT toUnixTimestamp(tupleElement(c.t, 'd')), tupleElement(c.t, 'a'), tupleElement(c.t, 'b')
+FROM (SELECT CAST('{"t":{"d":"2026-01-01 00:00:00","a":[1,2],"b":[3]}}'::JSON(t Tuple(d DateTime('UTC'), a Array(UInt8), b Dynamic)), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo''), a String, b Array(UInt8)))') AS c);
 
 DROP TABLE IF EXISTS t_json_datetime_alter;
-CREATE TABLE t_json_datetime_alter (j JSON(d DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_json_datetime_alter VALUES ('{"d":"2026-01-01 00:00:00"}');
-ALTER TABLE t_json_datetime_alter MODIFY COLUMN j JSON(d DateTime64(0, 'Asia/Tokyo')) SETTINGS mutations_sync = 2;
-SELECT toUnixTimestamp(j.d) FROM t_json_datetime_alter;
+CREATE TABLE t_json_datetime_alter (j JSON(d DateTime('UTC'), t Tuple(d DateTime('UTC'), a Array(UInt8)))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_json_datetime_alter VALUES ('{"d":"2026-01-01 00:00:00","t":{"d":"2026-01-01 00:00:00","a":[1,2]}}');
+ALTER TABLE t_json_datetime_alter MODIFY COLUMN j JSON(d DateTime64(0, 'Asia/Tokyo'), t Tuple(d DateTime64(0, 'Asia/Tokyo'), a String)) SETTINGS mutations_sync = 2;
+SELECT toUnixTimestamp(j.d), toUnixTimestamp(tupleElement(j.t, 'd')), tupleElement(j.t, 'a') FROM t_json_datetime_alter;
 DROP TABLE t_json_datetime_alter;
 
 -- The DateTime of a Variant also reads the text of its String.

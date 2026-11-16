@@ -2055,8 +2055,8 @@ namespace
 {
 
 /// The text of a `DateTime` has no time zone, so a cast between two JSON types writes and parses the `DateTime`s that pair up
-/// in UTC: returns `type` with them in UTC, which does not change its column. A typed path overlapping another typed path is
-/// kept, because an object at either one can be written or read whole.
+/// in UTC: returns `type` with them in UTC, which does not change its column. The pairs are the same seen from either type.
+/// A typed path overlapping another typed path is kept, because an object at either one can be written or read whole.
 DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTypeObject & other)
 {
     auto to_utc = [](const DataTypePtr & leaf, const DataTypePtr & other_leaf) -> DataTypePtr
@@ -2071,8 +2071,6 @@ DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTy
             return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
         return leaf;
     };
-    /// Whether a pair matches does not depend on its leaves, so the walk from `other` only checks it.
-    auto keep = [](const DataTypePtr & leaf, const DataTypePtr &) { return leaf; };
     const auto & other_paths = other.getTypedPaths();
     auto typed_paths = object.getTypedPaths();
     for (auto & [path, path_type] : typed_paths)
@@ -2083,8 +2081,8 @@ DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTy
         if (it == other_paths.end() || std::ranges::any_of(object.getTypedPaths(), overlaps) || std::ranges::any_of(other_paths, overlaps))
             continue;
         auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
-        if (relabeled && replaceNestedTypesInPair(it->second, path_type, keep, /*left_is_common_type=*/ false, /*as_json_text=*/ true))
-            path_type = relabeled;
+        if (relabeled)
+            path_type = std::move(relabeled);
     }
     return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
         object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
