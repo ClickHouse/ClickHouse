@@ -64,6 +64,31 @@ namespace ErrorCodes
 }
 
 
+/// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
+/// derives its delete mode and its own storage-check relaxation from its own settings.
+/// The table identifiers are qualified on each host instead.
+static BlockIO executeDeleteQueryOnCluster(const ASTPtr & query_ptr, const ContextPtr & context, const StorageID & table_id)
+{
+    /// Substitute the database into table functions that use the current database implicitly, e.g.
+    /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
+    /// the database of the session.
+    AddDefaultDatabaseVisitor visitor(context, table_id.getDatabaseName());
+    const auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
+    if (mutable_delete_query.predicate)
+        visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
+    if (mutable_delete_query.partition)
+        visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
+
+    DDLQueryOnClusterParams params;
+    params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+    params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context](const String &, bool throw_if_unresolved)
+    {
+        checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+    };
+    return executeDDLQueryOnCluster(query_ptr, context, params);
+}
+
+
 InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
 }
@@ -92,11 +117,19 @@ BlockIO InterpreterDeleteQuery::execute()
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
 
-    /// First check table storage for validations.
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
-    if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+    /// First check table storage for validations. A clustered DELETE is shipped to the hosts as itself,
+    /// so the table does not have to exist on the initiator: `TRUNCATE TABLE ... ON CLUSTER` and
+    /// `ALTER TABLE ... ON CLUSTER` are enqueued without a local table as well, and every host that has
+    /// the table runs these validations against its own settings and metadata.
+    StoragePtr table = delete_query.cluster.empty() ? DatabaseCatalog::instance().getTable(table_id, getContext())
+                                                    : DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+
+    if (table)
+    {
+        checkStorageSupportsTransactionsIfNeeded(table, getContext());
+        if (table->isStaticStorage())
+            throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+    }
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -112,6 +145,12 @@ BlockIO InterpreterDeleteQuery::execute()
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
     }
+
+    /// The initiator has no table to inspect, so it cannot tell whether the storage supports a
+    /// lightweight delete: the hosts that have the table decide. Enqueue the DELETE as itself. `table`
+    /// can only be null on the clustered path, because the lookup above throws when it is not clustered.
+    if (!table)
+        return executeDeleteQueryOnCluster(query_ptr, getContext(), table_id);
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
@@ -182,28 +221,8 @@ BlockIO InterpreterDeleteQuery::execute()
                         table_id.getFullTableName(), table_id.getFullTableName());
         }
 
-        /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
-        /// derives its delete mode and its own storage-check relaxation from its own settings.
         if (!delete_query.cluster.empty())
-        {
-            /// Substitute the database into table functions that use the current database implicitly, e.g.
-            /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
-            /// the database of the session. The table identifiers are qualified on each host instead.
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
-            if (mutable_delete_query.predicate)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
-            if (mutable_delete_query.partition)
-                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
-
-            DDLQueryOnClusterParams params;
-            params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
-            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
-            {
-                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
-            };
-            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-        }
+            return executeDeleteQueryOnCluster(query_ptr, getContext(), table_id);
 
         using enum LightweightDeleteMode;
         auto lightweight_delete_mode = settings[Setting::lightweight_delete_mode];
