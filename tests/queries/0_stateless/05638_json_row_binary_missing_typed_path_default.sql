@@ -10,3 +10,7 @@ SELECT id, toInt8(j.e), tupleElement(j.t, 'n'), toInt8(tupleElement(j.t, 'e')) F
 SELECT * FROM t_json_rb_absent ORDER BY id;
 
 DROP TABLE t_json_rb_absent;
+
+-- A failed default insert must roll the JSON column back, otherwise the outer Tuple over-pops it.
+SELECT x FROM format(RowBinary, 'x Tuple(JSON(t Tuple(s FixedString(10000000), e Enum8(\'a\' = 1))))', unhex('00'))
+SETTINGS max_memory_usage = 5000000, max_threads = 1, allow_suspicious_fixed_string_types = 1; -- { serverError MEMORY_LIMIT_EXCEEDED }
