@@ -73,4 +73,4 @@ SELECT count() = 2 FROM
     UNION DISTINCT
     SELECT materialize(toUInt64(1)) AS k FROM system.numbers_mt
 )
-SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break', max_execution_time = 10;
+SETTINGS max_rows_in_distinct = 2, distinct_overflow_mode = 'break', max_execution_time = 10, max_rows_to_read = 0;

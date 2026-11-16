@@ -216,3 +216,76 @@ TEST(StringHashTableSuppliedHash, LongStringClassification)
         ASSERT_EQ(found->getMapped(), i);
     }
 }
+
+/// `forEachValueWithHash` hands out every key, at every size class, with the canonical hash of the original key, which
+/// it takes from the cell: a short key it hands out is a view of the integer the key is packed into in its cell, which
+/// `hash` must not read.
+TEST(StringHashTableSuppliedHash, ForEachValueWithHash)
+{
+    using Map = StringHashMap<UInt64>;
+    Map map;
+
+    const auto keys = testKeys();
+    for (size_t i = 0; i < keys->size(); ++i)
+    {
+        Map::LookupResult it;
+        bool inserted = false;
+        map.emplace(keys->getDataAt(i), it, inserted);
+        ASSERT_TRUE(inserted);
+        it->getMapped() = i;
+    }
+
+    size_t visited = 0;
+    map.forEachValueWithHash(
+        [&](std::string_view key, UInt64 & mapped, size_t hash)
+        {
+            const std::string_view original = keys->getDataAt(mapped);
+            ASSERT_EQ(key, original);
+            ASSERT_EQ(hash, map.hash(original)) << "key size " << key.size();
+            ++visited;
+        });
+    ASSERT_EQ(visited, keys->size());
+}
+
+/// The keys the iteration hands out go into another table with `emplaceIteratedKey` and the hashes of
+/// `forEachValueWithHash`, at every size class: each lands once where the plain find looks for the original key, and a
+/// second pass finds every one of them already inserted.
+TEST(StringHashTableSuppliedHash, EmplaceIteratedKey)
+{
+    using Map = StringHashMap<UInt64>;
+    Map source;
+    Map destination;
+
+    const auto keys = testKeys();
+    for (size_t i = 0; i < keys->size(); ++i)
+    {
+        Map::LookupResult it;
+        bool inserted = false;
+        source.emplace(keys->getDataAt(i), it, inserted);
+        ASSERT_TRUE(inserted);
+        it->getMapped() = i;
+    }
+
+    for (const bool first_pass : {true, false})
+    {
+        source.forEachValueWithHash(
+            [&](std::string_view key, UInt64 & mapped, size_t hash)
+            {
+                Map::LookupResult it;
+                bool inserted = false;
+                destination.emplaceIteratedKey(key, it, inserted, hash);
+                ASSERT_EQ(inserted, first_pass) << "key size " << key.size();
+                if (inserted)
+                    it->getMapped() = mapped;
+                ASSERT_EQ(it->getMapped(), mapped) << "key size " << key.size();
+            });
+    }
+    ASSERT_EQ(destination.size(), keys->size());
+
+    for (size_t i = 0; i < keys->size(); ++i)
+    {
+        auto found = destination.find(keys->getDataAt(i));
+        ASSERT_NE(found, nullptr) << "key size " << keys->getDataAt(i).size();
+        ASSERT_EQ(found->getMapped(), i);
+    }
+}

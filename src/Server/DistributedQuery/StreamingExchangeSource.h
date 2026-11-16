@@ -133,6 +133,8 @@ private:
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet
+    /// The types of the packets that this source has read, when it gives rows.
+    NativeReaderTypeCache type_cache;
     size_t rows_read = 0;
     size_t bytes_read = 0;
     /// Runs from a read that found no bytes until bytes arrive.

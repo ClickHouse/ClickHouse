@@ -7,7 +7,7 @@
 #include <cudf/column/column_view.hpp>
 #include <cudf/types.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
+#include <cuda/stream_ref>
 
 #include <cuda_runtime_api.h>
 
@@ -52,6 +52,6 @@ struct DeviceVariableColumnOfCudf
     std::unique_ptr<cudf::column> widened_offsets;
 };
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream);
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, cuda::stream_ref stream);
 
 }

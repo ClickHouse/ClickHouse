@@ -693,19 +693,23 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
         ),
     )
 
-    def get_s3_requests():
-        node.query("SYSTEM FLUSH LOGS")
+    # Counts only the INSERT's own requests: the server also writes to S3 in the background
+    # (e.g. the metadata snapshot of a `plain_rewritable` database disk).
+    def insert_and_get_s3_requests(values):
+        query_id = uuid.uuid4().hex
+        node.query("INSERT INTO s3_test VALUES {}".format(values), query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
         return int(
             node.query(
-                "SELECT value FROM system.events WHERE event='S3WriteRequestsCount'"
+                "SELECT ProfileEvents['S3WriteRequestsCount'] FROM system.query_log"
+                f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
             )
         )
 
-    s3_requests_before = get_s3_requests()
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    s3_requests_to_write_partition = insert_and_get_s3_requests(
+        generate_values("2020-01-03", 4096)
     )
-    s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
+    assert s3_requests_to_write_partition > 0
 
     # Force multi-part upload mode.
     replace_config(
@@ -717,13 +721,11 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     node.query("SYSTEM RELOAD CONFIG")
 
     try:
-        s3_requests_before = get_s3_requests()
-        node.query(
-            "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
+        s3_requests_multi_part = insert_and_get_s3_requests(
+            generate_values("2020-01-04", 4096, -1)
         )
-
         # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
-        assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+        assert s3_requests_multi_part == s3_requests_to_write_partition * 3
 
         check_no_objects_after_drop(cluster)
 
@@ -838,6 +840,118 @@ def test_merge_canceled_by_drop(cluster, node_name):
     check_no_objects_after_drop(
         cluster, table_name="test_merge_canceled_by_drop", node_name=node_name
     )
+
+
+def cancel_paused_merge(node, table, query, pause_failpoint):
+    """Run `query` (DROP or DETACH) while the table's merge is paused at `pause_failpoint`,
+    so the merge is flagged for deletion and cancelled when it resumes."""
+    node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+    assert node.query(f"SELECT count() FROM system.merges WHERE table = '{table}'") == "1\n"
+    node.query("SYSTEM ENABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request = node.get_query_request(query)
+    node.query("SYSTEM WAIT FAILPOINT merge_tree_background_task_marked_for_deletion PAUSE")
+    node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+    node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request.get_answer()
+
+
+def run_merge_paused_at(node, table, pause_failpoint, query):
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for i in range(6):
+        node.query(
+            f"INSERT INTO {table} (dt, id, data) SELECT toDate('2020-01-03'), number, toString(number) FROM numbers({i * 10000}, 10000)"
+        )
+    try:
+        # Only this table's merge may reach the pause.
+        node.query("SYSTEM STOP MERGES")
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM START MERGES {table}")
+        cancel_paused_merge(node, table, query, pause_failpoint)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+        node.query("SYSTEM START MERGES")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_after_part_handoff(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(node, "s3_test")
+    run_merge_paused_at(
+        node, "s3_test", "merge_mutate_task_pause_after_part_handoff", "DETACH TABLE s3_test"
+    )
+
+    node.query("ATTACH TABLE s3_test")
+    assert node.query("SELECT count(), sum(id) FROM s3_test") == "60000\t1799970000\n"
+    node.query("OPTIMIZE TABLE s3_test FINAL")
+    check_no_objects_after_drop(cluster, node_name=node_name)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_vertical_merge_with_projection_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String, a String DEFAULT data, b String DEFAULT data,"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=MergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, enable_vertical_merge_algorithm=1,"
+        " vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1"
+    )
+    run_merge_paused_at(
+        node, "s3_test", "merge_task_projection_stage_pause", "DROP TABLE s3_test SYNC"
+    )
+    wait_for_delete_s3_objects(cluster, 0)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_with_text_index_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String,"
+        " INDEX t data TYPE text(tokenizer = splitByNonAlpha),"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=ReplacingMergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, deduplicate_merge_projection_mode='rebuild'"
+    )
+    run_merge_paused_at(
+        node, "s3_test", "merge_task_projection_stage_pause", "DROP TABLE s3_test SYNC"
+    )
+    wait_for_delete_s3_objects(cluster, 0)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_optimize_canceled_by_stop_merges(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test (dt Date, id Int64, data String, a String DEFAULT data, b String DEFAULT data,"
+        " PROJECTION p (SELECT id, data ORDER BY data))"
+        " ENGINE=MergeTree ORDER BY id"
+        " SETTINGS storage_policy='s3', min_bytes_for_wide_part=0, enable_vertical_merge_algorithm=1,"
+        " vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1"
+    )
+    # One part: no background merge selects it, only OPTIMIZE ... FINAL does.
+    node.query(
+        "INSERT INTO s3_test (dt, id, data) SELECT toDate('2020-01-03'), number, toString(number) FROM numbers(60000)"
+    )
+    try:
+        # Only this table's merge may reach the pause.
+        node.query("SYSTEM STOP MERGES")
+        node.query("SYSTEM START MERGES s3_test")
+        node.query("SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause")
+        optimize = node.get_query_request("OPTIMIZE TABLE s3_test FINAL")
+        node.query("SYSTEM WAIT FAILPOINT merge_task_projection_stage_pause PAUSE")
+        node.query("SYSTEM STOP MERGES s3_test")
+        node.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+        _, error = optimize.get_answer_and_error()
+        assert "Cancelled merging parts" in error, error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT merge_task_projection_stage_pause")
+        node.query("SYSTEM START MERGES")
+    assert node.query("SELECT count(), sum(id) FROM s3_test") == "60000\t1799970000\n"
+    check_no_objects_after_drop(cluster, node_name=node_name)
 
 
 @pytest.mark.parametrize("storage_policy", ["broken_s3_always_multi_part", "broken_s3"])

@@ -8,7 +8,7 @@ CREATE TABLE t_small (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_big SELECT number, number FROM numbers(1000);
 INSERT INTO t_small SELECT number, number * 2 FROM numbers(100);
 
-SET enable_analyzer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
+SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 SET use_index_for_in_with_subqueries = 1, use_query_condition_cache = 0;
 
 SELECT '-- literal IN ships as TupleValues';

@@ -8,8 +8,6 @@ sidebarTitle: 'Parte 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 > Esta é a **Parte 3** de um guia sobre a migração do PostgreSQL para o ClickHouse. Com um exemplo prático, ele demonstra como modelar dados no ClickHouse ao migrar do PostgreSQL.
 
 Recomendamos que os usuários que estão migrando do Postgres leiam [o guia de modelagem de dados no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/schema-design). Este guia usa o mesmo conjunto de dados do Stack Overflow e explora várias abordagens usando funcionalidades do ClickHouse.
@@ -32,9 +30,25 @@ Para entender por que usar sua chave primária de OLTP no ClickHouse não é apr
 
 Para mais detalhes, recomendamos este [guia detalhado](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Índice B-Tree do PostgreSQL" />
+<div className="ch-image-lg">
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Índice esparso do PostgreSQL" />
+<Frame>
+
+![Índice B-Tree do PostgreSQL](/images/migrations/postgres-b-tree.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Índice esparso do PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</Frame>
+
+</div>
 
 A chave selecionada no ClickHouse determinará não apenas o índice, mas também a ordem em que os dados são gravados em disco. Por isso, ela pode afetar drasticamente os níveis de compressão, o que, por sua vez, pode impactar o desempenho da consulta. Uma chave de ordenação que faça com que os valores da maioria das colunas sejam gravados em ordem contígua permitirá que o algoritmo de compressão selecionado (e os codecs) comprima os dados com mais eficácia.
 
@@ -56,7 +70,15 @@ Se você vem do Postgres, já deve estar familiarizado com o conceito de partici
 
 No ClickHouse, o particionamento é especificado na tabela quando ela é criada, por meio da cláusula `PARTITION BY`. Essa cláusula pode conter uma expressão SQL sobre qualquer coluna, e o resultado dessa expressão define para qual partição uma linha será enviada.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Partições do PostgreSQL para partições do ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Partições do PostgreSQL para partições do ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</Frame>
+
+</div>
 
 As partes de dados são associadas logicamente a cada partição no disco e podem ser consultadas de forma isolada. No exemplo abaixo, particionamos a tabela `posts` por ano usando a expressão `toYear(CreationDate)`. À medida que as linhas são inseridas no ClickHouse, essa expressão é avaliada para cada linha e ela é encaminhada para a partição correspondente; se for a primeira linha daquele ano, a partição será criada.
 
@@ -274,7 +296,15 @@ automaticamente à medida que os dados são inseridos. Além disso, as consultas
 tabela, em que as projeções são aproveitadas sempre que possível para acelerar o tempo
 de resposta.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Projeções do PostgreSQL no ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Projeções do PostgreSQL no ClickHouse](/images/migrations/postgres-projections.webp)
+
+</Frame>
+
+</div>
 
 Isso contrasta com as visões materializadas, nas quais o usuário precisa selecionar a
 tabela de destino otimizada apropriada ou reescrever sua consulta, dependendo dos filtros.
