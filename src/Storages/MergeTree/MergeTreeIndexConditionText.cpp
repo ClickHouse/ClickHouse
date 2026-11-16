@@ -1129,12 +1129,14 @@ String likePatternOf(const InfixPhraseWord & phrase_word)
 
 /// Only prunes granules: the original predicate is still evaluated for every row read.
 template <bool case_insensitive>
-TextSearchQueryPtr makePhraseWordQuery(const String & function_name, const InfixPhraseWord & phrase_word)
+TextSearchQueryPtr makePhraseWordQuery(
+    const String & function_name, const InfixPhraseWord & phrase_word, TextIndexAutomatonBudget * automaton_budget)
 {
     std::vector<OptimizedRegularExpression> patterns;
     patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*similar_to=*/ false, /*no_capture=*/ true, case_insensitive>(likePatternOf(phrase_word)));
     return std::make_shared<TextSearchQuery>(
-        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>(), std::move(patterns));
+        function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>(), std::move(patterns),
+        VectorWithMemoryTracking<String>(), automaton_budget);
 }
 
 }
@@ -1877,7 +1879,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (auto phrase_word = chooseInfixPhraseWord(value_field.safeGet<String>(), /*case_insensitive=*/ false, min_length))
             {
                 out.function = RPNElement::FUNCTION_LIKE;
-                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ false>(function_name, *phrase_word));
+                out.text_search_queries.emplace_back(
+                    makePhraseWordQuery</*case_insensitive=*/ false>(function_name, *phrase_word, automaton_budget.get()));
                 out.is_phrase_word = true;
                 return true;
             }
@@ -1919,7 +1922,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (auto phrase_word = chooseInfixPhraseWord(like_pattern, /*case_insensitive=*/ true, min_length))
             {
                 out.function = RPNElement::FUNCTION_LIKE;
-                out.text_search_queries.emplace_back(makePhraseWordQuery</*case_insensitive=*/ true>(function_name, *phrase_word));
+                out.text_search_queries.emplace_back(
+                    makePhraseWordQuery</*case_insensitive=*/ true>(function_name, *phrase_word, automaton_budget.get()));
                 out.is_phrase_word = true;
                 return true;
             }
