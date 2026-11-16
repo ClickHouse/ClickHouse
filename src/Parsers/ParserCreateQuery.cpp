@@ -950,7 +950,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         query->database = table_id->getDatabase();
         query->table = table_id->getTable();
-        query->table_is_folded_path = table_id->is_folded_path;
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
         query->has_uuid_clause = table_id->has_uuid;
@@ -1127,7 +1126,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
-    query->table_is_folded_path = table_id->is_folded_path;
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = table_id->has_uuid;
@@ -1700,7 +1698,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
-    query->table_is_folded_path = table_id->is_folded_path;
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = table_id->has_uuid;
@@ -1778,8 +1775,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 chassert(is_materialized_view);
                 targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
             }
-            if (to_table->as<ASTTableIdentifier>()->is_folded_path)
-                targets->setTableIsFoldedPath(ViewTarget::To);
         }
         if (to_inner_uuid)
         {
@@ -1965,7 +1960,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     rejectNilUUIDClause(attach, dict_id->has_uuid, dict_id->uuid);
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
-    query->table_is_folded_path = dict_id->is_folded_path;
     query->uuid = dict_id->uuid;
     query->has_uuid = dict_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = dict_id->has_uuid;

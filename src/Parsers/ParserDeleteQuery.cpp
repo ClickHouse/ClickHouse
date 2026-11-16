@@ -29,7 +29,7 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_from.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
 
         if (s_on.ignore(pos, expected))

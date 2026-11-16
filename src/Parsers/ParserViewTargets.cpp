@@ -93,8 +93,6 @@ namespace
                 if (!res)
                     res = make_intrusive<ASTViewTargets>();
                 res->setTableID(kind, table_id);
-                if (ast->as<ASTTableIdentifier>()->is_folded_path)
-                    res->setTableIsFoldedPath(kind);
                 return true;
             }
         }

@@ -86,9 +86,9 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!exchange)
             ref.if_exists = s_if_exists.ignore(pos, expected);
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, ref.from.database, ref.from.table, ref.from.is_folded_path)
+        if (!parseDatabaseAndTableAsAST(pos, expected, ref.from.database, ref.from.table)
             || !ignore_delim()
-            || !parseDatabaseAndTableAsAST(pos, expected, ref.to.database, ref.to.table, ref.to.is_folded_path))
+            || !parseDatabaseAndTableAsAST(pos, expected, ref.to.database, ref.to.table))
             return false;
     }
 

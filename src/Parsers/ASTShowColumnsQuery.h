@@ -22,8 +22,6 @@ public:
 
     String database;
     String table;
-    /// Set by the parser when `db.ns.t` was folded into (`db`, `ns.t`); not formatted, not hashed, not in JSON.
-    bool table_is_folded_path = false;
 
     String like;
 

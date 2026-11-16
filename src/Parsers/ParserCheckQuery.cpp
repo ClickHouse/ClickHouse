@@ -42,7 +42,7 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
     auto query = make_intrusive<ASTCheckTableQuery>();
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table, query->table_is_folded_path))
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;
 
     if (s_partition.ignore(pos, expected))
