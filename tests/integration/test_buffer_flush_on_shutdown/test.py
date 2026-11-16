@@ -300,7 +300,8 @@ def test_buffer_flush_delayed_over_threshold_at_shutdown(started_cluster):
         "CREATE TABLE dist_bufd.buf_dist (x UInt64) "
         "ENGINE = Buffer(dist_bufd, dist, 1, 100000, 100000, 1, 1, 1000000000, 1000000000)"
     )
-    node.query("INSERT INTO dist_bufd.buf_dist VALUES (0)")
+    # 1000 can't collide with the `numbers(10)` rows already queued in `dist`.
+    node.query("INSERT INTO dist_bufd.buf_dist VALUES (1000)")
     thread, errors = start_delayed_insert(
         "dist_bufd", "dist_bufd_delayed_insert", table="buf_dist"
     )
@@ -310,5 +311,8 @@ def test_buffer_flush_delayed_over_threshold_at_shutdown(started_cluster):
     thread.join(60)
     assert not thread.is_alive()
     assert node.query("SELECT count() FROM dist_bufd.mt") == "100\n"
+    # The row held in `buf_dist` must not be lost: it reaches the shard through `dist`.
+    node.query("SYSTEM FLUSH DISTRIBUTED dist_bufd.dist")
+    assert shard.query("SELECT count() FROM dist_bufd.data WHERE x = 1000") == "1\n"
 
     drop_database("dist_bufd")
