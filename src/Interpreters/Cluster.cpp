@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -6,6 +7,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -95,9 +97,9 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 }
 
 
-bool Cluster::Address::routesToThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const
+bool Cluster::Address::routesToThisServer(const std::vector<UInt16> & native_ports) const
 {
-    if (port != tcp_port && !(tcp_port_secure && port == *tcp_port_secure))
+    if (std::find(native_ports.begin(), native_ports.end(), port) == native_ports.end())
         return false;
 
     std::vector<Poco::Net::SocketAddress> resolved;
@@ -1077,15 +1079,20 @@ std::vector<Strings> Cluster::getHostIDs() const
     return host_ids;
 }
 
-bool Cluster::hasShardOnThisServer(UInt16 tcp_port, std::optional<UInt16> tcp_port_secure) const
+bool Cluster::hasShardOnThisServer(const ContextPtr & context) const
 {
     for (const auto & shard_info : shards_info)
         if (shard_info.isLocal())
             return true;
 
+    std::vector<UInt16> native_ports;
+    for (const auto & [_, server_port] : context->getServerPorts())
+        if (ServerType::isNativeProtocol(server_port.protocol_type))
+            native_ports.push_back(server_port.port);
+
     for (const auto & replicas : addresses_with_failover)
         for (const auto & replica : replicas)
-            if (replica.routesToThisServer(tcp_port, tcp_port_secure))
+            if (replica.routesToThisServer(native_ports))
                 return true;
 
     return false;

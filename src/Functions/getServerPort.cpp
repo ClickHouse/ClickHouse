@@ -120,7 +120,7 @@ public:
                 getName());
 
         String port_name{column->getDataAt(0)};
-        auto port = Context::getGlobalContextInstance()->getServerPort(port_name);
+        auto port = Context::getGlobalContextInstance()->getServerPort(port_name).port;
 
         DataTypes argument_types;
         argument_types.emplace_back(arguments.back().type);

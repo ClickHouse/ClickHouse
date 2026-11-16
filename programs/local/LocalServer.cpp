@@ -977,7 +977,7 @@ void LocalServer::startServers(const ServerType & server_type)
     /// registration is deferred until after phase 2. Otherwise a rolled-back bind would leave the
     /// registry pointing at a port whose listener was just closed.
     const size_t servers_started_before = servers.size();
-    std::vector<std::pair<const char *, UInt16>> ports_to_register;
+    std::vector<std::pair<const char *, Context::ServerPort>> ports_to_register;
     try
     {
         for (const auto & listen_host : listen_hosts)
@@ -1007,7 +1007,9 @@ void LocalServer::startServers(const ServerType & server_type)
                             socket,
                             params));
                 }, &logger()))
-                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                    ports_to_register.emplace_back(
+                        port_name,
+                        Context::ServerPort{.port = servers.back().portNumber(), .protocol_type = servers.back().getProtocolType()});
             }
 
             if (server_type.shouldStart(ServerType::Type::HTTP))
@@ -1041,7 +1043,9 @@ void LocalServer::startServers(const ServerType & server_type)
                                 ProfileEvents::InterfaceHTTPReceiveBytes,
                                 ProfileEvents::InterfaceHTTPSendBytes));
                     }, &logger()))
-                        ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                        ports_to_register.emplace_back(
+                            port_name,
+                            Context::ServerPort{.port = servers.back().portNumber(), .protocol_type = servers.back().getProtocolType()});
                 }
             }
         }
@@ -1103,8 +1107,8 @@ void LocalServer::startServers(const ServerType & server_type)
 
     /// All requested listeners are bound, verified, and now started — publish their ports, so the
     /// registry is only ever updated for a fully successful (and therefore non-rolled-back) start.
-    for (const auto & [port_name, port] : ports_to_register)
-        global_context->registerServerPort(port_name, port);
+    for (const auto & [port_name, server_port] : ports_to_register)
+        global_context->registerServerPort(port_name, server_port);
 }
 
 

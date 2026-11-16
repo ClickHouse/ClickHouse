@@ -19,5 +19,29 @@
             </networks>
             <profile>default</profile>
         </user123>
+        <!-- An account that may connect only from this machine, used by `test_remote_through_protocols_endpoint_checks_caller_grants`. -->
+        <svc>
+            <password></password>
+            <networks replace="replace">
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <grants>
+                <query>GRANT SELECT, INSERT ON default.remote_secret</query>
+            </grants>
+        </svc>
+        <!-- A caller without grants on `default.remote_secret`, who knows the `svc` account. -->
+        <bob>
+            <password>bob</password>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <grants>
+                <query>GRANT REMOTE ON *.*</query>
+                <query>GRANT CREATE TEMPORARY TABLE ON *.*</query>
+            </grants>
+        </bob>
     </users>
 </clickhouse>

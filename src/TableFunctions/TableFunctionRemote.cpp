@@ -47,7 +47,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     /// `127.0.0.{2..255}` is not classified local (tests use it to emulate a cluster on one machine), yet a query
     /// sent there is executed by this server under the credentials passed to the table function, and its
     /// peer address `127.0.0.1` satisfies `HOST LOCAL` restrictions of the account.
-    const bool has_shard_on_this_server = cluster->hasShardOnThisServer(context->getTCPPort(), context->getTCPPortSecure());
+    const bool has_shard_on_this_server = cluster->hasShardOnThisServer(context);
 
     /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
     /// without additional conversion in StorageTableFunctionProxy

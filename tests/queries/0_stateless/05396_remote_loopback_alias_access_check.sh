@@ -43,6 +43,32 @@ for host in "127.0.0.2:${port}" "127.0.0.1:${port}" "0.0.0.0:${port}" "[::ffff:1
     as_bob "SELECT s FROM remote('${host}', view(SELECT s FROM ${db}.secret), '${svc}', '')"
 done
 
+# The `Remote` databases are checked before ${bob} gets any grant on ${db}: any table-level grant implies `SHOW TABLES`.
+# Listing and existence checks must not expose the table names of ${db} either.
+echo "--- Remote database engine"
+proxy_db="${CLICKHOUSE_DATABASE}_proxy"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${proxy_db} ENGINE = Remote('127.0.0.2:${port}', '${db}', '${svc}', '')"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${proxy_db}.* TO ${bob}"
+as_bob "SELECT s FROM ${proxy_db}.secret"
+as_bob "INSERT INTO ${proxy_db}.secret VALUES (4, 'forged')"
+as_bob "SHOW TABLES FROM ${proxy_db}"
+as_bob "EXISTS TABLE ${proxy_db}.secret"
+
+echo "--- RemoteSecure database engine"
+secure_db="${CLICKHOUSE_DATABASE}_proxy_secure"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${secure_db} ENGINE = RemoteSecure('127.0.0.2:${CLICKHOUSE_PORT_TCP_SECURE}', '${db}', '${svc}', '')"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${secure_db}.* TO ${bob}"
+as_bob "SELECT s FROM ${secure_db}.secret"
+as_bob "SHOW TABLES FROM ${secure_db}"
+as_bob "EXISTS TABLE ${secure_db}.secret"
+
+echo "--- Remote database engine over another Remote database"
+chain_db="${CLICKHOUSE_DATABASE}_proxy_chain"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${chain_db} ENGINE = Remote('127.0.0.2:${port}', '${proxy_db}', '${svc}', '')"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${chain_db}.* TO ${bob}"
+as_bob "SHOW TABLES FROM ${chain_db}"
+as_bob "EXISTS TABLE ${chain_db}.secret"
+
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TABLE, DROP TABLE ON ${db}.* TO ${bob}"
 
 echo "--- table function with the structure given explicitly"
@@ -54,13 +80,6 @@ echo "--- Remote engine"
 as_bob "CREATE TABLE ${db}.proxy ENGINE = Remote('127.0.0.2:${port}', ${db}, secret, '${svc}', '')"
 as_bob "CREATE TABLE ${db}.proxy (id UInt32, s String) ENGINE = Remote('127.0.0.2:${port}', ${db}, secret, '${svc}', '')"
 as_bob "CREATE TABLE ${db}.proxy (s String) ENGINE = Remote('127.0.0.2:${port}', merge('${db}', '^secret\$'), '${svc}', '')"
-
-echo "--- Remote database engine"
-proxy_db="${CLICKHOUSE_DATABASE}_proxy"
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${proxy_db} ENGINE = Remote('127.0.0.2:${port}', '${db}', '${svc}', '')"
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${proxy_db}.* TO ${bob}"
-as_bob "SELECT s FROM ${proxy_db}.secret"
-as_bob "INSERT INTO ${proxy_db}.secret VALUES (4, 'forged')"
 
 echo "--- Remote database engine referring to itself"
 # Must end with an error rather than hang or recurse. The exact error depends on the connection retry settings.
@@ -85,6 +104,11 @@ done
 echo "--- with grants"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${db}.secret TO ${bob}"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${db}.proxy TO ${bob}"
+as_bob "SHOW TABLES FROM ${proxy_db}"
+as_bob "EXISTS TABLE ${proxy_db}.secret"
+as_bob "SHOW TABLES FROM ${secure_db}"
+as_bob "EXISTS TABLE ${secure_db}.secret"
+as_bob "SHOW TABLES FROM ${chain_db}"
 as_bob "SELECT s FROM remote('127.0.0.2:${port}', ${db}, secret, '${svc}', '')"
 as_bob "INSERT INTO FUNCTION remote('127.0.0.2:${port}', ${db}, secret, '${svc}', '') VALUES (3, 'granted')"
 as_bob "SELECT s FROM remote('127.0.0.2:${port}', view(SELECT s FROM ${db}.secret), '${svc}', '') ORDER BY s"
@@ -93,5 +117,7 @@ as_bob "SELECT s FROM ${db}.proxy ORDER BY s"
 
 as_bob "SELECT s FROM ${proxy_db}.secret ORDER BY s"
 
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${chain_db}"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${secure_db}"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${proxy_db}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${svc}, ${bob}"

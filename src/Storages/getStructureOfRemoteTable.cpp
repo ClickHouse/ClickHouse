@@ -192,7 +192,7 @@ ColumnsDescription getStructureOfRemoteTable(
     /// The structure was not obtained in-process (`isLocal`), but a shard reached over the network may still be this
     /// server (e.g. `127.0.0.2`, or `prefer_localhost_replica = 0`). Its `DESC` runs under the connection's credentials,
     /// bypassing the caller's own `SHOW_COLUMNS` (or table function) access check, so do that check here.
-    if (cluster.hasShardOnThisServer(context->getTCPPort(), context->getTCPPortSecure()))
+    if (cluster.hasShardOnThisServer(context))
     {
         if (table_func_ptr)
             TableFunctionFactory::instance().get(table_func_ptr, context)->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);

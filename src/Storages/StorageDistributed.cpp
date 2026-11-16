@@ -1153,7 +1153,7 @@ void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const
 
     /// Not only a local shard: a shard reached over a connection that this server answers (e.g. `127.0.0.2`)
     /// executes the query here under the engine credentials. See `Cluster::hasShardOnThisServer`.
-    if (getCluster()->hasShardOnThisServer(local_context->getTCPPort(), local_context->getTCPPortSecure()))
+    if (getCluster()->hasShardOnThisServer(local_context))
         local_context->checkAccess(access, remote_database, remote_table);
 }
 
@@ -3042,7 +3042,7 @@ void registerStorageRemote(StorageFactory & factory)
         /// See `Cluster::hasShardOnThisServer`. In this function, "a local shard" means such a shard.
         /// It is used only by the checks that are skipped for already-validated metadata, so it is not computed then.
         const bool has_local_shard = !loading_from_existing_metadata
-            && parsed.cluster->hasShardOnThisServer(args.getContext()->getTCPPort(), args.getContext()->getTCPPortSecure());
+            && parsed.cluster->hasShardOnThisServer(args.getContext());
 
         ColumnsDescription columns = args.columns;
 
