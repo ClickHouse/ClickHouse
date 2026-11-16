@@ -56,7 +56,14 @@ struct AggregateFunctionSumAddOverflowImpl
 {
     static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T & lhs, const T & rhs)
     {
-        /// `wide::integer` branches on the sign and adds in a loop with carries; `unsigned __int128` compiles to `add` and `adc`.
+        lhs += rhs;
+    }
+
+    /// A single addition, for the per-row path: `wide::integer` branches on the sign and adds in a loop with carries,
+    /// while `unsigned __int128` compiles to `add` and `adc`. The loops of the batch paths keep `add`, as the compiler
+    /// optimizes the loop of `wide::integer` better there (the masked loop of `sumIf` is 1.5 times faster).
+    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE addOne(T & lhs, const T & rhs)
+    {
         if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, UInt128>)
             lhs = __builtin_bit_cast(T, __builtin_bit_cast(unsigned __int128, lhs) + __builtin_bit_cast(unsigned __int128, rhs));
         else
@@ -69,6 +76,11 @@ struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
     static void ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
     {
         AggregateFunctionSumAddOverflowImpl<DecimalNativeType>::add(lhs.value, rhs.value);
+    }
+
+    static void ALWAYS_INLINE addOne(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
+    {
+        AggregateFunctionSumAddOverflowImpl<DecimalNativeType>::addOne(lhs.value, rhs.value);
     }
 };
 
@@ -91,7 +103,7 @@ struct AggregateFunctionSumData
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
     {
-        Impl::add(sum, toAccumulateResult(value));
+        Impl::addOne(sum, toAccumulateResult(value));
     }
 
     /// On AArch64 clang-23 does not turn a sum of 8- or 16-bit integers into a 64-bit accumulator into a partial
