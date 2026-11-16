@@ -39,3 +39,10 @@ all rows lightweight key	(UPDATE _row_exists = 0 WHERE id < 5)	5
 all rows lightweight key	(DELETE WHERE id < 7)	2
 all rows lightweight key	(DELETE WHERE id >= 0)	3
 all rows lightweight key empty part	1
+-- same condition
+(DELETE WHERE id < 3)	3
+(DELETE WHERE id < 3)	0
+(DELETE WHERE id = 5)	1
+(DELETE WHERE 0)	0
+-- nondeterministic
+2	1
