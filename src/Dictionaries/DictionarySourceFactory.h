@@ -46,15 +46,15 @@ public:
 
     void registerSource(const std::string & source_type, Creator create_source, SecretArgumentsSpec secret_arguments, Documentation documentation = {});
 
-    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    [[nodiscard]] std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Returns the embedded documentation for a dictionary source (empty if none was registered).
-    Documentation getDocumentation(const std::string & source_type) const;
+    [[nodiscard]] Documentation getDocumentation(const std::string & source_type) const;
 
     /// The secret keys of every source, see `SecretArgumentsRegistry::maskDictionarySourceValue`.
-    const UnorderedMapWithMemoryTracking<std::string, SecretArgumentsSpec> & getSecretArgumentsSpecs() const { return source_secret_arguments; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<std::string, SecretArgumentsSpec> & getSecretArgumentsSpecs() const { return source_secret_arguments; }
 
-    DictionarySourcePtr create(
+    [[nodiscard]] DictionarySourcePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,

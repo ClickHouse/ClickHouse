@@ -6,8 +6,6 @@ tags: ['오류 및 예외']
 keywords: ['개발자 확인', 'macOS']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ## macOS에서 개발자 확인 오류 해결하기 {#fix-the-developer-verification-error-in-macos}
 
 macOS는 기본적으로 인터넷에서 다운로드한 애플리케이션이나 도구가 확인된 개발자의 서명을 받고 Apple의 공증(notarization)을 거친 경우에만 실행을 허용합니다.
@@ -24,7 +22,15 @@ ClickHouse의 macOS 빌드는 26.7.4 릴리스부터(그리고 26.8 이후의 �
 
 격리된 `clickhouse` 바이너리를 실행하려고 하면 다음과 같은 오류가 표시될 수 있습니다.
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS 개발자 확인 오류 대화 상자" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MacOS 개발자 확인 오류 대화 상자](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 서명된 빌드로 전환할 수 없다면 시스템 설정이나 터미널에서 바이너리의 격리를 해제하십시오.
 
@@ -36,13 +42,29 @@ ClickHouse의 macOS 빌드는 26.7.4 릴리스부터(그리고 26.8 이후의 �
 
 3. **Privacy &amp; Security**로 이동하십시오.
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security 설정 기본 보기" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![MacOS Privacy & Security 설정 기본 보기](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. **Security** 섹션까지 아래로 스크롤하여 *&quot;clickhouse-macos-aarch64&quot; was blocked from use because it is not from an identified developer*라는 메시지를 찾으십시오.
 
 5. **Allow Anyway**(최신 macOS 버전에서는 **Open Anyway**)를 클릭하십시오.
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Allow Anyway 버튼이 표시된 MacOS Privacy & Security 설정" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![Allow Anyway 버튼이 표시된 MacOS Privacy & Security 설정](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. macOS 사용자 비밀번호를 입력하십시오.
 
