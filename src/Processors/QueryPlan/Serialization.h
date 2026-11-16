@@ -59,15 +59,15 @@ public:
     DeserializedInputHeaders(const SharedHeaders & headers_) : headers(headers_) {} /// NOLINT(google-explicit-constructor)
     operator const SharedHeaders &() const { return headers; } /// NOLINT(google-explicit-constructor)
 
-    size_t size() const { return headers.size(); }
-    bool empty() const { return headers.empty(); }
-    auto begin() const { return headers.begin(); }
-    auto end() const { return headers.end(); }
+    [[nodiscard]] size_t size() const { return headers.size(); }
+    [[nodiscard]] bool empty() const { return headers.empty(); }
+    [[nodiscard]] auto begin() const { return headers.begin(); }
+    [[nodiscard]] auto end() const { return headers.end(); }
 
-    const SharedHeader & at(size_t i) const;
-    const SharedHeader & operator[](size_t i) const { return at(i); }
-    const SharedHeader & front() const { return at(0); }
-    const SharedHeader & back() const { return at(headers.empty() ? 0 : headers.size() - 1); }
+    [[nodiscard]] const SharedHeader & at(size_t i) const;
+    [[nodiscard]] const SharedHeader & operator[](size_t i) const { return at(i); }
+    [[nodiscard]] const SharedHeader & front() const { return at(0); }
+    [[nodiscard]] const SharedHeader & back() const { return at(headers.empty() ? 0 : headers.size() - 1); }
 
 private:
     const SharedHeaders & headers;

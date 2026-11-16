@@ -188,14 +188,12 @@ def sendQuery(s, query, stage):
     s.sendall(ba)
 
 
-def buildQueryPlanPacket(plan_version, step_name, payload):
-    body = bytearray()
-    writeVarUInt(plan_version, body)
-    if plan_version >= WITH_EXECUTION_LIMITS:
-        writeVarUInt(0, body)      # max_threads
-        body.append(0)             # concurrency_control
-    # Node tree, a single root step with no children.
-    writeVarUInt(0, body)          # num_children
+def serializeNode(plan_version, node, body):
+    """A node is `(step_name, payload, children)`: the children go first, then the step itself."""
+    step_name, payload, children = node
+    writeVarUInt(len(children), body)  # num_children
+    for child in children:
+        serializeNode(plan_version, child, body)
     writeStringBinary(step_name, body)
     if plan_version >= WITH_STEP_VERSIONS:
         writeVarUInt(0, body)      # step_version
@@ -203,6 +201,15 @@ def buildQueryPlanPacket(plan_version, step_name, payload):
     writeVarUInt(0, body)          # output header: 0 columns
     writeVarUInt(0, body)          # settings: 0 changed
     body += payload
+
+
+def buildQueryPlanPacket(plan_version, root):
+    body = bytearray()
+    writeVarUInt(plan_version, body)
+    if plan_version >= WITH_EXECUTION_LIMITS:
+        writeVarUInt(0, body)      # max_threads
+        body.append(0)             # concurrency_control
+    serializeNode(plan_version, root, body)
 
     packet = bytearray()
     writeVarUInt(13, packet)       # Client::QueryPlan
@@ -219,8 +226,8 @@ def readException(s):
     return code, text
 
 
-def sendPlan(step_name, payload):
-    """Sends a `QueryPlan` packet with a single childless step and returns the exception code, or None if the query is not rejected."""
+def sendPlan(root):
+    """Sends a `QueryPlan` packet with the given tree of steps and returns the exception code, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -229,7 +236,7 @@ def sendPlan(step_name, payload):
         sendAddendum(s)
         # Stage 7 == QueryProcessingStage::QueryPlan: the server then expects a QueryPlan packet.
         sendQuery(s, "SELECT 1", 7)
-        s.sendall(buildQueryPlanPacket(plan_version, step_name, payload))
+        s.sendall(buildQueryPlanPacket(plan_version, root))
 
         # Only the first packet matters: either the exception or the start of the query result.
         packet_type = readVarUInt(s)
@@ -240,8 +247,14 @@ def sendPlan(step_name, payload):
 
 def main():
     # 117 == INCORRECT_DATA
+    # Steps lacking their children.
     for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00")]:
-        print(step_name, sendPlan(step_name, payload))
+        print(step_name, sendPlan((step_name, payload, [])))
+
+    # A sink has no output stream, so it cannot be a child of another step.
+    # `GatherSend` payload: exchange ID and no sort description.
+    gather_send = ("GatherSend", strbin("x") + b"\x00", [("ReadNothing", b"", [])])
+    print("Extremes over GatherSend", sendPlan(("Extremes", b"", [gather_send])))
 
 
 main()

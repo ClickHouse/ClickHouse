@@ -332,7 +332,14 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
+        {
+            /// A sink (e.g. `GatherSend`) has no output, so it cannot be an input of another step.
+            if (!child->step->hasOutputHeader())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Deserialized step {} has a child step {} without an output stream",
+                    step_name, child->step->getName());
             input_headers.push_back(child->step->getOutputHeader());
+        }
 
         IQueryPlanStep::Deserialization ctx{
             in, sets_registry, {}, context, input_headers, output_header, settings,
