@@ -15,7 +15,7 @@ Returns `1` if the value is probably in the filter (may have false positives),
 or `0` if the value is definitely not in the filter (no false negatives).
 
 The false positive rate is controlled by the `false_positive_rate` parameter of `groupBloomFilter`.
-Numeric probe values may use a different numeric type than the filter value type. They are converted with an accurate cast: non-representable values are reported as definitely absent, and `NULL` probe values are propagated to the result by the default nullable handling.
+Numeric probe values may use a different numeric type than the filter value type. They are converted with an accurate cast: non-representable values are reported as definitely absent, and `NULL` probe values are propagated to the result by the default nullable handling. For `Bool` filters, only numeric values exactly equal to `0` or `1` are representable.
     )";
     FunctionDocumentation::Syntax syntax_bloomFilterContains = "bloomFilterContains(bloom_filter, value)";
     FunctionDocumentation::Arguments arguments_bloomFilterContains = {

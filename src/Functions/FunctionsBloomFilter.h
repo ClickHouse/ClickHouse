@@ -94,6 +94,11 @@ public:
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
         DataTypePtr dispatch_probe_type = removeLowCardinalityAndNullable(arguments[1].type);
 
+        /// Preserve numeric identity instead of converting every nonzero probe to `true`.
+        const bool bloom_value_is_bool = isBool(dispatch_value_type);
+        if (bloom_value_is_bool)
+            dispatch_value_type = std::make_shared<DataTypeUInt8>();
+
         if (!canCastProbeType(arguments[1].type, dispatch_value_type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Conversion from {} to Bloom filter value type {} is not supported for function {}",
@@ -219,6 +224,14 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected value type {} for function {}",
                 value_type->getName(), getName());
+
+        if (bloom_value_is_bool)
+        {
+            const auto & values = assert_cast<const ColumnUInt8 &>(*casted_arguments[1].column).getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                if (values[i] > 1)
+                    vec_to[i] = 0;
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
             if ((*null_map)[i])

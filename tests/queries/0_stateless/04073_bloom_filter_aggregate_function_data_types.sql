@@ -174,3 +174,37 @@ SELECT bloomFilterContains(42, toUInt64(1)); -- { serverError ILLEGAL_TYPE_OF_AR
 -- bloomFilterContains with aggregate state from a different function must throw
 SELECT bloomFilterContains(sumState(number), toUInt64(1))
 FROM numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Numeric probes of `Bool` filters must preserve their value, including the `UInt8` cast path.
+WITH
+    (SELECT groupBloomFilterState(CAST(1 AS Bool))) AS true_bf,
+    (SELECT groupBloomFilterState(CAST(0 AS Bool))) AS false_bf
+SELECT
+    bloomFilterContains(true_bf, toUInt8(1)),
+    bloomFilterContains(true_bf, toUInt8(0)),
+    bloomFilterContains(false_bf, toUInt8(0)),
+    bloomFilterContains(false_bf, toUInt8(1)),
+    bloomFilterContains(true_bf, toUInt8(42)),
+    bloomFilterContains(true_bf, toUInt16(42)),
+    bloomFilterContains(true_bf, toInt64(-1)),
+    bloomFilterContains(true_bf, toFloat64(42)),
+    bloomFilterContains(false_bf, toFloat64(0.5)),
+    bloomFilterContains(true_bf, CAST(1 AS Bool));
+
+-- Check every `UInt8` probe and keep nullable numeric probes nullable.
+WITH
+    (SELECT groupBloomFilterState(CAST(1 AS Bool))) AS true_bf,
+    (SELECT groupBloomFilterState(CAST(0 AS Bool))) AS false_bf
+SELECT
+    countIf(bloomFilterContains(true_bf, toUInt8(number))),
+    countIf(bloomFilterContains(false_bf, toUInt8(number)))
+FROM numbers(256);
+
+WITH
+    (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([false, true]) AS value)) AS bf
+SELECT probe, bloomFilterContains(bf, probe)
+FROM
+(
+    SELECT arrayJoin(CAST([0, 1, 2, 42, 255, NULL], 'Array(Nullable(UInt8))')) AS probe
+)
+ORDER BY probe NULLS LAST;
