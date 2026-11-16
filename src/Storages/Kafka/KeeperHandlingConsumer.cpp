@@ -30,19 +30,18 @@ constexpr size_t MAX_ROUNDS_TO_YIELD_TO_LOCKLESS_REPLICA = 8;
 
 size_t parseDemandRetentionMs(const String & value)
 {
-    /// Retention = a few declared retry intervals; an unchanged demand past it means nobody
-    /// is requesting the partitions anymore. Value format: "<retry_interval_ms>:<counter>".
+    /// Retention = a few of the retry intervals the demand value declares; an unchanged
+    /// demand past it means nobody is requesting the partitions anymore.
     constexpr size_t demand_retention_factor = 3;
     constexpr size_t default_retention_ms = 1500;
-    constexpr size_t max_retention_ms = 180000;
+    constexpr size_t max_retention_ms = 1800000;
 
     const auto sep = value.find(':');
     if (sep == String::npos || sep == 0 || sep + 1 == value.size())
         return default_retention_ms;
     try
     {
-        const auto declared_ms = std::min<UInt64>(parse<UInt64>(value.substr(0, sep)), 60000);
-        return std::min(std::max<UInt64>(declared_ms, 1) * demand_retention_factor, max_retention_ms);
+        return std::min(std::max<UInt64>(parse<UInt64>(value.substr(0, sep)), 1) * demand_retention_factor, max_retention_ms);
     }
     catch (...) /// Ok: a malformed declared interval falls back to the default retention
     {
@@ -202,6 +201,7 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
     keeper = keeper_;
     tmp_locks_quota = 0;
     demand_published = false;
+    last_demand_time = {};
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;
     poll_count = 0;
@@ -312,8 +312,20 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
 void KeeperHandlingConsumer::markDemandInKeeper(size_t retry_interval_ms)
 {
     static std::atomic<UInt64> demand_counter{0};
+    const auto now = std::chrono::steady_clock::now();
+
+    /// Declare the measured retry interval (attempts include metadata fetches and event
+    /// polling beyond the scheduling delay); the first attempt falls back to the setting.
+    size_t declared_interval_ms = retry_interval_ms;
+    if (last_demand_time != std::chrono::steady_clock::time_point{})
+    {
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_demand_time).count();
+        declared_interval_ms = std::max<size_t>(retry_interval_ms, elapsed_ms);
+    }
+    last_demand_time = now;
+
     const auto demand_path = fs::path(keeper_path) / "replicas" / replica_name / "demand";
-    const auto value = fmt::format("{}:{}", retry_interval_ms, demand_counter.fetch_add(1) + 1);
+    const auto value = fmt::format("{}:{}", declared_interval_ms, demand_counter.fetch_add(1) + 1);
     const auto code = keeper->tryCreate(demand_path, value, zkutil::CreateMode::Ephemeral);
     if (code == Coordination::Error::ZNODEEXISTS)
         keeper->set(demand_path, value);

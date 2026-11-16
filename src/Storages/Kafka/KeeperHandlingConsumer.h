@@ -212,6 +212,9 @@ private:
     /// Whether this consumer currently keeps a demand node in Keeper.
     bool demand_published = false;
 
+    /// When this consumer last published a demand, to measure the actual retry interval.
+    std::chrono::steady_clock::time_point last_demand_time{};
+
     struct DemandState
     {
         String last_value;
