@@ -442,8 +442,9 @@ public:
 
     /// Creates the shared state of an adaptive aggregation over `producers` streams: their partition layout, the scope
     /// of the spill streams when the aggregation may spill, and the count bins of the top-K pruning when the
-    /// aggregation feeds a descending top-K.
-    AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers) const;
+    /// aggregation feeds a descending top-K. `process_list_element` is the query, whose reading progress tells how
+    /// many rows the aggregation can expect (see `AdaptiveAggregationSession::expectedRows`); it may be null.
+    AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers, QueryStatusPtr process_list_element = nullptr) const;
 
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the
     /// session with its count bins when the aggregation prunes by the top-K; the bins take the rows of
@@ -932,18 +933,21 @@ private:
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
-    /// The learning consume path of the adaptive aggregation, taken for a block that can push
-    /// the table past the freeze threshold: aggregates like `executeImpl`, but in slices, and
-    /// stops at the first row where the table stands at or past the threshold (the slicing
+    /// The learning consume path of the adaptive aggregation, taken for a block that can take
+    /// the table to a bound of `freeze_bounds`: aggregates like `executeImpl`, but in slices, and
+    /// stops at the first slice boundary where the table has reached a bound (the slicing
     /// gets it there with at most a slice of overshoot). Returns that boundary, or `row_end`
-    /// when the block finished with the table still below; the transition and the routing of
-    /// the rest of the block belong to the caller.
+    /// when the block finished with the table still learning; the transition and the routing of
+    /// the rest of the block belong to the caller. The table learned from `learned_rows` rows
+    /// before the block.
     size_t executeImplUntilAdaptiveFreeze(
         AggregatedDataVariants & result,
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
-        AggregateFunctionInstruction * aggregate_instructions) const;
+        AggregateFunctionInstruction * aggregate_instructions,
+        const AdaptiveFreezeBounds & freeze_bounds,
+        size_t learned_rows) const;
 
     /// Specialization for a particular value no_more_keys.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
@@ -1006,9 +1010,20 @@ private:
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
 
-    /// Whether a learning table reached a bound of the freeze: its key count or the bytes of its hash-table buffer (see
-    /// `AggregatedDataVariants::hashTableBufferBytes`).
-    bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const;
+    /// The freeze bounds of the producer's learning table for its current block (see `AdaptiveFreezeBounds`).
+    AdaptiveFreezeBounds adaptiveFreezeBounds(const AdaptiveAggregationProducer & adaptive) const;
+
+    /// The freeze bounds of a learning table for a block of `rows` rows that has to be taken in slices (see
+    /// `executeImplUntilAdaptiveFreeze`), or nothing when the block is aggregated whole.
+    std::optional<AdaptiveFreezeBounds> adaptiveSlicingFreezeBounds(
+        const AggregatedDataVariants & result,
+        const AdaptiveAggregationProducer * adaptive,
+        size_t rows,
+        bool all_keys_are_const) const;
+
+    /// Whether a learning table reached a bound of the freeze: one of its key counts (see `AdaptiveFreezeBounds`) or
+    /// the bytes of its hash-table buffer (see `AggregatedDataVariants::hashTableBufferBytes`).
+    bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const;
 
     /// Whether the top-K pruning can take the adaptive merge of an aggregation in which no producer froze (see
     /// `mergePrunesByTopK`): only where it skips the merge of heavy states.

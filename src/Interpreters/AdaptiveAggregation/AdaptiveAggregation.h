@@ -61,9 +61,15 @@ inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 struct AdaptiveAggregationSession;
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase, its staged records, and the
 /// per-block staging of the missed rows.
 struct AdaptiveAggregationProducer;
+
+/// The key counts at which the learning table of a producer freezes, as they stand for one block of the producer.
+class AdaptiveFreezeBounds;
 
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;

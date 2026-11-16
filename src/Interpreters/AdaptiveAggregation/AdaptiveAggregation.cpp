@@ -9,8 +9,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveFreezeBounds.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/ProcessList.h>
 
 namespace ProfileEvents
 {
@@ -166,7 +168,33 @@ void Aggregator::accountStagedBatch(
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, staged.key_bytes);
 }
 
-AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const
+std::optional<size_t> AdaptiveAggregationSession::expectedRows() const
+{
+    if (!process_list_element)
+        return {};
+    const auto progress = process_list_element->getProgressIn();
+    if (!progress.total_rows_to_read || !progress.read_rows)
+        return {};
+    const size_t received = received_rows.load(std::memory_order_relaxed);
+    if (progress.read_rows >= progress.total_rows_to_read)
+        return received;
+    return static_cast<size_t>(static_cast<UInt128>(received) * progress.total_rows_to_read / progress.read_rows);
+}
+
+std::optional<size_t> AdaptiveAggregationProducer::expectedRows() const
+{
+    const auto expected_rows = session->expectedRows();
+    if (!expected_rows)
+        return {};
+    /// The producers share the rows about evenly: the reading hands its ranges out to the streams as they ask. The
+    /// share is taken among the producers that received rows so far. Rows count as read before they reach the
+    /// aggregation, so while some producers still wait for their first block, the rows received are those of the
+    /// others only, and a share among all producers would come out too small.
+    const size_t started = std::max<size_t>(1, session->started_producers.load(std::memory_order_relaxed));
+    return *expected_rows / started;
+}
+
+AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers, QueryStatusPtr process_list_element) const
 {
     const auto layout = AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by);
     TemporaryDataOnDiskScopePtr spill_scope;
@@ -180,6 +208,8 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
     }
     return std::make_shared<AdaptiveAggregationSession>(
         producers,
+        adaptiveEarlyFreezeThreshold(params.adaptive_aggregator_freeze_threshold, producers),
+        std::move(process_list_element),
         layout,
         std::move(spill_scope),
         params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>() : nullptr);
@@ -206,7 +236,7 @@ bool Aggregator::advanceAdaptiveProducer(
     if (adaptive.isLearning())
     {
         std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows += rows;
-        if (adaptiveFreezeBoundReached(result))
+        if (adaptiveFreezeBoundReached(result, adaptive))
             freezeAdaptive(result, adaptive);
     }
     return true;
@@ -216,12 +246,38 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
 {
     /// `<=` keeps the first block sliced even under a zero threshold, where the slicer freezes the table at its
     /// first row.
-    return std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows
-        <= adaptive_learning_slicing_row_multiple * params.adaptive_aggregator_freeze_threshold;
+    return adaptive.learnedRows() <= adaptive_learning_slicing_row_multiple * params.adaptive_aggregator_freeze_threshold;
 }
 
-bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
+AdaptiveFreezeBounds Aggregator::adaptiveFreezeBounds(const AdaptiveAggregationProducer & adaptive) const
 {
+    return AdaptiveFreezeBounds(
+        params.adaptive_aggregator_freeze_threshold,
+        adaptive.session->early_freeze_threshold,
+        adaptive.expectedRows(),
+        adaptive.received_rows,
+        adaptive.session->layout.numPartitions());
+}
+
+std::optional<AdaptiveFreezeBounds> Aggregator::adaptiveSlicingFreezeBounds(
+    const AggregatedDataVariants & result, const AdaptiveAggregationProducer * adaptive, size_t rows, bool all_keys_are_const) const
+{
+    if (!adaptive || !adaptive->isLearning() || !result.isConvertibleToTwoLevel() || !adaptiveLearningSlices(*adaptive))
+        return {};
+    /// A block of constant keys adds at most one key, and the check between blocks handles it.
+    if (all_keys_are_const)
+        return {};
+    const auto bounds = adaptiveFreezeBounds(*adaptive);
+    if (!bounds.reachableWithin(result.sizeWithoutOverflowRow(), adaptive->learnedRows(), rows))
+        return {};
+    return bounds;
+}
+
+bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result, const AdaptiveAggregationProducer & adaptive) const
+{
+    if (!result.isConvertibleToTwoLevel())
+        return false;
+
     /// The byte twin of the key-count bound is the table's hash-table buffer: the cells that every probe walks, hits and
     /// misses alike, so it keeps a table with wide cells cache-resident. The memory of the states is no bound: it grows
     /// through the keys that the table already holds, which a freeze does not stop, and freezing a few groups with
@@ -229,10 +285,11 @@ bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & resul
     /// lands on a block boundary; the mid-block freeze crossing checks only the key count. The memory of the whole
     /// aggregation is no bound either: it sums the allocations of every thread, including the blocks they are
     /// processing, so the growth of some tables would freeze the others.
-    const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-    return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
-        && result.isConvertibleToTwoLevel();
+    if (params.adaptive_aggregator_freeze_threshold_bytes
+        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes)
+        return true;
+
+    return adaptiveFreezeBounds(adaptive).reached(result.sizeWithoutOverflowRow(), adaptive.learnedRows());
 }
 
 bool Aggregator::adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const
