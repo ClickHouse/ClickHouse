@@ -38,17 +38,17 @@ namespace
             return std::make_shared<UTCTimestampTransform>(name, to_utc);
         }
 
-        String getName() const override { return function_name; }
+        [[nodiscard]] String getName() const override { return function_name; }
 
-        size_t getNumberOfArguments() const override { return 2; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        String getSignatureString() const override
+        [[nodiscard]] String getSignatureString() const override
         {
             return
                 "(DateTime, const String) -> DateTime"
@@ -71,19 +71,19 @@ namespace
             }
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].get());
             return IFunction::getReturnTypeImpl(arguments);
         }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].type.get());
             return IFunction::getReturnTypeImpl(arguments);
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const ColumnWithTypeAndName & arg1 = arguments[0];
             const ColumnWithTypeAndName & arg2 = arguments[1];
