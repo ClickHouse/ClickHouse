@@ -1755,6 +1755,10 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
+        auto metadata = tryGetFilesMetadata();
+        if (!metadata)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata old_metadata(*metadata_snapshot); /// NOLINT
         SettingsChanges * old_settings = nullptr;
@@ -1765,6 +1769,7 @@ void StorageObjectStorageQueue::alter(
                 setting.name = normalizeSetting(setting.name);
 
             /// Take the values from keeper, table definition can be outdated.
+            metadata->syncChangeableSettingsFromKeeper();
             auto settings_in_effect = getSettings();
             for (auto & setting : *old_settings)
                 if (ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name))
@@ -1820,10 +1825,6 @@ void StorageObjectStorageQueue::alter(
 
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
-
-        auto metadata = tryGetFilesMetadata();
-        if (!metadata)
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
         const auto mode = metadata->getTableMetadata().getMode();
         const size_t dependencies_count = getDependencies();

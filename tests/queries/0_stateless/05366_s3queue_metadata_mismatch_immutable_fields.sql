@@ -167,6 +167,21 @@ DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tq_s2; ATTACH TABLE {CLICKHOUSE_
 SELECT table, value FROM system.s3_queue_settings WHERE database = currentDatabase() || '_1' AND table IN ('tq_s1', 'tq_s2') AND name = 'after_processing' ORDER BY table;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
+-- Set `delete` directly in keeper, as another server would, while the definition and the copy of this server have
+-- `keep`. An explicit `keep` must still reach keeper, by a `MODIFY` and by a `RESET`.
+CREATE TABLE tq_k (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_k/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_k', after_processing = 'keep';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"keep"', '"after_processing":"delete"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+ALTER TABLE tq_k MODIFY SETTING after_processing = 'keep';
+SELECT JSONExtractString(value, 'after_processing'), (SELECT value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table = 'tq_k' AND name = 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"after_processing":"keep"', '"after_processing":"delete"') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+ALTER TABLE tq_k RESET SETTING after_processing;
+SELECT JSONExtractString(value, 'after_processing'), (SELECT value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table = 'tq_k' AND name = 'after_processing') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+-- An `ALTER` of another setting keeps what another server set in keeper, for any setting stored there.
+INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '"loading_retries":10', '"loading_retries":5') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+ALTER TABLE tq_k MODIFY SETTING polling_max_timeout_ms = 2000;
+SELECT JSONExtractUInt(value, 'loading_retries'), (SELECT value FROM system.s3_queue_settings WHERE database = currentDatabase() AND table = 'tq_k' AND name = 'loading_retries') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_k' AND name = 'metadata';
+DROP TABLE tq_k;
+
 -- Change the source in keeper: `tq_b` must still attach, with a warning.
 INSERT INTO system.zookeeper (name, path, value) SELECT name, path, replaceOne(value, '05366_shared', '05366_other') FROM system.zookeeper WHERE path = '/clickhouse/' || currentDatabase() || '/05366_shared' AND name = 'metadata';
 DETACH TABLE tq_b; ATTACH TABLE tq_b;

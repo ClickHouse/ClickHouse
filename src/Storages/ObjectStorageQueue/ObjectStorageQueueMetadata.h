@@ -119,6 +119,7 @@ public:
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
     void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
+    void syncChangeableSettingsFromKeeper();
 
     /// Get object storage type: s3, azure, local, etc.
     ObjectStorageType getType() const { return storage_type; }

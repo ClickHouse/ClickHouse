@@ -17,5 +17,8 @@ tq_b	1
 keep
 tq_s1	keep
 tq_s2	keep
+keep	keep
+keep	keep
+5	5
 1
 http://localhost:11111	05366_shared/*
