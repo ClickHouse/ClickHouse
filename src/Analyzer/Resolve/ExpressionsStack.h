@@ -21,8 +21,8 @@ public:
 
         if (const auto * function = node->as<FunctionNode>())
         {
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
-                ++aggregate_functions_counter;
+            if (isAggregateOrGroupingFunction(*function))
+                ++aggregate_or_grouping_functions_counter;
         }
 
         expressions.emplace_back(node);
@@ -45,19 +45,19 @@ public:
 
         if (const auto * function = top_expression->as<FunctionNode>())
         {
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
-                --aggregate_functions_counter;
+            if (isAggregateOrGroupingFunction(*function))
+                --aggregate_or_grouping_functions_counter;
         }
 
         expressions.pop_back();
     }
 
-    [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
+    [[nodiscard]] [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
         return expressions.front();
     }
 
-    const QueryTreeNodePtr & getTop() const
+    [[nodiscard]] const QueryTreeNodePtr & getTop() const
     {
         return expressions.back();
     }
@@ -69,17 +69,25 @@ public:
         return expressions[n];
     }
 
-    [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
+    [[nodiscard]] [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);
     }
 
-    bool hasAggregateFunction() const
+    /** Returns true if the stack contains an aggregate or `grouping` function.
+      *
+      * It is used to decide whether an expression equal to a GROUP BY key must be converted
+      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate functions are
+      * computed before the nullability is applied to the keys, and arguments of the `grouping`
+      * function only identify GROUP BY keys and are compared with them in their original form
+      * by `GroupingFunctionsResolvePass`.
+      */
+    [[nodiscard]] bool hasAggregateOrGroupingFunction() const
     {
-        return aggregate_functions_counter > 0;
+        return aggregate_or_grouping_functions_counter > 0;
     }
 
-    QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
+    [[nodiscard]] QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
     {
         auto expression_it = alias_name_to_expressions.find(alias);
         if (expression_it == alias_name_to_expressions.end())
@@ -93,12 +101,12 @@ public:
         return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
     }
 
-    [[maybe_unused]] size_t size() const
+    [[nodiscard]] [[maybe_unused]] size_t size() const
     {
         return expressions.size();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return expressions.empty();
     }
@@ -120,7 +128,7 @@ public:
         }
     }
 
-    [[maybe_unused]] String dump() const
+    [[nodiscard]] [[maybe_unused]] String dump() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);
@@ -129,8 +137,19 @@ public:
     }
 
 private:
+    static bool isAggregateOrGroupingFunction(const FunctionNode & function)
+    {
+        /// A window function is evaluated after aggregation: its arguments and window specification see GROUP BY keys
+        /// already converted to Nullable. `isWindowFunction` tests only the window child, so it holds before resolution.
+        /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
+        /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
+        return (AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
+                && !function.isWindowFunction())
+            || function.getFunctionName() == "grouping";
+    }
+
     QueryTreeNodes expressions;
-    size_t aggregate_functions_counter = 0;
+    size_t aggregate_or_grouping_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 

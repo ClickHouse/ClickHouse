@@ -1,0 +1,17 @@
+---
+title: '运行 ClickHouse 需要哪些第三方依赖？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/dependencies
+description: 'ClickHouse 是自包含的，没有运行时依赖'
+doc_type: 'reference'
+keywords: ['依赖项', '第三方']
+---
+
+ClickHouse 没有任何运行时依赖。它以单个二进制应用程序的形式分发，完全自包含。这个应用程序提供集群所需的全部功能：处理查询、充当集群中的工作节点、作为实现 RAFT 共识算法的协调系统，以及作为客户端或本地查询引擎。
+
+这种独特的架构选择使其有别于其他系统。其他系统通常会设置专门的前端、后端或聚合节点，而这种设计让部署、集群管理和监控都更加简单。
+
+<Info>
+  很多年前，ClickHouse 曾经需要依赖 ZooKeeper 来协调分布式集群。如今已不再需要；虽然我们仍然支持使用 ZooKeeper，但已不再推荐。
+</Info>

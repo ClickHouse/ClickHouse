@@ -18,8 +18,13 @@ public:
     const String & getHost() const { return host; }
     int getPort() const { return port; }
 
-    std::shared_ptr<arrow::flight::FlightClient> getClient() const;
-    std::shared_ptr<const arrow::flight::FlightCallOptions> getOptions() const;
+    /// `timeout_sec` bounds the handshake this may have to run; zero means no deadline. The client
+    /// itself carries none, so an RPC is bounded only by the options getCallOptions returns.
+    std::shared_ptr<arrow::flight::FlightClient> getClient(UInt64 timeout_sec) const;
+
+    /// By value: the connection's shared options carry only the authentication header, while the
+    /// deadline differs per request.
+    arrow::flight::FlightCallOptions getCallOptions(UInt64 timeout_sec) const;
 
     /// Makes another connection with the same parameters.
     std::shared_ptr<ArrowFlightConnection> clone() const;
@@ -28,7 +33,10 @@ public:
     std::shared_ptr<ArrowFlightConnection> cloneWithHostAndPort(const String & host_, int port_) const;
 
 private:
-    void connect() const TSA_REQUIRES(mutex);
+    /// Authenticates without holding `mutex`, so a query waits for its own deadline rather than for
+    /// another query's handshake. Racing callers each build a client and the first to publish wins.
+    void connect(arrow::flight::TimeoutDuration timeout) const;
+    static arrow::flight::TimeoutDuration toTimeoutDuration(UInt64 timeout_sec);
     static String loadCertificate(const String & path);
 
     ArrowFlightConnection(const ArrowFlightConnection & src);

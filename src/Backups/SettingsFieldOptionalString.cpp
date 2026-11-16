@@ -13,6 +13,8 @@ namespace ErrorCodes
 
 SettingFieldOptionalString::operator Field() const { return Field(value.value_or("")); }
 
+String SettingFieldOptionalString::toString() const { return value.value_or(""); }
+
 SettingFieldOptionalString::SettingFieldOptionalString(const Field & field)
 {
     if (field.getType() == Field::Types::Null)

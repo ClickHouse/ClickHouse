@@ -1,0 +1,23 @@
+---
+description: 'توثيق لنوع البيانات Nothing'
+sidebarTitle: 'Nothing'
+slug: /sql-reference/data-types/special-data-types/nothing
+title: 'Nothing'
+doc_type: 'reference'
+---
+
+الغرض الوحيد من نوع البيانات هذا هو تمثيل الحالات التي لا يُتوقع فيها وجود قيمة. لذلك، لا يمكنك إنشاء قيمة من النوع `Nothing`.
+
+على سبيل المثال، القيمة الحرفية [NULL](/ar/reference/syntax#null) تكون من النوع `Nullable(Nothing)`. اطّلع على المزيد حول [Nullable](/ar/reference/data-types/nullable).
+
+يمكن أيضًا استخدام النوع `Nothing` للدلالة على المصفوفات الفارغة:
+
+```sql
+SELECT toTypeName(array())
+```
+
+```text
+┌─toTypeName(array())─┐
+│ Array(Nothing)      │
+└─────────────────────┘
+```

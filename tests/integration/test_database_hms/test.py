@@ -10,7 +10,6 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["config.xml"],
             user_configs=["users.xml"],
             stay_alive=True,
             with_hms_catalog=True,
@@ -180,7 +179,7 @@ def test_check_database(started_cluster):
 
     password = os.environ.get('MINIO_PASSWORD', '[HIDDEN]')
 
-    node.query(f"DROP DATABASE IF EXISTS test_hms_check_db")
+    node.query("DROP DATABASE IF EXISTS test_hms_check_db")
 
     try:
         node.query(f"""
@@ -192,11 +191,11 @@ def test_check_database(started_cluster):
         node.query("CHECK DATABASE test_hms_check_db")
 
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
 
         assert "fault when checking database" in node.query_and_get_error(
-            f"CHECK DATABASE test_hms_check_db"
+            "CHECK DATABASE test_hms_check_db"
         )
     except Exception as e:
         if "compiled without USE_HIVE" in str(e) or "compiled without USE_AVRO" in str(e):
@@ -204,5 +203,5 @@ def test_check_database(started_cluster):
         if "Invalid URL format" in str(e):
             pass
     finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
+        node.query("SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
         node.query("DROP DATABASE IF EXISTS test_hms_check_db")

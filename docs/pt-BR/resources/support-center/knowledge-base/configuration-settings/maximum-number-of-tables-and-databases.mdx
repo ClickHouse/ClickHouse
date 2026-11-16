@@ -1,0 +1,17 @@
+---
+title: Limite máximo recomendado de bancos de dados, tabelas, partições e partes no ClickHouse
+description: "Conheça os limites máximos recomendados para bancos de dados, tabelas, partições e partes em um cluster do ClickHouse para garantir o desempenho ideal."
+date: 2021-09-01
+tags: ['Desempenho e otimização', 'Implantações e escalabilidade']
+keywords: ['limites']
+---
+
+<div id="recommended-maximum-databases-tables-partitions-and-parts-in-clickhouse">
+  ## Máximo recomendado de bancos de dados, tabelas, partições e partes no ClickHouse
+</div>
+
+Recomendamos, no máximo, 1000 bancos de dados, 5000 tabelas, 50000 partições e 100000 partes em um serviço, considerando todos os bancos de dados.
+
+No ClickHouse, bancos de dados funcionam mais como um *espaço de nomes* e não afetam o desempenho; 1000 bancos de dados é apenas uma diretriz aproximada. No entanto, o número de tabelas afeta o tempo de inicialização do serviço, por isso recomendamos limitar a quantidade de tabelas ou partições. O ClickHouse exibe um aviso quando esses limites são atingidos.
+
+Esses limites também se aplicam ao ClickHouse Cloud.

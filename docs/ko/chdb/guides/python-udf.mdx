@@ -1,0 +1,396 @@
+---
+title: 'Python 사용자 정의 함수(UDF)'
+sidebar_label: 'Python UDF'
+sidebar_position: 4
+sidebarTitle: 'Python UDF'
+slug: /chdb/guides/python-udf
+description: '형식이 지정된 인수, NULL 처리 및 예외 제어를 지원하는 네이티브 Python UDF를 chDB에서 생성합니다.'
+keywords: ['chdb', 'udf', 'python', 'user-defined function']
+doc_type: 'guide'
+---
+
+chDB에서는 Python 함수를 SQL로 호출할 수 있는 UDF로 등록할 수 있습니다. 이 함수들은 네이티브 인프로세스 방식으로 실행되므로 하위 프로세스를 생성하거나 직렬화 오버헤드가 발생하지 않습니다. 함수는 타입 안전성을 보장하고 Python 어노테이션을 기반으로 한 자동 유형 추론을 지원하며, NULL 및 예외 처리를 구성할 수 있습니다.
+
+<div id="quick-start">
+  ## Quick Start
+</div>
+
+```python
+from chdb import query, func
+from chdb.sqltypes import INT64
+
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+result = query("SELECT add(2, 3)")
+print(result)  # 5
+```
+
+<Note>
+  이 가이드의 예시에서는 기본 CSV 출력 형식으로 `query()`를 실행합니다. 인라인 주석은 논리적인 결과 값을 보여 줍니다. 원시 출력에서는 `NULL`이 `\N`으로 표시되며, 문자열 및 날짜 값에는 CSV 따옴표 처리가 적용됩니다(예: `"Hello, world!"`).
+</Note>
+
+<div id="registration-methods">
+  ## 등록 방법
+</div>
+
+<div id="func-decorator">
+  ### `@func` 데코레이터
+</div>
+
+UDF를 등록하는 가장 간단한 방법입니다. 함수의 `__name__`이 SQL 함수 이름으로 사용됩니다.
+
+```python
+from chdb import func
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+```
+
+데코레이터가 적용된 함수는 일반 Python 함수처럼 호출할 수 있습니다:
+
+```python
+add(2, 3)       # 5 (Python call)
+query("SELECT add(2, 3)")  # 5 (SQL call)
+```
+
+<div id="create-function">
+  ### `create_function`
+</div>
+
+호출 가능한 모든 항목(lambda, 함수, 메서드)을 명시적인 이름으로 등록합니다:
+
+```python
+from chdb import create_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+query("SELECT strlen('hello')")  # 5
+
+create_function("double", lambda x: x * 2, arg_types=[INT64], return_type=INT64)
+query("SELECT double(21)")  # 42
+```
+
+<div id="drop-function">
+  ### `drop_function`
+</div>
+
+등록된 UDF를 제거합니다. 등록되지 않은 이름을 삭제해도 아무 작업도 수행되지 않으므로, 항상 안전하게 호출할 수 있습니다:
+
+```python
+from chdb import drop_function
+
+drop_function("strlen")
+# query("SELECT strlen('hello')")  # Error: function not found
+```
+
+<Note>
+  이미 등록된 이름을 다시 등록하면 오류가 발생합니다. UDF는 자동으로 대체되지 않습니다. 예를 들어 노트북 셀을 다시 실행할 때 함수를 다시 등록하려면 먼저 `drop_function(name)`을 호출하십시오.
+</Note>
+
+<div id="type-system">
+  ## 유형 시스템
+</div>
+
+<div id="available-types">
+  ### 사용 가능한 타입
+</div>
+
+모든 타입은 `chdb.sqltypes`에서 import할 수 있습니다:
+
+```python
+from chdb.sqltypes import (
+    # Boolean
+    BOOL,
+    # Signed integers
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    # Unsigned integers
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    # Floating point
+    FLOAT32, FLOAT64,
+    # String
+    STRING,
+    # Date and time
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="specifying-types">
+  ### 타입 지정
+</div>
+
+타입은 다음 네 가지 방식으로 지정할 수 있습니다.
+
+| 방법                | 예시                                     | 설명                                                            |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------- |
+| `ChdbType` 상수     | `INT64`, `STRING`                      | `chdb.sqltypes`에서 가져옵니다                                       |
+| ClickHouse 타입 문자열 | `"Int64"`, `"String"`                  | 표준 ClickHouse 타입 이름                                           |
+| 매개변수화된 문자열        | `"DateTime('UTC')"`, `"DateTime64(6)"` | 매개변수가 있는 타입에 사용                                               |
+| Python 타입         | `int`, `str`, `float`                  | `arg_types`/`return_type`에 직접 전달하거나 함수 시그니처의 타입 어노테이션으로 사용합니다 |
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# All equivalent:
+create_function("f1", lambda x: x * 2, arg_types=[INT64], return_type=INT64)
+create_function("f2", lambda x: x * 2, arg_types=["Int64"], return_type="Int64")
+create_function("f3", lambda x: x * 2, arg_types=[int], return_type=int)
+
+@func()
+def f4(x: int) -> int:
+    return x * 2
+```
+
+<div id="automatic-type-inference">
+  ### 자동 유형 추론
+</div>
+
+`arg_types` 또는 `return_type`을 생략하면 chDB가 Python 타입 어노테이션을 기반으로 타입을 추론합니다:
+
+| Python 타입           | ClickHouse 타입   |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+```python
+@func()
+def process(name: str, age: int) -> str:
+    return f"{name} is {age} years old"
+
+# Equivalent to:
+# @func([STRING, INT64], STRING)
+```
+
+<Note>
+  `arg_types`를 명시적으로 지정하는 경우 **모든** 매개변수를 포함해야 합니다. 일부 매개변수만 명시적으로 지정하고 나머지는 추론하도록 하는 방식은 지원되지 않습니다. 이는 `create_function`과 `@func` 데코레이터 모두에 적용됩니다. 모든 매개변수의 타입을 지정하거나, 모두 생략하여 chDB가 어노테이션을 통해 추론하도록 하십시오.
+</Note>
+
+반환 타입은 항상 필요합니다. `return_type`을 생략하고 함수에 반환 어노테이션도 없으면 등록에 실패합니다. 반면 인수 타입은 선택 사항입니다. 명시적 타입이나 어노테이션이 없는 매개변수는 지원되는 모든 입력 타입을 동적으로 허용합니다.
+
+<div id="null-handling">
+  ## NULL 처리
+</div>
+
+`on_null` 매개변수는 입력 인수 중 하나라도 NULL인 경우의 동작을 제어합니다.
+
+| 값              | 동작                                          |
+| -------------- | ------------------------------------------- |
+| `"skip"` (기본값) | 함수를 호출하지 않고 즉시 NULL을 반환합니다                  |
+| `"pass"`       | NULL을 Python `None`으로 변환한 후 함수를 정상적으로 호출합니다 |
+
+enum을 사용할 수도 있습니다: `chdb.NullHandling.SKIP` / `chdb.NullHandling.PASS`.
+
+<div id="null-skip">
+  ### 예시: default (건너뜀)
+</div>
+
+```python
+@func(return_type="Int64")
+def increment(x: int) -> int:
+    return x + 1
+
+query("SELECT increment(NULL)")  # NULL
+query("SELECT increment(5)")     # 6
+```
+
+<div id="null-pass">
+  ### 예시: NULL을 `None`으로 전달하기
+</div>
+
+```python
+@func(return_type="Int64", on_null="pass")
+def null_to_zero(x):
+    return 0 if x is None else x + 1
+
+query("SELECT null_to_zero(NULL)")  # 0
+query("SELECT null_to_zero(5)")     # 6
+```
+
+<div id="null-multiple-args">
+  ### 예시: 여러 인수
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_null="pass")
+def add_or_zero(a, b):
+    return (a or 0) + (b or 0)
+
+query("SELECT add_or_zero(NULL, 5)")    # 5
+query("SELECT add_or_zero(NULL, NULL)") # 0
+query("SELECT add_or_zero(3, 7)")       # 10
+```
+
+<div id="exception-handling">
+  ## 예외 처리
+</div>
+
+`on_error` 매개변수는 Python 함수에서 예외가 발생할 때의 동작을 제어합니다.
+
+| 값                   | 동작                         |
+| ------------------- | -------------------------- |
+| `"propagate"` (기본값) | 예외를 SQL 오류로 발생시킵니다         |
+| `"ignore"`          | 예외를 처리하고 해당 행에 NULL을 반환합니다 |
+
+enum도 사용할 수 있습니다: `chdb.ExceptionHandling.PROPAGATE` / `chdb.ExceptionHandling.IGNORE`.
+
+<div id="exception-propagate">
+  ### 예시: default (전파)
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+query("SELECT divide(10, 2)")  # 5
+query("SELECT divide(1, 0)")   # Error: ZeroDivisionError
+```
+
+<div id="exception-ignore">
+  ### 예시: 오류 무시하기
+</div>
+
+```python
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+query("SELECT safe_divide(10, 2)")  # 5
+query("SELECT safe_divide(1, 0)")   # NULL
+```
+
+<div id="combining-null-and-exception">
+  ## NULL 및 예외 처리 함께 사용하기
+</div>
+
+`on_null` 및 `on_error` 옵션을 함께 사용할 수 있습니다.
+
+| on&#95;null | on&#95;error  | NULL 입력        | 예외 |
+| ----------- | ------------- | -------------- | --------- |
+| `"skip"`    | `"propagate"` | NULL 반환        | 오류 발생     |
+| `"skip"`    | `"ignore"`    | NULL 반환        | NULL 반환   |
+| `"pass"`    | `"propagate"` | `None`을 인수로 호출 | 오류 발생     |
+| `"pass"`    | `"ignore"`    | `None`을 인수로 호출 | NULL 반환   |
+
+```python
+@func(
+    arg_types=["Int64", "Int64"],
+    return_type="Int64",
+    on_null="pass",
+    on_error="ignore",
+)
+def robust_divide(a, b):
+    if a is None or b is None:
+        return -1
+    return a // b
+
+query("SELECT robust_divide(10, 2)")     # 5
+query("SELECT robust_divide(NULL, 2)")   # -1
+query("SELECT robust_divide(1, 0)")      # NULL (exception caught)
+```
+
+<div id="datetime-and-timezone">
+  ## DateTime 및 시간대 지원
+</div>
+
+UDF는 시간대를 지원하는 날짜 및 시간 타입을 완벽하게 지원합니다.
+
+<div id="date-types">
+  ### Date 타입
+</div>
+
+```python
+from datetime import date, timedelta
+
+@func()
+def next_day(d: date) -> date:
+    return d + timedelta(days=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+query("SELECT next_day(toDate('2024-06-15'))")  # 2024-06-16
+query("SELECT get_year(toDate('2024-06-15'))")  # 2024
+```
+
+<div id="datetime-with-timezones">
+  ### 시간대가 있는 DateTime
+</div>
+
+```python
+from datetime import timedelta
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))")  # 2024-01-01 13:00:00
+```
+
+<div id="datetime64">
+  ### DateTime64(고정밀도)
+</div>
+
+`DATETIME64`의 기본 scale은 6(마이크로초)입니다:
+
+```python
+from datetime import timedelta
+
+@func(arg_types=["DateTime64(6, 'UTC')"], return_type="DateTime64(6, 'UTC')")
+def add_microsecond(dt):
+    return dt + timedelta(microseconds=1)
+
+query("SELECT add_microsecond(toDateTime64('2024-01-01 12:00:00.000000', 6, 'UTC'))")  # 2024-01-01 12:00:00.000001
+```
+
+<Note>
+  * 입력 `DateTime`/`DateTime64` 값에는 ClickHouse의 시간대 정보가 포함됩니다
+  * 출력 `datetime` 객체는 시간대 정보를 유지합니다
+  * 시간대 변환은 자동으로 처리됩니다
+</Note>
+
+<div id="using-udfs-with-sessions">
+  ## 세션에서 UDF 사용하기
+</div>
+
+UDF는 전역으로 등록되며 동일한 프로세스 내의 모든 세션에서 사용할 수 있습니다:
+
+```python
+from chdb import session as chs, func
+from chdb.sqltypes import INT64
+
+@func([INT64], INT64)
+def double(x):
+    return x * 2
+
+sess = chs.Session()
+sess.query("CREATE TABLE t (x Int64) ENGINE = Memory")
+sess.query("INSERT INTO t VALUES (1), (2), (3)")
+result = sess.query("SELECT double(x) FROM t ORDER BY x", "CSV")
+print(result)
+# 2
+# 4
+# 6
+```

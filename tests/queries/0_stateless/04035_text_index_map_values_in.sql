@@ -1,6 +1,5 @@
 -- Tests that text indexes built on mapValues(m) work with the IN operator.
-
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

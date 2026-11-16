@@ -1,5 +1,5 @@
 -- Tags: no-random-settings, no-parallel-replicas
-set enable_analyzer=1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test

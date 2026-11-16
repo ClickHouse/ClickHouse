@@ -10,7 +10,7 @@ CH_CLIENT="$CLICKHOUSE_CLIENT --allow_merge_tree_settings --allow_experimental_d
 
 function test()
 {
-    $CH_CLIENT -q "create table test (id UInt64, sum AggregateFunction(sum, UInt64), d Dynamic) engine=AggregatingMergeTree() order by id settings $1;"
+    $CH_CLIENT -q "create table test (id UInt64, sum AggregateFunction(sum, UInt64), d Dynamic) engine=AggregatingMergeTree() order by id settings allow_dimensions_outside_sorting_key=1, $1;"
     $CH_CLIENT -q "system stop merges test"
     $CH_CLIENT -q "insert into test select number, sumState(1::UInt64), number from numbers(100000) group by number"
     $CH_CLIENT -q "insert into test select number, sumState(1::UInt64), 'str_' || toString(number) from numbers(50000, 100000) group by number"

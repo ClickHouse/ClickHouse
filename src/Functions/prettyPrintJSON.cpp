@@ -18,6 +18,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/error/en.h>
 
+#include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
+
 namespace DB
 {
 
@@ -30,21 +32,28 @@ namespace ErrorCodes
 namespace
 {
 
+/// rapidjson types whose internal stacks and output buffer are accounted against the memory
+/// tracker, so a pathological input cannot allocate without bound (see RapidJSONMemoryTrackerAllocator).
+using TrackedStringBuffer = rapidjson::GenericStringBuffer<rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
+using TrackedPrettyWriter
+    = rapidjson::PrettyWriter<TrackedStringBuffer, rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
+using TrackedReader = rapidjson::GenericReader<rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
+
 class FunctionPrettyPrintJSON : public IFunction
 {
 public:
     static constexpr auto name = "prettyPrintJSON";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrettyPrintJSON>(); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"json", &isString, nullptr, "String"}
@@ -57,7 +66,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col)
@@ -85,21 +94,23 @@ public:
             /// Since RapidJSON uses '\0' as end-of-stream char in its stream abstraction,
             /// we have to default to this check to prevent silent truncation of the input
             /// unescaped '\0' is not valid in JSON strings anyway
-            if (str_view.find('\0') != std::string_view::npos)
+            if (str_view.contains('\0'))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid JSON string in function {}: embedded NULL byte",
                     getName());
 
-            rapidjson::StringBuffer buffer;
-            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+            TrackedStringBuffer buffer;
+            TrackedPrettyWriter writer(buffer);
             writer.SetIndent(' ', indent_count);
 
             /// Stream JSON directly from Reader to PrettyWriter without building
             /// a DOM. Both Reader (with kParseIterativeFlag) and PrettyWriter use
-            /// heap-allocated stacks, so arbitrarily deep nesting is safe.
+            /// heap-allocated stacks, so arbitrarily deep nesting is safe. The stacks and the
+            /// output buffer are accounted against the memory tracker, so an input that would
+            /// produce an enormous output is rejected with MEMORY_LIMIT_EXCEEDED.
             rapidjson::MemoryStream ms(str_view.data(), str_view.size());
-            rapidjson::Reader reader;
+            TrackedReader reader;
             auto parse_result = reader.Parse(ms, writer);
 
             if (parse_result.IsError())
@@ -134,19 +145,14 @@ Returns a pretty-printed version of a JSON string with newlines and indentation 
             "Simple object",
             R"(SELECT prettyPrintJSON('{"a":1,"b":"hello"}');)",
             R"(
-{
-    "a": 1,
-    "b": "hello"
-}
+{\n    "a": 1,\n    "b": "hello"\n}
             )"
         },
         {
             "Custom indent",
             R"(SELECT prettyPrintJSON('{"a":1}', 8);)",
             R"(
-{
-        "a": 1
-}
+{\n        "a": 1\n}
             )"
         }
     };

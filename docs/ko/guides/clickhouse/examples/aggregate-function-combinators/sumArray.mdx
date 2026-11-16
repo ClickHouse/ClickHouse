@@ -1,0 +1,62 @@
+---
+slug: '/examples/aggregate-function-combinators/sumArray'
+title: 'sumArray'
+description: 'sumArray combinator를 사용하는 예시'
+keywords: ['sum', '배열', 'combinator', '예시', 'sumArray']
+sidebarTitle: 'sumArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`배열`](/ko/reference/functions/aggregate-functions/combinators#-array) 조합자는
+[`sum`](/ko/reference/functions/aggregate-functions/sum)
+함수에 적용할 수 있으며, `sumArray`
+집계 조합자 함수를 사용해 배열의 모든 요소 합계를 계산합니다.
+
+`sumArray` 함수는 데이터셋의 여러 배열에 있는
+모든 요소의 총합을 계산해야 할 때 유용합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 `sumArray`의 작동 방식을 보여주기 위해 서로 다른 제품
+카테고리의 일일 판매량 샘플 데이터셋을 사용합니다. 각 날짜별로 모든 카테고리의 총
+판매량을 계산합니다.
+
+```sql title="Query"
+CREATE TABLE daily_category_sales
+(
+    date Date,
+    category_sales Array(UInt32)
+) ENGINE = Memory;
+
+INSERT INTO daily_category_sales VALUES
+    ('2024-01-01', [100, 200, 150]),
+    ('2024-01-02', [120, 180, 160]),
+    ('2024-01-03', [90, 220, 140]);
+
+SELECT 
+    date,
+    category_sales,
+    sumArray(category_sales) AS total_sales_sumArray,
+    sum(arraySum(category_sales)) AS total_sales_arraySum
+FROM daily_category_sales
+GROUP BY date, category_sales;
+```
+
+`sumArray` 함수는 각 `category_sales` 배열의 모든 요소를 합산합니다.
+예를 들어 `2024-01-01`에는 `100 + 200 + 150 = 450`으로 계산됩니다. 이는
+`arraySum`과 동일한 결과를 반환합니다.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`sum`](/ko/reference/functions/aggregate-functions/sum)
+* [`arraySum`](/ko/reference/functions/regular-functions/array-functions#arraySum)
+* [`배열 combinator`](/ko/reference/functions/aggregate-functions/combinators#-array)
+* [`sumMap`](/ko/guides/clickhouse/examples/aggregate-function-combinators/sumMap)

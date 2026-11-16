@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -21,7 +21,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
     extern const int LOGICAL_ERROR;
@@ -54,7 +53,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     for (auto & column : mutable_columns)
     {
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
         columns.push_back(std::move(column));
     }
@@ -70,7 +69,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns.assign(columns.begin(), columns.end());
@@ -85,7 +84,7 @@ ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 
     for (const auto & column : columns)
         if (isColumnConst(*column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnTuple cannot have ColumnConst as its element");
 
     auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns = columns;
@@ -175,6 +174,58 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         if (!columns[i]->isDefaultAt(n))
+            return false;
+    return true;
+}
+
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    /// Avoid the O(rows * tuple_size) per-row virtual `isDefaultAt` calls of the
+    /// IColumnHelper default: query each element's non-default rows once and union them
+    /// in a bitmap.
+    const size_t num_rows = size();
+    if (num_rows == 0)
+        return 0;
+    if (columns.empty())
+        return num_rows;
+
+    PaddedPODArray<UInt8> non_default_anywhere;
+    non_default_anywhere.resize_fill(num_rows);
+    size_t num_non_default = 0;
+
+    for (const auto & column : columns)
+    {
+        if (num_non_default == num_rows)
+            break;
+
+        const size_t num_defaults_in_column = column->getNumberOfDefaultRows();
+        if (num_defaults_in_column == num_rows)
+            continue;
+        if (num_defaults_in_column == 0)
+        {
+            std::memset(non_default_anywhere.data(), 1, num_rows);
+            num_non_default = num_rows;
+            break;
+        }
+
+        IColumn::Offsets non_default_indices;
+        column->getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
+        for (UInt64 idx : non_default_indices)
+        {
+            if (!non_default_anywhere[idx])
+            {
+                non_default_anywhere[idx] = 1;
+                ++num_non_default;
+            }
+        }
+    }
+    return num_rows - num_non_default;
+}
+
+bool ColumnTuple::hasOnlyTypeDefaults() const
+{
+    for (const auto & col : columns)
+        if (!col->hasOnlyTypeDefaults())
             return false;
     return true;
 }
@@ -406,18 +457,6 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
         column->deserializeAndInsertFromArena(in, settings);
 }
 
-void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
-{
-    if (columns.empty())
-    {
-        in.ignore(1);
-        return;
-    }
-
-    for (const auto & column : columns)
-        column->skipSerializedInArena(in);
-}
-
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)
@@ -430,15 +469,40 @@ void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
         column->updateHashWithValueRange(begin, end, hash);
 }
 
-WeakHash32 ColumnTuple::getWeakHash32() const
+void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = size();
-    WeakHash32 hash(s);
+    const size_t n = row_end - row_begin;
 
+    if (columns.empty())
+    {
+        /// Empty tuple: a single fixed per-row hash (all bits set).
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
+        return;
+    }
+
+    if (initial)
+    {
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        for (const auto & column : columns)
+            column->computeHashInto(row_begin, row_end, hash_out, false);
+        return;
+    }
+
+    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash (rather than streaming elements straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : columns)
-        hash.update(column->getWeakHash32());
-
-    return hash;
+        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -741,6 +805,13 @@ size_t ColumnTuple::capacity() const
 void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
+    for (const auto & source_column : source_columns)
+    {
+        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+        if (!source_tuple || source_tuple->tupleSize() != tuple_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
+    }
+
     for (size_t i = 0; i < tuple_size; ++i)
     {
         VectorWithMemoryTracking<ColumnPtr> nested_columns;
@@ -906,7 +977,11 @@ void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
 
     for (const auto & source_column : source_columns)
     {
-        const auto & nsource_columns = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+        const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+        if (!source_tuple || source_tuple->tupleSize() != columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not a Tuple of the same size, but {}", getName(), source_column->getName());
+
+        const auto & nsource_columns = source_tuple->getColumns();
         for (size_t i = 0; i != nsource_columns.size(); ++i)
             nested_source_columns[i].push_back(nsource_columns[i]);
     }
@@ -917,9 +992,12 @@ void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
 
 void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
+    const auto * source_tuple = typeid_cast<const ColumnTuple *>(&source);
+    if (!source_tuple || source_tuple->tupleSize() != columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not a Tuple of the same size", getName(), source.getName());
+
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple->getColumnPtr(i));
 }
 
 
@@ -945,8 +1023,8 @@ void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
             const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-            if (!source_tuple)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+            if (!source_tuple || source_tuple->tupleSize() != columns.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not a Tuple of the same size, but {}", source_column->getName());
 
             elem_source_columns.push_back(source_tuple->columns[i]);
         }
@@ -984,6 +1062,7 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
+    Columns parts = compressed;
 
     return ColumnCompressed::create(size(), byte_size,
         [my_compressed = std::move(compressed)]() mutable
@@ -993,7 +1072,8 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
             for (const auto & column : my_compressed)
                 decompressed.push_back(column->decompress());
             return ColumnTuple::create(decompressed);
-        });
+        },
+        std::move(parts));
 }
 
 void ColumnTuple::finalize()
@@ -1007,4 +1087,14 @@ bool ColumnTuple::isFinalized() const
     return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
+ColumnPlanes ColumnTuple::getPlanes() const
+{
+    /// An element-less tuple keeps only a row count, so its rows have no planes.
+    if (columns.empty())
+        return ColumnPlanes(ColumnPlanes::Shape::Rows, this);
+    ColumnPlanes planes(ColumnPlanes::Shape::Tuple);
+    for (const auto & column : columns)
+        planes.children.push_back(column.get());
+    return planes;
+}
 }

@@ -14,13 +14,21 @@ namespace DB
 /// Compact enum storage with efficient lookups.
 /// - Strings stored in values vector (sorted by value for compatibility)
 /// - Name-to-value: binary search on sorted name index (O(log N))
-/// - Value-to-name: direct array lookup (O(1)) for small ranges, binary search for large ranges
+/// - Value-to-name: direct array lookup (O(1)) for small or dense ranges, binary search otherwise
 template <typename T>
 class EnumValues : public IHints<>
 {
 public:
     using Value = std::pair<std::string, T>;
     using Values = std::vector<Value>;
+    /// `TemporaryAdd` is only for intermediate `ADD ENUM VALUES` state:
+    /// values stay in parser order and duplicate numeric placeholders are allowed
+    /// until `mergeEnumTypes` remaps and validates the final enum values.
+    enum class ValidationMode
+    {
+        Normal,
+        TemporaryAdd,
+    };
 
 private:
     /// Original values sorted by numeric value (for getValues() compatibility)
@@ -31,7 +39,7 @@ private:
 
     /// Value-to-name lookup strategy.
     /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
-    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD`, otherwise binary search.
+    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD` or at most twice the number of values, otherwise binary search.
     bool use_direct_value_lookup = true;
 
     /// Direct lookup array: `value_to_index[value - min_value]` = index into `values`.
@@ -45,46 +53,51 @@ private:
     /// The `INVALID_INDEX` sentinel must not collide with a real index.
     static_assert(DIRECT_LOOKUP_THRESHOLD < INVALID_INDEX);
 
-    void buildLookupStructures();
+    void buildLookupStructures(ValidationMode validation_mode);
 
     /// Exact-name lookup without numeric-string fallback.
     /// Returns true and writes the value into `result` if `field_name` matches an enum name.
     bool findValueByName(std::string_view field_name, T & result) const;
 
+    /// Value-to-name lookup, `nullptr` if not found. Returns a pointer rather than filling an out
+    /// parameter so that callers keep no address-taken local, which costs a canary under
+    /// `-fstack-protector-strong`.
+    [[nodiscard]] const std::string * findNameForValue(T value) const;
+
 public:
-    explicit EnumValues(const Values & values_);
+    explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
     ~EnumValues() override;
 
-    const Values & getValues() const { return values; }
+    [[nodiscard]] const Values & getValues() const { return values; }
 
     /// Approximate number of heap-allocated bytes owned by this object:
     /// the `values` vector (including each name's string capacity) plus the
     /// `name_sorted_index` and `value_to_index` lookup vectors.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 
     /// Check if value exists in enum
-    bool hasValue(T value) const;
+    [[nodiscard]] bool hasValue(T value) const;
 
     /// Get name for value, throws if not found
-    std::string_view getNameForValue(T value) const;
+    [[nodiscard]] std::string_view getNameForValue(T value) const;
 
     /// Get name for value, returns false if not found
     bool getNameForValue(T value, std::string_view & result) const;
 
     /// Get value for name, throws if not found
-    T getValue(std::string_view field_name) const;
+    [[nodiscard]] T getValue(std::string_view field_name) const;
 
     /// Get value for name, returns false if not found
     bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
-    bool containsAll(const TValues & rhs_values) const;
+    [[nodiscard]] bool containsAll(const TValues & rhs_values) const;
 
-    Names getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
-    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+    [[nodiscard]] std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
 
-    std::unordered_set<T> getSetOfAllValues() const;
+    [[nodiscard]] std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

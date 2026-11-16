@@ -19,29 +19,23 @@ public:
     static constexpr auto name = "lowCardinalityIndices";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLowCardinalityIndices>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(LowCardinality) -> UInt64";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & arg = arguments[0];
         auto indexes_col = typeid_cast<const ColumnLowCardinality *>(arg.column.get())->getIndexesPtr();
@@ -59,7 +53,7 @@ public:
 REGISTER_FUNCTION(LowCardinalityIndices)
 {
     FunctionDocumentation::Description description = R"(
-Returns the position of a value in the dictionary of a [LowCardinality](../data-types/lowcardinality.md) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
+Returns the position of a value in the dictionary of a [LowCardinality](/reference/data-types/lowcardinality) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
     )";
     FunctionDocumentation::Syntax syntax = "lowCardinalityIndices(col)";
     FunctionDocumentation::Arguments arguments = {
@@ -78,23 +72,23 @@ CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
-SELECT s, lowCardinalityIndices(s) FROM test;
+-- the order the blocks are read in is not defined, so sort the result to make it reproducible:
+
+SELECT s, lowCardinalityIndices(s) AS index FROM test ORDER BY s, index;
         )",
         R"(
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ab │                        1 │
-│ cd │                        2 │
-│ ab │                        1 │
-│ ab │                        1 │
-│ df │                        3 │
-└────┴──────────────────────────┘
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ef │                        1 │
-│ cd │                        2 │
-│ ab │                        3 │
-│ cd │                        2 │
-│ ef │                        1 │
-└────┴──────────────────────────┘
+┌─s──┬─index─┐
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     3 │
+│ cd │     2 │
+│ cd │     2 │
+│ cd │     2 │
+│ df │     3 │
+│ ef │     1 │
+│ ef │     1 │
+└────┴───────┘
         )"
     }
     };

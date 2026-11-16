@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -39,16 +40,25 @@ public:
         ObjectStorageRouterPtr object_storages_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        bool use_fake_transaction_ = true);
+        const String & config_prefix);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
+    /// A shallow copy of this disk with a fresh writable in-memory metadata storage;
+    /// everything else is shared, no background threads are started.
+    DiskObjectStoragePtr wrapWithMemoryMetadata();
+
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    /// Keeper metadata replicates itself; in-memory metadata is transient and has no local
+    /// metadata files zero-copy could ship (see `getReplicatedFilesDescriptionForRemoteDisk`).
+    bool supportZeroCopyReplication() const override
+    {
+        return metadata_storage->getType() != MetadataStorageType::Keeper
+            && metadata_storage->getType() != MetadataStorageType::Memory;
+    }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
@@ -139,7 +149,7 @@ public:
 
     time_t getLastChanged(const String & path) const override;
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const override;
 
     void shutdown() override;
 
@@ -185,6 +195,8 @@ public:
         ) override;
 
     void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -200,10 +212,14 @@ public:
     bool isPlain() const override;
 
     /// Is object write-once?
-    /// For example: S3PlainObjectStorage is write once, this means that it
-    /// does support BACKUP to this disk, but does not support INSERT into
+    /// For example: S3ObjectStorage with MetadataStorageFromPlainObjectStorage is write once, this
+    /// means that it does support BACKUP to this disk, but does not support INSERT into
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
+
+    bool prefersRecursiveRemoval() const override;
+
+    bool supportsAtomicFileCreation() const override;
 
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
@@ -220,10 +236,18 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const;
+    /// The configuration of the cache layer is the section the cache disk is defined in, and it has
+    /// to be passed here: a disk defined in a query is not present in the server configuration at all.
+    DiskObjectStoragePtr wrapWithCache(
+        FileCachePtr cache,
+        const FileCacheSettings & cache_settings,
+        const String & layer_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix) const;
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -238,15 +262,17 @@ public:
 
 private:
 
+    /// Shallow-copy constructor for `wrapWithMemoryMetadata`.
+    DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_);
+
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    String getReadResourceName() const;
-    String getWriteResourceName() const;
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
+    void propagateResourceNamesNoLock() const;
 
     /// Points to wrapped disk in case of cache disk.
     DiskObjectStorageConstPtr wrapped_disk = nullptr;
@@ -271,8 +297,6 @@ private:
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
     String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
@@ -280,7 +304,6 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
@@ -296,13 +319,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
 
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override;
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

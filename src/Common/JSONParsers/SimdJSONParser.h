@@ -208,6 +208,11 @@ public:
                 format.nullAtom();
                 break;
             }
+            /// Big integers are stored as raw digit strings; emit them quoted.
+            case simdjson::dom::element_type::BIGINT: {
+                format.string(value.get_bigint().value_unsafe());
+                break;
+            }
             case simdjson::dom::element_type::ARRAY: {
                 append(value.get_array().value_unsafe());
                 break;
@@ -269,6 +274,11 @@ struct SimdJSONParser
     class Array;
     class Object;
 
+    /// Store integers that do not fit in 64 bits as raw digit strings on the tape instead of
+    /// failing the whole document with `BIGINT_ERROR`, so they can be parsed into wider integer
+    /// types (Int128/UInt128/Int256/UInt256).
+    SimdJSONParser() { parser.number_as_string(true); }
+
     /// References an element in a JSON document, representing a JSON null, boolean, string, number,
     /// array or object.
     class Element
@@ -277,7 +287,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Element() {} /// NOLINT
         ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {} /// NOLINT
 
-        ALWAYS_INLINE ElementType type() const
+        [[nodiscard]] ALWAYS_INLINE ElementType type() const
         {
             switch (element.type())
             {
@@ -289,27 +299,42 @@ struct SimdJSONParser
                 case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
                 case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
                 case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
+                /// Big integers are stored as raw digit strings; report as String so the numeric
+                /// extraction path parses them into wider integer types.
+                case simdjson::dom::element_type::BIGINT: return ElementType::STRING;
             }
         }
 
-        ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
-        ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
-        ALWAYS_INLINE bool isDouble() const { return element.type() == simdjson::dom::element_type::DOUBLE; }
-        ALWAYS_INLINE bool isString() const { return element.type() == simdjson::dom::element_type::STRING; }
-        ALWAYS_INLINE bool isArray() const { return element.type() == simdjson::dom::element_type::ARRAY; }
-        ALWAYS_INLINE bool isObject() const { return element.type() == simdjson::dom::element_type::OBJECT; }
-        ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
-        ALWAYS_INLINE bool isNull() const { return element.type() == simdjson::dom::element_type::NULL_VALUE; }
+        [[nodiscard]] ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
+        [[nodiscard]] ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
+        [[nodiscard]] ALWAYS_INLINE bool isDouble() const { return element.type() == simdjson::dom::element_type::DOUBLE; }
+        /// Expose a big integer as a string so `isString`-gated callers parse it into wider types.
+        [[nodiscard]] ALWAYS_INLINE bool isString() const
+        {
+            return element.type() == simdjson::dom::element_type::STRING
+                || element.type() == simdjson::dom::element_type::BIGINT;
+        }
+        [[nodiscard]] ALWAYS_INLINE bool isArray() const { return element.type() == simdjson::dom::element_type::ARRAY; }
+        [[nodiscard]] ALWAYS_INLINE bool isObject() const { return element.type() == simdjson::dom::element_type::OBJECT; }
+        [[nodiscard]] ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
+        [[nodiscard]] ALWAYS_INLINE bool isNull() const { return element.type() == simdjson::dom::element_type::NULL_VALUE; }
 
-        ALWAYS_INLINE Int64 getInt64() const { return element.get_int64().value_unsafe(); }
-        ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().value_unsafe(); }
-        ALWAYS_INLINE double getDouble() const { return element.get_double().value_unsafe(); }
-        ALWAYS_INLINE bool getBool() const { return element.get_bool().value_unsafe(); }
-        ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
-        ALWAYS_INLINE Array getArray() const;
-        ALWAYS_INLINE Object getObject() const;
+        [[nodiscard]] ALWAYS_INLINE Int64 getInt64() const { return element.get_int64().value_unsafe(); }
+        [[nodiscard]] ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().value_unsafe(); }
+        [[nodiscard]] ALWAYS_INLINE double getDouble() const { return element.get_double().value_unsafe(); }
+        [[nodiscard]] ALWAYS_INLINE bool getBool() const { return element.get_bool().value_unsafe(); }
+        [[nodiscard]] ALWAYS_INLINE std::string_view getString() const
+        {
+            /// A big integer is stored on the tape as a raw digit string and must be read via
+            /// `get_bigint`; `get_string` works only for real JSON strings.
+            if (element.type() == simdjson::dom::element_type::BIGINT)
+                return element.get_bigint().value_unsafe();
+            return element.get_string().value_unsafe();
+        }
+        [[nodiscard]] ALWAYS_INLINE Array getArray() const;
+        [[nodiscard]] ALWAYS_INLINE Object getObject() const;
 
-        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
+        [[nodiscard]] ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
 
     private:
         simdjson::dom::element element;
@@ -333,9 +358,9 @@ struct SimdJSONParser
         };
 
         ALWAYS_INLINE Array(const simdjson::dom::array & array_) : array(array_) {} /// NOLINT
-        ALWAYS_INLINE Iterator begin() const { return array.begin(); }
-        ALWAYS_INLINE Iterator end() const { return array.end(); }
-        ALWAYS_INLINE size_t size() const { return array.size(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator begin() const { return array.begin(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator end() const { return array.end(); }
+        [[nodiscard]] ALWAYS_INLINE size_t size() const { return array.size(); }
         ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return array.at(index).value_unsafe(); }
 
     private:
@@ -362,9 +387,9 @@ struct SimdJSONParser
         };
 
         ALWAYS_INLINE Object(const simdjson::dom::object & object_) : object(object_) {} /// NOLINT
-        ALWAYS_INLINE Iterator begin() const { return object.begin(); }
-        ALWAYS_INLINE Iterator end() const { return object.end(); }
-        ALWAYS_INLINE size_t size() const { return object.size(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator begin() const { return object.begin(); }
+        [[nodiscard]] ALWAYS_INLINE Iterator end() const { return object.end(); }
+        [[nodiscard]] ALWAYS_INLINE size_t size() const { return object.size(); }
 
         bool find(std::string_view key, Element & result) const
         {

@@ -1,0 +1,69 @@
+<test>
+    <!--
+        Speedup-focused companion to array_distance.xml. It isolates the cases
+        where PR #101310 has a clear net win over master: the non-const x
+        non-const and mixed-type paths (which had NO SIMD on master at all),
+        with the FMA-friendly L2 / L2Squared / cosine kernels, at the
+        mid-to-long vector lengths typical of vector search.
+
+        L1 / Linf and the const-needle hand-written paths are deliberately left
+        to array_distance.xml and norm_distance: their kernels are either less
+        SIMD-friendly (abs-sum / fmax reductions) or already optimal on master,
+        so they belong in the broad regression suite rather than here.
+    -->
+    <substitutions>
+        <substitution>
+            <name>dim</name>
+            <values>
+                <value>512</value>
+                <value>2048</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Two distinct Float32 vectors per row (so cosine is well-defined). -->
+    <create_query>
+        CREATE TABLE adss_f32_{dim} (a Array(Float32), b Array(Float32)) ENGINE = Memory
+    </create_query>
+
+    <!-- Quantised UInt8 storage vector against a Float64 query vector: the
+         canonical mixed-type ANN layout that has no SIMD path on master. -->
+    <create_query>
+        CREATE TABLE adss_mixed_{dim} (u8 Array(UInt8), f64 Array(Float64)) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO adss_f32_{dim}
+        SELECT
+            arrayMap(i -> toFloat32((number * 9 + i) % 1000) * 0.001, range({dim})),
+            arrayMap(i -> toFloat32((number * 7 + i + 13) % 1000) * 0.001, range({dim}))
+        FROM numbers(100000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO adss_mixed_{dim}
+        SELECT
+            arrayMap(i -> toUInt8((number + i) % 256), range({dim})),
+            arrayMap(i -> toFloat64((number * 3 + i) % 997) * 0.5, range({dim}))
+        FROM numbers(100000)
+    </fill_query>
+
+    <!-- ===== Native Float32, non-const x non-const: no SIMD on master ===== -->
+    <query>SELECT sum(cosineDistance(a, b))    FROM adss_f32_{dim}</query>
+    <query>SELECT sum(L2Distance(a, b))        FROM adss_f32_{dim}</query>
+    <query>SELECT sum(L2SquaredDistance(a, b)) FROM adss_f32_{dim}</query>
+
+    <!-- ===== Mixed UInt8 x Float64: no SIMD on master, non-const and const ===== -->
+    <query>SELECT sum(L2Distance(u8, f64))     FROM adss_mixed_{dim}</query>
+    <query>SELECT sum(cosineDistance(u8, f64)) FROM adss_mixed_{dim}</query>
+    <query>
+        WITH (SELECT u8 FROM adss_mixed_{dim} LIMIT 1) AS needle
+        SELECT sum(L2Distance(needle, f64)) FROM adss_mixed_{dim}
+    </query>
+
+    <drop_query>DROP TABLE adss_f32_{dim}</drop_query>
+    <drop_query>DROP TABLE adss_mixed_{dim}</drop_query>
+</test>

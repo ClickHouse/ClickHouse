@@ -1,12 +1,10 @@
-import logging
 import time
 from random import randint
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -40,6 +38,17 @@ reading_node = cluster.add_instance(
 nodes = [node1, node2]
 
 test_idx = 0
+
+
+def wait_until_view_registered(node, name):
+    # `system sync database replica` doesn't wait for the replicated view's startup() to
+    # register its refresh task, so the SYSTEM *VIEW commands below can race with it.
+    assert_eq_with_retry(
+        node,
+        f"select count() from system.view_refreshes where database = 're' and view = '{name}'",
+        "1\n",
+        retry_count=60,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -83,6 +92,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node1.query("system sync database replica re")
     for node in nodes:
+        wait_until_view_registered(node, "a")
         node.query("system wait view re.a")
         assert node.query("select * from re.a order by all") == "0\n10\n"
         assert (
@@ -101,8 +111,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         )
         # Stop the clocks.
         for node in nodes:
+            node.query("system sync database replica re")
+            wait_until_view_registered(node, name)
             node.query(
-                f"system sync database replica re; system test view re.{name} set fake time '2040-01-01 00:00:01'"
+                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
             )
         # Wait for quiescence.
         for node in nodes:
@@ -140,6 +152,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node2.query("system sync database replica re")
     for node in nodes:
+        wait_until_view_registered(node, "unreplicated_uncoordinated")
         node.query("system wait view re.unreplicated_uncoordinated")
         assert (
             node.query("select distinct x from re.unreplicated_uncoordinated") == "1\n"
@@ -297,6 +310,30 @@ def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
         node1,
         "select count() from system.view_refreshes where exception = '' and last_refresh_replica = '1'",
         "1\n",
+    )
+
+
+def test_refresh_requested_on_read_only_node_runs_elsewhere(started_cluster, cleanup):
+    for node in [node1, reading_node]:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        )
+    node1.query(
+        "create materialized view re.a refresh every 1 year (x Int64) engine ReplicatedMergeTree order by x empty as select number*10 as x from numbers(2)"
+    )
+    reading_node.query("system sync database replica re")
+    wait_until_view_registered(reading_node, "a")
+
+    # A read-only replica cannot refresh, so a writable one runs its request after a Keeper session timeout,
+    # and the wait covers that.
+    reading_node.query("system refresh view re.a")
+    reading_node.query("system wait view re.a", timeout=180)
+    assert node1.query("select count() from re.a") == "2\n"
+    assert (
+        reading_node.query(
+            "select last_refresh_replica from system.view_refreshes where view = 'a'"
+        )
+        == "1\n"
     )
 
 
@@ -603,7 +640,7 @@ def test_adding_replica(started_cluster, cleanup):
         node1.query("select last_refresh_replica from system.view_refreshes") == "1\n"
     )
 
-    r = node2.query(
+    node2.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r2');"
         "system sync database replica re"
     )
@@ -780,3 +817,79 @@ def test_system_view_refreshes_on_not_running_replica(started_cluster):
             pass
         for node in nodes:
             node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_attach_while_keeper_is_unreachable(started_cluster, cleanup):
+    node1.query(
+        f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}')"
+    )
+    for i in [1, 2]:
+        node1.query(
+            f"create table re.t{i} (x UInt64) engine ReplicatedMergeTree order by x;"
+            f"create materialized view re.mv{i} refresh every 1 year append to re.t{i} as select number as x from numbers(10);"
+            f"system wait view re.mv{i}"
+        )
+        assert node1.query(f"select count() from re.t{i}") == "10\n"
+
+    # mv2 loses its coordination znodes, so they must be created once Keeper is reachable.
+    uuid = node1.query(
+        "select uuid from system.tables where database = 're' and name = 'mv2'"
+    ).strip()
+    node1.stop_clickhouse()
+    zk = cluster.get_kazoo_client("zoo1")
+    children = zk.get_children(f"/clickhouse/tables/{uuid}")
+    assert len(children) == 1
+    path = f"/clickhouse/tables/{uuid}/{children[0]}"
+    assert "replicas" in zk.get_children(path)
+    zk.delete(path, recursive=True)
+    zk.stop()
+    zk.close()
+
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    cluster.stop_zookeeper_nodes(zk_nodes)
+    try:
+        node1.start_clickhouse()
+        assert_eq_with_retry(
+            node1,
+            "select count() from system.view_refreshes where database = 're'",
+            "2\n",
+            retry_count=120,
+        )
+        assert (
+            node1.query(
+                "select job, status, exception from system.asynchronous_loader "
+                "where status in ('FAILED', 'CANCELED') and job like '% re.%'"
+            )
+            == ""
+        )
+    finally:
+        cluster.start_zookeeper_nodes(zk_nodes)
+        cluster.wait_zookeeper_nodes_to_start(zk_nodes)
+
+    # A refresh fails while its target table is still initializing.
+    assert_eq_with_retry(
+        node1,
+        "select count() from system.replicas where database = 're' and not is_readonly",
+        "2\n",
+        retry_count=240,
+    )
+    for i in [1, 2]:
+        exec_query_with_retry(
+            node1, f"system refresh view re.mv{i}", retry_count=120, sleep_time=1
+        )
+        node1.query(f"system wait view re.mv{i}")
+    assert node1.query("select count() from re.t1") == "20\n"
+    assert int(node1.query("select count() from re.t2")) >= 20
+
+    exec_query_with_retry(
+        node1, "system sync database replica re", retry_count=120, sleep_time=1
+    )
+    node1.query(
+        "create table re.after_keeper (x UInt64) engine ReplicatedMergeTree order by x",
+        settings={"database_replicated_initial_query_timeout_sec": 60},
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    assert zk.exists(f"{path}/replicas/1")
+    zk.stop()
+    zk.close()

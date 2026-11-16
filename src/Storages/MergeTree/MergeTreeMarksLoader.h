@@ -24,8 +24,8 @@ class MergeTreeMarksGetter
 public:
     MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_);
 
-    MarkInCompressedFile getMark(size_t row_index, size_t column_index) const;
-    size_t getNumColumns() const { return num_columns_in_mark; }
+    [[nodiscard]] MarkInCompressedFile getMark(size_t row_index, size_t column_index) const;
+    [[nodiscard]] size_t getNumColumns() const { return num_columns_in_mark; }
 
 private:
     const MarkCache::MappedPtr marks;
@@ -48,7 +48,8 @@ public:
         bool save_marks_in_cache_,
         const ReadSettings & read_settings_,
         ThreadPool * load_marks_threadpool_,
-        size_t num_columns_in_mark_);
+        size_t num_columns_in_mark_,
+        bool use_streaming_compression_);
 
     ~MergeTreeMarksLoader();
 
@@ -65,6 +66,7 @@ private:
     const bool save_marks_in_cache;
     const ReadSettings read_settings;
     const size_t num_columns_in_mark;
+    const bool use_streaming_compression;
 
     std::mutex load_mutex;
     MarkCache::MappedPtr marks;

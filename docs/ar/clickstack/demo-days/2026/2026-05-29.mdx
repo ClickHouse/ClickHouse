@@ -1,0 +1,116 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-29
+title: 'Demo days - 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: 'ClickStack Demo days بتاريخ 2026-05-29'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="version-aware-improved-schema-filtering">
+  ## تحسين تصفية المخطط بحسب الإصدار
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يطبّق ClickStack الآن تحسين `direct_read` فقط على إصدارات ClickHouse 26.2 وما بعدها، حيث يدعم فهرس البحث بالنص الكامل بشكل صحيح أعمدة `alias` المضافة إلى المخططات مفتوحة المصدر. في السابق، كان يمكن تجربة هذا التحسين على الإصدارات الأقدم، رغم أنه لم يكن يعمل فيها بشكل صحيح. ويجري التحقق من الإصدار وقت تنفيذ الاستعلام عبر فحص المخطط، كما أصبحت أعمدة `alias` نفسها مضمنة الآن افتراضيًا في المخططات مفتوحة المصدر.
+
+ومما عُرض أيضًا: عمل جارٍ على استبدال العرض المادي الخاص بالإكمال التلقائي باستعلامات مباشرة على فهرس النص. حاليًا، يؤدي الاثنان عملًا متداخلًا، مما يزيد الضغط على إدخال البيانات. وإذا أكدت اختبارات الأداء أن استعلامات فهرس النص تحافظ على مستوى الأداء، فيمكن تبسيط العرض المادي أو إزالته. كما أجاب آرون عن أسئلة من الفريق حول كيف يمكن للترميز الموضعي في الإصدارات المستقبلية من فهرس النص في ClickHouse أن يجعل عمليات البحث في مرشحات المفتاح-القيمة أكثر دقة.
+
+**طلبات السحب ذات الصلة:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: إضافة تحسين direct&#95;read افتراضيًا للسجلات والتتبعات, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): تطبيق تحسين عناصر direct&#95;read الخاصة بـ KV على مرشحات SQL, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: استخدام فهرس النص لتشغيل المرشحات والإكمال التلقائي
+
+<div id="better-log-parsing">
+  ## تحسين تحليل السجلات
+</div>
+
+*عرض توضيحي من [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+كانت لدى أحد العملاء سجلات يكون فيها محتوى الحدث كائن JSON يحتوي على حقل `level`. وكان منطق استنتاج الشدة ينفّذ خطوتين: تحليل المحتوى باعتباره JSON لاستخراج السمات، ثم الرجوع إلى مطابقة السلاسل النصية إذا لم تكن الشدة قد ضُبطت على مستوى OTel. وكانت مطابقة السلاسل النصية تلتقط كلمة &quot;alert&quot; من اسم مدير التنبيهات داخل المحتوى، مما يؤدي إلى تصنيف مستوى السجل بشكل خاطئ.
+
+يضيف هذا الإصلاح شرطًا احترازيًا: إذا أمكن تحليل المحتوى كـ JSON وكان يحتوي بالفعل على حقل `level`، فتخطَّ خطوة الاستدلال النصي بالكامل. كما أن مجموعة اختبارات smoke، التي بُنيت قبل نحو عام، جعلت من السهل التحقق من الإصلاح واكتشاف الحالات الطرفية ذات الصلة بمجرد إضافة حالات اختبار جديدة، وهذا بالضبط ما صُممت له.
+
+**طلبات السحب ذات الصلة:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): تخطّي الاستدلال النصي عندما يُحلَّل المحتوى كـ JSON مع وجود حقل `level`
+
+<div id="mcp-server-improvements">
+  ## تحسينات خادم MCP
+</div>
+
+*عرض توضيحي من [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+شهد هذا الأسبوع عدة تحسينات على MCP: تحسين تجميع أنماط الأحداث وتقييمها، وتحسين تلميحات الأخطاء، وتنظيف المساعدات المشتركة. كما أُعيدت تسمية بادئات الأدوات من `hyperdx_` إلى `clickstack_` لتتوافق مع اسم المنتج.
+
+**طلبات السحب ذات الصلة:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): تحسين جودة أدوات MCP — تلميحات الأخطاء، والمساعدات المشتركة، ورسائل أفضل، [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): إعادة تسمية بادئات الأدوات من hyperdx&#95; إلى clickstack&#95;، [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): إضافة أدوات patch&#95;dashboard وget&#95;dashboard&#95;tile وsearch&#95;dashboards، [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): تحسين أوصاف وأمثلة alias لتسهيل قراءة وسائل إيضاح المخططات، [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: تبسيط التحقق من صحة MCP ObjectId باستخدام المساعدات المشتركة وعمليات التحقق على مستوى المخطط
+
+<div id="new-series-color-palette">
+  ## لوحة ألوان جديدة للسلاسل
+</div>
+
+*عرض توضيحي من [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+عملت Elizabet على توحيد لوحة ألوان تصور البيانات عبر سمات HyperDX وClickStack، دعمًا لعمل Alex على منتقي الألوان. كانت لكل سمة لوحة منفصلة مع قواعد استثناء خاصة بها، مما جعل التعامل مع الألوان أعقد من اللازم. وكان الهدف هو اعتماد لوحة واحدة تعمل مع كلتيهما.
+
+اختبرت ذلك بمقارنة لوحات ألوان معتمدة في المجال (Tableau وObservable وIBM) باستخدام أداة لمحاكاة الرؤية اللونية للتحقق من التباين وإمكانية الوصول. وكان أداء لوحة ClickHouse ضعيفًا، إذ لا يوفر اللون الأخضر تباينًا كافيًا على خلفية بيضاء. كما أن كلًا من Tableau وObservable يفشل في فحص واحد على الأقل، بينما تجتاز لوحة IBM جميع الفحوصات لكنها تضم خمسة ألوان فقط، وهذا غير كافٍ. وكانت لوحة Observable الأقرب إجمالًا، مع تعديل طفيف على اللون الأزرق، وستُعتمد الآن في كلتا السمتين.
+
+**طلبات السحب ذات الصلة:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
+
+<div id="new-page-layout-with-sticky-header">
+  ## تخطيط صفحة جديد مع رأس صفحة مثبت
+</div>
+
+*عرض توضيحي بواسطة [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تم اعتماد زوج المكوّنين الجديدين PageHeader وPageLayout في جميع الصفحات الرئيسية: لوحات المعلومات، وخريطة الخدمات، وجلسات العميل، وKubernetes، ولوحة معلومات ClickHouse. تشترك كل الصفحات الآن في الهوامش الداخلية نفسها، والخط الفاصل أسفل الرأس، وبنية العنوان نفسها. قبل ذلك، كانت الصفحات غير متسقة — فبعضها كان يحتوي على عنوان إلى اليسار مع عناصر تحكم إلى اليمين، بينما لم يكن لبعضها الآخر أي عنوان على الإطلاق.
+
+سلوك التثبيت اختياري ويُفعَّل عبر `prop`. أي عنصر تمرّره إلى موضع مثبت يبقى مثبتًا أسفل الرأس أثناء التمرير، بينما يتم تمرير كل شيء آخر بشكل طبيعي. وإذا لم يتم تمرير أي شيء، وكان الموجود فقط هو مسارات التنقل أو خيارات الصفحة، فستُثبَّت هذه تلقائيًا.
+
+**طلبات السحب ذات الصلة:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) إضافة PageHeader/PageLayout وترحيل Sessions، [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) استخدام عنوان PageHeader في صفحات القوائم، [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) ترحيل Service Map إلى PageLayout، [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) ترحيل لوحة معلومات Kubernetes إلى PageLayout، [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) ترحيل لوحة معلومات ClickHouse إلى PageLayout، [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): الترحيل إلى PageLayout مع شريط أدوات استعلام مثبت، [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): إبقاء الرأس المثبت أسفل تراكبات الدرج الجانبي المنزلق
+
+<div id="new-datasource-selector-and-color-picking-for-series">
+  ## محدد مصادر بيانات جديد وانتقاء الألوان للسلاسل
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تحسينان في واجهة المستخدم من Alex. جرى تبسيط محدد مصادر البيانات: فعند النقر عليه، لم يعُد يعرض الآن سوى مصادر البيانات المتاحة للاختيار. أما إجراءات الإدارة، مثل عرض المخطط أو إنشاء مصدر جديد، فقد نُقلت إلى قائمة kebab منفصلة. وبذلك أصبح الاختيار منفصلًا عن الإعداد — وهو أمر كان على قائمة المهام منذ فترة، كما أنه يستجيب لملاحظات الفريق.
+
+تتضمن بطاقات Number الآن أيضًا منتقي ألوان ثابتًا، بحيث يمكنك تعيين لون محدد لمقياس معيّن. ويجري العمل أيضًا على قواعد ألوان شرطية (كالتحول إلى الأحمر أو الأخضر أو الأصفر استنادًا إلى قيمة عتبة أو عمود). وما إن تصبح لوحة الألوان الموحّدة الخاصة بـ Elizabet متاحة، فسيستخدم كلاهما ألوانًا بأسماء واضحة بدلًا من التسميات الحالية مثل &quot;color 1, 2, 3&quot;، وهو ما يُفترض أن يشكّل تحسينًا مهمًا للمستخدمين القادمين من أدوات مثل Grafana.
+
+**طلبات السحب ذات الصلة:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+<div id="better-hints-for-dashboard-actions">
+  ## تلميحات أفضل لإجراءات لوحة المعلومات
+</div>
+
+*عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تعرض صفوف بلاطة الجدول في لوحة المعلومات الآن حالة تحويم أكثر فائدة. يتغير المؤشر والأيقونة عند تمرير الفأرة لتوضيح ما سيحدث عند النقر — إما فتح لوحة معلومات مرتبطة أو الانتقال إلى التفاصيل داخل مصدر بيانات. قبل هذا التغيير، لم يكن واضحًا أصلًا أن الصفوف قابلة للنقر، فضلًا عن معرفة ما الذي ستفعله.
+
+**طلبات السحب ذات الصلة:** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): تلميح عند التحويم ومظهر الرابط المعتاد عند النقر على صف في بلاطة جدول لوحة المعلومات

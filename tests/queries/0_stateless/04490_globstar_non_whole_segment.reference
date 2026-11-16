@@ -1,0 +1,6 @@
+whole-segment **/ matches all levels including zero:
+0	0
+1	1
+2	2
+non-whole-segment ?**/ matches exactly one directory level (only sub/pick.tsv):
+1	1

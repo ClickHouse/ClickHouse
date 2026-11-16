@@ -1,0 +1,678 @@
+---
+description: '5단계로 Tab Separated Value 데이터를 수집하고 쿼리하기'
+sidebarTitle: 'NYPD 신고 데이터'
+slug: /getting-started/example-datasets/nypd_complaint_data
+title: 'NYPD 신고 데이터'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'nypd', '범죄 데이터', '샘플 데이터', '공공 데이터']
+---
+
+Tab Separated Value, 즉 TSV 파일은 널리 사용되며 파일의 첫 번째 줄에 필드 헤더가 포함될 수 있습니다. ClickHouse는 TSV를 수집할 수 있고, 파일을 수집하지 않은 상태에서도 TSV를 쿼리할 수 있습니다. 이 가이드에서는 두 가지 경우를 모두 다룹니다. CSV 파일을 쿼리하거나 수집해야 하는 경우에도 동일한 기법을 사용할 수 있으며, 포맷 인수에서 `TSV`만 `CSV`로 바꾸면 됩니다.
+
+이 가이드를 진행하면서 다음 작업을 수행합니다:
+
+* **조사**: TSV 파일의 구조와 내용을 쿼리합니다.
+* **대상 ClickHouse 스키마 결정**: 적절한 데이터 타입을 선택하고 기존 데이터를 해당 타입에 매핑합니다.
+* **ClickHouse 테이블 생성**.
+* **데이터 전처리 및 스트리밍**을 통해 ClickHouse로 전송합니다.
+* **몇 가지 쿼리 실행**: ClickHouse에서 쿼리를 실행합니다.
+
+이 가이드에서 사용하는 데이터셋은 NYC Open Data 팀에서 제공하며, &quot;뉴욕시 경찰국(NYPD)에 신고된 모든 유효한 중범죄, 경범죄 및 위반 행위&quot;에 대한 데이터를 포함합니다. 작성 시점 기준으로 데이터 파일 크기는 166MB이며, 정기적으로 업데이트됩니다.
+
+**출처**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
+**이용 약관**: https://www1.nyc.gov/home/terms-of-use.page
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+* [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) 페이지로 이동한 다음 Export 버튼을 클릭하고 **TSV for Excel**을 선택하여 데이터셋을 다운로드합니다.
+* [ClickHouse 서버 및 클라이언트](/ko/get-started/setup/install)를 설치합니다
+
+<div id="a-note-about-the-commands-described-in-this-guide">
+  ### 이 가이드에서 설명하는 명령에 대한 참고 사항
+</div>
+
+이 가이드에는 두 가지 유형의 명령이 있습니다:
+
+* 일부 명령은 TSV 파일에 쿼리하는 명령이며, 명령 프롬프트에서 실행합니다.
+* 나머지 명령은 ClickHouse에 쿼리하는 명령이며, `clickhouse-client` 또는 Play UI에서 실행합니다.
+
+<Note>
+  이 가이드의 예시는 TSV 파일이 `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`에 저장되어 있다고 가정합니다. 필요에 따라 명령을 조정하십시오.
+</Note>
+
+<div id="familiarize-yourself-with-the-tsv-file">
+  ## TSV 파일 살펴보기
+</div>
+
+ClickHouse 데이터베이스 작업을 시작하기 전에 먼저 데이터를 살펴보십시오.
+
+<div id="look-at-the-fields-in-the-source-tsv-file">
+  ### 원본 TSV 파일의 필드 살펴보기
+</div>
+
+다음은 TSV 파일을 쿼리하는 명령어 예시이지만, 아직 실행하지 마십시오.
+
+```sh title="Query"
+clickhouse-local --query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+응답 예시
+
+```response
+CMPLNT_NUM                  Nullable(Float64)
+ADDR_PCT_CD                 Nullable(Float64)
+BORO_NM                     Nullable(String)
+CMPLNT_FR_DT                Nullable(String)
+CMPLNT_FR_TM                Nullable(String)
+```
+
+<Tip>
+  대부분의 경우 위 명령을 실행하면 입력 데이터에서 어떤 필드가 숫자이고, 어떤 필드가 문자열이며, 어떤 필드가 튜플인지 알 수 있습니다. 하지만 항상 그런 것은 아닙니다. ClickHouse는 수십억 개의 레코드가 포함된 데이터셋과 함께 자주 사용되므로, [스키마를 추론](/ko/guides/clickhouse/data-formats/json/inference)하기 위해 수십억 개의 행을 파싱하지 않도록 기본적으로 100개의 행만 검사합니다. 아래 응답은 데이터셋이 매년 여러 차례 업데이트되므로 실제로 표시되는 내용과 일치하지 않을 수 있습니다. 데이터 딕셔너리를 보면 CMPLNT&#95;NUM은 숫자가 아니라 텍스트로 지정되어 있음을 확인할 수 있습니다. 추론 시 기본값인 100개 행 대신 `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000` 설정을 사용하면
+  데이터 내용을 더 정확하게 파악할 수 있습니다.
+
+  참고: 22.5 버전부터는 스키마 추론을 위한 기본값이 25,000개 행이므로, 이전 버전을 사용 중이거나 25,000개보다 많은 행을 샘플링해야 하는 경우에만 이 설정을 변경하십시오.
+</Tip>
+
+명령 프롬프트에서 이 명령을 실행하십시오. 다운로드한 TSV 파일의 데이터를 쿼리하기 위해 `clickhouse-local`을 사용합니다.
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+```response title="Response"
+CMPLNT_NUM        Nullable(String)
+ADDR_PCT_CD       Nullable(Float64)
+BORO_NM           Nullable(String)
+CMPLNT_FR_DT      Nullable(String)
+CMPLNT_FR_TM      Nullable(String)
+CMPLNT_TO_DT      Nullable(String)
+CMPLNT_TO_TM      Nullable(String)
+CRM_ATPT_CPTD_CD  Nullable(String)
+HADEVELOPT        Nullable(String)
+HOUSING_PSA       Nullable(Float64)
+JURISDICTION_CODE Nullable(Float64)
+JURIS_DESC        Nullable(String)
+KY_CD             Nullable(Float64)
+LAW_CAT_CD        Nullable(String)
+LOC_OF_OCCUR_DESC Nullable(String)
+OFNS_DESC         Nullable(String)
+PARKS_NM          Nullable(String)
+PATROL_BORO       Nullable(String)
+PD_CD             Nullable(Float64)
+PD_DESC           Nullable(String)
+PREM_TYP_DESC     Nullable(String)
+RPT_DT            Nullable(String)
+STATION_NAME      Nullable(String)
+SUSP_AGE_GROUP    Nullable(String)
+SUSP_RACE         Nullable(String)
+SUSP_SEX          Nullable(String)
+TRANSIT_DISTRICT  Nullable(Float64)
+VIC_AGE_GROUP     Nullable(String)
+VIC_RACE          Nullable(String)
+VIC_SEX           Nullable(String)
+X_COORD_CD        Nullable(Float64)
+Y_COORD_CD        Nullable(Float64)
+Latitude          Nullable(Float64)
+Longitude         Nullable(Float64)
+Lat_Lon           Tuple(Nullable(Float64), Nullable(Float64))
+New Georeferenced Column Nullable(String)
+```
+
+이 단계에서는 TSV 파일의 컬럼이 [데이터셋 웹 페이지](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)의 **이 데이터셋의 컬럼** 섹션에 지정된 이름 및 타입과 일치하는지 확인해야 합니다. 데이터 타입은 그다지 구체적이지 않아서, 모든 숫자 필드는 `Nullable(Float64)`로 설정되어 있고 그 외의 모든 필드는 `Nullable(String)`입니다. 데이터를 저장할 ClickHouse 테이블을 만들 때는 더 적절하고 성능에 유리한 타입을 지정할 수 있습니다.
+
+<div id="determine-the-proper-schema">
+  ### 적절한 스키마 결정
+</div>
+
+필드에 어떤 타입을 사용해야 하는지 판단하려면 먼저 데이터가 어떤 형태인지 알아야 합니다. 예를 들어 `JURISDICTION_CODE` 필드는 숫자형입니다. `UInt8`을 사용해야 할까요, `Enum`을 사용해야 할까요, 아니면 `Float64`가 적절할까요?
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select JURISDICTION_CODE, count() FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ GROUP BY JURISDICTION_CODE
+ ORDER BY JURISDICTION_CODE
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─JURISDICTION_CODE─┬─count()─┐
+│                 0 │  188875 │
+│                 1 │    4799 │
+│                 2 │   13833 │
+│                 3 │     656 │
+│                 4 │      51 │
+│                 6 │       5 │
+│                 7 │       2 │
+│                 9 │      13 │
+│                11 │      14 │
+│                12 │       5 │
+│                13 │       2 │
+│                14 │      70 │
+│                15 │      20 │
+│                72 │     159 │
+│                87 │       9 │
+│                88 │      75 │
+│                97 │     405 │
+└───────────────────┴─────────┘
+```
+
+쿼리 응답을 보면 `JURISDICTION_CODE`는 `UInt8`에 잘 맞는다는 것을 알 수 있습니다.
+
+마찬가지로 일부 `String` 필드도 살펴보고, `DateTime` 또는 [`LowCardinality(String)`](/ko/reference/data-types/lowcardinality) 필드로 사용하기에 적합한지 확인합니다.
+
+예를 들어 `PARKS_NM` 필드는 &quot;해당하는 경우 사건 발생 장소인 뉴욕시 공원, 놀이터 또는 녹지의 이름(주립공원 제외)&quot;으로 설명됩니다. 뉴욕시 공원 이름은 `LowCardinality(String)`의 좋은 후보가 될 수 있습니다:
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select count(distinct PARKS_NM) FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─uniqExact(PARKS_NM)─┐
+│                 319 │
+└─────────────────────┘
+```
+
+몇 가지 공원 이름을 살펴보겠습니다:
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select distinct PARKS_NM FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ LIMIT 10
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─PARKS_NM───────────────────┐
+│ (null)                     │
+│ ASSER LEVY PARK            │
+│ JAMES J WALKER PARK        │
+│ BELT PARKWAY/SHORE PARKWAY │
+│ PROSPECT PARK              │
+│ MONTEFIORE SQUARE          │
+│ SUTTON PLACE PARK          │
+│ JOYCE KILMER PARK          │
+│ ALLEY ATHLETIC PLAYGROUND  │
+│ ASTORIA PARK               │
+└────────────────────────────┘
+```
+
+작성 시점 기준으로 사용 중인 데이터셋에는 `PARK_NM` 컬럼에 서로 다른 공원과 놀이터가 수백 개 정도밖에 없습니다. 이는 `LowCardinality(String)` 필드에서는 고유한 문자열 수를 10,000개 미만으로 유지하라는 [LowCardinality](/ko/reference/data-types/lowcardinality#description) 권장 사항을 고려하면 적은 수입니다.
+
+<div id="datetime-fields">
+  ### DateTime 필드
+</div>
+
+[데이터셋 웹 페이지](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)의 **이 데이터셋의 컬럼** 섹션을 보면, 신고된 이벤트의 시작 시점과 종료 시점을 나타내는 날짜 및 시간 필드가 있습니다. `CMPLNT_FR_DT` 및 `CMPLT_TO_DT`의 최솟값과 최댓값을 확인하면 해당 필드가 항상 채워지는지 여부를 가늠할 수 있습니다:
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_DT), max(CMPLNT_FR_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_DT)─┬─max(CMPLNT_FR_DT)─┐
+│ 01/01/1973        │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_DT), max(CMPLNT_TO_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_DT)─┬─max(CMPLNT_TO_DT)─┐
+│                   │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_TM), max(CMPLNT_FR_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_TM)─┬─max(CMPLNT_FR_TM)─┐
+│ 00:00:00          │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_TM), max(CMPLNT_TO_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_TM)─┬─max(CMPLNT_TO_TM)─┐
+│ (null)            │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+<div id="make-a-plan">
+  ## 계획 세우기
+</div>
+
+위 조사 결과를 바탕으로 합니다.
+
+* `JURISDICTION_CODE`는 `UInt8`로 CAST해야 합니다.
+* `PARKS_NM`은 `LowCardinality(String)`으로 CAST해야 합니다.
+* `CMPLNT_FR_DT`와 `CMPLNT_FR_TM`은 항상 값이 있습니다(`00:00:00` 기본 시간이 들어갈 수도 있음).
+* `CMPLNT_TO_DT`와 `CMPLNT_TO_TM`은 비어 있을 수 있습니다.
+* 원본에서는 날짜와 시간이 별도의 필드에 저장됩니다.
+* 날짜는 `mm/dd/yyyy` 포맷입니다.
+* 시간은 `hh:mm:ss` 포맷입니다.
+* 날짜와 시간을 연결해 DateTime 타입으로 만들 수 있습니다.
+* 1970년 1월 1일 이전 날짜도 일부 있으므로 64비트 DateTime이 필요합니다.
+
+<Note>
+  타입에 적용해야 할 변경 사항은 이보다 훨씬 많지만, 모두 동일한 조사 단계에 따라 결정할 수 있습니다. 필드에 있는 고유 문자열 수와 숫자값의 최솟값 및 최댓값을 살펴보고 판단하십시오. 이 가이드 뒤쪽에 제시된 테이블 스키마에는 낮은 카디널리티 문자열과 부호 없는 정수 필드가 많고, 부동소수점 숫자 필드는 매우 적습니다.
+</Note>
+
+<div id="concatenate-the-date-and-time-fields">
+  ## 날짜 및 시간 필드 연결하기
+</div>
+
+날짜 및 시간 필드 `CMPLNT_FR_DT`와 `CMPLNT_FR_TM`을 연결해 `DateTime`으로 CAST할 수 있는 단일 `String`으로 만들려면, 연결 연산자로 두 필드를 이어 붙인 `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`를 선택합니다. `CMPLNT_TO_DT`와 `CMPLNT_TO_TM` 필드도 같은 방식으로 처리합니다.
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM AS complaint_begin FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+LIMIT 10
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─complaint_begin─────┐
+│ 07/29/2010 00:01:00 │
+│ 12/01/2011 12:00:00 │
+│ 04/01/2017 15:00:00 │
+│ 03/26/2018 17:20:00 │
+│ 01/01/2019 00:00:00 │
+│ 06/14/2019 00:00:00 │
+│ 11/29/2021 20:00:00 │
+│ 12/04/2021 00:35:00 │
+│ 12/05/2021 12:50:00 │
+│ 12/07/2021 20:30:00 │
+└─────────────────────┘
+```
+
+<div id="convert-the-date-and-time-string-to-a-datetime64-type">
+  ## 날짜 및 시간 String을 DateTime64 타입으로 변환
+</div>
+
+가이드 앞부분에서 TSV 파일에 1970년 1월 1일 이전 날짜가 포함되어 있음을 확인했습니다. 따라서 이러한 날짜를 처리하려면 64비트 DateTime 타입이 필요합니다. 또한 날짜 포맷도 `MM/DD/YYYY`에서 `YYYY/MM/DD`로 변환해야 합니다. 이 두 작업은 모두 [`parseDateTime64BestEffort()`](/ko/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort)를 사용해 수행할 수 있습니다.
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+      (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+select parseDateTime64BestEffort(CMPLNT_START) AS complaint_begin,
+       parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end
+FROM file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ORDER BY complaint_begin ASC
+LIMIT 25
+FORMAT PrettyCompact"
+```
+
+위 2행과 3행에는 이전 단계에서 이어 붙인 결과가 들어 있고, 4행과 5행에서는 문자열을 `DateTime64`로 파싱합니다. 불만 종료 시간은 항상 존재하는 것이 아니므로 `parseDateTime64BestEffortOrNull`을 사용합니다.
+
+```response title="Response"
+┌─────────complaint_begin─┬───────────complaint_end─┐
+│ 1925-01-01 10:00:00.000 │ 2021-02-12 09:30:00.000 │
+│ 1925-01-01 11:37:00.000 │ 2022-01-16 11:49:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2021-12-31 00:00:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2022-02-02 22:00:00.000 │
+│ 1925-01-01 19:00:00.000 │ 2022-04-14 05:00:00.000 │
+│ 1955-09-01 19:55:00.000 │ 2022-08-01 00:45:00.000 │
+│ 1972-03-17 11:40:00.000 │ 2022-03-17 11:43:00.000 │
+│ 1972-05-23 22:00:00.000 │ 2022-05-24 09:00:00.000 │
+│ 1972-05-30 23:37:00.000 │ 2022-05-30 23:50:00.000 │
+│ 1972-07-04 02:17:00.000 │                    ᴺᵁᴸᴸ │
+│ 1973-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1975-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1976-11-05 00:01:00.000 │ 1988-10-05 23:59:00.000 │
+│ 1977-01-01 00:00:00.000 │ 1977-01-01 23:59:00.000 │
+│ 1977-12-20 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-01-01 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-08-14 00:00:00.000 │ 1987-08-13 23:59:00.000 │
+│ 1983-01-07 00:00:00.000 │ 1990-01-06 00:00:00.000 │
+│ 1984-01-01 00:01:00.000 │ 1984-12-31 23:59:00.000 │
+│ 1985-01-01 12:00:00.000 │ 1987-12-31 15:00:00.000 │
+│ 1985-01-11 09:00:00.000 │ 1985-12-31 12:00:00.000 │
+│ 1986-03-16 00:05:00.000 │ 2022-03-16 00:45:00.000 │
+│ 1987-01-07 00:00:00.000 │ 1987-01-09 00:00:00.000 │
+│ 1988-04-03 18:30:00.000 │ 2022-08-03 09:45:00.000 │
+│ 1988-07-29 12:00:00.000 │ 1990-07-27 22:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+<Note>
+  위에 `1925`로 표시된 날짜는 데이터 오류로 인한 것입니다. 원본 데이터에는 `1019` - `1022`년으로 되어 있지만 실제로는 `2019` - `2022`년이어야 하는 레코드가 여러 개 있습니다. `64 bit DateTime`에서 표현할 수 있는 가장 이른 날짜가 1925년 1월 1일이기 때문에 해당 값으로 저장됩니다.
+</Note>
+
+<div id="create-a-table">
+  ## 테이블 생성
+</div>
+
+위에서 컬럼에 사용할 데이터 타입을 결정한 내용은 아래 테이블 스키마에 반영되어 있습니다. 또한 테이블에 사용할 `ORDER BY`와 `PRIMARY KEY`도 결정해야 합니다. `ORDER BY` 또는 `PRIMARY KEY` 중 하나 이상은 반드시 지정해야 합니다. 아래에는 `ORDER BY`에 포함할 컬럼을 결정할 때 참고할 몇 가지 지침을 정리했습니다. 자세한 내용은 이 문서 끝의 *다음 단계* 섹션에서 확인할 수 있습니다.
+
+<div id="order-by-and-primary-key-clauses">
+  ### `ORDER BY` 및 `PRIMARY KEY` 절
+</div>
+
+* `ORDER BY` 튜플에는 쿼리 필터에 사용되는 필드가 포함되어야 합니다
+* 디스크 압축을 최대화하려면 `ORDER BY` 튜플을 카디널리티가 낮은 순서대로 정렬해야 합니다
+* `PRIMARY KEY` 튜플이 있으면 `ORDER BY` 튜플의 부분 집합이어야 합니다
+* `ORDER BY`만 지정하면 동일한 튜플이 `PRIMARY KEY`로 사용됩니다
+* 프라이머리 키 인덱스는 지정된 경우 `PRIMARY KEY` 튜플을 사용하고, 그렇지 않으면 `ORDER BY` 튜플을 사용해 생성됩니다
+* `PRIMARY KEY` 인덱스는 메인 메모리에 유지됩니다
+
+데이터셋과 이를 쿼리해 답할 수 있는 질문을 살펴보면,
+New York City의 5개 자치구에서 시간 경과에 따라 신고된 범죄 유형을 확인하는 것이
+적절하다고 판단할 수 있습니다. 그러면 다음 필드들을 `ORDER BY`에 포함할 수 있습니다:
+
+| 컬럼            | 설명(데이터 딕셔너리 기준)  |
+| ------------- | ---------------- |
+| OFNS&#95;DESC | 키 코드에 해당하는 범죄 설명 |
+| RPT&#95;DT    | 사건이 경찰에 신고된 날짜   |
+| BORO&#95;NM   | 사건이 발생한 자치구 이름   |
+
+후보 컬럼 3개의 카디널리티를 확인하기 위해 TSV 파일을 쿼리합니다:
+
+```bash title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select formatReadableQuantity(uniq(OFNS_DESC)) as cardinality_OFNS_DESC,
+        formatReadableQuantity(uniq(RPT_DT)) as cardinality_RPT_DT,
+        formatReadableQuantity(uniq(BORO_NM)) as cardinality_BORO_NM
+  FROM
+  file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+  FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─cardinality_OFNS_DESC─┬─cardinality_RPT_DT─┬─cardinality_BORO_NM─┐
+│ 60.00                 │ 306.00             │ 6.00                │
+└───────────────────────┴────────────────────┴─────────────────────┘
+```
+
+카디널리티 기준으로 정렬하면 `ORDER BY`는 다음과 같습니다:
+
+```sql
+ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
+```
+
+<Note>
+  아래 표에서는 가독성이 더 높은 컬럼 이름을 사용하며, 위의 이름은 다음과 같이 매핑됩니다.
+
+  ```sql
+  ORDER BY ( borough, offense_description, date_reported )
+  ```
+</Note>
+
+데이터 타입의 변경 사항과 `ORDER BY` 튜플을 함께 반영하면 다음과 같은 테이블 구조가 됩니다:
+
+```sql
+CREATE TABLE NYPD_Complaint (
+    complaint_number     String,
+    precinct             UInt8,
+    borough              LowCardinality(String),
+    complaint_begin      DateTime64(0,'America/New_York'),
+    complaint_end        DateTime64(0,'America/New_York'),
+    was_crime_completed  String,
+    housing_authority    String,
+    housing_level_code   UInt32,
+    jurisdiction_code    UInt8,
+    jurisdiction         LowCardinality(String),
+    offense_code         UInt8,
+    offense_level        LowCardinality(String),
+    location_descriptor  LowCardinality(String),
+    offense_description  LowCardinality(String),
+    park_name            LowCardinality(String),
+    patrol_borough       LowCardinality(String),
+    PD_CD                UInt16,
+    PD_DESC              String,
+    location_type        LowCardinality(String),
+    date_reported        Date,
+    transit_station      LowCardinality(String),
+    suspect_age_group    LowCardinality(String),
+    suspect_race         LowCardinality(String),
+    suspect_sex          LowCardinality(String),
+    transit_district     UInt8,
+    victim_age_group     LowCardinality(String),
+    victim_race          LowCardinality(String),
+    victim_sex           LowCardinality(String),
+    NY_x_coordinate      UInt32,
+    NY_y_coordinate      UInt32,
+    Latitude             Float64,
+    Longitude            Float64
+) ENGINE = MergeTree
+  ORDER BY ( borough, offense_description, date_reported )
+```
+
+<div id="finding-the-primary-key-of-a-table">
+  ### 테이블의 기본 키 찾기
+</div>
+
+ClickHouse의 `system` 데이터베이스, 특히 `system.table`에는 방금 생성한 테이블의 모든 정보가 들어 있습니다. 이 쿼리는 `ORDER BY`(정렬 키)와 `PRIMARY KEY`를 보여줍니다:
+
+```sql
+SELECT
+    partition_key,
+    sorting_key,
+    primary_key,
+    table
+FROM system.tables
+WHERE table = 'NYPD_Complaint'
+FORMAT Vertical
+```
+
+응답
+
+```response
+Query id: 6a5b10bf-9333-4090-b36e-c7f08b1d9e01
+
+Row 1:
+──────
+partition_key:
+sorting_key:   borough, offense_description, date_reported
+primary_key:   borough, offense_description, date_reported
+table:         NYPD_Complaint
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<div id="preprocess-import-data">
+  ## 데이터 전처리 및 가져오기
+</div>
+
+데이터 전처리에는 `clickhouse-local` 도구를 사용하고, 업로드에는 `clickhouse-client`를 사용합니다.
+
+<div id="clickhouse-local-arguments-used">
+  ### 사용된 `clickhouse-local` 인수
+</div>
+
+<Tip>
+  아래 `clickhouse-local` 인수에 `table='input'`이 포함되어 있습니다. `clickhouse-local`은 제공된 입력(`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`)을 받아 테이블에 삽입합니다. 기본 테이블 이름은 `table`입니다. 이 가이드에서는 데이터 흐름을 더 명확히 보여주기 위해 테이블 이름을 `input`으로 설정합니다. `clickhouse-local`의 마지막 인수는 테이블(`FROM input`)에서 선택하는 쿼리이며, 이 쿼리는 `clickhouse-client`로 파이프되어 `NYPD_Complaint` 테이블을 채웁니다.
+</Tip>
+
+```sql
+cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
+  | clickhouse-local --table='input' --input-format='TSVWithNames' \
+  --input_format_max_rows_to_read_for_schema_inference=2000 \
+  --query "
+    WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+     (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+    SELECT
+      CMPLNT_NUM                                  AS complaint_number,
+      ADDR_PCT_CD                                 AS precinct,
+      BORO_NM                                     AS borough,
+      parseDateTime64BestEffort(CMPLNT_START)     AS complaint_begin,
+      parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end,
+      CRM_ATPT_CPTD_CD                            AS was_crime_completed,
+      HADEVELOPT                                  AS housing_authority_development,
+      HOUSING_PSA                                 AS housing_level_code,
+      JURISDICTION_CODE                           AS jurisdiction_code,
+      JURIS_DESC                                  AS jurisdiction,
+      KY_CD                                       AS offense_code,
+      LAW_CAT_CD                                  AS offense_level,
+      LOC_OF_OCCUR_DESC                           AS location_descriptor,
+      OFNS_DESC                                   AS offense_description,
+      PARKS_NM                                    AS park_name,
+      PATROL_BORO                                 AS patrol_borough,
+      PD_CD,
+      PD_DESC,
+      PREM_TYP_DESC                               AS location_type,
+      toDate(parseDateTimeBestEffort(RPT_DT))     AS date_reported,
+      STATION_NAME                                AS transit_station,
+      SUSP_AGE_GROUP                              AS suspect_age_group,
+      SUSP_RACE                                   AS suspect_race,
+      SUSP_SEX                                    AS suspect_sex,
+      TRANSIT_DISTRICT                            AS transit_district,
+      VIC_AGE_GROUP                               AS victim_age_group,
+      VIC_RACE                                    AS victim_race,
+      VIC_SEX                                     AS victim_sex,
+      X_COORD_CD                                  AS NY_x_coordinate,
+      Y_COORD_CD                                  AS NY_y_coordinate,
+      Latitude,
+      Longitude
+    FROM input" \
+  | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
+```
+
+<div id="validate-data">
+  ## 데이터 확인
+</div>
+
+<Note>
+  데이터셋은 매년 한 번 이상 변경되므로, 집계 건수가 이 문서에 있는 값과 일치하지 않을 수 있습니다.
+</Note>
+
+```sql title="Query"
+SELECT count()
+FROM NYPD_Complaint
+```
+
+```text title="Response"
+┌─count()─┐
+│  208993 │
+└─────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+ClickHouse에서 데이터셋 크기는 원본 TSV 파일의 12%에 불과합니다. 원본 TSV 파일 크기와 테이블 크기를 비교해 보겠습니다:
+
+```sql title="Query"
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
+WHERE name = 'NYPD_Complaint'
+```
+
+```text title="Response"
+┌─formatReadableSize(total_bytes)─┐
+│ 8.63 MiB                        │
+└─────────────────────────────────┘
+```
+
+<div id="run-queries">
+  ## 몇 가지 쿼리 실행
+</div>
+
+<div id="query-1-compare-the-number-of-complaints-by-month">
+  ### 쿼리 1. 월별 민원 건수 비교
+</div>
+
+```sql title="Query"
+SELECT
+    dateName('month', date_reported) AS month,
+    count() AS complaints,
+    bar(complaints, 0, 50000, 80)
+FROM NYPD_Complaint
+GROUP BY month
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
+
+┌─month─────┬─complaints─┬─bar(count(), 0, 50000, 80)───────────────────────────────┐
+│ March     │      34536 │ ███████████████████████████████████████████████████████▎ │
+│ May       │      34250 │ ██████████████████████████████████████████████████████▋  │
+│ April     │      32541 │ ████████████████████████████████████████████████████     │
+│ January   │      30806 │ █████████████████████████████████████████████████▎       │
+│ February  │      28118 │ ████████████████████████████████████████████▊            │
+│ November  │       7474 │ ███████████▊                                             │
+│ December  │       7223 │ ███████████▌                                             │
+│ October   │       7070 │ ███████████▎                                             │
+│ September │       6910 │ ███████████                                              │
+│ August    │       6801 │ ██████████▊                                              │
+│ June      │       6779 │ ██████████▋                                              │
+│ July      │       6485 │ ██████████▍                                              │
+└───────────┴────────────┴──────────────────────────────────────────────────────────┘
+
+12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
+```
+
+<div id="query-2-compare-total-number-of-complaints-by-borough">
+  ### 쿼리 2. 자치구별 총 민원 건수 비교
+</div>
+
+```sql title="Query"
+SELECT
+    borough,
+    count() AS complaints,
+    bar(complaints, 0, 125000, 60)
+FROM NYPD_Complaint
+GROUP BY borough
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
+
+┌─borough───────┬─complaints─┬─bar(count(), 0, 125000, 60)──┐
+│ BROOKLYN      │      57947 │ ███████████████████████████▋ │
+│ MANHATTAN     │      53025 │ █████████████████████████▍   │
+│ QUEENS        │      44875 │ █████████████████████▌       │
+│ BRONX         │      44260 │ █████████████████████▏       │
+│ STATEN ISLAND │       8503 │ ████                         │
+│ (null)        │        383 │ ▏                            │
+└───────────────┴────────────┴──────────────────────────────┘
+
+6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+[ClickHouse의 희소 프라이머리 인덱스 실용 입문](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)에서는 기존 관계형 데이터베이스와 비교했을 때 ClickHouse 인덱싱이 어떻게 다른지, ClickHouse가 희소 프라이머리 인덱스를 어떻게 생성하고 활용하는지, 그리고 인덱싱 모범 사례를 설명합니다.

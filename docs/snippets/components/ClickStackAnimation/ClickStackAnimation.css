@@ -1,0 +1,155 @@
+/* ClickStack Animation Component */
+
+.clickstack-animation-wrapper {
+  width: 100%;
+  max-width: max-content;
+  transition: opacity 0.3s ease;
+}
+
+.clickstack-animation-inner {
+  transform-origin: top left;
+}
+
+.clickstack-grid {
+  display: grid;
+  width: 537px;
+  height: 537px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+}
+
+/* Grid item containers */
+.clickstack-grid-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clickstack-grid-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Icon boxes */
+.clickstack-icon-box {
+  display: flex;
+  width: 4rem;
+  height: 4rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(113, 113, 122, 0.8);
+  background-color: #171717;
+}
+
+/* SVG positioning utilities */
+.clickstack-svg-absolute {
+  position: absolute;
+}
+
+.clickstack-svg-left-center {
+  left: 50%;
+  top: 50%;
+  transform: translateY(2rem);
+}
+
+.clickstack-svg-right-center {
+  right: 50%;
+  top: 50%;
+  transform: translateY(2rem);
+}
+
+.clickstack-svg-bottom-left {
+  bottom: 50%;
+  left: 50%;
+  transform: translateY(-2rem);
+}
+
+.clickstack-svg-bottom-right {
+  bottom: 50%;
+  right: 50%;
+  transform: translateY(-2rem);
+}
+
+/* ClickStack Logo Container */
+.clickstack-logo-container {
+  position: relative;
+}
+
+.clickstack-logo-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  animation: fadeInOut 3s ease-in-out infinite;
+  background-color: rgba(250, 255, 105, 0.6);
+  filter: blur(40px);
+}
+
+.clickstack-logo-box {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  border-radius: 0.5rem;
+  border: 2px solid #faff69;
+  background-color: #262626;
+  background-image: linear-gradient(to bottom right, rgba(250, 255, 105, 0.2), rgba(250, 255, 105, 0.4));
+}
+
+.clickstack-logo-svg {
+  margin: auto;
+}
+
+@keyframes fadeInOut {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Light mode adjustments - hide glow, keep yellow border */
+:is(.light) .clickstack-logo-glow {
+  display: none;
+}
+
+:is(.light) .clickstack-logo-box {
+  border-color: #faff69;
+  background-color: #000000;
+  background-image: none;
+}
+
+/* SVG line colors - dark mode (default) */
+.clickstack-line-bg {
+  stroke: #414141;
+}
+
+.clickstack-line-animated {
+  stroke: #faff69;
+}
+
+/* SVG line colors - light mode (all grey) */
+:is(.light) .clickstack-line-bg {
+  stroke: #d4d4d8;
+}
+
+:is(.light) .clickstack-line-animated {
+  stroke: #a1a1aa;
+}
+
+/* Responsive adjustments */
+@media (max-width: 767px) {
+  .clickstack-animation-wrapper {
+    max-width: 400px;
+  }
+
+  .clickstack-grid {
+    width: 400px;
+    height: 400px;
+  }
+}

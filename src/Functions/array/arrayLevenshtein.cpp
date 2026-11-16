@@ -38,14 +38,22 @@ public:
     static constexpr auto name = T::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayLevenshtein<T>>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return T::arguments; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return T::arguments; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (requires { T::signature; })
+            return T::signature;
+        else
+            return {};
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args_descriptors;
         args_descriptors = FunctionArgumentDescriptors{
@@ -81,7 +89,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
 
@@ -105,7 +113,7 @@ public:
         return execute(columns);
     }
 private:
-    ColumnPtr execute(VectorWithMemoryTracking<const ColumnArray *>) const
+    [[nodiscard]] ColumnPtr execute(VectorWithMemoryTracking<const ColumnArray *>) const
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -418,7 +426,7 @@ private:
         return (levenshteinString<Types, ResultColumn>(columns, res_values) || ...);
     }
 
-    ColumnPtr levenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    [[nodiscard]] ColumnPtr levenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
     {
         auto res = ColumnUInt32::create();
         ColumnUInt32::Container & res_values = res->getData();
@@ -450,7 +458,7 @@ private:
         return res;
     }
 
-    ColumnPtr weightedLevenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    [[nodiscard]] ColumnPtr weightedLevenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
     {
         for (size_t i = 0; i < 2; i++)
         {
@@ -528,14 +536,21 @@ private:
                 res_values[row] = 1.0;
                 continue;
             }
-            W weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), W{}) +
-                            std::accumulate(to_weights.begin(), to_weights.end(), W{});
+            // Sum the weights in a wide accumulator (exact for integral weights, no overflow/UB), then
+            // convert once to Float64 to match the distance domain. Mirrors levenshteinDistanceWeighted.
+            using Acc = LevenshteinWeightAccumulator<W>;
+            Acc weights_acc = 0;
+            for (const auto & weight : from_weights)
+                weights_acc += static_cast<Acc>(weight);
+            for (const auto & weight : to_weights)
+                weights_acc += static_cast<Acc>(weight);
+            const Float64 weights_sum = static_cast<Float64>(weights_acc);
             if (weights_sum == 0)
             {
                 res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = 1.0 - (distance->getFloat64(row) / static_cast<Float64>(weights_sum));
+            res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
         }
         return true;
     }
@@ -545,6 +560,7 @@ struct SimpleLevenshtein
 {
     static constexpr auto name{"arrayLevenshteinDistance"};
     static constexpr size_t arguments = 2;
+    static constexpr auto signature = "(Array, Array) -> UInt32";
 };
 
 template <>
@@ -570,6 +586,8 @@ struct Weighted
 {
     static constexpr auto name{"arrayLevenshteinDistanceWeighted"};
     static constexpr size_t arguments = 4;
+    static constexpr auto signature
+        = "(Array, Array, Array(T : Integer | Float), Array(T)) -> Float64";
 };
 
 template <>
@@ -582,6 +600,8 @@ struct Similarity
 {
     static constexpr auto name{"arraySimilarity"};
     static constexpr size_t arguments = 4;
+    static constexpr auto signature
+        = "(Array, Array, Array(T : Integer | Float), Array(T)) -> Float64";
 };
 
 template <>
@@ -613,8 +633,8 @@ REGISTER_FUNCTION(ArrayLevenshtein)
     FunctionDocumentation::Description description_arrayLevDis = "Calculates the Levenshtein distance for two arrays.";
     FunctionDocumentation::Syntax syntax_arrayLevDis = "arrayLevenshteinDistance(from, to)";
     FunctionDocumentation::Arguments arguments_arrayLevDis = {
-        {"from", "The first array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to", "The second array. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"from", "The first array. [`Array(T)`](/reference/data-types/array)."},
+        {"to", "The second array. [`Array(T)`](/reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_arrayLevDis = {"Levenshtein distance between the first and the second arrays.", {"Float64"}};
     FunctionDocumentation::Examples example_arrayLevDis = {
@@ -636,8 +656,8 @@ The number of elements for the array and its weights should match.
     )";
     FunctionDocumentation::Syntax syntax_arrayLevDisW = "arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)";
     FunctionDocumentation::Arguments arguments_arrayLevDisW = {
-        {"from", "first array. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"from", "first array. [`Array(T)`](/reference/data-types/array)."},
+        {"to", "second array. [`Array(T)`](/reference/data-types/array)."},
         {"from_weights", "weights for the first array.", {"Array((U)Int*|Float*)"}},
         {"to_weights", "weights for the second array.", {"Array((U)Int*|Float*)"}},
     };

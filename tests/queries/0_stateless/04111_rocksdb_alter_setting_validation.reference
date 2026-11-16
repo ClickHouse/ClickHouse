@@ -1,0 +1,7 @@
+after-invalid-bool:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key
+after-invalid-bool2:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key
+after-invalid-uint-string:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key
+after-invalid-uint-negative:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key
+after-valid-bool:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key SETTINGS optimize_for_bulk_insert = 0
+after-valid-uint:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key SETTINGS optimize_for_bulk_insert = 0, bulk_insert_block_size = 1234
+after-reset:	CREATE TABLE default.t_rocksdb_alter_validation (`key` UInt64, `value` UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key SETTINGS bulk_insert_block_size = 1234

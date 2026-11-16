@@ -238,7 +238,15 @@ private:
         }
 
         /// Scale the histogram to the range [0, BAR_LEVELS]
-#pragma clang loop vectorize(disable) /// Workaround for a bug in clang-23
+        ///
+        /// Vectorization is disabled because of a bug in the loop vectorizer of clang 23 that shows up in
+        /// baseline x86-64 builds (`-DX86_ARCH_LEVEL=1`): `mulOverflow` is widened to a vector
+        /// `llvm.umul.with.overflow`, but the predicated division below is replicated per lane and takes the
+        /// whole vector struct member as a scalar operand, which produces ill-typed IR and a backend failure
+        /// (`Cannot select: i32 = any_extend`). Fixed on LLVM main by
+        /// https://github.com/llvm/llvm-project/pull/219941, not backported to any 23.1.x release.
+        /// The loop is at most 1024 iterations long, so it does not matter for performance.
+#pragma clang loop vectorize(disable)
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -286,7 +294,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter `min_x` must be less than `max_x`");
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "sparkbar";
     }
@@ -301,7 +309,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs, Arena * /*arena*/) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs, Arena * /*arena*/) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -316,7 +324,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * /*arena*/) const override
     {
@@ -433,7 +441,7 @@ SELECT sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt) 
     FunctionDocumentation::Category category_sparkbar = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sparkbar = {description_sparkbar, syntax_sparkbar, arguments_sparkbar, parameters_sparkbar, returned_value_sparkbar, examples_sparkbar, introduced_in_sparkbar, category_sparkbar};
 
-    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, documentation_sparkbar});
+    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, documentation_sparkbar, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
     factory.registerAlias("sparkBar", "sparkbar");
 }
 

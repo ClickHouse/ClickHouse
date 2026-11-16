@@ -17,6 +17,9 @@ DROP USER IF EXISTS $user;
 CREATE USER $user;
 GRANT SELECT, CREATE, INSERT ON $db.test_buffer TO $user;
 GRANT TABLE ENGINE ON Buffer TO $user;
+-- Creating the buffer without a column list infers the structure from the destination, which needs
+-- SHOW COLUMNS on it. The read and write checks asserted below require SELECT and INSERT instead.
+GRANT SHOW COLUMNS ON $db.test_table TO $user;
 EOF
 
 ${CLICKHOUSE_CLIENT} --user $user --query "CREATE TABLE $db.test_buffer ENGINE = Buffer($db, test_table, 1, 10, 100, 10000, 1000000, 10000000, 100000000)"

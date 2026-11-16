@@ -1,0 +1,16 @@
+---
+title: 创建摄取用户
+---
+
+我们建议为 collector 单独创建一个用户，而不是复用 `default`。通过 SQL 控制台连接到你的服务，然后运行：
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+  请将上方代码片段中的密码替换为强密码。
+</Tip>
+
+collector 会在首次使用时，在 `otel` 数据库中为日志、链路追踪和指标创建 schema。有关生产环境用户设置的更多指导，请参阅 [进入生产环境](/zh/clickstack/managing/production#create-a-database-ingestion-user-managed)。

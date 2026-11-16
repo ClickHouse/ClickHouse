@@ -25,7 +25,7 @@ Standard: Cpp11
 PointerAlignment: Middle
 MaxEmptyLinesToKeep: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
-AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortFunctionsOnASingleLine: All
 AlwaysBreakTemplateDeclarations: true
 IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true
@@ -79,6 +79,9 @@ IndentWidth: 4
 IndentWrappedFunctionNames: false
 MacroBlockBegin: ''
 MacroBlockEnd: ''
+WhitespaceSensitiveMacros:
+  - DECLARE_X86_64_V3_SPECIFIC_CODE
+  - DECLARE_X86_64_V4_SPECIFIC_CODE
 NamespaceIndentation: None
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true

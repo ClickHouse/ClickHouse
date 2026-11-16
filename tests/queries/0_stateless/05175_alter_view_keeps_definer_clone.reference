@@ -1,0 +1,10 @@
+mv clone after DROP USER: 1
+view clone after DROP USER: 1
+mv clone after MODIFY COMMENT: 1
+view clone after MODIFY COMMENT: 1
+mv clone after MODIFY SQL SECURITY with the same definer: 1
+mv sum: 40
+view rows: 1
+mv clone after the definer changed: 0
+new definer is protected
+view clone after DROP TABLE: 0

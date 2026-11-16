@@ -19,26 +19,29 @@ public:
         return std::make_shared<FunctionFQDN>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Read per executing node, so two nodes can disagree.
+    [[nodiscard]] bool isServerConstant() const override { return true; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeString>();
+        return "() -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(
             input_rows_count, getFQDNOrHostName())->convertToFullColumnIfConst();
@@ -61,9 +64,9 @@ Returns the fully qualified domain name of the ClickHouse server.
 SELECT fqdn()
         )",
         R"(
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
         )"
     }
     };

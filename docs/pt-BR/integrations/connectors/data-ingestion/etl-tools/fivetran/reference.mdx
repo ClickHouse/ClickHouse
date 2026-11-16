@@ -1,0 +1,364 @@
+---
+sidebarTitle: 'Referência técnica'
+slug: /integrations/fivetran/reference
+description: 'Mapeamentos de tipos, detalhes do mecanismo de tabela, colunas de metadados e consultas de depuração para o destino ClickHouse da Fivetran.'
+title: 'Referência técnica'
+doc_type: 'guide'
+keywords: ['fivetran', 'clickhouse destination', 'technical reference']
+---
+
+<div id="setup-details">
+  ## Detalhes da configuração
+</div>
+
+<div id="user-and-role-management">
+  ### Gerenciamento de usuários e funções
+</div>
+
+Considere não usar o usuário `default`; em vez disso, crie um usuário dedicado para ser usado exclusivamente com este
+destino do Fivetran. Os comandos a seguir, executados com o usuário `default`, criarão um novo `fivetran_user` com os
+privilégios necessários.
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- use um gerador de senhas seguro
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+Além disso, você pode revogar o acesso do `fivetran_user` a determinados bancos de dados.
+Por exemplo, ao executar a instrução a seguir, restringimos o acesso ao banco de dados `default`:
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+Você pode executar estas instruções no console SQL do ClickHouse.
+
+<div id="advanced-configuration">
+  ### Configuração avançada
+</div>
+
+O destino ClickHouse Cloud oferece suporte a um arquivo de configuração JSON opcional para casos de uso avançados. Esse arquivo permite ajustar com precisão o comportamento do destino, sobrescrevendo as configurações padrão que controlam tamanhos de lote, paralelismo, pools de conexão e timeouts de solicitação.
+
+<Note>
+  Essa configuração é totalmente opcional. Se nenhum arquivo for enviado, o destino usará valores padrão adequados, que funcionam bem para a maioria dos casos de uso.
+</Note>
+
+O arquivo deve ser um JSON válido e estar em conformidade com o esquema descrito abaixo.
+
+Se você precisar modificar a configuração após a configuração inicial, poderá editar as configurações do destino no dashboard do Fivetran e enviar um arquivo atualizado.
+
+O arquivo de configuração tem uma seção de nível superior:
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+Nela, é possível especificar as seguintes configurações que controlam o comportamento interno do próprio conector de destino do ClickHouse.
+Essas configurações afetam a forma como o conector processa os dados antes de enviá-los ao ClickHouse.
+
+| Configuração             | Tipo    | Padrão   | Faixa permitida | Descrição                                                                                                                                                                          |
+| ------------------------ | ------- | -------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `write_batch_size`       | integer | `100000` | 5,000 – 100,000 | Número de linhas por lote para operações de inserção, atualização e substituição.                                                                                                  |
+| `select_batch_size`      | integer | `1500`   | 200 – 1,500     | Número de linhas por lote para consultas SELECT usadas durante atualizações.                                                                                                       |
+| `mutation_batch_size`    | integer | `1500`   | 200 – 1,500     | Número de linhas por lote para mutações ALTER TABLE UPDATE no modo de histórico. Reduza esse valor se estiver lidando com instruções SQL grandes.                                  |
+| `hard_delete_batch_size` | integer | `1500`   | 200 – 1,500     | Número de linhas por lote para operações de exclusão permanente em sincronizações normais e no modo de histórico. Reduza esse valor se estiver lidando com instruções SQL grandes. |
+
+Todos os campos são opcionais. Se um campo não for especificado, o valor padrão será usado.
+Se um valor estiver fora da faixa permitida, o destino gerará um erro durante a sincronização.
+Campos desconhecidos são ignorados silenciosamente (um aviso é registrado no log) e não causam erros, o que permite compatibilidade futura quando novas configurações forem adicionadas.
+
+Exemplo:
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+<div id="type-mapping">
+  ## Mapeamento de conversão de tipos
+</div>
+
+O destino ClickHouse da Fivetran mapeia os [tipos de dados do Fivetran](https://fivetran.com/docs/destinations#datatypes) para os tipos do ClickHouse da seguinte forma:
+
+| Tipo do Fivetran | Tipo do ClickHouse                                               |
+| ---------------- | ---------------------------------------------------------------- |
+| BOOLEAN          | [Bool](/pt-BR/reference/data-types/boolean)                            |
+| SHORT            | [Int16](/pt-BR/reference/data-types/int-uint)                          |
+| INT              | [Int32](/pt-BR/reference/data-types/int-uint)                          |
+| LONG             | [Int64](/pt-BR/reference/data-types/int-uint)                          |
+| BIGDECIMAL       | [Decimal(P, S)](/pt-BR/reference/data-types/decimal)                   |
+| FLOAT            | [Float32](/pt-BR/reference/data-types/float)                           |
+| DOUBLE           | [Float64](/pt-BR/reference/data-types/float)                           |
+| LOCALDATE        | [Date32](/pt-BR/reference/data-types/date32)                           |
+| LOCALDATETIME    | [DateTime64(0, &#39;UTC&#39;)](/pt-BR/reference/data-types/datetime64) |
+| INSTANT          | [DateTime64(9, &#39;UTC&#39;)](/pt-BR/reference/data-types/datetime64) |
+| STRING           | [String](/pt-BR/reference/data-types/string)                           |
+| LOCALTIME        | [String](/pt-BR/reference/data-types/string) * **                      |
+| BINARY           | [String](/pt-BR/reference/data-types/string) *                         |
+| XML              | [String](/pt-BR/reference/data-types/string) *                         |
+| JSON             | [String](/pt-BR/reference/data-types/string) *                         |
+
+<Note>
+  * BINARY, XML, LOCALTIME e JSON são armazenados como [String](/pt-BR/reference/data-types/string) porque o tipo `String` do ClickHouse pode representar um conjunto arbitrário de bytes. O destination adiciona um comentário na coluna para indicar o tipo de dados original. O tipo de dados [JSON](/pt-BR/reference/data-types/newjson) do ClickHouse não é usado, pois foi marcado como obsoleto e nunca foi recomendado para uso em produção.
+    ** OBSERVAÇÃO: Issue para acompanhar o suporte ao tipo LOCALTIME: [clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15).
+</Note>
+
+<div id="date-and-time-value-ranges">
+  ### Intervalos de valores de data e hora
+</div>
+
+As fontes do Fivetran podem enviar valores de data e hora no intervalo [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange).
+Os tipos de data do ClickHouse Cloud têm intervalos mais restritos, portanto valores fora do intervalo compatível são ajustados silenciosamente para o limite mais próximo:
+
+| Tipo do Fivetran | Tipo do ClickHouse Cloud     | Valor mínimo        | Valor máximo        |
+| ---------------- | ---------------------------- | ------------------- | ------------------- |
+| LOCALDATE        | Date32                       | 1900-01-01          | 2299-12-31          |
+| LOCALDATETIME    | DateTime64(0, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+| INSTANT          | DateTime64(9, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+
+* O limite superior de INSTANT é 2262-04-11 23:47:16 porque DateTime64(9) armazena nanossegundos desde o epoch como int64, e 2^63 - 1 nanossegundos correspondem a essa data.
+  O próprio ClickHouse suporta DateTime64 com precisão &lt;= 9 até 2299-12-31 23:59:59.
+* O limite superior de LOCALDATETIME também é limitado a 2262-04-11 23:47:16 devido a um [bug conhecido](https://github.com/ClickHouse/clickhouse-go/issues/1311) no driver Go do ClickHouse, em que `time.Time.UnixNano()` é chamado para todas as precisões de DateTime64 antes de aplicar a escala, causando estouro de int64 para datas após 2262 mesmo com precisão 0.
+
+<div id="table-structure">
+  ## Tabelas de destino
+</div>
+
+O destino do ClickHouse Cloud usa o tipo de motor
+[Replacing](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) da família
+[SharedMergeTree](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree)
+(especificamente, `SharedReplacingMergeTree`), com versionamento pela coluna `_fivetran_synced`.
+
+Todas as colunas, exceto as chaves primárias (de ordenação) e as colunas de metadados do Fivetran, são criadas
+como [Nullable(T)](/pt-BR/reference/data-types/nullable), em que `T` é um
+tipo do ClickHouse Cloud baseado no [mapeamento de tipos](#type-mapping).
+
+A estrutura da tabela varia de acordo com o
+[modo de sincronização](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling)
+configurado para o conector do Fivetran: **exclusão lógica** (padrão) ou **modo histórico** (SCD Type 2).
+
+<div id="soft-delete-mode">
+  ### Modo de exclusão lógica
+</div>
+
+No modo de exclusão lógica, cada tabela de destino inclui as seguintes colunas de metadados:
+
+| Coluna              | Tipo                   | Descrição                                                                                                                   |
+| ------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `_fivetran_synced`  | `DateTime64(9, 'UTC')` | Timestamp de quando o registro foi sincronizado pelo Fivetran. Usado como coluna de versão para `SharedReplacingMergeTree`. |
+| `_fivetran_deleted` | `Bool`                 | Marcador de exclusão lógica. Definido como `true` quando o registro de origem é excluído.                                   |
+| `_fivetran_id`      | `String`               | Identificador único gerado automaticamente. Presente apenas quando a tabela de origem não tem chaves primárias.             |
+
+<div id="single-pk">
+  #### Chave primária única na tabela de origem
+</div>
+
+Por exemplo, a tabela de origem `users` tem como chave primária a coluna `id` (`INT`) e uma coluna regular `name` (`STRING`).
+A tabela de destino será definida da seguinte forma:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+Neste caso, a coluna `id` é usada como chave de ordenação da tabela.
+
+<div id="multiple-pks">
+  #### Múltiplas chaves primárias na tabela de origem
+</div>
+
+Se a tabela de origem tiver múltiplas chaves primárias, elas serão usadas na ordem em que aparecem na definição da
+tabela de origem no Fivetran.
+
+Por exemplo, há uma tabela de origem `items` com as colunas da chave primária `id` (`INT`) e `name` (`STRING`), além de uma
+coluna comum adicional `description` (`STRING`). A tabela de destino será definida da seguinte forma:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+Neste caso, as colunas `id` e `name` são usadas como chaves de ordenação da tabela.
+
+<div id="no-pks">
+  #### Sem chaves primárias na tabela de origem
+</div>
+
+Se a tabela de origem não tiver chaves primárias, o Fivetran adicionará um identificador exclusivo na forma de uma coluna `_fivetran_id`.
+Considere uma tabela `events` que tenha apenas as colunas `event` (`STRING`) e `timestamp` (`LOCALDATETIME`) na origem.
+Nesse caso, a tabela de destino será a seguinte:
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+Como `_fivetran_id` é único e não há outras opções de chave primária, ele é usado como chave de ordenação da tabela.
+
+<div id="history-mode">
+  ### Modo histórico (SCD Type 2)
+</div>
+
+Quando o [modo histórico](https://fivetran.com/docs/using-fivetran/features#historymode) está habilitado,
+o destino preserva todas as versões de cada registro em vez de sobrescrever os valores anteriores.
+Isso implementa [Slowly Changing Dimension Type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) (SCD Type 2),
+mantendo uma trilha de auditoria completa de todas as alterações.
+
+No modo histórico, toda tabela de destino inclui as seguintes colunas de metadados:
+
+| Coluna             | Tipo                             | Descrição                                                                                                                   |
+| ------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `_fivetran_synced` | `DateTime64(9, 'UTC')`           | Timestamp de quando o registro foi sincronizado pelo Fivetran. Usada como coluna de versão para `SharedReplacingMergeTree`. |
+| `_fivetran_start`  | `DateTime64(9, 'UTC')`           | Timestamp de quando esta versão do registro se tornou ativa. Parte da chave de ordenação da tabela.                         |
+| `_fivetran_end`    | `Nullable(DateTime64(9, 'UTC'))` | Timestamp de quando esta versão foi substituída. Definida como `2262-04-11 23:47:16` para os registros atualmente ativos.   |
+| `_fivetran_active` | `Nullable(Bool)`                 | Indica se esta é a versão atualmente ativa do registro.                                                                     |
+| `_fivetran_id`     | `String`                         | Identificador único gerado automaticamente. Presente apenas quando a tabela de origem não tem chaves primárias.             |
+
+A coluna `_fivetran_start` é sempre incluída na cláusula `ORDER BY` como o último elemento da chave de ordenação composta.
+Isso permite que várias versões do mesmo registro (com diferentes horários de início) coexistam na tabela.
+
+Quando um registro é atualizado:
+
+* O `_fivetran_end` da versão anterior é definido como o `_fivetran_start` da nova versão menos um nanossegundo, e `_fivetran_active` é definido como `false`.
+* A nova versão é inserida com `_fivetran_active` definido como `true` e `_fivetran_end` definido como `2262-04-11 23:47:16.000000000` (o valor máximo de `DateTime64(9)`).
+
+<div id="single-pk">
+  #### Chave primária única na tabela de origem
+</div>
+
+Por exemplo, a tabela de origem `users` tem a coluna de chave primária `id` (`INT`) e as colunas regulares `name` (`STRING`) e `status` (`STRING`).
+A tabela de destino no modo de histórico será definida da seguinte forma:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+Neste caso, `id` e `_fivetran_start` formam a chave de ordenação composta.
+
+Após algumas sincronizações, a tabela pode conter os seguintes dados:
+
+| id | name    | status | &#95;fivetran&#95;start       | &#95;fivetran&#95;end         | &#95;fivetran&#95;active |
+| -- | ------- | ------ | ----------------------------- | ----------------------------- | ------------------------ |
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000 | 2025-11-11 20:56:59.999000000 | false                    |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+
+O registro `id=1` tem duas versões: a original (`name 1`, inativa) e a atualizada (`name 11`, ativa).
+O registro `id=2` tem apenas uma versão, que no momento está ativa.
+
+<div id="history-multiple-pks">
+  #### múltiplas chaves primárias na tabela de origem
+</div>
+
+Se a tabela de origem tiver múltiplas chaves primárias, todas elas serão incluídas no `ORDER BY`, com `_fivetran_start` como último elemento.
+
+Por exemplo, há uma tabela de origem `items` com as colunas de chave primária `id` (`INT`) e `name` (`STRING`), além de uma
+coluna regular adicional `description` (`STRING`). A tabela de destino no modo de histórico será definida da seguinte forma:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+Nesse caso, `id`, `name` e `_fivetran_start` formam a chave de ordenação composta.
+
+<div id="no-pks">
+  #### Sem chaves primárias na tabela de origem
+</div>
+
+Se a tabela de origem não tiver chaves primárias, o Fivetran adicionará um identificador único como a coluna `_fivetran_id`,
+e `_fivetran_start` será acrescentado à chave de ordenação.
+Considere uma tabela `events` que tenha apenas as colunas `event` (`STRING`) e `timestamp` (`LOCALDATETIME`) na tabela de origem.
+A tabela de destino no modo histórico é a seguinte:
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+Como `_fivetran_id` e `_fivetran_start` formam a chave de ordenação composta.
+
+<div id="selecting-latest-version">
+  ### Selecionando a versão mais recente dos dados sem duplicatas
+</div>
+
+`SharedReplacingMergeTree` realiza a desduplicação de dados em segundo plano
+[apenas durante merges, em um momento imprevisível](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree).
+No entanto, é possível selecionar sob demanda a versão mais recente dos dados sem duplicatas com a palavra-chave `FINAL`:
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+Consulte a seção [otimizando consultas de leitura](/pt-BR/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)&quot; no guia de solução de problemas para ver dicas de otimização de consultas.
+
+<div id="retries-on-network-failures">
+  ## Novas tentativas em falhas de rede
+</div>
+
+O destino ClickHouse Cloud tenta novamente em caso de erros transitórios de rede usando o algoritmo de backoff exponencial.
+Isso é seguro mesmo quando o destino insere os dados, pois possíveis duplicatas são tratadas
+pelo mecanismo de tabela `SharedReplacingMergeTree`.

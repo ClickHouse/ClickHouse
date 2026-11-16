@@ -27,37 +27,28 @@ public:
         return std::make_shared<FunctionRandomString>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"length", &isNumber, nullptr, "(U)Int*"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"x", nullptr, nullptr, "Any"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-        return std::make_shared<DataTypeString>();
+        return "(Number, [Any]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
@@ -99,7 +90,7 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "Length of the string in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
     FunctionDocumentation::Examples examples = {

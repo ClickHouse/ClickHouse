@@ -62,8 +62,15 @@ public:
     /// Get the number of parts in the queue for check.
     size_t size() const;
 
-    /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
+    /// Check part by name.
+    /// A part check that `stop` interrupted did not learn anything about the part. The background thread just
+    /// drops such a result, but a foreground `CHECK TABLE` must fail instead of reporting the part as broken,
+    /// so it passes `throw_if_cancelled` and gets `ABORTED`.
+    CheckResult checkPartAndFix(
+        const String & part_name,
+        std::optional<time_t> * recheck_after = nullptr,
+        bool throw_on_broken_projection = true,
+        bool throw_if_cancelled = false);
 
     ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
@@ -108,6 +115,12 @@ private:
     mutable std::mutex parts_mutex;
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
+
+    /// Serializes cancelRemovedPartsCheck against another such call and against enqueuePart.
+    /// cancelRemovedPartsCheck drops parts_mutex while removing parts from ZooKeeper; without this
+    /// mutex a concurrent cancel or enqueue could mutate parts_queue in that gap and break the
+    /// recheck invariant. Lock order: cancel_removed_parts_mutex before parts_mutex.
+    std::mutex cancel_removed_parts_mutex;
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };

@@ -64,14 +64,16 @@ public:
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
+
+    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
+    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -108,6 +110,8 @@ public:
         }
     }
 
+    void insertManyDefaults(size_t length) override;
+
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void filter(const Filter & filt) override;
@@ -129,6 +133,7 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -150,7 +155,7 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     // Special function for nullable minmax index
@@ -201,11 +206,15 @@ public:
     void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     bool isNullable() const override { return true; }
+    ColumnPlanes getPlanes() const override;
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
     bool onlyNull() const override { return nested_column->isDummy(); }
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
+
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
 
     /// Return the column that represents values.
@@ -236,7 +245,9 @@ public:
     void applyNullMap(const ColumnUInt8 & map);
     void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
-    void applyNegatedNullMap(const NullMap & map);
+    /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
+    /// covers just that range; otherwise it must cover the whole column.
+    void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
@@ -249,12 +260,22 @@ public:
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
+    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
+    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+
+    size_t rowStoreOverflowBytes(size_t start, size_t count) const override { return nested_column->rowStoreOverflowBytes(start, count); }
+    void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const override;
+
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const NullMap & map);
+    void applyNullMapImpl(const NullMap & map, size_t offset = 0);
+
+    /// Probe the nested column's comparable serialization once so unsupported nested
+    /// types are rejected even on all-NULL blocks. Shared by the single-row and batch paths.
+    void validateNestedComparable() const;
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 

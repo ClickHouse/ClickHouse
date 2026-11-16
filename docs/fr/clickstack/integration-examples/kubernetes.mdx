@@ -1,0 +1,476 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kubernetes
+description: 'Intégration Kubernetes pour ClickStack - la stack d’observabilité ClickHouse'
+title: 'Kubernetes'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'logs', 'observability', 'surveillance des conteneurs']
+---
+
+ClickStack utilise le collector OpenTelemetry (OTel) pour collecter les logs, les métriques et les événements Kubernetes depuis des clusters Kubernetes, puis les transférer vers ClickStack. Nous prenons en charge le format de logs OTel natif et n’exigeons aucune configuration supplémentaire propre à un fournisseur.
+
+Ce guide intègre les éléments suivants :
+
+* **Logs**
+* **Métriques d’infrastructure**
+
+<Note>
+  Pour envoyer des métriques au niveau applicatif ou des traces/APM, vous devrez également ajouter à votre application l’intégration correspondant au langage utilisé.
+</Note>
+
+Le guide suivant suppose que vous avez déployé un [ClickStack OTel collector comme gateway](/fr/clickstack/ingesting-data/collector), sécurisé avec une clé API d’ingestion.
+
+<div id="creating-the-otel-helm-chart-config-files">
+  ## Création des fichiers de configuration du chart Helm OTel
+</div>
+
+Pour collecter les logs et les métriques sur chaque nœud ainsi qu&#39;au niveau du cluster lui-même, il faudra déployer deux collecteurs OpenTelemetry distincts. L&#39;un sera déployé sous forme de DaemonSet pour collecter les logs et les métriques de chaque nœud, et l&#39;autre sous forme de déploiement pour collecter les logs et les métriques du cluster lui-même.
+
+<div id="create-api-key-secret">
+  ### Création d’un secret de clé API
+</div>
+
+Créez un nouveau secret Kubernetes avec la [clé API d’ingestion](/fr/clickstack/ingesting-data/opentelemetry#sending-otel-data) de HyperDX. Elle sera utilisée par les composants installés ci-dessous pour ingérer des données en toute sécurité dans votre ClickStack OTel collector :
+
+```shell
+kubectl create secret generic hyperdx-secret \
+--from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+```
+
+De plus, créez une ConfigMap contenant l’emplacement de votre ClickStack OTel collector :
+
+```shell
+kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
+# e.g. kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+```
+
+<div id="creating-the-daemonset-configuration">
+  ### Création de la configuration du DaemonSet
+</div>
+
+Le DaemonSet collectera les logs et les métriques de chaque nœud du cluster, mais pas les événements Kubernetes ni les métriques à l’échelle du cluster.
+
+Téléchargez le manifeste du DaemonSet :
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+```
+
+<Tabs>
+  <Tab title="ClickStack managé">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # Obligatoire pour utiliser les métriques d'utilisation CPU/mémoire de kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configure le processeur Kubernetes pour ajouter des métadonnées Kubernetes.
+        # Ajoute le processeur k8sattributes à tous les pipelines et les règles nécessaires au ClusterRole.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # Lorsque cette option est activée, le processeur extrait tous les labels d'un pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact du label sera utilisé comme clé.
+          extractAllPodLabels: true
+          # Lorsque cette option est activée, le processeur extrait toutes les annotations d'un pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact de l'annotation sera utilisé comme clé.
+          extractAllPodAnnotations: true
+        # Configure le collector pour collecter les métriques des nœuds, pods et conteneurs depuis l'API du kubelet.
+        # Ajoute le receiver kubeletstats au pipeline de métriques et les règles nécessaires au ClusterRole.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Configure des métriques kubelet supplémentaires
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # Requis pour utiliser les métriques d'utilisation CPU/mémoire de kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configure le processeur Kubernetes pour ajouter des métadonnées Kubernetes.
+        # Ajoute le processeur k8sattributes à tous les pipelines et ajoute les règles nécessaires au rôle de cluster.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # Lorsqu'il est activé, le processeur extrait tous les labels d'un pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact du label sera utilisé comme clé.
+          extractAllPodLabels: true
+          # Lorsqu'il est activé, le processeur extrait toutes les annotations d'un pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact de l'annotation sera utilisé comme clé.
+          extractAllPodAnnotations: true
+        # Configure le collector pour collecter les métriques des nœuds, pods et conteneurs depuis l'API du kubelet.
+        # Ajoute le receiver kubeletstats au pipeline de métriques et ajoute les règles nécessaires au rôle de cluster.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Configure des métriques kubelet supplémentaires
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="creating-the-deployment-configuration">
+  ### Création de la configuration du déploiement
+</div>
+
+Pour collecter les événements Kubernetes et les métriques de l’ensemble du cluster, nous devrons déployer un collecteur OpenTelemetry distinct sous forme de déploiement.
+
+Téléchargez le manifeste de déploiement :
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+```
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # Nous ne voulons qu'un seul de ces collecteurs ; sinon, nous produirions des données en double
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Lorsqu'il est activé, le processeur extrait tous les labels d'un pod associé et les ajoute en tant qu'attributs de ressource.
+          # Le nom exact du label sera utilisé comme clé.
+          extractAllPodLabels: true
+          # Lorsqu'il est activé, le processeur extrait toutes les annotations d'un pod associé et les ajoute en tant qu'attributs de ressource.
+          # Le nom exact de l'annotation sera utilisé comme clé.
+          extractAllPodAnnotations: true
+        # Configure le collecteur pour collecter les événements Kubernetes.
+        # Ajoute le receiver k8sobject au pipeline de logs et collecte les événements Kubernetes par défaut.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Configure le Kubernetes Cluster Receiver pour collecter les métriques au niveau du cluster.
+        # Ajoute le receiver k8s_cluster au pipeline de métriques et ajoute les règles nécessaires à ClusteRole.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # Nous ne voulons qu'un seul de ces collecteurs ; sinon, nous produirions des données en double
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Lorsqu'il est activé, le processeur extrait tous les labels d'un pod associé et les ajoute en tant qu'attributs de ressource.
+          # Le nom exact du label sera utilisé comme clé.
+          extractAllPodLabels: true
+          # Lorsqu'il est activé, le processeur extrait toutes les annotations d'un pod associé et les ajoute en tant qu'attributs de ressource.
+          # Le nom exact de l'annotation sera utilisé comme clé.
+          extractAllPodAnnotations: true
+        # Configure le collecteur pour collecter les événements Kubernetes.
+        # Ajoute le receiver k8sobject au pipeline de logs et collecte les événements Kubernetes par défaut.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Configure le Kubernetes Cluster Receiver pour collecter les métriques au niveau du cluster.
+        # Ajoute le receiver k8s_cluster au pipeline de métriques et ajoute les règles nécessaires à ClusteRole.
+        # Plus d'infos : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="deploying-the-otel-collector">
+  ## Déployer le collecteur OpenTelemetry
+</div>
+
+Le collecteur OpenTelemetry peut désormais être déployé dans votre cluster Kubernetes à l’aide du [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector).
+
+Ajoutez le dépôt Helm OpenTelemetry :
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # Add OTel Helm repo
+```
+
+Installez le chart à l’aide de la configuration ci-dessus :
+
+```shell copy
+helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+```
+
+Désormais, les métriques, les logs et les événements Kubernetes de votre cluster Kubernetes devraient
+désormais apparaître dans HyperDX.
+
+<div id="forwarding-resouce-tags-to-pods">
+  ## Transmission des tags de ressource aux pods (recommandé)
+</div>
+
+Pour corréler les logs, les métriques et les traces au niveau de l’application avec les métadonnées Kubernetes
+(par ex. le nom du pod, l’espace de noms, etc.), vous devrez transmettre les métadonnées Kubernetes
+à votre application à l’aide de la variable d’environnement `OTEL_RESOURCE_ATTRIBUTES`.
+
+Voici un exemple de déploiement qui transmet les métadonnées Kubernetes à
+l’application à l’aide de variables d’environnement :
+
+```yaml
+# my_app_deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+        # Combined with the Kubernetes Attribute Processor, this will ensure
+        # the pod's logs and metrics will be associated with a service name.
+        service.name: <MY_APP_NAME>
+    spec:
+      containers:
+        - name: app-container
+          image: my-image
+          env:
+            # ... other environment variables
+            # Collect K8s metadata from the downward API to forward to the app
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DEPLOYMENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['deployment']
+            # Forward the K8s metadata to the app via OTEL_RESOURCE_ATTRIBUTES
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+```

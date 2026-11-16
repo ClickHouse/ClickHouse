@@ -1,4 +1,12 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <!-- The custom-access-header case reads an S3 endpoint whose auth header comes from the server
+                 `<s3>` config, which is treated as a server-managed credential and blocked for user queries
+                 by default. Allow it here. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

@@ -1,7 +1,9 @@
+#include <optional>
 #include <string_view>
 #include <Access/Common/OneTimePassword.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <Poco/String.h>
@@ -12,12 +14,9 @@
 
 #include <cotp.h>
 
-constexpr int TOTP_SHA512 = SHA512;
-constexpr int TOTP_SHA256 = SHA256;
-constexpr int TOTP_SHA1 = SHA1;
-#undef SHA512
-#undef SHA256
-#undef SHA1
+constexpr int TOTP_SHA512 = COTP_SHA512;
+constexpr int TOTP_SHA256 = COTP_SHA256;
+constexpr int TOTP_SHA1 = COTP_SHA1;
 
 #endif
 
@@ -145,19 +144,27 @@ static String getOneTimePassword(const String & secret [[ maybe_unused ]], const
 }
 
 
-bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
+std::optional<Int64> findOneTimePasswordTimeStep(std::string_view password, const OneTimePasswordSecret & secret, UInt64 current_time)
 {
     if (password.size() != static_cast<size_t>(secret.params.num_digits)
-     || !std::all_of(password.begin(), password.end(), ::isdigit))
-        return false;
+     || !std::all_of(password.begin(), password.end(), isNumericASCII))
+        return {};
 
-    auto current_time = static_cast<UInt64>(std::time(nullptr));
+    std::optional<Int64> result;
     for (int delta : {0, -1, 1})
     {
-        if (password == getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period))
-            return true;
+        auto candidate_pass = getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period);
+        bool matched = constantTimeEquals(password, candidate_pass);
+        /// No early return to avoid leaking which window matched
+        if (matched && !result.has_value())
+            result = static_cast<Int64>(current_time / secret.params.period) + delta;
     }
-    return false;
+    return result;
+}
+
+bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
+{
+    return findOneTimePasswordTimeStep(password, secret, static_cast<UInt64>(std::time(nullptr))).has_value();
 }
 
 }

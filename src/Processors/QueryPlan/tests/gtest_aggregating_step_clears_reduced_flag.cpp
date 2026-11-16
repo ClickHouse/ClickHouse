@@ -51,7 +51,8 @@ TEST(AggregatingStep, ClearsReadStreamCountWasReducedFlag)
         1,                       // max_threads
         65536,                   // max_block_size
         0.5f,                    // min_hit_rate_to_use_consecutive_keys_optimization
-        false);                  // serialize_string_with_zero_byte
+        false,                   // serialize_string_with_zero_byte
+        true);                   // enable_packed_string_keys
 
     AggregatingStep step(
         shared_header,
@@ -68,8 +69,7 @@ TEST(AggregatingStep, ClearsReadStreamCountWasReducedFlag)
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 
     /// Build a single-stream pipeline from a header-only source.
     QueryPipelineBuilder builder;

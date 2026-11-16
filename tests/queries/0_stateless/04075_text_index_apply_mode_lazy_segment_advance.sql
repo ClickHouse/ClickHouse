@@ -20,7 +20,6 @@
 -- 14. Interleaved tokens in alternating segments
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 ----------------------------------------------------
@@ -47,8 +46,8 @@ SELECT min(k), max(k) FROM tab_next_linear WHERE hasToken(s, 'alpha');
 SELECT 'Test 2: next() in 2-way leapfrog across segments';
 
 -- Two tokens both spanning multiple segments, with identical posting lists.
--- intersectTwo: c0.value()==c1.value() -> both call next() repeatedly.
--- next() must cross segment boundaries for both cursors.
+-- Leapfrog: on every match the lead calls next() and the other cursor advance() to the lead's doc id.
+-- Both must cross segment boundaries.
 -- Token 'aa' and 'bb' both appear in every row -> all 400 rows match AND.
 
 DROP TABLE IF EXISTS tab_next_leapfrog;
@@ -322,8 +321,8 @@ SELECT min(k), max(k) FROM tab_merge_advance WHERE hasAllTokens(s, ['merged', 'e
 ----------------------------------------------------
 SELECT 'Test 14: 5-way leapfrog across multiple segments';
 
--- 5 tokens, each in every row. 5-way intersection uses intersectLeapfrogLinear (n=5).
--- All 5 cursors must advance across segment boundaries via next().
+-- 5 tokens, each in every row. 5-way leapfrog intersection.
+-- All 5 cursors must cross segment boundaries (the lead via next(), the others via advance()).
 
 DROP TABLE IF EXISTS tab_fiveway_seg;
 

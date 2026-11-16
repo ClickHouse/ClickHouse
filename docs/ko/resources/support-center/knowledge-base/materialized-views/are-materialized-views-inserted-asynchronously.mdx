@@ -1,0 +1,24 @@
+---
+title: Materialized View는 동기적으로 삽입되나요?
+description: 이 KB 문서에서는 Materialized View가 동기적으로 삽입되는지 설명합니다
+date: 2023-03-01
+tags: ['데이터 모델링']
+keywords: ['Materialized View']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## Materialized View는 동기적으로 삽입되나요?
+</div>
+
+**질문:** 소스 테이블에 새 행이 삽입되면 해당 행은 그 소스 테이블의 모든 materialized view에도 전달됩니다. Materialized View에 대한 삽입도 동기적으로 수행되나요? 즉, 서버가 클라이언트에 삽입 성공을 응답했다면 모든 Materialized View가 완전히 업데이트되어 쿼리할 수 있는 상태라는 뜻인가요?
+
+**답변:**
+
+1. `INSERT`가 성공하면 데이터는 테이블과 모든 materialized view에 삽입됩니다.
+2. 삽입은 materialized view와 관련해 원자적이지 않습니다. `INSERT`가 진행 중인 시점에는 동시에 실행 중인 클라이언트가 중간 상태를 볼 수 있습니다. 즉, 데이터가 기본 테이블에는 삽입되었지만 materialized view에는 아직 삽입되지 않았거나, 그 반대일 수 있습니다.
+3. [async inserts](/ko/concepts/features/operations/insert/asyncinserts)를 사용하는 경우, 내부적으로 데이터를 모아 일반 삽입을 수행하며 클라이언트에는 일반 삽입과 같은 유형의 응답을 반환합니다. 클라이언트가 `wait_for_async_insert` 옵션이 설정된 async insert에서 성공 응답을 받았다면(기본값), 데이터는 테이블과 그에 연결된 모든 materialized view에 삽입됩니다.
+
+**질문:** 체인으로 연결되거나 캐스케이딩된 materialized view는 어떤가요?
+
+**답변:**
+동일한 규칙이 적용됩니다. `INSERT`가 성공 응답을 반환했다면 체인에 있는 모든 materialized view에 데이터가 삽입되었음을 의미합니다. 삽입은 원자적이지 않습니다.

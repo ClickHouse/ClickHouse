@@ -1,0 +1,2 @@
+1
+SELECT COUNT(*) FROM test_table;	1	1

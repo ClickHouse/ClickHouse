@@ -29,17 +29,17 @@ namespace ErrorCodes
 
 class FunctionDateOrDateTimeBase : public IFunction
 {
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         return true;
     }
@@ -50,9 +50,9 @@ protected:
     /// `EXTRACT(<unit> FROM INTERVAL ...)` on a matching-kind interval. Other
     /// `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
-    bool acceptsIntervalArgument() const
+    [[nodiscard]] bool acceptsIntervalArgument() const
     {
-        IntervalKind::Kind unused = IntervalKind::Kind::Second;
+        IntervalKind unused;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
     }
 
@@ -106,51 +106,18 @@ class IFunctionDateOrDateTime : public FunctionDateOrDateTimeBase
 {
 public:
     static constexpr auto name = Transform::name;
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
-            const IDataType * type_ptr = &type;
-
-            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-                type_ptr = lc_type->getDictionaryType().get();
-
-            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-                type_ptr = nullable_type->getNestedType().get();
-
-            /// Date32 values outside the valid LUT range get clamped to sentinel values,
-            /// which breaks monotonicity. Only claim monotonic if the range is within bounds.
-            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
-            {
-                /// Valid Date32 range: -DAYNUM_OFFSET_EPOCH .. DATE_LUT_MAX_EXTEND_DAY_NUM
-                static constexpr Int32 MIN_DATE32_DAY_NUM = -static_cast<Int32>(DAYNUM_OFFSET_EPOCH);
-                static constexpr Int32 MAX_DATE32_DAY_NUM = static_cast<Int32>(DATE_LUT_MAX_EXTEND_DAY_NUM);
-
-                if (left.isNull() || right.isNull())
-                    return { .is_monotonic = false };
-
-                Int64 left_val = left.safeGet<Int64>();
-                Int64 right_val = right.safeGet<Int64>();
-
-                if (left_val >= MIN_DATE32_DAY_NUM && left_val <= MAX_DATE32_DAY_NUM
-                    && right_val >= MIN_DATE32_DAY_NUM && right_val <= MAX_DATE32_DAY_NUM)
-                    return { .is_monotonic = true, .is_always_monotonic = true };
-
-                return { .is_monotonic = false };
-            }
-
             return { .is_monotonic = true, .is_always_monotonic = true };
         }
         else
         {
             const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
             const IFunction::Monotonicity is_not_monotonic;
-
-            const DateLUTImpl * date_lut = &DateLUT::instance();
-            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
-                date_lut = &timezone->getTimeZone();
 
             if (left.isNull() || right.isNull())
                 return is_not_monotonic;
@@ -162,6 +129,11 @@ public:
 
             if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
                 type_ptr = nullable_type->getNestedType().get();
+
+            /// `LowCardinality` and `Nullable` carry no time zone of their own.
+            const DateLUTImpl * date_lut = &DateLUT::instance();
+            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
+                date_lut = &timezone->getTimeZone();
 
             /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
@@ -228,6 +200,25 @@ public:
                     ? is_monotonic
                     : is_not_monotonic;
         }
+    }
+
+    [[nodiscard]] bool hasInformationAboutPreimage() const override
+    {
+        if constexpr (requires { Transform::hasPreimage(); })
+            return Transform::hasPreimage();
+
+        return false;
+    }
+
+    [[nodiscard]] FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (requires { Transform::hasPreimage(); })
+        {
+            if constexpr (Transform::hasPreimage())
+                return Transform::getPreimage(type, point);
+        }
+
+        return IFunction::getPreimage(type, point);
     }
 };
 

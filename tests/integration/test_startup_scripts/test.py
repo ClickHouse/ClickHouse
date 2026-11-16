@@ -6,8 +6,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
-        "configs/config.d/query_log.xml",
-        "configs/config.d/startup_scripts.xml",
+        "configs/query_log.xml",
+        "configs/startup_scripts.xml",
     ],
     macros={"replica": "node", "shard": "node"},
     with_zookeeper=True,
@@ -15,18 +15,12 @@ node = cluster.add_instance(
 )
 good = cluster.add_instance(
     "good",
-    main_configs=[
-        "configs/execution_state/users.xml",
-        "configs/execution_state/good_script.xml",
-    ],
+    main_configs=["configs/good_script.xml"],
     stay_alive=True,
 )
 bad = cluster.add_instance(
     "bad",
-    main_configs=[
-        "configs/execution_state/users.xml",
-        "configs/execution_state/bad_script.xml",
-    ],
+    main_configs=["configs/bad_script.xml"],
     stay_alive=True,
 )
 
@@ -132,7 +126,9 @@ def test_startup_execution_state(start_cluster):
     )
 
 
-def test_reload_config_reruns_startup_scripts(start_cluster):
-    assert get_execution_state(good) == STATE_SUCCESS
-    good.query("SYSTEM RELOAD CONFIG")
-    assert get_execution_state(good) == STATE_SUCCESS
+def test_reload_config_does_not_rerun_startup_scripts(start_cluster):
+    # Startup scripts contain non-idempotent queries.
+    # So if SYSTEM RELOAD CONFIG invoked startup scripts, the metric would turn red.
+    assert get_execution_state(node) == STATE_SUCCESS
+    node.query("SYSTEM RELOAD CONFIG")
+    assert get_execution_state(node) == STATE_SUCCESS

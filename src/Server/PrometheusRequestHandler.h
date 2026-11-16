@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ class IServer;
 class PrometheusMetricsWriter;
 class WriteBufferFromHTTPServerResponse;
 
-/// Handles requests for prometheus protocols (expose_metrics, remote_write, remote-read).
+/// Handles requests for prometheus protocols (/metrics and /api/v1/*).
 class PrometheusRequestHandler : public HTTPRequestHandler
 {
 public:
@@ -36,6 +37,12 @@ private:
     /// Calls onException() in a try-catch block.
     void tryCallOnException();
 
+    /// Parses the client's trace context from the request and starts the server span of the current thread.
+    OpenTelemetry::TracingContextHolderPtr startTracing(const HTTPServerRequest & request);
+
+    /// Returns the request URI with the values of sensitive parameters and PromQL expressions hidden.
+    [[nodiscard]] String getURIForLogging(const HTTPServerRequest & request) const;
+
     IServer & server;
     const PrometheusRequestHandlerConfig config;
     const AsynchronousMetrics & async_metrics;
@@ -44,13 +51,17 @@ private:
 
     class Impl;
     class ImplWithContext;
-    class ExposeMetricsImpl;
-    class RemoteWriteImpl;
-    class RemoteReadImpl;
-    class QueryAPIImpl;
+    class MetricsImpl;
+    class WriteImpl;
+    class ReadImpl;
+    class QueryImpl;
+    class APIv1Impl;
     std::unique_ptr<Impl> impl;
 
     String http_method;
+
+    OpenTelemetry::TracingContext client_trace_context;
+
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
     size_t http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     ProfileEvents::Event write_event;

@@ -1,0 +1,31 @@
+---
+title: Избегайте столбцов с типом Nullable
+---
+
+[`Nullable` столбец](/ru/reference/data-types/nullable) (например, `Nullable(String)`) создаёт отдельный столбец типа `UInt8`. Этот дополнительный столбец приходится обрабатывать каждый раз при работе со столбцом `Nullable`. Это требует дополнительного места в хранилище и почти всегда отрицательно сказывается на производительности.
+
+Чтобы избежать столбцов `Nullable`, задайте для этого столбца значение по умолчанию. Например, вместо:
+
+```sql highlight={4}
+CREATE TABLE default.sample
+(
+    `x` Int8,
+    `y` Nullable(Int8)
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+используйте
+
+```sql highlight={4}
+CREATE TABLE default.sample2
+(
+    `x` Int8,
+    `y` Int8 DEFAULT 0
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+Учитывайте свой сценарий использования; значение по умолчанию может быть неподходящим.

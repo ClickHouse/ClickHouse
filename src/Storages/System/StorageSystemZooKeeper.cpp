@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
@@ -237,7 +238,7 @@ public:
         const Block & header,
         UInt64 max_block_size_);
 
-    String getName() const override { return "ReadFromSystemZooKeeper"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemZooKeeper"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
@@ -850,3 +851,6 @@ void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeper) }

@@ -29,7 +29,7 @@ public:
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const final;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const final;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const final;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const final;
 };
 
 extern template class SerializationDecimalBase<Decimal32>;

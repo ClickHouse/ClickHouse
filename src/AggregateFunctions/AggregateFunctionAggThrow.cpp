@@ -84,7 +84,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 

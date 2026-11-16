@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: Comment afficher le nombre de mutations actives ou en attente ?
+description: Surveillez le nombre de mutations actives ou en attente dans ClickHouse, en particulier lors de l’exécution d’opérations `ALTER` ou `UPDATE`. Utilisez la table `system.mutations` pour suivre les mutations.
+tags: ['Tables système']
+keywords: ['Mutations actives', 'Mutations en attente']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Comment voir le nombre de mutations actives ou en attente ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Il est important de surveiller le nombre de mutations actives ou en attente si vous exécutez beaucoup d’instructions `ALTER` ou `UPDATE` sur vos tables. Ces requêtes réécrivent les data parts et ne sont pas atomiques : elles sont ordonnées selon leur part de création et appliquées à chaque part dans cet ordre. Vous trouverez plus de détails sur les mutations dans la [documentation](/fr/reference/statements/alter/index#mutations).
+
+Chaque mutation génère une entrée dans la table `system.mutations`. Si vous effectuez un grand nombre de mutations, vous pouvez surveiller le nombre de mutations en cours et en attente avec ceci :
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  Cette requête part du principe que vous utilisez un cluster nommé `default`, qui correspond au nom de votre cluster dans ClickHouse Cloud. Remplacez `default` par le nom de votre cluster.
+
+  Si vous n’avez pas de cluster, utilisez cette commande :
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+Nous vous recommandons également de lire ce [billet de blog récent sur les mises à jour et les suppressions](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse).

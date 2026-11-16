@@ -1,4 +1,3 @@
-import io
 
 import avro.datafile
 import avro.io

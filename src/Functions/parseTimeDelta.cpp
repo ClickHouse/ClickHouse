@@ -12,10 +12,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -108,46 +107,37 @@ namespace
         static constexpr auto name = "parseTimeDelta";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseTimeDelta>(); }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
-        bool isVariadic() const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-        size_t getNumberOfArguments() const override { return 0; }
-
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        [[nodiscard]] String getSignatureString() const override
         {
-            if (arguments.empty())
-                throw Exception(
-                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
-
-            if (arguments.size() > 1)
-                throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
-                    getName(),
-                    arguments.size());
-
-            const IDataType & type = *arguments[0];
-
-            if (!isString(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
-
-            return std::make_shared<DataTypeFloat64>();
+            return "(String) -> Float64";
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
+        /// signature, and its tests pin those codes.
+        [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
+        {
+            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+        }
+
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();

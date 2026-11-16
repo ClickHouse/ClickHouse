@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ public:
     void finish(bool sync) final;
     void cancel() noexcept override;
 
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
     static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
@@ -92,9 +93,13 @@ private:
         const NameAndTypePair & name_and_type,
         WrittenOffsetSubstreams & offset_substreams);
 
-    void addStreams(
-        const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
+
+    /// The stream count is derived from the substreams inventory and read by addStreams(), so the
+    /// three initializations must happen in this order.
+    void initStreamsAndSubstreamsIfNeeded();
+
+    void initStreamsToOpenCount();
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -115,11 +120,18 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    /// Gives every column an empty serialize call with granule_is_complete set, for a granule
+    /// that adjustLastMarkIfNeedAndFlushToDisk completed without a call carrying its rows.
+    void completeGranuleWithoutRows();
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    /// Settings with the getters and callbacks bound to the streams of the column.
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
+        const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
+
+    [[nodiscard]] ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
-    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+    [[nodiscard]] const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -146,6 +158,10 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    /// Number of streams opened for the whole part. Peak write memory scales with this rather than
+    /// with the number of columns, since one column can own thousands of substreams.
+    std::optional<size_t> streams_to_open_in_part;
 
     String already_written_stream_holder;
 };

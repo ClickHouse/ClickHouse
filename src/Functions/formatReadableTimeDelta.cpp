@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -15,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -41,58 +40,30 @@ public:
     static constexpr auto name = "formatReadableTimeDelta";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                            getName(), arguments.size());
-
-        if (arguments.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3.",
-                            getName(), arguments.size());
-
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
-
-        if (arguments.size() >= 2)
-        {
-            const auto * maximum_unit_arg = arguments[1].get();
-            if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
-                                maximum_unit_arg->getName(), getName());
-
-            if (arguments.size() == 3)
-            {
-                const auto * minimum_unit_arg = arguments[2].get();
-                if (!isStringOrFixedString(minimum_unit_arg))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument minimum_unit of function {}",
-                                    minimum_unit_arg->getName(), getName());
-            }
-        }
-
-        return std::make_shared<DataTypeString>();
+        /// `Interval` arguments are accepted in addition to numbers (master added
+        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
+        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
+               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     enum Unit
     {
@@ -107,7 +78,7 @@ public:
         Years = 9
     };
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::string_view maximum_unit_str;
         std::string_view minimum_unit_str;
@@ -149,11 +120,13 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
+            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
@@ -262,8 +235,9 @@ public:
 
             if (!num_units)
             {
-                /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
-                if (unit_multiplier != 1 || has_output)
+                /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
+                if (unit_multiplier != 1 || has_output
+                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
                     return;
             }
 
@@ -325,7 +299,7 @@ private:
         return std::string(buffer, builder.position()).substr(2);   /// do not return `0.` -- we don't need it
     }
 
-    Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
+    [[nodiscard]] Unit dispatchUnit(const std::string_view & unit_str, const Unit default_unit, const std::string & bound_name) const
     {
         if (unit_str.empty())
             return default_unit;
@@ -362,13 +336,15 @@ private:
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     FunctionDocumentation::Description description = R"(
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
 
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+
+When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
     FunctionDocumentation::Arguments arguments = {
-        {"column", "A column with a numeric time delta.", {"Float64"}},
+        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
         {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
         {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
     };
@@ -382,11 +358,11 @@ SELECT
     formatReadableTimeDelta(elapsed) AS time_delta
         )",
         R"(
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                        │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
-└────────────┴────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
+│       100 │ 1 minute and 40 seconds                                         │
+│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└───────────┴─────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -396,11 +372,21 @@ SELECT
     formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
         )",
         R"(
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta─────────────────────┐
+│       100 │ 1 minute and 40 seconds        │
+│     12345 │ 205 minutes and 45 seconds     │
+│ 432546534 │ 7209108 minutes and 54 seconds │
+└───────────┴────────────────────────────────┘
+        )"
+    },
+    {
+        "With an INTERVAL expression", R"(
+SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
+        )",
+        R"(
+┌─time_delta─────────────────────────┐
+│ 3 hours, 25 minutes and 45 seconds │
+└────────────────────────────────────┘
         )"
     }
     };

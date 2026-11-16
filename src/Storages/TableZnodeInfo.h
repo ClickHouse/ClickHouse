@@ -55,12 +55,29 @@ struct TableZnodeInfo
     /// E.g. path = "/clickhouse/tables/{uuid}/{shard}", path_prefix_to_drop = "/clickhouse/tables/{uuid}".
     String path_prefix_for_drop;
 
+    /// `validate_substitutions` rejects a {database}/{table} value that would not stay a single safe
+    /// ZooKeeper path component. It must be requested only for a freshly supplied definition: enabling
+    /// it while merely re-deriving the path of an existing table (a short ATTACH, a Replicated-database
+    /// recovery replay, a restore of a definition that kept its own engine arguments) would break that
+    /// table. What decides it is the origin of the value being judged, not the statement's mode:
+    /// a value minted from the server's `default_replica_path` template is freshly supplied even
+    /// during a RESTORE, because it is expanded against the name that statement supplies. Converting a
+    /// MergeTree table to a replicated engine counts as fresh for the same reason.
     static TableZnodeInfo resolve(
         const String & requested_path, const String & requested_replica_name,
         const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode,
-        const ContextPtr & context);
+        const ContextPtr & context, bool validate_substitutions = false);
 
     void dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const;
+
+    /// A table of an `Ordinary` database stores `path` as a literal, without the {uuid} macro, so on every
+    /// later load `path_prefix_for_drop` is recovered by matching the path against the `default_replica_path`
+    /// template again. Throws if that recovery would not yield the prefix computed here, which happens when
+    /// the template cannot be matched at all (it expands {uuid} more than once, say), and also when the match
+    /// would depend on the name of the table, which a `RENAME TABLE` changes while the literal path keeps the
+    /// old one: such a table would keep its parent znode forever after `DROP TABLE`.
+    /// Call it before the literal path is written into metadata.
+    void checkPrefixForDropRecoverableFromPath(const StorageID & table_id, const ContextPtr & context) const;
 };
 
 }

@@ -62,19 +62,28 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_count;
 
     bool build_logical_plan = false;
+    bool is_local_shard_plan = false;
     bool ignore_rename_columns = false;
+
+    /// The plan is built for a local shard/replica of a distributed query, so its blocks are
+    /// consumed in this process and must not be marshalled: `UnmarshallBlocksTransform` exists
+    /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
+    bool is_local_plan_for_distributed_query = false;
+
+    /// IN and scalar subqueries read the view source instead of the source table. Set by `InterpreterSelectQueryAnalyzer`
+    /// when it is given the view source as storage, and passed on to the replan of the query for a `Merge` child or for
+    /// the blocks of a `Buffer`.
+    bool view_source_in_subqueries = false;
 
     size_t max_step_description_length = 0;
 
-    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
-      * This optimization will break subsequent execution of the same query tree, because table node
-      * will no more have valid snapshot.
-      *
-      * TODO: Implement this functionality in safer way
-      */
-    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
-
     bool force_materialize_cte = false;
+
+    /// The query is printed from a resolved query tree, so its integer constants are not positions.
+    bool positional_arguments_already_resolved = false;
+
+    /// The query as received from the initiator of a distributed read, not a subquery of it.
+    bool is_secondary_query_root = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -88,12 +97,15 @@ struct SelectQueryOptions
     {
     }
 
-    SelectQueryOptions copy() const { return *this; }
+    [[nodiscard]] SelectQueryOptions copy() const { return *this; }
 
-    SelectQueryOptions subquery() const
+    [[nodiscard]] SelectQueryOptions subquery() const
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
+        out.is_local_shard_plan = false;
+        out.is_local_plan_for_distributed_query = false;
+        out.is_secondary_query_root = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
@@ -105,7 +117,7 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions createParameterizedView() const
+    [[nodiscard]] SelectQueryOptions createParameterizedView() const
     {
         SelectQueryOptions out = *this;
         out.is_create_parameterized_view = true;
@@ -202,6 +214,18 @@ struct SelectQueryOptions
     SelectQueryOptions & forceMaterializeCTE(bool value = true)
     {
         force_materialize_cte = value;
+        return *this;
+    }
+
+    SelectQueryOptions & positionalArgumentsAlreadyResolved(bool value = true)
+    {
+        positional_arguments_already_resolved = value;
+        return *this;
+    }
+
+    SelectQueryOptions & secondaryQueryRoot(bool value = true)
+    {
+        is_secondary_query_root = value;
         return *this;
     }
 };

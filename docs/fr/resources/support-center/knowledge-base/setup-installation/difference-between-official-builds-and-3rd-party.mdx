@@ -1,0 +1,34 @@
+---
+title: Différences entre les builds officiels et les builds tiers de ClickHouse
+description: Comprenez les principales différences entre les builds officiels de ClickHouse et les builds tiers, notamment en matière de mises à jour, de compatibilité et de sécurité.
+date: 2023-06-26
+tags: ['Concepts']
+keywords: ['builds officiels', 'builds tiers']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Je vois que d&#39;autres fournisseurs proposent leurs propres builds de ClickHouse. Quelle différence y a-t-il entre les builds officielles de ClickHouse et ces builds tierces ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Voici quelques différences que nous avons observées avec d&#39;autres builds :
+
+* Les chaînes **« official »** sont remplacées par le nom du fournisseur
+* Elles n&#39;apparaissent qu&#39;après plusieurs mois de retard et ***n&#39;incluent pas les correctifs de bugs les plus récents***, ce qui signifie que ces builds peuvent contenir des vulnérabilités déjà corrigées dans les versions officielles
+* Les builds ne sont pas identiques au bit près, et les adresses dans le code diffèrent. Par conséquent, les stack traces de ces builds ne peuvent pas être analysées, et l&#39;équipe ClickHouse ne peut pas répondre aux questions à leur sujet
+* Les builds ne sont ni auditables ni reproductibles - il n&#39;existe aucun système de CI public avec les mêmes logs de build
+* La suite de tests ClickHouse n&#39;est pas exécutée sur ces builds ; ils ne sont donc pas validés par la suite de tests
+* Ils peuvent ne pas être disponibles pour toutes les architectures (ARM, etc.)
+* Ils incluent parfois des patchs destinés à un client en particulier, ce qui peut rompre la compatibilité et introduire un risque supplémentaire
+
+Nous recommandons d&#39;exécuter la dernière version de ClickHouse à l&#39;aide des builds officielles, en suivant les [instructions d&#39;installation](/fr/get-started/setup/install) de la documentation :
+
+* Nous publions une **version stable** chaque mois, et les trois dernières versions stables sont prises en charge pour le diagnostic et le backport des correctifs de bugs.
+* Nous publions également une **version avec support à long terme (LTS)** deux fois par an, prise en charge pendant un an après sa publication initiale, et qui s&#39;adresse surtout aux entreprises qui n&#39;autorisent pas les mises à niveau fréquentes ou l&#39;utilisation de logiciels non LTS. (Nous sommes de grands fans des builds stables mensuelles !)
+
+Vous trouverez [plus de détails sur les versions stables et LTS](/fr/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases) dans la documentation.

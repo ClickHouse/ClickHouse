@@ -1,13 +1,26 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/IParser.h>
 
 #include <vector>
 
 namespace DB
 {
 
-class IParser;
+/** Machine-readable details of a parse, for callers that need more than the message in
+  * 'out_error_message': the token the error message points at, and - when the caller sets
+  * `expected.enable_highlighting` before the call - the syntax highlighting ranges accumulated
+  * during parsing (which cover the successfully parsed prefix even when parsing fails).
+  */
+struct ParserDiagnostics
+{
+    Expected expected;
+
+    /// The token the error message points at ("failed at position N" counts from its begin).
+    /// Only filled in when parsing fails; for an empty query it is the end-of-stream token.
+    Token error_token{};
+};
 
 /// Parse query or set 'out_error_message'.
 ASTPtr tryParseQuery(
@@ -22,7 +35,8 @@ ASTPtr tryParseQuery(
                                     /// Disabled if zero. Is used in order to check query size if buffer can contains data for INSERT query.
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    bool skip_insignificant,   /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    ParserDiagnostics * diagnostics = nullptr);
 
 
 /// Parse query or throw an exception with error message.

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeUUID.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -68,3 +69,6 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQueryConditionCache) }

@@ -30,6 +30,8 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
+    /// The working buffer is a page cache cell, an exact-size allocation: nothing past its end is readable.
+    clearBufferPadding();
 }
 
 bool CachedInMemoryReadBufferFromFile::innerSupportsReadAt() const
@@ -112,6 +114,13 @@ void CachedInMemoryReadBufferFromFile::setReadUntilPosition(size_t position)
 void CachedInMemoryReadBufferFromFile::setReadUntilEnd()
 {
     setReadUntilPosition(file_size.value());
+}
+
+std::optional<Field> CachedInMemoryReadBufferFromFile::getMetadata(const String & name) const
+{
+    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(in.get()))
+        return provider->getMetadata(name);
+    return std::nullopt;
 }
 
 bool CachedInMemoryReadBufferFromFile::nextImpl()

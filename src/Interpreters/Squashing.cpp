@@ -296,7 +296,7 @@ static Chunk sliceChunk(const Chunk & chunk, size_t offset, size_t length)
     return result;
 }
 
-Chunk Squashing::squash(Chunks &&input_chunks)
+Chunk Squashing::squashWithoutChunkInfo(Chunks && input_chunks)
 {
     ChunksWithOffsetsAndLengths data;
     data.reserve(input_chunks.size());
@@ -313,7 +313,7 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
     if (input_data.empty())
         return {};
 
-    std::vector<IColumn::MutablePtr> mutable_columns;
+    MutableColumns mutable_columns;
     size_t rows = 0;
     for (const auto & data : input_data)
         rows += data.length;

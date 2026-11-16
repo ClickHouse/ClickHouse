@@ -6,7 +6,9 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -75,7 +77,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
@@ -86,16 +88,19 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec than just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-        else /// otherwise return only generic codecs and don't use info about data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         UInt64 codec_id = compression_codec->getHash();
+        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
+        /// object, so they must not be shared between streams. Make the key unique per stream so that
+        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
+        if (compression_codec->needsVectorDimensionUpfront())
+        {
+            SipHash codec_hash;
+            codec_hash.update(codec_id);
+            codec_hash.update(stream_name.data(), stream_name.size());
+            codec_id = codec_hash.get64();
+        }
         /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
         auto it = streams_by_codec.find(codec_id);
         if (it == streams_by_codec.end())
@@ -115,6 +120,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -212,6 +218,8 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
+    serialize_settings.object_typed_shared_data_serialization_version = settings.object_typed_shared_data_serialization_version;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -219,6 +227,8 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::PREFIX;
     serialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     serialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+    /// One complete granule per call.
+    serialize_settings.granule_is_complete = true;
 
     return serialize_settings;
 }
@@ -302,6 +312,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
+        CurrentThread::checkIfNotCancelled();
+
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.
         /// So we flush each stream (using next()) before using new one, because otherwise we will override
@@ -320,6 +332,20 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
 
                 auto & result_stream = stream_it->second;
+
+                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+                /// require specifying the array dimensions before compression starts.
+                /// For 1D arrays, it's simply the length. The dimension is a property of the whole column
+                /// and `setAndCheckVectorDimension` accumulates it monotonically, so it only needs to be
+                /// computed once per block: rescanning the full column on every granule would make SZ3
+                /// writes O(rows * granules) in the insert/merge hot path. Do it while writing the first
+                /// granule, before its data is compressed.
+                if (&granule == &granules.front())
+                {
+                    auto compression_codec = result_stream->compressed_buf.getCodec();
+                    setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
+                }
+
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
@@ -354,10 +380,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
+            auto serialize_settings = getSerializationSettings();
+            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
+                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, std::move(serialize_settings));
 
             if (settings.compress_per_column_in_compact_parts)
             {
@@ -449,35 +477,20 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_file->finalize();
     marks_file->finalize();
-}
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-    {
-        size_t rows_left_in_block = rows_in_block - current_row;
-
-        /// Try to extend last granule if block is large enough
-        ///  or it isn't first in granule (index_offset != 0).
-        if (rows_left_in_block < index_granularity_for_block &&
-            (rows_in_block >= index_granularity_for_block || index_offset != 0))
-        {
-            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
-            // So, real size of granule differs from index_granularity_for_block not more than 50%.
-            if (rows_left_in_block * 2 >= index_granularity_for_block)
-                index_granularity.appendMark(rows_left_in_block);
-            else
-                index_granularity.addRowsToLastMark(rows_left_in_block);
-        }
-        else
-        {
-            index_granularity.appendMark(index_granularity_for_block);
-        }
-    }
+    /// Release the data (`data.bin`) and marks (`data.cmrk*`) file descriptors now that everything
+    /// has been flushed and synced. Otherwise the writer keeps these handles open until it is
+    /// destroyed, which happens only after the part's temporary directory has been renamed to its
+    /// final name. Renaming a directory that still has open file descriptors inside fails on
+    /// filesystems backed by Windows (WSL, CIFS/SMB, Docker Desktop bind mounts).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56288.
+    ///
+    /// Only plain_file and marks_file own the file descriptors. The wrapper buffers
+    /// (plain_hashing, streams_by_codec, marks_*_hashing, marks_compressor) were already finalized in
+    /// fillDataChecksums, and a finalized WriteBuffer never touches its underlying buffer on
+    /// destruction, so releasing the file streams here is safe even though the wrappers outlive them.
+    plain_file = nullptr;
+    marks_file = nullptr;
 }
 
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
@@ -486,11 +499,7 @@ void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granulari
     if (index_granularity->getMarksCount() > getCurrentMark())
         index_offset = index_granularity->getMarkRows(getCurrentMark()) - columns_buffer.size();
 
-    fillIndexGranularityImpl(
-        *index_granularity,
-        index_offset,
-        index_granularity_for_block,
-        rows_in_block);
+    fillIndexGranularityForCompactPart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
 }
 
 void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums & checksums)
@@ -591,7 +600,14 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     plain_hashing.cancel();
 
-    plain_file->cancel();
+    /// plain_file and marks_file may already be released: finishDataSerialization resets them as
+    /// soon as the data is flushed and synced, before the part is committed. cancel() can still run
+    /// afterwards (e.g. MergeTreeTemporaryPart::cancel from the sink destructor when a quorum INSERT
+    /// finishes the part but the subsequent quorum wait throws), so guard against the null streams.
+    /// The wrapper buffers above were finalized, so their cancel() is a no-op and never touches the
+    /// underlying file. This mirrors the null guards in MergeTreeDataPartWriterOnDisk::cancel.
+    if (plain_file)
+        plain_file->cancel();
 
     if (marks_source_hashing)
         marks_source_hashing->cancel();
@@ -601,7 +617,8 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     marks_file_hashing->cancel();
 
-    marks_file->cancel();
+    if (marks_file)
+        marks_file->cancel();
 
     Base::cancel();
 }

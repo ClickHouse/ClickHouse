@@ -1,0 +1,215 @@
+---
+slug: /use-cases/AI/MCP/claude-desktop
+sidebarTitle: 'Configurar el servidor MCP de ClickHouse'
+title: 'Configurar el servidor MCP de ClickHouse'
+description: 'Conecte el servidor MCP de ClickHouse a Claude Code, Claude Desktop, Codex, ChatGPT, Cursor o Windsurf.'
+keywords: ['AI', 'ClickHouse', 'MCP', 'Claude', 'Codex', 'ChatGPT']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+El [servidor MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) permite a los asistentes de IA compatibles explorar bases de datos, inspeccionar tablas y ejecutar consultas SQL en ClickHouse.
+Esta guía configura el servidor `stdio` local con `uv` y lo conecta a un Client MCP popular.
+
+De forma predeterminada, el servidor solo permite consultas de lectura.
+Use un usuario de ClickHouse específico con únicamente los permisos que necesite el asistente; no use un usuario predeterminado ni administrativo.
+
+El siguiente tutorial muestra la configuración con Claude Desktop.
+Los mismos datos de conexión de ClickHouse se aplican a los demás clientes que se describen en esta guía.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="Configurar el servidor MCP de ClickHouse con Claude Desktop" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+Antes de empezar:
+
+1. [Instale `uv`](https://docs.astral.sh/uv/getting-started/installation/).
+2. Instale el Client MCP que desee utilizar.
+3. Obtenga el nombre de host, el nombre de usuario y la contraseña de su servicio de ClickHouse.
+
+En los ejemplos siguientes se utilizan estos valores de marcador de posición:
+
+| Variable de entorno   | Valor                      |
+| --------------------- | -------------------------- |
+| `CLICKHOUSE_HOST`     | `your-clickhouse-host`     |
+| `CLICKHOUSE_USER`     | `your-clickhouse-user`     |
+| `CLICKHOUSE_PASSWORD` | `your-clickhouse-password` |
+
+Sustitúyalos por los datos de conexión correspondientes.
+En un servicio de ClickHouse Cloud, el servidor utiliza HTTPS en el puerto `8443` de forma predeterminada.
+Para un servicio autogestionado que use HTTP sin cifrar, configure también `CLICKHOUSE_SECURE=false` y, si es necesario, `CLICKHOUSE_PORT=8123`.
+
+<div id="configure-mcp-client">
+  ## Configura tu MCP Client
+</div>
+
+<Tabs>
+  <Tab title="Claude Code" icon="/images/logo-claudecode-color.svg">
+    Ejecute el siguiente comando en la terminal:
+
+    ```bash
+    claude mcp add \
+      --transport stdio \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      --scope user \
+      mcp-clickhouse -- \
+      uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
+    ```
+
+    Ejecute `claude mcp list` para verificar la conexión o escriba `/mcp` en Claude Code para inspeccionar el servidor y sus herramientas.
+  </Tab>
+
+  <Tab title="Claude Desktop" icon="/images/logo-claude.svg">
+    En Claude Desktop, abre **Settings**, selecciona **Developer** y, a continuación, **Edit config**.
+    Añade el siguiente servidor a `claude_desktop_config.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    Guarda el archivo y reinicia Claude Desktop.
+    Abre **Connectors** en el área de redacción del chat para confirmar que `mcp-clickhouse` está disponible.
+  </Tab>
+
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    Agrega el servidor desde la CLI de Codex:
+
+    ```bash
+    codex mcp add mcp-clickhouse \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
+    ```
+
+    Ejecuta `codex mcp list` para verificar la conexión o escribe `/mcp` en la interfaz de terminal de Codex.
+    La CLI de Codex, la extensión de Codex para IDE y la aplicación de escritorio de ChatGPT comparten la configuración de MCP en `~/.codex/config.toml`.
+  </Tab>
+
+  <Tab title="ChatGPT" icon="/images/logo-codex.svg">
+    La aplicación de escritorio de ChatGPT configura servidores MCP locales para su host de Codex.
+    Esta configuración se comparte con Codex CLI y la extensión de Codex para IDE.
+
+    En la aplicación de escritorio de ChatGPT:
+
+    1. Abra **Configuración** y seleccione **Servidores MCP**.
+    2. Seleccione **Añadir servidor** y elija **STDIO**.
+    3. Introduzca `mcp-clickhouse` como nombre y `uv` como comando.
+    4. Añada `run`, `--with`, `mcp-clickhouse`, `--python`, `3.10` y `mcp-clickhouse` como argumentos, en ese orden.
+    5. Añada `CLICKHOUSE_HOST`, `CLICKHOUSE_USER` y `CLICKHOUSE_PASSWORD` con los datos de conexión.
+    6. Guarde el servidor y reinicie la aplicación.
+
+    Tras reiniciar la aplicación, abra Codex e introduzca `/mcp` en el campo de redacción para inspeccionar el servidor conectado.
+
+    <Note>
+      Estos pasos configuran un servidor `stdio` local para Codex en la aplicación de escritorio de ChatGPT.
+      En cambio, ChatGPT web utiliza herramientas remotas basadas en MCP proporcionadas por plugins.
+      Para usar las herramientas de ClickHouse en ChatGPT web, consulte [Servidor MCP remoto en ClickHouse Cloud](/es/products/cloud/features/ai-ml/remote-mcp).
+    </Note>
+  </Tab>
+
+  <Tab title="Cursor" icon="/images/logo-cursor.webp">
+    Añade el siguiente servidor a `.cursor/mcp.json` para el proyecto actual o a la configuración global de MCP de Cursor:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    Reinicia Cursor y abre su configuración de MCP para confirmar que el servidor esté habilitado.
+  </Tab>
+
+  <Tab title="Windsurf" icon="/images/logo-windsurf.svg">
+    Agrega el siguiente servidor a `~/.codeium/windsurf/mcp_config.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    Recarga Windsurf y, a continuación, abre la configuración de MCP para confirmar que el servidor está habilitado.
+  </Tab>
+</Tabs>
+
+<div id="verify-connection">
+  ## Verifique la conexión
+</div>
+
+Cuando el Client indique que `mcp-clickhouse` está conectado, pídale lo siguiente:
+
+```text
+List the databases available in ClickHouse, then show me the tables in one of them.
+```
+
+Es posible que el Client te pida aprobar las primeras llamadas a herramientas.
+Revisa cada solicitud antes de conceder acceso.
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+Si el Client informa de que no puede encontrar `uv`, sustituya `uv` en el comando o la configuración por su ruta absoluta.
+Ejecute `which uv` en macOS o Linux, o `where uv` en Windows, para obtener esa ruta.
+
+Para conocer otras opciones de conexión, la compatibilidad opcional con chDB, el transporte HTTP y la autenticación, consulte el [README de `mcp-clickhouse`](https://github.com/ClickHouse/mcp-clickhouse).

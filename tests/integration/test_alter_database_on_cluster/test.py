@@ -74,7 +74,7 @@ def test_alter_database_comment(started_cluster, engine):
         == modified_comment
     )
 
-    node1.query(f"DETACH DATABASE test ON CLUSTER test_cluster")
+    node1.query("DETACH DATABASE test ON CLUSTER test_cluster")
 
     assert (
         node1.query("SELECT count() FROM system.databases WHERE name='test'").strip()
@@ -85,7 +85,7 @@ def test_alter_database_comment(started_cluster, engine):
         == "0"
     )
 
-    node1.query(f"ATTACH DATABASE test ON CLUSTER test_cluster")
+    node1.query("ATTACH DATABASE test ON CLUSTER test_cluster")
 
     assert (
         node1.query("SELECT comment FROM system.databases WHERE name='test'").strip()

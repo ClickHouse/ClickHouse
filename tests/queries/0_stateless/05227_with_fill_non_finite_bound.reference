@@ -1,0 +1,18 @@
+a TO bound towards the fill direction generated rows without end
+a TO bound against the fill direction filled nothing
+a TO bound with no STEP is checked as well
+a STALENESS value reaches the same constraint as TO
+a FROM bound left itself in the result and lost the rest of the fill
+a STEP value that is not finite filled nothing
+a bound is checked after it is evaluated, not only as a literal
+finite values still fill
+10
+0
+1
+2
+3
+-1
+0
+1
+2
+4

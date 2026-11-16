@@ -28,9 +28,9 @@ toRelativeYearNum(date)
 SELECT toRelativeYearNum('2010-10-01'::DateTime) - toRelativeYearNum('2000-01-01'::DateTime)
         )",
         R"(
-┌─minus(toRela⋯ateTime')))─┐
-│                       10 │
-└──────────────────────────┘
+┌─minus(toRelativeYearNum(CAST('2010-10-01', 'DateTime')), toRelativeYearNum(CAST('2000-01-01', 'DateTime')))─┐
+│                                                                                                          10 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

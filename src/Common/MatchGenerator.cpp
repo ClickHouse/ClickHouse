@@ -459,6 +459,14 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_s
 
     regexp.reset(regexp->Simplify());
 
+    /// Simplify() returns null when the pattern is too complex for re2 to simplify
+    /// (its internal node-visit budget is exceeded). Walking a null regexp would crash,
+    /// so surface a normal error instead. Report only the size, not the huge pattern.
+    if (!regexp)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                            "Regexp of size {} bytes is too complex to be simplified for random string generation",
+                            re_str.size());
+
     auto walker = re2::RandomStringPrepareWalker();
     walker.Walk(regexp.get(), {});
     generatorFunc = walker.getGenerator();

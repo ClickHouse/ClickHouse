@@ -28,17 +28,17 @@ public:
     static constexpr auto name = "regexpPosition";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRegexpPosition>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 5}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 2 || arguments.size() > 7)
             throw Exception(
@@ -68,12 +68,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column_haystack = arguments[0].column;
 
@@ -247,7 +247,7 @@ private:
         for (size_t n = 0; n < occurrence; ++n)
         {
             matches.clear();
-            regexp.match(data + cur_offset, size - cur_offset, matches, capture_limit);
+            regexp.match(data, size, cur_offset, matches, capture_limit);
             if (matches.empty() || matches[0].offset == std::string::npos)
                 return 0;
 
@@ -257,13 +257,12 @@ private:
                 if (subexpression >= matches.size() || matches[subexpression].offset == std::string::npos)
                     return 0;
                 const auto & m = matches[subexpression];
-                const size_t abs_offset = cur_offset + m.offset;
-                return abs_offset + (return_after_match ? m.length : 0) + 1;
+                return m.offset + (return_after_match ? m.length : 0) + 1;
             }
 
             /// Step by 1 on zero-length matches to avoid an infinite loop.
             const size_t advance = whole.length == 0 ? 1 : whole.length;
-            cur_offset += whole.offset + advance;
+            cur_offset = whole.offset + advance;
             if (cur_offset > size)
                 return 0;
         }
@@ -312,9 +311,9 @@ SELECT
     regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 2, 0, '', 2);
             )",
             R"(
-┌─...─┬─...─┬─...─┬─...─┬─...─┐
-│   7 │   4 │   5 │   7 │  10 │
-└─────┴─────┴─────┴─────┴─────┘
+┌─regexpPosition('hello world', 'world')─┬─regexpPosition('aXbXcXd', 'X', 1, 2)─┬─regexpPosition('aXbXcXd', 'X', 1, 2, 1)─┬─regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'i')─┬─regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 2, 0, '', 2)─┐
+│                                      7 │                                    4 │                                       5 │                                                    7 │                                                                 10 │
+└────────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────────────────────┴──────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
             )"
         }
     };

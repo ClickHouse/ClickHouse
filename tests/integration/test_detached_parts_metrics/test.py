@@ -1,4 +1,3 @@
-import time
 
 import pytest
 
@@ -6,7 +5,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
-    wait_for_delete_inactive_parts,
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -103,7 +101,7 @@ def test_numbers_of_detached_parts(started_cluster):
 
     # inject some data directly and wait until asynchronous metrics notice it
     data_path = node1.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='t'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='t'"
     ).strip()
     node1.exec_in_container(
         [

@@ -52,12 +52,21 @@ struct SortAnalysisResult
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+    /// INTERPOLATE target name -> name of the column `before_interpolate_actions` interpolates for it.
+    NameToNameMap interpolated_column_names;
+    /// INTERPOLATE target name -> name of its column in the `FillingStep` header; the target name unless another column has it.
+    NameToNameMap interpolate_target_column_names;
 };
 
 struct LimitByAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_limit_by_actions;
     Names limit_by_column_names;
+};
+
+struct LimitRangeAnalysisResult
+{
+    ActionsAndProjectInputsFlagPtr before_limit_range_actions;
 };
 
 class PlannerExpressionsAnalysisResult
@@ -72,7 +81,7 @@ public:
         return projection_analysis_result;
     }
 
-    bool hasWhere() const
+    [[nodiscard]] bool hasWhere() const
     {
         return where_analysis_result.filter_actions != nullptr;
     }
@@ -87,9 +96,10 @@ public:
         where_analysis_result = std::move(where_analysis_result_);
     }
 
-    bool hasAggregation() const
+    [[nodiscard]] bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
+            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
     }
 
     AggregationAnalysisResult & getAggregation()
@@ -102,7 +112,7 @@ public:
         aggregation_analysis_result = std::move(aggregation_analysis_result_);
     }
 
-    bool hasHaving() const
+    [[nodiscard]] bool hasHaving() const
     {
         return having_analysis_result.filter_actions != nullptr;
     }
@@ -117,7 +127,7 @@ public:
         having_analysis_result = std::move(having_analysis_result_);
     }
 
-    bool hasWindow() const
+    [[nodiscard]] bool hasWindow() const
     {
         return !window_analysis_result.window_descriptions.empty();
     }
@@ -132,7 +142,7 @@ public:
         window_analysis_result = std::move(window_analysis_result_);
     }
 
-    bool hasQualify() const
+    [[nodiscard]] bool hasQualify() const
     {
         return qualify_analysis_result.filter_actions != nullptr;
     }
@@ -147,7 +157,7 @@ public:
         qualify_analysis_result = std::move(qualify_analysis_result_);
     }
 
-    bool hasSort() const
+    [[nodiscard]] bool hasSort() const
     {
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
@@ -162,7 +172,7 @@ public:
         sort_analysis_result = std::move(sort_analysis_result_);
     }
 
-    bool hasLimitBy() const
+    [[nodiscard]] bool hasLimitBy() const
     {
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
@@ -177,6 +187,21 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
+    [[nodiscard]] bool hasLimitRange() const
+    {
+        return limit_range_analysis_result.before_limit_range_actions != nullptr;
+    }
+
+    LimitRangeAnalysisResult & getLimitRange()
+    {
+        return limit_range_analysis_result;
+    }
+
+    void addLimitRange(LimitRangeAnalysisResult limit_range_analysis_result_)
+    {
+        limit_range_analysis_result = std::move(limit_range_analysis_result_);
+    }
+
 private:
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
@@ -186,12 +211,16 @@ private:
     FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
+    LimitRangeAnalysisResult limit_range_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` (see `JoinTreeQueryPlan::source_constants`) are constant columns the chain
+/// keeps flowing rather than fold-and-drop, so a distributed shard delivers what the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

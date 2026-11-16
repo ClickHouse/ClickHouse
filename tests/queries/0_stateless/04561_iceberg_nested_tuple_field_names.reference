@@ -1,0 +1,12 @@
+parquet	((7))
+avro	((7))
+depth3	(((7)))
+multi	((7,8),9)
+array	([(7)])
+map	({\'k\':(7)})
+unnamed	((7))
+avro innermost name: inner
+unnamed innermost name: 1
+added	1	((0))
+added	2	((7))
+added innermost name: i

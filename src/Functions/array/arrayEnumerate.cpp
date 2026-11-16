@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
@@ -27,27 +26,18 @@ public:
         return std::make_shared<FunctionArrayEnumerate>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be an array but it has type {}.",
-                            getName(), arguments[0]->getName());
+    [[nodiscard]] String getSignatureString() const override { return "(Array) -> Array(UInt32)"; }
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
         {
@@ -79,7 +69,7 @@ REGISTER_FUNCTION(ArrayEnumerate)
     FunctionDocumentation::Description description = R"(
 Returns the array `[1, 2, 3, ..., length (arr)]`
 
-This function is normally used with the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause. It allows counting something just
+This function is normally used with the [`ARRAY JOIN`](/reference/statements/select/array-join) clause. It allows counting something just
 once for each array after applying `ARRAY JOIN`.
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 )";

@@ -1,0 +1,56 @@
+---
+description: 'Dicionários geobase integrados no ClickHouse'
+sidebarTitle: 'Dicionários integrados'
+slug: /sql-reference/statements/create/dictionary/embedded
+title: 'Dicionários integrados (geobase)'
+doc_type: 'referência'
+---
+
+import SelfManaged from '/snippets/pt-BR/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+O ClickHouse contém um recurso integrado para trabalhar com uma geobase.
+
+Isso permite que você:
+
+* Use o ID de uma região para obter seu nome no idioma desejado.
+* Use o ID de uma região para obter o ID de uma cidade, área, distrito federal, país ou continente.
+* Verifique se uma região faz parte de outra região.
+* Obtenha uma cadeia de regiões ascendentes.
+
+Todas as funções oferecem suporte a &quot;translocality&quot;, a capacidade de usar simultaneamente diferentes perspectivas sobre o pertencimento de regiões. Para mais informações, consulte a seção &quot;Funções para trabalhar com dicionários de análise da web&quot;.
+
+Os dicionários internos vêm desabilitados no pacote padrão.
+Para habilitá-los, descomente os parâmetros `path_to_regions_hierarchy_file` e `path_to_regions_names_files` no arquivo de configuração do servidor.
+
+A geobase é carregada de arquivos de texto.
+
+Coloque os arquivos `regions_hierarchy*.txt` no diretório `path_to_regions_hierarchy_file`. Esse parâmetro de configuração deve conter o caminho para o arquivo `regions_hierarchy.txt` (a hierarquia regional padrão), e os outros arquivos (`regions_hierarchy_ua.txt`) devem estar no mesmo diretório.
+
+Coloque os arquivos `regions_names_*.txt` no diretório `path_to_regions_names_files`.
+
+Você também pode criar esses arquivos manualmente. O formato do arquivo é o seguinte:
+
+`regions_hierarchy*.txt`: TabSeparated (sem cabeçalho), colunas:
+
+* ID da região (`UInt32`)
+* ID da região pai (`UInt32`)
+* tipo de região (`UInt8`): 1 - continente, 3 - país, 4 - distrito federal, 5 - região, 6 - cidade; os outros tipos não têm valores
+* população (`UInt32`) — coluna opcional
+
+`regions_names_*.txt`: TabSeparated (sem cabeçalho), colunas:
+
+* ID da região (`UInt32`)
+* nome da região (`String`) — Não pode conter tabulações nem quebras de linha, mesmo escapadas.
+
+Um array plano é usado para armazenamento na RAM. Por esse motivo, os IDs não devem ser maiores que um milhão.
+
+Os dicionários podem ser atualizados sem reiniciar o servidor. No entanto, o conjunto de dicionários disponíveis não é atualizado.
+Nas atualizações, as datas de modificação dos arquivos são verificadas. Se um arquivo tiver sido alterado, o dicionário será atualizado.
+O intervalo para verificar alterações é configurado no parâmetro `builtin_dictionaries_reload_interval`.
+As atualizações de dicionários (exceto o carregamento no primeiro uso) não bloqueiam consultas. Durante as atualizações, as consultas usam as versões antigas dos dicionários. Se ocorrer um erro durante uma atualização, o erro será gravado no log do servidor, e as consultas continuarão usando a versão antiga dos dicionários.
+
+Recomendamos atualizar periodicamente os dicionários da geobase. Durante uma atualização, gere novos arquivos e grave-os em um local separado. Quando tudo estiver pronto, renomeie-os com os nomes dos arquivos usados pelo servidor.
+
+Também existem funções para trabalhar com identificadores de SO e mecanismos de busca, mas elas não devem ser usadas.

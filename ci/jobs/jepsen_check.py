@@ -8,15 +8,25 @@ from pathlib import Path
 from typing import Any, List
 
 import boto3
-from tests.ci.ssh import SSHKey
+from botocore.config import Config
 
 from ci.defs.defs import JobNames
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.tools.ssh import SSHKey
 
 JEPSEN_GROUP_NAME = "jepsen_group"
+
+# Auto Scaling throttles per account; standard mode caps a backoff at 20 s,
+# so 13 attempts keep retrying for up to about 3 minutes.
+AWS_CLIENT_CONFIG = Config(retries={"mode": "standard", "total_max_attempts": 13})
+
+
+def aws_client(service):
+    return boto3.client(service, region_name="us-east-1", config=AWS_CLIENT_CONFIG)
+
 
 KEEPER_DESIRED_INSTANCE_COUNT = 3
 SERVER_DESIRED_INSTANCE_COUNT = 4
@@ -87,7 +97,7 @@ def get_instances_addresses(ec2_client, instance_ids):
 
 
 def prepare_autoscaling_group_and_get_hostnames(count):
-    asg_client = boto3.client("autoscaling", region_name="us-east-1")
+    asg_client = aws_client("autoscaling")
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=count
     )
@@ -101,12 +111,12 @@ def prepare_autoscaling_group_and_get_hostnames(count):
         if counter > 30:
             raise RuntimeError("Cannot wait autoscaling group")
 
-    ec2_client = boto3.client("ec2", region_name="us-east-1")
+    ec2_client = aws_client("ec2")
     return get_instances_addresses(ec2_client, instances)
 
 
 def clear_autoscaling_group():
-    asg_client = boto3.client("autoscaling", region_name="us-east-1")
+    asg_client = aws_client("autoscaling")
     asg_client.set_desired_capacity(
         AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=0
     )
@@ -260,19 +270,39 @@ def main():
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
+        has_fail = any(r.status == Result.Status.FAIL for r in test_result)
+        has_error = any(r.status == Result.Status.ERROR for r in test_result)
+        # Keep the description consistent with the status Result.create_from
+        # derives: it promotes the job to ERROR as soon as any result is ERROR
+        # (even alongside FAILs), so check ERROR-bearing cases before FAIL-only.
+        # A test-all run can emit both categories at once.
         if len(test_result) == 0:
             status = Result.Status.FAIL
             description = "No test results found"
-        elif any(r.status == "FAIL" for r in test_result):
+        elif has_fail and has_error:
+            status = Result.Status.ERROR
+            description = "Found invalid analysis and crashed/indeterminate tests"
+        elif has_error:
+            status = Result.Status.ERROR
+            description = "Found crashed or indeterminate tests"
+        elif has_fail:
             status = Result.Status.FAIL
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
-
-        additional_data.append(Utils.compress_zst(result_path / "store"))
     except Exception as ex:
         print("Exception", ex)
         status = Result.Status.FAIL
         description = "No Jepsen output log"
         test_result = [Result("No Jepsen output log", Result.Status.FAIL)]
+
+    # Attach the store/ artifact separately from parsing: an early Jepsen crash
+    # may leave no store/ directory, and a compression failure must not
+    # overwrite the parsed FAIL/ERROR diagnosis above with a synthetic error.
+    store_path = result_path / "store"
+    if store_path.exists():
+        try:
+            additional_data.append(Utils.compress_zst(store_path))
+        except Exception as ex:
+            print("Failed to compress Jepsen store artifact:", ex)
 
     Result.create_from(
         results=test_result,

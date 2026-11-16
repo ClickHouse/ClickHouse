@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Databases/IDatabase.h>
 #include <rocksdb/statistics.h>
 
@@ -50,7 +52,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
     using RocksDBStoragePtr = std::shared_ptr<StorageEmbeddedRocksDB>;
     std::map<String, std::map<String, RocksDBStoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -60,7 +62,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            RocksDBStoragePtr rocksdb_table = table ? std::dynamic_pointer_cast<StorageEmbeddedRocksDB>(table) : nullptr;
+            RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, DeferredTable::Skip) : nullptr;
             if (!rocksdb_table)
                 continue;
 
@@ -135,3 +137,6 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRocksDB) }

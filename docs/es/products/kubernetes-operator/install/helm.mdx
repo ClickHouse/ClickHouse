@@ -1,0 +1,102 @@
+---
+slug: /clickhouse-operator/install/helm
+title: 'Instalar ClickHouse Operator con Helm'
+keywords: ['kubernetes']
+description: 'Esta guía explica cómo instalar ClickHouse Operator con gráficos de Helm.'
+doc_type: 'guide'
+sidebarTitle: 'Helm'
+---
+
+Esta guía explica cómo instalar ClickHouse Operator con gráficos de Helm.
+
+## Requisitos previos {#prerequisites}
+
+* Clúster de Kubernetes v1.28.0 o posterior
+* Helm v3.0 o posterior
+* kubectl configurado para comunicarse con su clúster
+
+## Instalar Helm {#install-helm}
+
+Si no tiene instalado Helm:
+
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+Verifique la instalación:
+
+```bash
+helm version
+```
+
+## Instalar el operador {#install-the-operator}
+
+<Note>
+  De forma predeterminada, el gráfico de Helm despliega ClickHouse Operator con webhooks habilitados y requiere que cert-manager esté instalado.
+</Note>
+
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
+```
+
+### Desde el repositorio OCI de Helm {#from-oci-helm-repository}
+
+Instala la versión más reciente
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system
+```
+
+Instalar una versión específica del operador
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set manager.image.tag=<operator version>
+```
+
+### Desde un chart local {#from-local-chart}
+
+Clona el repositorio e instala desde el chart local:
+
+```bash
+git clone https://github.com/ClickHouse/clickhouse-operator.git
+cd clickhouse-operator
+helm install clickhouse-operator ./dist/chart
+```
+
+### Supervisar espacios de nombres específicos {#watch-namespaces}
+
+De forma predeterminada, el operador supervisa todos los espacios de nombres. Configure `controller.watchNamespaces` para restringirlo.
+Las entradas se renderizan como plantillas, por lo que `{{ .Release.Namespace }}` se resuelve como el espacio de nombres de la release
+y puede combinarse con espacios de nombres estáticos:
+
+```yaml
+controller:
+  watchNamespaces:
+    - "{{ .Release.Namespace }}"
+    - team-a
+```
+
+En la línea de comandos, `--set` interpreta las llaves como sintaxis de lista, así que utilice `--set-json` (Helm v3.10 o posterior):
+`--set-json 'controller.watchNamespaces=["{{ .Release.Namespace }}"]'`.
+
+Para supervisar únicamente el espacio de nombres de la release con RBAC limitado a ese espacio de nombres:
+
+```yaml
+controller:
+  watchNamespaces:
+    - "{{ .Release.Namespace }}"
+rbac:
+  namespaced: true
+```
+
+Con `rbac.namespaced: true`, los permisos del manager se convierten en un Role/RoleBinding en el espacio de nombres de la release,
+por lo que, para observar otros espacios de nombres, se requiere RBAC con alcance de cluster (la opción predeterminada).
+
+### Opciones de configuración {#configuration-options}
+
+Para conocer las opciones de configuración avanzadas, consulta el archivo [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) del gráfico de Helm

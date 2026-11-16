@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'دليل أمان BYOC'
+slug: /cloud/security/audit-logging/byoc-security-playbook
+title: 'دليل أمان BYOC'
+description: 'توضح هذه الصفحة الأساليب التي يمكن للعملاء استخدامها لتحديد الأحداث الأمنية المحتملة'
+doc_type: 'guide'
+keywords: ['byoc', 'الأمان', 'دليل أمان', 'أفضل الممارسات', 'الامتثال']
+---
+
+تُشغّل ClickHouse نموذج Bring Your Own Cloud (BYOC) وفق نموذج المسؤولية الأمنية المشتركة، ويمكن تنزيل هذا النموذج من Trust Center على https://trust.clickhouse.com. وتُقدَّم المعلومات التالية لعملاء BYOC كأمثلة على كيفية تحديد الأحداث الأمنية المحتملة. وينبغي للعملاء النظر في هذه المعلومات ضمن سياق برنامجهم الأمني لتحديد ما إذا كانت هناك وسائل كشف وتنبيهات إضافية قد تكون مفيدة.
+
+<div id="compromised-clickhouse-credentials">
+  ## بيانات اعتماد ClickHouse التي يُحتمل اختراقها
+</div>
+
+ارجع إلى وثائق [سجل تدقيق قاعدة البيانات](/ar/products/cloud/guides/security/audit-logging/database-audit-log) للاطلاع على الاستعلامات اللازمة لاكتشاف الهجمات المعتمدة على بيانات الاعتماد، والاستعلامات المستخدمة للتحقيق في الأنشطة الضارة.
+
+<div id="application-layer-dos-attack">
+  ## هجوم حجب الخدمة على طبقة التطبيق
+</div>
+
+توجد عدة طرق لتنفيذ هجوم حجب الخدمة (DoS). إذا كان الهجوم يستهدف التسبب في تعطّل مثيل ClickHouse باستخدام payload معيّنة، فأعِد النظام إلى حالة التشغيل، أو أعد تشغيل النظام وقيّد الوصول لاستعادة التحكم. استخدم الاستعلام التالي لمراجعة [system.crash&#95;log](/ar/reference/system-tables/crash_log) والحصول على مزيد من المعلومات حول الهجوم.
+
+```sql
+SELECT * 
+FROM clusterAllReplicas('default',system.crash_log)
+```
+
+<div id="compromised-clickhouse-created-aws-roles">
+  ## أدوار AWS التي أنشأها ClickHouse وتعرّضت للاختراق
+</div>
+
+يستخدم ClickHouse أدوارًا مُنشأة مسبقًا لتمكين وظائف النظام. يفترض هذا القسم أن العميل يستخدم AWS مع CloudTrail ولديه إمكانية الوصول إلى سجلات CloudTrail.
+
+إذا كان الحادث قد يكون ناتجًا عن دور تعرّض للاختراق، فراجِع الأنشطة في CloudTrail وCloudWatch المرتبطة بأدوار IAM والإجراءات الخاصة بـ ClickHouse. ارجع إلى مكدس [CloudFormation](/ar/products/bring-your-own-cloud/reference/privilege#aws-iam-roles) أو وحدة Terraform المقدَّمة كجزء من الإعداد للحصول على قائمة بأدوار IAM.
+
+<div id="unauthorized-access-eks-cluster">
+  ## الوصول غير المصرّح به إلى عنقود EKS
+</div>
+
+يعمل ClickHouse BYOC داخل EKS. يفترض هذا القسم أن العميل يستخدم CloudTrail وCloudWatch في AWS ولديه إمكانية الوصول إلى السجلات.
+
+إذا كان الحادث قد يكون ناتجًا عن تعرّض عنقود EKS للاختراق، فاستخدم الاستعلامات أدناه ضمن سجلات EKS في CloudWatch لتحديد تهديدات محددة.
+
+اعرض عدد استدعاءات واجهة برمجة تطبيقات Kubernetes حسب اسم المستخدم
+
+```sql
+fields user.username
+| stats count(*) as count by user.username
+```
+
+تحقّق مما إذا كان المستخدم مهندسًا لدى ClickHouse
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter user.username like /clickhouse.com/
+| limit 10000
+```
+
+راجع المستخدمين الذين يصلون إلى أسرار Kubernetes، واستبعد أدوار الخدمة
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter requestURI like /secret/
+| filter verb="get"
+| filter ispresent(user.extra.sessionName.0)
+| filter user.username not like /ClickHouseManagementRole/
+| filter user.username not like /data-plane-mgmt/
+```

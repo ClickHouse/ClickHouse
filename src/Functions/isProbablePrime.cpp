@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -35,16 +36,16 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsProbablePrime>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), nullptr, "UInt8/UInt16/UInt32/UInt64/UInt128/UInt256"},
@@ -59,7 +60,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         unsigned rounds = default_rounds;
         if (arguments.size() == 2)
@@ -82,13 +83,24 @@ public:
         auto result = ColumnUInt8::create(input_rows_count);
         auto & result_data = result->getData();
 
+        /// A whole block's rows run inside this one call, so the pipeline's between-blocks cancellation check
+        /// cannot interrupt them. A wide row reaching the Miller-Rabin rounds costs milliseconds and checks
+        /// directly; a row taking a cheap exit costs under a microsecond and is throttled by the budget.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         if (!castTypeToEither<ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnVector<UInt128>, ColumnVector<UInt256>>(
                 column,
                 [&](const auto & col)
                 {
                     const auto & data = col.getData();
+                    using ValueT = std::decay_t<decltype(data[0])>;
                     for (size_t i = 0; i < input_rows_count; ++i)
-                        result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                    {
+                        if constexpr (Primality::is_big_uint<ValueT>)
+                            budget.charge();
+                        result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancellation);
+                    }
                     return true;
                 }))
             throw Exception(
@@ -109,7 +121,7 @@ REGISTER_FUNCTION(IsProbablePrime)
 Returns `1` if the argument is probably prime, `0` if it is definitely composite.
 
 For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
-[`isPrime`](/sql-reference/functions/math-functions#isPrime). The `rounds` argument is ignored.
+[`isPrime`](/reference/functions/regular-functions/math-functions#isPrime). The `rounds` argument is ignored.
 
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:

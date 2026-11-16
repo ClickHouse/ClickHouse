@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatSettings.h>
 #include <base/DecomposedFloat.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/formatIPv6.h>
 #include <Common/NaNUtils.h>
 
@@ -52,17 +53,17 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 {
-    size_t idx = (ip >> 24);
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    std::string_view text = oneByteToString(static_cast<UInt8>(ip >> 24));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 16) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 16));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 8) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 8));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = ip & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip));
+    buf.write(text.data(), text.size());
 }
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
@@ -103,18 +104,54 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
             && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
     };
 
+    /// These are valid identifiers that the parser reads back as a literal instead of an identifier:
+    /// `ParserNumber` hands a bare word to `strtod`, which accepts `inf`, `infinity` and `nan`, and
+    /// `true`/`false` are parsed as `Bool` literals. (`null` is already rejected by
+    /// `isValidIdentifier`.) Left unquoted, a reference to a column with such a name silently turns
+    /// into a constant: a table with a column named `inf` has `ORDER BY inf` written to its
+    /// metadata, and the next server start fails to load it with `Sorting key cannot contain
+    /// constants`.
+    auto isParsedAsLiteral = [&](std::string_view identifier)
+    {
+        return isCaseInsensitiveEqual(identifier, "inf")
+            || isCaseInsensitiveEqual(identifier, "infinity")
+            || isCaseInsensitiveEqual(identifier, "nan")
+            || isCaseInsensitiveEqual(identifier, "true")
+            || isCaseInsensitiveEqual(identifier, "false");
+    };
+
     if (isValidIdentifier(s)
+        && !isParsedAsLiteral(s)
         && !isCaseInsensitiveEqual(s, "distinct")
         && !isCaseInsensitiveEqual(s, "all")
+        /// The parser can consume a bare `SOME` as the array-quantifier keyword, which rewrites the
+        /// node at parse time, so a function of that name has to stay quoted to survive a re-parse.
+        && !isCaseInsensitiveEqual(s, "some")
         && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
         && !isCaseInsensitiveEqual(s, "select")
+        /// CUBE and ROLLUP are parsed as GROUP BY modifiers when left unquoted, so identifiers
+        /// with these names must stay quoted to survive formatting and re-parsing.
+        && !isCaseInsensitiveEqual(s, "cube")
+        && !isCaseInsensitiveEqual(s, "rollup")
+        /// RECURSIVE is parsed as the WITH RECURSIVE keyword when left unquoted, so a CTE named
+        /// `recursive` must stay quoted to survive formatting and re-parsing.
+        && !isCaseInsensitiveEqual(s, "recursive")
         /// These keywords cause parsing ambiguity when used as function or identifier names
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
-        && !isCaseInsensitiveEqual(s, "values"))
+        && !isCaseInsensitiveEqual(s, "top")
+        && !isCaseInsensitiveEqual(s, "values")
+        /// Parsed as unary NOT operator
+        && !isCaseInsensitiveEqual(s, "not")
+        /// `CAST(as AS T)` fails to parse
+        && !isCaseInsensitiveEqual(s, "as")
+        /// `interval AS DAY` parses as INTERVAL literal
+        && !isCaseInsensitiveEqual(s, "interval")
+        /// `EXCEPT strict` parses as EXCEPT STRICT modifier
+        && !isCaseInsensitiveEqual(s, "strict"))
     {
         writeString(s, buf);
     }
@@ -132,9 +169,19 @@ void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
 }
 
+void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringPostgreSQL(s_, buf_); });
+}
+
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
+}
+
+void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringSQLite(s_, buf_); });
 }
 
 void writePointerHex(const void * ptr, WriteBuffer & buf)
@@ -311,8 +358,10 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer)
+size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 {
+    size_t result = 0;
+
     if constexpr (std::is_same_v<T, Float64>)
     {
         DecomposedFloat64 decomposed(x);
@@ -325,12 +374,11 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         ///   exp < 0:    |value| < 1, not an integer.
         ///   exp > 62:   |value| >= 2^63, overflows Int64.
         if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-            return itoa(Int64(x), buffer) - buffer;
-
-        if (exp > 53 && exp <= 62)
-            return writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
-
-        return zmij::detail::write(x, buffer) - buffer;
+            result = itoa(Int64(x), buffer) - buffer;
+        else if (exp > 53 && exp <= 62)
+            result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
+        else
+            result = zmij::detail::write(buffer, x) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -362,28 +410,47 @@ size_t writeFloatTextFastPath(T x, char * buffer)
 
         /// Most common fast path first: exp 0..24, exact integers.
         if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-            return itoa(Int32(f32), buffer) - buffer;
-
+            result = itoa(Int32(f32), buffer) - buffer;
         /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
-        if (exp > 24 && exp <= 30)
-            return writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
-
+        else if (exp > 24 && exp <= 30)
+            result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
         /// Not an integer, or exp out of range: use zmij.
-        return zmij::detail::write(f32, buffer) - buffer;
+        else
+            result = zmij::detail::write(buffer, f32) - buffer;
     }
+
+    /// Append a trailing decimal point for finite values whose representation is a bare integer
+    /// (no '.', exponent, or inf/nan). The byte-scan predicate covers both the itoa fast paths
+    /// and the zmij path, which can also emit a bare integer for large magnitudes
+    /// (e.g. `toFloat32(1.23e20)` -> `123000000000000000000`). The `isFinite` guard keeps
+    /// `inf`/`nan` untouched. The caller guarantees at least
+    /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
+    if (force_decimal_point && isFinite(x)
+        && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
+    {
+        buffer[result] = '.';
+        ++result;
+    }
+
+    return result;
 }
 
-template size_t writeFloatTextFastPath(Float64 x, char * buffer);
-template size_t writeFloatTextFastPath(Float32 x, char * buffer);
-template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
+template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
+template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
 
 template <typename T>
 requires is_floating_point<T>
-void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point)
 {
+    /// `force_decimal_point` is deliberately a separate parameter rather than read from `settings`
+    /// here: JSON output routes floats through this overload too (via `writeJSONNumber`) and must
+    /// not force a trailing point, otherwise a bare `1.` would be an invalid JSON number.
     if (settings.float_precision == 0 || !isFinite(x))
     {
-        writeFloatText(x, buf);
+        /// Special values (`inf`/`nan`) never receive a decimal point; the fast path applies
+        /// `force_decimal_point` only to bare-integer representations of finite values.
+        writeFloatText(x, buf, force_decimal_point);
         return;
     }
 
@@ -394,11 +461,21 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
             "Too high precision requested for Float, must not be more than {}, got {}",
             max_fixed_digits, settings.float_precision);
 
+    /// Writes the chosen representation and, when requested, appends a trailing decimal point if it
+    /// is a bare integer (no '.', exponent or inf/nan). Scientific-notation fallbacks are left as-is.
+    auto write_representation = [&](const char * data, size_t len)
+    {
+        buf.write(data, len);
+        if (force_decimal_point
+            && find_first_symbols<'.', 'e', 'E'>(data, data + len) == data + len)
+            writeChar('.', buf);
+    };
+
     /// First compute the default shortest round-trip representation.
     /// If it already has fewer or equal decimal places than requested, use it directly
     /// to avoid introducing floating-point artefacts from ToFixed.
     char default_buf[64];
-    const size_t default_len = writeFloatTextFastPath(x, default_buf);
+    const size_t default_len = writeFloatTextFastPath(x, default_buf, /* force_decimal_point= */ false);
 
     /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
     /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
@@ -412,7 +489,7 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
     /// For fixed-notation defaults with few enough decimal places, use them directly.
     if (default_decimals >= 0 && default_decimals <= static_cast<int>(settings.float_precision))
     {
-        buf.write(default_buf, default_len);
+        write_representation(default_buf, default_len);
         return;
     }
 
@@ -422,7 +499,7 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
     if (!DoubleConverter<false>::instance().ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder))
     {
-        buf.write(default_buf, default_len);
+        write_representation(default_buf, default_len);
         return;
     }
 
@@ -446,15 +523,131 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
         int non_sign = (buffer[0] == '-') ? 1 : 0;
         if (len - non_sign == 1 && buffer[non_sign] == '0')
         {
-            buf.write(default_buf, default_len);
+            write_representation(default_buf, default_len);
             return;
         }
     }
 
-    buf.write(buffer, len);
+    write_representation(buffer, static_cast<size_t>(len));
 }
 
-template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
-template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
-template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+
+void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
+{
+    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
+    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
+    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
+    static constexpr auto stop_tables = []
+    {
+        std::array<std::array<UInt8, 256>, 2> tables{};
+        for (auto & table : tables)
+        {
+            for (size_t i = 0; i <= 0x1F; ++i)
+                table[i] = 1;
+            table['"'] = 1;
+            table['\\'] = 1;
+            table[0xE2] = 1;
+        }
+        tables[true]['/'] = 1;
+        return tables;
+    }();
+    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
+
+    writeChar('"', buf);
+
+    const char * it = begin;
+
+    while (true)
+    {
+        const char * run_end = it;
+        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
+            ++run_end;
+
+        if (run_end != it)
+        {
+            buf.write(it, static_cast<size_t>(run_end - it));
+            it = run_end;
+        }
+
+        if (it == end)
+            break;
+
+        switch (*it)
+        {
+            case '\b':
+                writeChar('\\', buf);
+                writeChar('b', buf);
+                break;
+            case '\f':
+                writeChar('\\', buf);
+                writeChar('f', buf);
+                break;
+            case '\n':
+                writeChar('\\', buf);
+                writeChar('n', buf);
+                break;
+            case '\r':
+                writeChar('\\', buf);
+                writeChar('r', buf);
+                break;
+            case '\t':
+                writeChar('\\', buf);
+                writeChar('t', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case '/':
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            default:
+                UInt8 c = *it;
+                if (c <= 0x1F)
+                {
+                    /// Escaping of ASCII control characters.
+
+                    UInt8 higher_half = c >> 4;
+                    UInt8 lower_half = c & 0xF;
+
+                    writeCString("\\u00", buf);
+                    writeChar('0' + higher_half, buf);
+
+                    if (lower_half <= 9)
+                        writeChar('0' + lower_half, buf);
+                    else
+                        writeChar('A' + lower_half - 10, buf);
+                }
+                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
+                {
+                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
+                    ///  and these code points are alternative line separators.
+
+                    if (it[2] == '\xA8')
+                        writeCString("\\u2028", buf);
+                    if (it[2] == '\xA9')
+                        writeCString("\\u2029", buf);
+
+                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
+                    it += 2;
+                }
+                else
+                    writeChar(*it, buf);
+        }
+
+        ++it;
+    }
+
+    writeChar('"', buf);
+}
+
 }

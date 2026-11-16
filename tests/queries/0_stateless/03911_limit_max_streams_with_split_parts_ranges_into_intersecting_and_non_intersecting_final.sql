@@ -2,6 +2,7 @@
 -- long: times out in private
 -- no-sanitizers: sometimes times out in private :(
 -- no-s3-storage, no-azure-blob-storage: writing 550 small parts to object storage is too slow
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_on_insert = 1;
 SET optimize_trivial_insert_select = 0;

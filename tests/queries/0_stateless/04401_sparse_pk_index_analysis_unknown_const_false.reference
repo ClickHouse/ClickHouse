@@ -1,0 +1,20 @@
+-- { echo }
+
+EXPLAIN ESTIMATE
+SELECT count() FROM t_sparse_pk_unknown_false
+WHERE ignore(c) AND 0
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+default	t_sparse_pk_unknown_false	0	0	0
+SELECT count() FROM t_sparse_pk_unknown_false
+WHERE ignore(c) AND 0
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+0
+EXPLAIN ESTIMATE
+SELECT count() FROM t_sparse_pk_unknown_false
+WHERE ignore(c) AND 0
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+default	t_sparse_pk_unknown_false	0	0	0
+SELECT count() FROM t_sparse_pk_unknown_false
+WHERE ignore(c) AND 0
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+0

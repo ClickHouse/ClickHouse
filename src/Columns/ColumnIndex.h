@@ -19,10 +19,10 @@ public:
     explicit ColumnIndex(MutableColumnPtr && indexes_);
     explicit ColumnIndex(ColumnPtr indexes_);
 
-    const ColumnPtr & getIndexes() const { return indexes; }
-    const IColumn::WrappedPtr & getIndexesPtr() const { return indexes; }
+    [[nodiscard]] const ColumnPtr & getIndexes() const { return indexes; }
+    [[nodiscard]] const IColumn::WrappedPtr & getIndexesPtr() const { return indexes; }
     IColumn::WrappedPtr & getIndexesPtr() { return indexes; }
-    size_t getIndexAt(size_t row) const;
+    [[nodiscard]] size_t getIndexAt(size_t row) const;
     void insertIndex(size_t index);
     void insertManyIndexes(size_t index, size_t length);
     void insertIndexesRange(const IColumn & column, size_t offset, size_t limit);
@@ -32,12 +32,12 @@ public:
     void popBack(size_t n) { indexes->popBack(n); }
     void reserve(size_t n) { indexes->reserve(n); }
     void resizeAssumeReserve(size_t n);
-    size_t size() const { return indexes->size(); }
-    size_t capacity() const { return indexes->capacity(); }
+    [[nodiscard]] size_t size() const { return indexes->size(); }
+    [[nodiscard]] size_t capacity() const { return indexes->capacity(); }
     void shrinkToFit() { indexes->shrinkToFit(); }
 
     static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
-    size_t getSizeOfIndexType() const { return size_of_type; }
+    [[nodiscard]] size_t getSizeOfIndexType() const { return size_of_type; }
 
     MutableColumnPtr detachIndexes() { return IColumn::mutate(std::move(indexes)); }
     void attachIndexes(MutableColumnPtr indexes_);
@@ -45,9 +45,13 @@ public:
     /// Count the number of occurrences of each row in indexed data.
     void countRowsInIndexedData(ColumnUInt64::Container & counts) const;
 
-    bool containsDefault() const;
+    [[nodiscard]] bool containsDefault() const;
 
-    WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
+    /// Per-row hash of indexed data: gathers the precomputed per-dictionary-row hashes
+    /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
+    /// `hash_out[i]` corresponds to row `row_begin + i`.
+    void computeHashInto(
+        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
@@ -66,15 +70,20 @@ public:
         Columns compact_indexed_columns;
     };
 
-    CompactIndexedColumnsResult buildCompactIndexedColumns(const Columns & indexed_columns) const;
+    [[nodiscard]] CompactIndexedColumnsResult buildCompactIndexedColumns(const Columns & indexed_columns) const;
 
     /// Collect rows where mask[index] is 1.
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
 
     void expand(const IColumn::Filter & mask, bool inverted);
 
+    /// Set the stored index to `value` for every row where `mask` is zero.
+    /// When `offset` is given, only the rows in `[offset, offset + mask.size())` are affected and `mask`
+    /// covers just that range; otherwise it must cover the whole column.
+    void setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset = 0);
+
 private:
-    size_t getMaxIndexForCurrentType() const;
+    [[nodiscard]] size_t getMaxIndexForCurrentType() const;
 
     void checkSizeOfType();
 
@@ -93,7 +102,7 @@ private:
     template <typename IndexType>
     void convertIndexes();
 
-    std::optional<IColumn::Filter> buildUsedRowsFilter(size_t indexed_data_size) const;
+    [[nodiscard]] std::optional<IColumn::Filter> buildUsedRowsFilter(size_t indexed_data_size) const;
     size_t compactIndexes(const IColumn::Filter & filter, size_t indexed_data_size);
 
     IColumn::WrappedPtr indexes;

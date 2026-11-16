@@ -71,34 +71,52 @@ fi
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-if [ -f "$clickhouse" ]
+# If something already exists at this path, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
+# Do not prompt interactively here: this script is commonly run as `curl https://clickhouse.com/ | sh`,
+# where the script itself is delivered on stdin. A `read` would consume bytes from that same pipe,
+# desyncing the shell parser and producing spurious syntax errors.
+# Use `-e` together with `-L` so that directories and broken symlinks are also treated as occupied
+# (a dangling symlink is invisible to `-e` alone, and `curl -o` would then fail on it).
+i=0
+while [ -e "$clickhouse" ] || [ -L "$clickhouse" ]
+do
+    clickhouse="${clickhouse_download_filename_prefix}.${i}"
+    i=$(($i+1))
+done
+
+# The `master` build by default. `CLICKHOUSE_BRANCH=latest` selects the newest release branch,
+# any other value names a folder on builds.clickhouse.com, such as `26.10`.
+CLICKHOUSE_BRANCH="${CLICKHOUSE_BRANCH:-master}"
+if [ "${CLICKHOUSE_BRANCH}" = "latest" ]
 then
-    read -p "ClickHouse binary ${clickhouse} already exists. Overwrite? [y/N] " answer
-    if [ "$answer" = "y" -o "$answer" = "Y" ]
-    then
-        rm -f "$clickhouse"
-    else
-        i=0
-        while [ -f "$clickhouse" ]
-        do
-            clickhouse="${clickhouse_download_filename_prefix}.${i}"
-            i=$(($i+1))
-        done
-    fi
+    CLICKHOUSE_BRANCH=$(curl -fsSL https://clickhouse.com/data/version_date.tsv | sed -n 's/^v\([0-9]*\.[0-9]*\)\..*/\1/p' | sort -uV | tail -n 1)
+    [ -n "${CLICKHOUSE_BRANCH}" ] || { echo "Cannot find the latest release branch in version_date.tsv."; exit 1; }
 fi
 
-URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
+URL="https://builds.clickhouse.com/${CLICKHOUSE_BRANCH}/${DIR}/clickhouse"
 echo
 echo "Will download ${URL} into ${clickhouse}"
 echo
 curl "${URL}" -o "${clickhouse}" && chmod a+x "${clickhouse}" || exit 1
+
+# Highlight the commands with increased intensity when the output is a terminal,
+# in the same style as `clickhouse install` does.
+if [ -t 1 ]
+then
+    HILITE="$(printf '\033[1m')"
+    END_HILITE="$(printf '\033[0m')"
+else
+    HILITE=""
+    END_HILITE=""
+fi
+
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
-    ./${clickhouse}"
+    ${HILITE}./${clickhouse}${END_HILITE}"
 
 echo
 echo "You can also install it:
-sudo ./${clickhouse} install"
+${HILITE}sudo ./${clickhouse} install${END_HILITE}"
 
 # Also install clickhousectl, the CLI for ClickHouse local and Cloud.
 # Set CLICKHOUSE_ONLY=1 to skip.

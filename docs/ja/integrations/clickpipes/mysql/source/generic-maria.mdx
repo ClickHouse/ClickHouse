@@ -1,0 +1,115 @@
+---
+sidebarTitle: '汎用 MariaDB'
+description: '任意の MariaDB インスタンスを ClickPipes のソースとして設定する'
+slug: /integrations/clickpipes/mysql/source/generic_maria
+title: '汎用 MariaDB ソース設定ガイド'
+doc_type: 'guide'
+keywords: ['generic mariadb', 'clickpipes', 'バイナリログ', 'ssl tls', 'セルフホスト']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  サポートされているプロバイダー (サイドバーに記載) のいずれかを使用している場合は、そのプロバイダー専用のガイドを参照してください。
+</Info>
+
+<div id="enable-binlog-retention">
+  ## バイナリログの保持を有効にする
+</div>
+
+バイナリログには、MariaDBサーバーインスタンスで行われたデータ変更に関する情報が含まれており、レプリケーションに必要です。
+
+MariaDBインスタンスでバイナリログを有効にするには、次の設定が構成されていることを確認してください。
+
+```sql
+server_id = 1               -- 1以上であれば何でも可（0以外）
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  -- 10.5.0で導入
+expire_logs_days = 1        -- 1以上を指定（0の場合、ログは永久に保持される）
+```
+
+これらの設定を確認するには、以下のSQLコマンドを実行します。
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+値が一致しない場合は、設定ファイル (通常は `/etc/my.cnf` または `/etc/my.cnf.d/mariadb-server.cnf`) で設定できます。
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+binlog_row_metadata = FULL  ; 10.5.0以降でのみ使用可能
+expire_logs_days = 1
+```
+
+ソースデータベースがレプリカである場合は、`log_slave_updates` も有効にしてください。
+
+変更を反映するには、MariaDB インスタンスを再起動する必要があります。
+
+<Note>
+  MariaDB &lt;= 10.4 では、`binlog_row_metadata` 設定がまだ導入されていないため、カラムの除外はサポートされていません。
+</Note>
+
+<div id="configure-database-user">
+  ## データベースユーザーを設定する
+</div>
+
+root ユーザーとして MariaDB インスタンスに接続し、以下のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します。
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. スキーマに対する権限を付与します。以下の例は、`clickpipes` データベースに対する権限を示しています。レプリケーション対象の各データベースおよびホストについて、これらのコマンドを繰り返してください。
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. ユーザーにレプリケーション権限を付与します。
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  `clickpipes_user` と `some_secure_password` は、使用するユーザー名とパスワードに置き換えてください。
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 設定 (推奨)
+</div>
+
+SSL 証明書により、MariaDB データベースへのセキュアな接続が確保されます。設定内容は、証明書の種類によって異なります。
+
+**信頼された認証局 (DigiCert、Let&#39;s Encrypt など)&#x20;**&#x20;- 追加の設定は不要です。
+
+**内部認証局** - IT チームからルート CA 証明書ファイルを入手してください。新しい MariaDB ClickPipe の作成時に、ClickPipes UI でアップロードします。
+
+**セルフホストの MariaDB** - MariaDB サーバーから CA 証明書をコピーしてください (`my.cnf` の `ssl_ca` 設定でパスを確認できます) 。新しい MariaDB ClickPipe の作成時に、ClickPipes UI でアップロードします。ホストにはサーバーの IP アドレスを使用してください。
+
+**11.4 以降のセルフホストの MariaDB** - サーバーで `ssl_ca` が設定されている場合は、上記の方法に従ってください。設定されていない場合は、適切な証明書を用意できるよう IT チームに相談してください。どうしても必要な場合の最終手段として、ClickPipes UI の「Skip Certificate Verification」トグルを使用できます (セキュリティ上の理由から推奨されません) 。
+
+SSL/TLS オプションの詳細については、[よくある質問](/ja/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)をご覧ください。
+
+<div id="whats-next">
+  ## 次のステップ
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mysql/index)して、MariaDB インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、MariaDB インスタンスのセットアップ時に使用した接続情報は必ず控えておいてください。

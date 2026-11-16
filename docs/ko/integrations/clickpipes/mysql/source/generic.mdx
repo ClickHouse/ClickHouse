@@ -1,0 +1,152 @@
+---
+sidebarTitle: 'Generic MySQL'
+description: '모든 MySQL 인스턴스를 ClickPipes 소스로 설정합니다'
+slug: /integrations/clickpipes/mysql/source/generic
+title: 'Generic MySQL 소스 설정 가이드'
+doc_type: 'guide'
+keywords: ['generic mysql', 'clickpipes', '바이너리 로깅', 'ssl tls', 'mysql 8.x']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  사이드바에 있는 지원되는 제공업체 중 하나를 사용하는 경우, 해당 제공업체별 가이드를 참조하십시오.
+</Info>
+
+<div id="enable-binlog-retention">
+  ## 바이너리 로그 보존 활성화
+</div>
+
+바이너리 로그에는 MySQL 서버 인스턴스에서 수행된 데이터 변경 정보가 포함되며, 복제에 필요합니다.
+
+<div id="binlog-v8-x">
+  ### MySQL 8.x 및 이후 버전
+</div>
+
+MySQL 인스턴스에서 바이너리 로깅을 활성화하려면 다음 설정이 구성되어 있는지 확인하십시오:
+
+```sql
+log_bin = ON                        -- 기본값
+binlog_format = ROW                 -- 기본값
+binlog_row_image = FULL             -- 기본값
+binlog_row_metadata = FULL
+binlog_expire_logs_seconds = 86400  -- 1일 이상; 기본값은 30일
+```
+
+이러한 설정을 확인하려면 다음 SQL 명령을 실행하십시오:
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'binlog_expire_logs_seconds';
+```
+
+설정값이 일치하지 않으면 다음 SQL 명령을 실행하여 설정할 수 있습니다:
+
+```sql
+SET PERSIST log_bin = ON;
+SET PERSIST binlog_format = ROW;
+SET PERSIST binlog_row_image = FULL;
+SET PERSIST binlog_row_metadata = FULL;
+SET PERSIST binlog_expire_logs_seconds = 86400;
+```
+
+`log_bin` 설정을 변경했다면, 변경 사항이 적용되도록 MySQL 인스턴스를 반드시 다시 시작해야 합니다.
+
+설정을 변경한 후에는 [데이터베이스 사용자 구성](#configure-database-user)으로 진행하세요.
+
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
+
+MySQL 5.7 인스턴스에서 바이너리 로깅을 활성화하려면 다음 설정이 적용되어 있는지 확인하십시오.
+
+```sql
+server_id = 1            -- 1 이상; 0이 아닌 값
+log_bin = ON
+binlog_format = ROW      -- 기본값
+binlog_row_image = FULL  -- 기본값
+expire_logs_days = 1     -- 1 이상; 0으로 설정하면 로그가 영구 보존됨
+```
+
+이 설정을 확인하려면 다음 SQL 명령을 실행하십시오:
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+값이 일치하지 않으면 구성 파일(일반적으로 `/etc/my.cnf` 또는 `/etc/mysql/my.cnf`)에서 설정할 수 있습니다:
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+expire_logs_days = 1
+```
+
+변경 사항이 적용되려면 MySQL 인스턴스를 반드시 다시 시작해야 합니다.
+
+<Note>
+  컬럼 제외 및 스키마 변경은 MySQL 5.7 및 이전 버전에서는 지원되지 않습니다. 이러한 기능은 [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) 이전의 binlog에서 제공되지 않는 테이블 메타데이터에 의존합니다.
+</Note>
+
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
+
+root 사용자로 MySQL 인스턴스에 연결한 후 다음 명령을 실행하십시오:
+
+1. ClickPipes 전용 사용자를 생성합니다:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. 스키마 권한을 부여합니다. 다음 예시는 `clickpipes` 데이터베이스에 대한 권한을 보여줍니다. 복제하려는 각 데이터베이스와 호스트에 대해 이 명령을 반복하십시오:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. 사용자에게 복제 권한을 부여합니다:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  `clickpipes_user`와 `some_secure_password`는 원하는 사용자 이름과 비밀번호로 바꾸십시오.
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 구성 (권장)
+</div>
+
+SSL 인증서는 MySQL 데이터베이스에 대한 보안 연결을 보장합니다. 구성 방법은 인증서 유형에 따라 달라집니다.
+
+**신뢰할 수 있는 인증 기관(DigiCert, Let&#39;s Encrypt 등)** - 추가 구성이 필요하지 않습니다.
+
+**내부 인증 기관** - IT 팀에서 루트 CA 인증서 파일을 받으십시오. 새 MySQL ClickPipe를 만들 때 ClickPipes UI에서 해당 파일을 업로드하십시오.
+
+**자체 호스팅 MySQL** - MySQL server에서 CA 인증서를 복사한 다음(일반적으로 `/var/lib/mysql/ca.pem`에 위치) 새 MySQL ClickPipe를 만들 때 UI에서 업로드하십시오. 호스트로는 server의 IP 주소를 사용하십시오.
+
+**server 액세스 권한이 없는 자체 호스팅 MySQL** - 인증서를 받으려면 IT 팀에 문의하십시오. 최후의 수단으로 ClickPipes UI의 &quot;인증서 검증 건너뛰기&quot; 토글을 사용하십시오(보안상 권장되지 않음).
+
+SSL/TLS 옵션에 대한 자세한 내용은 [FAQ](/ko/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)를 참조하십시오.
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mysql/index)하여 MySQL 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
+ClickPipe 생성 과정에서 필요하므로 MySQL 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

@@ -60,6 +60,9 @@ public:
         /// Timeout for writing data to command stdin
         size_t command_write_timeout_milliseconds = 10000;
 
+        /// Requested capacity for command stdin/stdout pipes. Zero keeps the OS default.
+        size_t command_pipe_capacity = 0;
+
         /// Reaction when external command outputs data to its stderr.
         ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
 
@@ -84,11 +87,14 @@ public:
         /// Execute script direct or with /bin/bash.
         bool execute_direct = true;
 
+        /// True when this coordinator runs an executable or executable pool UDF.
+        bool is_user_defined_function = false;
+
     };
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
 
-    const Configuration & getConfiguration() const
+    [[nodiscard]] const Configuration & getConfiguration() const
     {
         return configuration;
     }
@@ -96,14 +102,14 @@ public:
     Pipe createPipe(
         const std::string & command,
         const VectorWithMemoryTracking<std::string> & arguments,
-        std::vector<Pipe> && input_pipes,
+        Pipes && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {});
 
     Pipe createPipe(
         const std::string & command,
-        std::vector<Pipe> && input_pipes,
+        Pipes && input_pipes,
         Block sample_block,
         ContextPtr context,
         const ShellCommandSourceConfiguration & source_configuration = {})
