@@ -83,6 +83,11 @@ constexpr size_t adaptive_spill_min_buffer_bytes = 4 << 10;
 /// table, grown to hold them, stays in the cache while the unit is drained and converted; a bucket smaller than a
 /// unit is merged as one, which spares a small bucket the fixed cost of every further unit.
 constexpr size_t adaptive_merge_unit_records = 16'384;
+/// Once the merge ends, what the producers left is freed in parallel jobs of this many producers each (see
+/// `Aggregator::releaseAdaptiveMergeSources`). Freeing a producer's table, cell index, arenas, staging buffer and
+/// count bins takes about twenty microseconds, as waking a thread of the pool does, so fewer producers do not pay
+/// for a job.
+constexpr size_t adaptive_release_producers_per_job = 16;
 /// Groups below this work estimate use the existing parallelism across merge buckets. Above the upper
 /// bound, a group has enough work to amortize additional merge tasks even while other buckets are busy.
 /// Between the bounds, the threshold follows the estimated work per worker for this query.

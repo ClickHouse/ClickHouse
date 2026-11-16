@@ -13,6 +13,8 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
@@ -1332,8 +1334,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedRecords, pruned_records);
 
     /// Every source cell of the bucket was adopted, merged or discarded and its mapped value nulled, so the bucket tables
-    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which its destruction
-    /// frees after the last bucket of the merge stopped the source owning states (see `AdaptiveBucketMergingSource`).
+    /// of two-level sources only release their buffers. A single-level source keeps its one buffer, which is freed after
+    /// the last bucket of the merge stopped the source owning states (see `releaseAdaptiveMergeSources`).
     for (size_t i = 1; i < data.size(); ++i)
         if (data[i]->isTwoLevel())
             getDataVariant<Method>(*data[i]).data.impls[bucket].clearAndShrink();
@@ -1352,6 +1354,72 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     arena_slot.reset();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
     return chunks;
+}
+
+void Aggregator::releaseAdaptiveMergeTable(ManyAggregatedDataVariants & data, const AdaptiveMergeTask & task) const
+{
+    if (task.previous_bucket < 0)
+        return;
+    /// The conversion of the task's last unit emptied the table and kept its buffer.
+    visitTwoLevelVariant(
+        *data[0],
+        [&](auto & method)
+        {
+            auto & table = method.data.impls[task.previous_bucket];
+            chassert(table.empty());
+            table.clearAndShrink();
+        });
+}
+
+void Aggregator::releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, AdaptiveAggregationSession & session) const
+{
+    /// The first variants are the destination, which keeps its states.
+    resetAggregatorExceptFirst(data);
+
+    /// The destination took the arenas of the sources over (see `prepareVariantsToMerge`). No unit is left to create
+    /// or convert states, so it gives them up, all but its own first one.
+    auto & destination_pools = data[0]->aggregates_pools;
+    Arenas pools(std::make_move_iterator(destination_pools.begin() + 1), std::make_move_iterator(destination_pools.end()));
+    destination_pools.resize(1);
+
+    /// The memory scheduler reads the buffers under the mutex, and finds none from here on.
+    std::vector<std::unique_ptr<PartitionedRecordBuffer>> buffers;
+    {
+        std::lock_guard lock(session.producer_buffers_mutex);
+        buffers = std::exchange(session.producer_buffers, {});
+    }
+
+    std::vector<AdaptiveTopKCountBins> bins;
+    if (session.top_k_pruning)
+        bins = session.top_k_pruning->takeProducerBins();
+
+    /// Item `i` is the `i`-th of each kind, about what one producer left: a source table, an arena, a staging buffer
+    /// and the bins of a producer.
+    const size_t items = std::max({data.size() - 1, pools.size(), buffers.size(), bins.size()});
+    std::atomic<size_t> next_item = 0;
+    const auto release = [&]
+    {
+        for (size_t i; (i = next_item.fetch_add(1, std::memory_order_relaxed)) < items;)
+        {
+            if (i + 1 < data.size())
+                data[i + 1].reset();
+            if (i < pools.size())
+                pools[i].reset();
+            if (i < buffers.size())
+                buffers[i].reset();
+            if (i < bins.size())
+                bins[i] = {};
+        }
+    };
+
+    /// A job per `adaptive_release_producers_per_job` items, one of them on this thread. The runner is declared last,
+    /// so it joins its jobs before anything they use goes.
+    const size_t jobs = std::min<size_t>(params.max_threads, items / adaptive_release_producers_per_job);
+    ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    for (size_t job = 1; job < jobs; ++job)
+        runner.enqueueAndKeepTrack([&release] { release(); }, Priority{});
+    release();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
