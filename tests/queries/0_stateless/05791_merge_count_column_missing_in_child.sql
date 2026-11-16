@@ -2,6 +2,7 @@
 
 DROP TABLE IF EXISTS v;
 DROP TABLE IF EXISTS t_nested;
+DROP TABLE IF EXISTS al;
 DROP TABLE IF EXISTS vj;
 DROP TABLE IF EXISTS vn;
 DROP TABLE IF EXISTS mm;
@@ -87,6 +88,10 @@ SELECT count() FROM (SELECT n.c FROM t_nested ARRAY JOIN n) SETTINGS optimize_tr
 SELECT count() FROM (SELECT c FROM (SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n)) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 CREATE VIEW vj AS SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n;
 SELECT count() FROM (SELECT c FROM vj) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+CREATE TABLE al ENGINE = Alias(vj);
+SELECT count() FROM (SELECT c FROM al) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT c FROM merge(currentDatabase(), '^vj$')) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE al;
 DROP TABLE vj;
 DROP TABLE t_nested;
 DROP TABLE v;

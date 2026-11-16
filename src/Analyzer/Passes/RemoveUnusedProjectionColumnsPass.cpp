@@ -14,6 +14,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 #include <Analyzer/traverseQueryTree.h>
 
@@ -43,6 +45,22 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     return result;
 }
 
+/// A storage that reads other tables may read a view. Only `Merge` is looked through, one level down.
+bool rowsMayDependOnReadColumns(const StoragePtr & storage)
+{
+    const auto nested_storage = unwrapStorageProxy(storage);
+    if (!nested_storage || nested_storage->isView())
+        return true;
+    if (!nested_storage->readsFromOtherTables())
+        return false;
+    const auto * storage_merge = nested_storage->as<StorageMerge>();
+    return !storage_merge || storage_merge->hasChildTable([](const StoragePtr & table)
+    {
+        const auto nested_table = unwrapStorageProxy(table);
+        return !nested_table || nested_table->isView() || nested_table->readsFromOtherTables();
+    });
+}
+
 /// Whether the rows of a query over this join tree do not depend on which columns it reads.
 /// `ARRAY JOIN` of a `Nested` column joins only the subcolumns that are read, which may have different sizes,
 /// and a view is read like an `ARRAY JOIN` subquery would be, so the projection must name the columns to read.
@@ -55,11 +73,11 @@ bool rowsDoNotDependOnReadColumns(const TableExpressionNodePtr & join_tree_node)
             case QueryTreeNodeType::ARRAY_JOIN:
                 return false;
             case QueryTreeNodeType::TABLE:
-                if (table_expression->as<TableNode &>().getStorage()->isView())
+                if (rowsMayDependOnReadColumns(table_expression->as<TableNode &>().getStorage()))
                     return false;
                 break;
             case QueryTreeNodeType::TABLE_FUNCTION:
-                if (const auto & storage = table_expression->as<TableFunctionNode &>().getStorage(); !storage || storage->isView())
+                if (rowsMayDependOnReadColumns(table_expression->as<TableFunctionNode &>().getStorage()))
                     return false;
                 break;
             case QueryTreeNodeType::QUERY:

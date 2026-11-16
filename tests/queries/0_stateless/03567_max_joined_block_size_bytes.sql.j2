@@ -153,6 +153,7 @@ FROM
             FROM numbers(128 * 4)
         ) AS r
     )
+    WHERE NOT ignore(v1, v2)
 )
 SETTINGS max_block_size = 128, max_joined_block_size_bytes = '10Mi';
 
@@ -176,6 +177,7 @@ FROM
             FROM numbers(128 * 4)
         ) AS r
     )
+    WHERE NOT ignore(v1, v2)
 )
 SETTINGS max_block_size = 128, max_joined_block_size_bytes = '10Mi';
 
@@ -199,5 +201,6 @@ FROM
             FROM numbers(128 * 4)
         ) AS r
     )
+    WHERE NOT ignore(v1, v2)
 )
 SETTINGS max_block_size = 128, max_joined_block_size_bytes = '10Mi';
