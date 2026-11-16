@@ -48,13 +48,14 @@ SETTINGS query_plan_filter_push_down = 0;
 -- Case 4: same not-ready-set nullIn inside the right branch of INTERSECT ALL, matching
 -- the original fuzzer query shape (INTERSECT ALL generates the ANY JOIN). >= 0 keeps the
 -- filter always TRUE, so the intersection is the left branch unchanged.
-SELECT a, b FROM t_left_04340 WHERE a > 0
-INTERSECT ALL
-SELECT a, b
-FROM t_left_04340
-ANY LEFT JOIN t_right_04340 USING (a)
-WHERE toUInt64(nullIn(a, (SELECT x FROM t_subq_04340))) >= 0
-ORDER BY a
+SELECT * FROM (
+    SELECT a, b FROM t_left_04340 WHERE a > 0
+    INTERSECT ALL
+    SELECT a, b
+    FROM t_left_04340
+    ANY LEFT JOIN t_right_04340 USING (a)
+    WHERE toUInt64(nullIn(a, (SELECT x FROM t_subq_04340))) >= 0)
+ORDER BY ALL
 SETTINGS query_plan_filter_push_down = 0;
 
 DROP TABLE t_left_04340;

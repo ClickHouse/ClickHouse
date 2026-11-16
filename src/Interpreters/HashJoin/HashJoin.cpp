@@ -2125,7 +2125,7 @@ private:
             auto take_remaining_copies = [&](const auto & mapped) -> bool
             {
                 const auto remaining = static_cast<size_t>(std::max<Int64>(mapped.remaining, 0));
-                const size_t take = std::min(remaining - copies_emitted, max_block_size - rows_added);
+                const size_t take = std::min<size_t>(remaining - copies_emitted, max_block_size - rows_added);
                 words.resize_fill(words.size() + take, mapped.ref.encode());
                 rows_added += take;
                 copies_emitted += take;
