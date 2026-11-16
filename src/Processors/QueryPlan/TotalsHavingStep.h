@@ -38,20 +38,20 @@ public:
         , final(other.final)
     {}
 
-    String getName() const override { return "TotalsHaving"; }
+    [[nodiscard]] String getName() const override { return "TotalsHaving"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
     /// Mutable access for the query plan cache: a restored plan rewrites the HAVING constants
     /// (`HAVING count() > 91`) before the pipeline is built.
     ActionsDAG * getActions() { return actions_dag ? &*actions_dag : nullptr; }
-    const String & getFilterColumnName() const { return filter_column_name; }
+    [[nodiscard]] const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
+    [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
 
-    bool hasCorrelatedExpressions() const override
+    [[nodiscard]] bool hasCorrelatedExpressions() const override
     {
         if (actions_dag)
             return actions_dag->hasCorrelatedColumns();
@@ -60,11 +60,11 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

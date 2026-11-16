@@ -171,7 +171,7 @@ enum class AccessType : uint16_t
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
-    M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
+    M(SHOW_FILESYSTEM_CACHES, "", GLOBAL, ALL) /* allows to execute SHOW FILESYSTEM CACHES, DESCRIBE FILESYSTEM CACHE and SELECT from system.filesystem_cache_settings */\
     \
     M(SELECT, "", COLUMN, ALL) \
     M(INSERT, "", COLUMN, ALL) \
