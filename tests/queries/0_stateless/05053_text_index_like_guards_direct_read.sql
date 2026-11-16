@@ -52,6 +52,11 @@ SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%mm%'
     SETTINGS log_comment = 'like_direct_q6', text_index_like_rows_max_selectivity = 1,
              text_index_like_max_postings_to_read = 1000000;
 
+-- Q14: a value above 1 turns the rows check off too.
+SELECT count() FROM t_text_index_like_direct WHERE message LIKE '%mm%'
+    SETTINGS log_comment = 'like_direct_q14', text_index_like_rows_max_selectivity = 1.5,
+             text_index_like_max_postings_to_read = 1000000;
+
 -- The primary key prunes first; `gapfar` spans the surviving ranges, but none of its posting blocks
 -- lies in them, so only `gapnear` may count.
 DROP TABLE IF EXISTS t_text_index_like_gap;
@@ -226,6 +231,12 @@ SELECT 'q13',
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = 'like_direct_q13';
+
+SELECT 'q14',
+    ProfileEvents['TextIndexDiscardPatternScan'] = 0 AS scan_not_discarded
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = 'like_direct_q14';
 
 DROP TABLE t_text_index_like_gap;
 DROP TABLE t_text_index_like_direct;

@@ -825,7 +825,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
     const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
-    /// A row can hold several matched tokens, so their rows can add up past the part's rows: 1 turns the check off.
+    /// A row can hold several matched tokens, so their rows can add up past the part's rows: 1 or more turns the check off.
     const double rows_max_selectivity = settings[Setting::text_index_like_rows_max_selectivity];
     const bool check_postings_rows = rows_max_selectivity < 1.0;
     const double max_postings_rows = rows_max_selectivity * static_cast<double>(state.part_info.getRowCount());

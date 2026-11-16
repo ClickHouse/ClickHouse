@@ -11141,7 +11141,7 @@ Maximum fraction of a part's rows that the posting lists read for a LIKE/ILIKE p
 
 While scanning the dictionary of a part, ClickHouse adds up the row counts of the matched tokens whose posting lists are stored outside the dictionary. If the sum exceeds this fraction of the part's rows, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual. A token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted, and a token it has partly ruled out counts the rows that its still-read posting blocks span, at most its row count, except with `distributed_index_analysis` and `use_skip_indexes_on_data_read = 0`.
 
-A row can contain several matched tokens, so the sum can exceed the number of rows. The value `1` disables the check.
+A row can contain several matched tokens, so the sum can exceed the number of rows. A value of `1` or more disables the check.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
