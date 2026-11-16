@@ -145,7 +145,7 @@ struct AggregateFunctionFlameGraphTree
 
     using Traces = VectorWithMemoryTracking<Trace>;
 
-    Traces dump(size_t max_depth, size_t min_bytes) const
+    [[nodiscard]] Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
@@ -255,7 +255,7 @@ static void dumpFlameGraphImpl(
 
     UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
@@ -278,7 +278,7 @@ static void dumpFlameGraphImpl(
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
             {
                 if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)

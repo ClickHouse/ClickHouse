@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -1273,6 +1274,7 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(

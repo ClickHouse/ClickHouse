@@ -38,7 +38,7 @@ struct IcebergObjectSerializableInfo
     std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
-    bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
+    [[nodiscard]] bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
@@ -85,6 +85,10 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
+
+    /// Whether the position deletes of this file are applied by `IcebergStreamingPositionDeleteTransform`,
+    /// which requires the rows of the data file and of its delete files in order of increasing row number.
+    bool usesStreamingPositionDeletes(const ContextPtr & context_) const;
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 

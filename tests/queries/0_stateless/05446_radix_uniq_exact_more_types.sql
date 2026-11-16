@@ -2,8 +2,7 @@
 -- 128 bits), or as the 128-bit `SipHash` of the others, and must count as many distinct values as without it. Up to 300000
 -- distinct values are routed, not kept in the local set of a stream.
 
--- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
-SET max_threads = 4, count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0;
+SET max_threads = 4, collect_hash_table_stats_during_aggregation = 0;
 
 SELECT 'Decimal32',
     (SELECT uniqExact(x) FROM (SELECT toDecimal32(number % 300000, 2) AS x FROM numbers_mt(2000000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1),

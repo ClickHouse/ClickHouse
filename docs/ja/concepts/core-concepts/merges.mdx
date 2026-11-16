@@ -6,8 +6,6 @@ keywords: ['マージ']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="what-are-part-merges-in-clickhouse">
   ## ClickHouse におけるパーツマージとは何ですか？
 </div>
@@ -26,7 +24,15 @@ ClickHouse が[高速](/ja/get-started/about/why-clickhouse-is-so-fast)なのは
 
 次の図は、このバックグラウンドマージのプロセスを概略的に示したものです。
 
-<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -69,7 +75,15 @@ ORDER BY name ASC;
 
 ClickHouse 24.10 では、新しい[マージダッシュボード](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)が組み込みの[監視ダッシュボード](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)に追加されました。これは OSS と Cloud の両方で `/merges` HTTP ハンドラー経由で利用でき、この例のテーブルで発生するすべてのパーツマージを可視化できます。
 
-<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -87,7 +101,15 @@ ClickHouse 24.10 では、新しい[マージダッシュボード](https://pres
 
 1 台の ClickHouse サーバーは、複数のバックグラウンド[マージスレッド](/ja/reference/settings/server-settings/settings/background#background_pool_size)を使用して、パーツの同時マージを実行します。
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -121,7 +143,15 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 以下の図は、ClickHouse における単一のバックグラウンド[マージスレッド](/ja/concepts/core-concepts/merges#concurrent-merges)が、パーツをどのようにマージするかを示しています (デフォルトでは、[垂直マージ](/ja/concepts/core-concepts/merges#memory-optimized-merges)は使用しません) ：
 
-<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -157,7 +187,15 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 以下の図は、標準的な[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)テーブルでパーツがどのようにマージされるかを示しています。
 
-<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -171,7 +209,15 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルのパーツマージは、[標準的なマージ](/ja/concepts/core-concepts/merges#standard-merges) と同様に動作しますが、各行については最新バージョンのみが保持され、古いバージョンは破棄されます。
 
-<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -189,7 +235,15 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 数値データは、[SummingMergeTree](/ja/reference/engines/table-engines/mergetree-family/summingmergetree) テーブルのパーツのマージ時に自動的に集計されます。
 
-<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_06.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -203,7 +257,15 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 前述の `SummingMergeTree` テーブルの例は、[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) テーブルの特化版であり、パートのマージ時に [90+](/ja/reference/functions/aggregate-functions/reference-index) の任意の集計関数を適用することで、[データの自動インクリメンタル変換](https://www.youtube.com/watch?v=QDAJTKZT8y4) を可能にします。
 
-<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="パーツマージ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![パーツマージ](/images/managing-data/core-concepts/merges_07.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

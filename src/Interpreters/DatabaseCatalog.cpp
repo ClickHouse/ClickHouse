@@ -118,7 +118,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -1126,6 +1126,22 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     chassert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
+}
+
+bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
+{
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(old_table && new_table);
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end() || it->second.second != old_table)
+        return false;
+    /// The mapping and the caller.
+    if (old_table.use_count() != 2)
+        return false;
+    it->second.second = std::move(new_table);
+    return true;
 }
 
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)

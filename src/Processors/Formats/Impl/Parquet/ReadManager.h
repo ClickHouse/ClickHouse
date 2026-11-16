@@ -26,16 +26,16 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    bool test(size_t i, std::memory_order memory_order) const
+    [[nodiscard]] bool test(size_t i, std::memory_order memory_order) const
     {
         return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
     }
 
     /// First set bit at or after `start`.
-    std::optional<size_t> findNext(size_t start) const;
-    std::optional<size_t> findFirst() const { return findNext(0); }
+    [[nodiscard]] std::optional<size_t> findNext(size_t start) const;
+    [[nodiscard]] std::optional<size_t> findFirst() const { return findNext(0); }
     /// First bit at or after `start` that is set here and not in `mask` (of the same size).
-    std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
+    [[nodiscard]] std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
 };
 
 // I'd like to talk to the manager.
@@ -51,7 +51,12 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_);
+    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
+    /// are read by other readers of the same query, so they are not counted as pruned by this one.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        RowGroupSelection row_groups_to_read_,
+        bool other_row_groups_are_read_by_other_readers = false);
 
     ~ReadManager();
 
