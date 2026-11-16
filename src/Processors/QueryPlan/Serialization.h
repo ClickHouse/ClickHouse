@@ -57,6 +57,8 @@ class DeserializedInputHeaders
 {
 public:
     DeserializedInputHeaders(const SharedHeaders & headers_) : headers(headers_) {} /// NOLINT(google-explicit-constructor)
+    /// Only a reference is stored, so a temporary vector would dangle right after the initialization.
+    DeserializedInputHeaders(SharedHeaders && headers_) = delete;
     operator const SharedHeaders &() const { return headers; } /// NOLINT(google-explicit-constructor)
 
     size_t size() const { return headers.size(); }
