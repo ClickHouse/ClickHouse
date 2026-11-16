@@ -971,9 +971,8 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     output.name = node.name;
     output.primitive_start = primitive_start;
     output.primitive_end = primitive_columns.size();
-    output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
-    output.output_type = read_as_variant ? node.type_hint : output.input_type;
-    output.needs_cast = read_as_variant;
+    output.input_type = read_as_json || read_as_variant ? node.type_hint : std::make_shared<DataTypeDynamic>();
+    output.output_type = output.input_type;
     output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
     return true;
 }

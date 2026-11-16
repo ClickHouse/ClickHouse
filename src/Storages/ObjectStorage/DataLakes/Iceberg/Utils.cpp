@@ -1712,9 +1712,14 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot sort an Iceberg table by {}: it is neither a column nor a field of a tuple column",
                     column_name);
+            const auto source_type = removeNullable(schema_processor.getFieldCharacteristics(/*schema_version=*/ 0, *source_id).type);
+            if (isDynamic(source_type))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot sort an Iceberg table by {}: the Iceberg type `variant` cannot be a sort source, only primitive types can",
+                    column_name);
             if (!column_name_to_source_id.contains(column_name))
             {
-                const auto source_type = removeNullable(schema_processor.getFieldCharacteristics(/*schema_version=*/ 0, *source_id).type);
                 if (isTuple(source_type) || isArray(source_type) || isMap(source_type))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
