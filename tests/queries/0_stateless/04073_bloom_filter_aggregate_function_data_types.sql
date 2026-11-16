@@ -319,3 +319,143 @@ SELECT
     bloomFilterContains(signed_bf, toDecimal256('-1', 0)),
     bloomFilterContains(unsigned_bf, toDecimal256('-1', 0)),
     bloomFilterContains(unsigned_bf, toDecimal256('0', 0));
+
+-- Fractional `Decimal` probes must not alias an inserted integer after truncation.
+WITH (SELECT groupBloomFilterState(toUInt64(42))) AS bf
+SELECT
+    bloomFilterContains(bf, toDecimal32('42.5', 1)),
+    bloomFilterContains(bf, toDecimal32('42.0', 1)),
+    bloomFilterContains(bf, toDecimal64('42.5', 1)),
+    bloomFilterContains(bf, toDecimal64('42.0', 1)),
+    bloomFilterContains(bf, toDecimal128('42.5', 1)),
+    bloomFilterContains(bf, toDecimal128('42.0', 1)),
+    bloomFilterContains(bf, toDecimal256('42.5', 1)),
+    bloomFilterContains(bf, toDecimal256('42.0', 1)),
+    bloomFilterContains(bf, toDecimal64('42', 0));
+
+-- Negative fractions must not alias signed integers or unsigned zero.
+WITH
+    (SELECT groupBloomFilterState(toInt64(-42))) AS signed_bf,
+    (SELECT groupBloomFilterState(toUInt64(0))) AS unsigned_bf
+SELECT
+    bloomFilterContains(signed_bf, toDecimal64('-42.5', 1)),
+    bloomFilterContains(signed_bf, toDecimal64('-42.0', 1)),
+    bloomFilterContains(unsigned_bf, toDecimal64('-0.5', 1)),
+    bloomFilterContains(unsigned_bf, toDecimal64('0.0', 1));
+
+-- Exact wide integers must remain valid without an integer-to-`Decimal` round trip.
+WITH
+    (SELECT groupBloomFilterState(toInt128('-18446744073709551616'))) AS int128_bf,
+    (SELECT groupBloomFilterState(toUInt128('18446744073709551616'))) AS uint128_bf,
+    (SELECT groupBloomFilterState(toInt256('-170141183460469231731687303715884105728'))) AS int256_bf,
+    (SELECT groupBloomFilterState(toUInt256('170141183460469231731687303715884105728'))) AS uint256_bf
+SELECT
+    bloomFilterContains(int128_bf, toDecimal128('-18446744073709551616.5', 1)),
+    bloomFilterContains(int128_bf, toDecimal128('-18446744073709551616.0', 1)),
+    bloomFilterContains(uint128_bf, toDecimal128('18446744073709551616.5', 1)),
+    bloomFilterContains(uint128_bf, toDecimal128('18446744073709551616.0', 1)),
+    bloomFilterContains(int256_bf, toDecimal256('-170141183460469231731687303715884105728.5', 1)),
+    bloomFilterContains(int256_bf, toDecimal256('-170141183460469231731687303715884105728.0', 1)),
+    bloomFilterContains(uint256_bf, toDecimal256('170141183460469231731687303715884105728.5', 1)),
+    bloomFilterContains(uint256_bf, toDecimal256('170141183460469231731687303715884105728.0', 1));
+
+-- Exercise vector probes and preserve `NULL` propagation for each `Decimal` width.
+WITH
+    (SELECT groupBloomFilterState(value) FROM (SELECT arrayJoin([toUInt64(0), 42]) AS value)) AS bf
+SELECT
+    probe,
+    bloomFilterContains(bf, toDecimal32(probe, 1)),
+    bloomFilterContains(bf, toDecimal64(probe, 1)),
+    bloomFilterContains(bf, toDecimal128(probe, 1)),
+    bloomFilterContains(bf, toDecimal256(probe, 1))
+FROM
+(
+    SELECT arrayJoin(CAST(['-0.5', '0.0', '42.0', '42.5', NULL], 'Array(Nullable(String))')) AS probe
+)
+ORDER BY probe NULLS LAST;
+
+-- Basic construction, execution shapes, and membership checks for `groupBloomFilter` and `bloomFilterContains`.
+
+-- Positive checks and state type name.
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS bf,
+    (SELECT groupBloomFilterState(1000)(number) AS state FROM numbers(100)) AS subquery_bf,
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(10)) AS type_bf
+SELECT
+    bloomFilterContains(bf, toUInt64(42)),
+    bloomFilterContains(bf, toUInt64(200)),
+    bloomFilterContains(subquery_bf, toUInt64(42)),
+    toTypeName(type_bf) LIKE 'AggregateFunction(1, groupBloomFilter%';
+
+-- Const Bloom filter states from `WITH` clauses.
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(100)) AS uint64_bf,
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS datetime64_bf
+SELECT
+    bloomFilterContains(uint64_bf, toUInt64(42)),
+    bloomFilterContains(string_bf, '42'),
+    bloomFilterContains(datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3));
+
+-- Const Bloom filter states with non-const probe columns.
+WITH
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(100)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(toDateTime64('2023-01-01 12:00:00.123', 3)) FROM numbers(1)) AS datetime64_bf
+SELECT
+    (SELECT sum(bloomFilterContains(string_bf, toString(number))) FROM numbers(10)),
+    (SELECT sum(bloomFilterContains(datetime64_bf, toDateTime64('2023-01-01 12:00:00.123', 3) + toIntervalMillisecond(number - number))) FROM numbers(10));
+
+-- Bloom filter and probe are both columns.
+SELECT bloomFilterContains(bf, val) AS result
+FROM
+(
+    SELECT
+        groupBloomFilterState(1000)(number) AS bf,
+        toUInt64(42) AS val
+    FROM numbers(100)
+);
+
+-- Values in 100..199 are absent from the filter built on 0..99.
+WITH
+(
+    SELECT groupBloomFilterState(1000)(number)
+    FROM numbers(100)
+) AS old_bloom
+SELECT
+    count() AS new_values_count,
+    count() = 100 AS all_new_values_found
+FROM numbers(200)
+WHERE number >= 100
+  AND NOT bloomFilterContains(old_bloom, number);
+
+-- Values from 0..99 must have no false negatives.
+WITH
+(
+    SELECT groupBloomFilterState(1000)(number)
+    FROM numbers(100)
+) AS old_bloom
+SELECT count() = 0 AS no_false_negatives
+FROM numbers(100)
+WHERE NOT bloomFilterContains(old_bloom, number);
+
+-- Build and probe Bloom filter states per group.
+SELECT key, bloomFilterContains(bf, toUInt64(key + 4)) AS result
+FROM
+(
+    SELECT number % 2 AS key, groupBloomFilterState(1000)(number) AS bf
+    FROM numbers(10)
+    GROUP BY key
+)
+ORDER BY key;
+
+-- Empty and boundary values.
+WITH
+    (SELECT groupBloomFilterState(1000)(number) FROM numbers(0)) AS empty_bf,
+    (SELECT groupBloomFilterState(1000)(toString(number)) FROM numbers(10)) AS string_bf,
+    (SELECT groupBloomFilterState(1000)(s) FROM (SELECT '' AS s)) AS empty_string_bf,
+    (SELECT groupBloomFilterState(1000)(repeat('x', 1000)) FROM numbers(1)) AS long_string_bf
+SELECT
+    bloomFilterContains(empty_bf, toUInt64(42)),
+    bloomFilterContains(string_bf, ''),
+    bloomFilterContains(empty_string_bf, ''),
+    bloomFilterContains(long_string_bf, repeat('x', 1000));
