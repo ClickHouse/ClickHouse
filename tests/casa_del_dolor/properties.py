@@ -733,15 +733,17 @@ object_storages_properties = {
         **plain_rewritable_properties,
         # Opts the disk out of the distributed cache of the private binary
         "enable_distributed_cache": true_false_lambda,
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
+        # SeaweedFS rejects a ListObjectsV2 `max-keys` above 65535 with `InvalidArgument`
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 65535, 16),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
+        # SeaweedFS rejects a DeleteObjects of more than 1000 keys with `InvalidArgument`
         "objects_chunk_size_to_delete": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024, 32
+            0.2, 0.2, 0, 1000, allow_unlimited=False
         ),
         "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
         "s3_allow_multipart_copy": true_false_lambda,
