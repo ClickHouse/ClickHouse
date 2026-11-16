@@ -79,9 +79,9 @@ private:
             Allocator<false>::free(begin, size());
         }
 
-        bool empty() const { return begin == end;}
-        size_t size() const { return end + pad_right - begin; }
-        size_t remaining() const { return end - pos; }
+        [[nodiscard]] bool empty() const { return begin == end;}
+        [[nodiscard]] size_t size() const { return end + pad_right - begin; }
+        [[nodiscard]] size_t remaining() const { return end - pos; }
     };
 
     size_t initial_size;
@@ -103,7 +103,7 @@ private:
     /// Uses exponential buffer growth below `linear_growth_threshold` and linear growth above it
     /// to limit unused capacity.
     template <typename Size>
-    Size nextSize(Size min_next_size) const
+    [[nodiscard]] Size nextSize(Size min_next_size) const
     {
         Size size_after_grow = 0;
 
@@ -172,7 +172,7 @@ public:
     /// Bounds additional memory for `num_allocations` calls to `alloc` requesting `total_bytes` in total.
     /// Includes buffers and metadata without inspecting individual allocation sizes or changing the arena.
     /// Saturates at the maximum of `size_t` when the bound is not representable.
-    size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
+    [[nodiscard]] size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
     {
         if (num_allocations == 0 || (!head.empty() && total_bytes <= head.remaining()))
             return 0;
@@ -378,15 +378,15 @@ public:
     }
 
     /// Size of all MemoryChunks in bytes.
-    size_t allocatedBytes() const { return allocated_bytes; }
+    [[nodiscard]] size_t allocatedBytes() const { return allocated_bytes; }
 
     /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
-    size_t usedBytes() const { return used_bytes; }
+    [[nodiscard]] size_t usedBytes() const { return used_bytes; }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find
     /// yourself having to use this method, probably you're doing something wrong.
-    size_t remainingSpaceInCurrentMemoryChunk() const
+    [[nodiscard]] size_t remainingSpaceInCurrentMemoryChunk() const
     {
         return head.remaining();
     }

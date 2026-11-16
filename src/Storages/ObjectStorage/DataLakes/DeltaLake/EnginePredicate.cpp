@@ -545,9 +545,9 @@ struct EngineIteratorData
         predicate.setException(exception_);
     }
 
-    bool hasException() const { return predicate.exception != nullptr; }
+    [[nodiscard]] bool hasException() const { return predicate.exception != nullptr; }
 
-    const LoggerPtr & log() const { return predicate.log; }
+    [[nodiscard]] const LoggerPtr & log() const { return predicate.log; }
 
     const DB::ActionsDAG::Node * next()
     {
@@ -848,12 +848,12 @@ struct ColumnPredicateBuilder
         return assertValid(visitor(visitor_state, column_id, literal_id), "comparison");
     }
 
-    uintptr_t andOf(uintptr_t left, uintptr_t right) const
+    [[nodiscard]] uintptr_t andOf(uintptr_t left, uintptr_t right) const
     {
         return junction(Junction::And, left, right, "AND");
     }
 
-    uintptr_t orOf(uintptr_t left, uintptr_t right) const
+    [[nodiscard]] uintptr_t orOf(uintptr_t left, uintptr_t right) const
     {
         return junction(Junction::Or, left, right, "OR");
     }
@@ -868,7 +868,7 @@ struct ColumnPredicateBuilder
     }
 
 private:
-    uintptr_t junction(
+    [[nodiscard]] uintptr_t junction(
         Junction kind, uintptr_t left, uintptr_t right, std::string_view description) const
     {
         /// A zero child would end the iterator early and silently shrink the junction.
@@ -878,7 +878,7 @@ private:
             visitJunction(visitor_state, kind, {left, right}), description);
     }
 
-    uintptr_t assertValid(uintptr_t id, std::string_view description) const
+    uintptr_t assertValid(uintptr_t id, std::string_view description) const /// NOLINT(modernize-use-nodiscard): often called only for its side effect
     {
         if (!id || id == EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED)
             throw DB::Exception(

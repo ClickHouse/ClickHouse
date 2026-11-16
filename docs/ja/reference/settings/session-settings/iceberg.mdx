@@ -34,11 +34,21 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
 
 ゼロより大きい値を指定する必要があります。
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "パス指定で読み取るIcebergテーブルの最新メタデータファイルを探す際に、`metadata\/v` キープレフィックスのみを一覧表示する新しい設定。"}]}]} />
+
+S3 または Azure 上のIcebergテーブルをパス指定で読み取る際、キープレフィックス `metadata/v` のみを一覧表示して最新のメタデータファイルを探します。これにより、同じ `metadata` ディレクトリに保存されているマニフェストは一覧表示の対象外となります。このプレフィックス配下に `.metadata.json` ファイルが存在する場合はそれらのみが候補となり、存在しない場合はディレクトリ全体が一覧表示されます。`iceberg_use_version_hint`、`iceberg_metadata_file_path`、`iceberg_metadata_table_uuid`、`iceberg_recent_metadata_file_by_last_updated_ms_field` のいずれかと併用した場合や、データレイクカタログデータベースのテーブルには適用されません。
+
+この設定は、すべてのメタデータファイルが `v<N>...` という形式の名前 (ClickHouse および Hadoop カタログが使用する命名規則) であるテーブルに対してのみ有効化してください。`<N>-<uuid>.metadata.json` ファイルが混在するディレクトリでは、それらのファイルが候補になることはないため、それらを書き込んだライターによるコミットは認識されません。
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **別名**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -62,6 +72,14 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
       label:
         "最初の行が読み取られる前に同時実行でデコードされる Iceberg 削除マニフェストファイルの数を制限する新しい設定です。26.8 より前は、次のマニフェストの fetch を転送中にしたまま、マニフェストを 1 つずつデコードしていました。そのため、以前の動作に最も近い同等の値は `2` です。以前の動作では、各マニフェストの object storage へのラウンドトリップの合計が、最初の行を読み取るまでのクリティカルパスに含まれていました。当時この設定は `iceberg_delete_manifest_decode_concurrency` という名前でしたが、現在はこの設定の別名となっています。"
     }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "マニフェストを多数持つテーブルで、より多くの object storage へのラウンドトリップを重ね合わせられるよう、同時実行でデコードされる Iceberg マニフェストファイル数の既定値を 4 から 16 に引き上げました。" }
   ]
 }
 ]}
@@ -97,6 +115,16 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "新しい設定"}]}]} />
 
 Iceberg における コンパクション data files のしきい値。
+
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "新しい設定。`remove_orphan_files` は、現在時刻からの差がこの秒数未満となる `older_than` を拒否します。これにより、開始からこの時間が経過しておらず、まだコミットされていない書き込みのファイルは削除されずに保持されます。`compatibility` を 26.10 より前のバージョンに設定すると、以前の動作 (最小値なし) に戻ります。"}]}]} />
+
+`ALTER TABLE ... EXECUTE remove_orphan_files` が Icebergテーブルから削除できるファイルの最小経過時間 (秒) です。`older_than` (明示的に指定された値、または `iceberg_orphan_files_older_than_seconds` から導出された値) が現在時刻からこの値よりも近い場合、その指定は拒否されます。まだコミットされていない書き込みのファイルはテーブルのメタデータから参照されていないため削除対象となり、その書き込みがコミットされた時点でテーブルが破損するためです。テーブルへの書き込みのコミットに要しうる最長時間よりも大きい値を設定してください。0 を指定するとこのチェックは無効になります。
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 

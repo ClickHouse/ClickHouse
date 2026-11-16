@@ -138,7 +138,7 @@ public:
     }
 
     /// Number of inserted values.
-    size_t size() const { return num_values; }
+    [[nodiscard]] size_t size() const { return num_values; }
 
     /// Compresses and finalizes the current page of values.
     /// Called automatically when a page is full or at the end to finalize the structure.
@@ -179,7 +179,7 @@ public:
 
     void clearTemporaryStorage() { current_page_values = {}; }
 
-    size_t totalAllocatedMemory() const { return pages.allocated_bytes() + current_page_values.allocated_bytes() + arena.allocatedBytes(); }
+    [[nodiscard]] size_t totalAllocatedMemory() const { return pages.allocated_bytes() + current_page_values.allocated_bytes() + arena.allocatedBytes(); }
 };
 
 
@@ -222,7 +222,7 @@ public:
     }
 
     /// Number of rows of the part, which is the number of its mapped offsets.
-    size_t getPartRowsCount(UInt64 part_index) const
+    [[nodiscard]] size_t getPartRowsCount(UInt64 part_index) const
     {
         chassert(mode == MappingMode::Enabled);
         chassert(part_index < offset_maps.size());
@@ -257,11 +257,11 @@ public:
             formatReadableSizeWithBinarySuffix(total_allocated_memory));
     }
 
-    bool isFinalized() const { return finalized; }
-    bool isMappingEnabled() const { return mode == MappingMode::Enabled; }
+    [[nodiscard]] bool isFinalized() const { return finalized; }
+    [[nodiscard]] bool isMappingEnabled() const { return mode == MappingMode::Enabled; }
 
-    bool empty() const { return num_rows == 0; }
-    size_t size() const { return num_rows; }
+    [[nodiscard]] bool empty() const { return num_rows == 0; }
+    [[nodiscard]] size_t size() const { return num_rows; }
 
     void clear()
     {

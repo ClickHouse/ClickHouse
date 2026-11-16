@@ -33,7 +33,7 @@ public:
         WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_, std::optional<FormatSettings> format_settings_, bool remove_low_cardinality_ = false,
         IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0, NativeWriterTypeCache * type_cache_ = nullptr);
 
-    SharedHeader getHeader() const { return header; }
+    [[nodiscard]] SharedHeader getHeader() const { return header; }
 
     /// Returns the number of bytes written.
     size_t write(const Block & block);

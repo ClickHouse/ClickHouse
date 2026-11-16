@@ -50,6 +50,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `throttling_us` ([Nullable(Int64)](/ja/reference/data-types/nullable)) — `bandwidth_limit` ノードのみ。このノードがスロットリング状態にあった合計マイクロ秒数。
 * `tokens` ([Nullable(Float64)](/ja/reference/data-types/nullable)) — `bandwidth_limit` ノードのみ。トークンバケットスロットラーで現在使用可能なトークン数。
 * `allocated` ([Nullable(Int64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノード配下で現在割り当てられているリソース量。
+* `reclaimable` ([Nullable(Int64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノード配下で新しいスピルリクエストに使用できるメモリ。各割り当てについて、報告された回収可能なメモリから未処理のリクエスト分を差し引き、結果が負になる場合は 0 として扱ったうえで合計します。
+* `reclaiming` ([Nullable(Int64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノード配下でスピルのために要求されたものの、まだ確定していないメモリ (実行が開始されていないリクエストを含む)。確定時には、実際に解放された量にかかわらず、要求された量が差し引かれます。
 * `allocations` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノード配下で現在実行中のリソース割り当て数。
 * `updates` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノードを通じて伝播された更新の合計数。
 * `increases` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノードが承認した増加リクエストの合計数。
@@ -58,6 +60,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `removes` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノードから削除された割り当ての合計数。
 * `killers` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノードへの増加リクエストにより開始されたエビクションの合計数。
 * `victims` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。このノードから追い出された割り当ての合計数。
+* `spills` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — space-shared ノードのみ。ソフトメモリ制限の超過により、このノードが発行したスピルリクエストの合計数。
+* `soft_limit` ([Nullable(Int64)](/ja/reference/data-types/nullable)) — `allocation_limit` ノードのみ。実効ソフトメモリ制限で、これを超えると回収可能な割り当てにスピルが要求されます (`max_memory_before_spill` と `max_memory_to_spill_ratio * max_memory` のうち小さい方)。値がハードリミット以上の場合、スピルは無効です。
 * `rejects` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — `allocation_queue` ノードのみ。このノードで拒否されたリソース割り当ての合計数。
 * `pending` ([Nullable(UInt64)](/ja/reference/data-types/nullable)) — `allocation_queue` ノードのみ。このノード内で保留中のリソース割り当て数。
 

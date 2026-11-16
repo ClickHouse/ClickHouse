@@ -245,7 +245,7 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has unsupported data_source_format '{}'. " \
                     "It means that it's unreadable with Unity catalog in ClickHouse, readable tables must have data_source_format == '{}'",
-                    full_table_name, object->get("securable_kind").extract<String>(), READABLE_DATA_SOURCE_FORMAT));
+                    full_table_name, object->get("data_source_format").extract<String>(), READABLE_DATA_SOURCE_FORMAT));
             }
 
             if (!has_data_source_format && !has_securable_kind)
@@ -431,7 +431,7 @@ void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try
     {
-        getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
+        (void)getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + schema_name));
     }
     catch (const DB::HTTPException & e)
     {

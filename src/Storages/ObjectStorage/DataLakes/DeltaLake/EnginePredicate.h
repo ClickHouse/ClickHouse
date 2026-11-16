@@ -40,7 +40,7 @@ public:
         visitor = &visitPredicate;
     }
 
-    bool hasException() const { return exception != nullptr; }
+    [[nodiscard]] bool hasException() const { return exception != nullptr; }
 
     void setException(std::exception_ptr exception_)
     {
@@ -49,10 +49,10 @@ public:
             exception = exception_;
     }
 
-    const DB::ActionsDAG & getFilterDAG() const { return filter; }
-    DB::ContextPtr getContext() const { return context; }
+    [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
 
-    const DeltaTimestampColumn * getTimestampColumn(const String & column_name) const
+    [[nodiscard]] const DeltaTimestampColumn * getTimestampColumn(const String & column_name) const
     {
         auto it = timestamp_columns.find(column_name);
         if (it == timestamp_columns.end())
