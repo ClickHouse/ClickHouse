@@ -817,8 +817,18 @@ void ReadFromRemote::addLazyPipe(
                 if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
                     local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
+                /// The local read of an incremental refresh reports its cursor under the shard number, as the remote one would.
+                ContextPtr local_context = my_context;
+                if (auto streaming_cursor = my_context->getStreamingCursor())
+                {
+                    auto mutable_local_context = Context::createCopy(my_context);
+                    mutable_local_context->setStreamingCursor(
+                        StreamingCursor::createChild(std::move(streaming_cursor), {toString(my_shard.shard_info.shard_num)}));
+                    local_context = std::move(mutable_local_context);
+                }
+
                 auto plan = createLocalPlan(
-                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, local_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }

@@ -33,5 +33,10 @@ remote table function, with cursor
 --- unbounded, with cursor
 1 4
 2 4
---- incremental refresh is not supported
-NOT_IMPLEMENTED
+--- incremental refresh
+round1	remote	8	20
+round1	local	8	20
+round2	remote	10	30
+round2	local	10	30
+round3	remote	10	30
+round3	local	10	30

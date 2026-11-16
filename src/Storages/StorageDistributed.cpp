@@ -2943,7 +2943,7 @@ SELECT _shard_num, _partition_id, _block_number, _block_offset, * FROM distribut
 STREAM CURSOR {'1': {'all': {'block_number': 5, 'block_offset': 99}}, '2': {'all': {'block_number': 7, 'block_offset': 0}}}
 ```
 
-A shard without an entry in the cursor is read from the beginning. The cursor of a `ReplicatedMergeTree` table does not depend on the replica, so the read can be resumed on any replica of a shard. `WATERMARK` is not supported, and a `Distributed` table cannot be the source of an incremental refresh (`APPEND INCREMENTAL`).
+A shard without an entry in the cursor is read from the beginning. The cursor of a `ReplicatedMergeTree` table does not depend on the replica, so the read can be resumed on any replica of a shard. A `Distributed` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): every shard sends the cursor of its bounded read back to the initiator, which keeps them under the shard numbers. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 

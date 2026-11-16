@@ -668,6 +668,11 @@ void executeQuery(
 
     new_context->increaseDistributedDepth();
 
+    /// An incremental refresh of a materialized view: every shard reports the cursor of its bounded streaming read.
+    const bool report_streaming_cursor = query_info.isStream() && context->getStreamingCursor();
+    if (report_streaming_cursor)
+        new_context->setSetting("report_streaming_cursor", true);
+
     const size_t shards = cluster->getShardCount();
     ProfileEvents::increment(ProfileEvents::Shards, shards);
 
@@ -704,8 +709,20 @@ void executeQuery(
             optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }
 
+        ContextPtr shard_context = new_context;
         if (query_info.isStream())
+        {
             setStreamCursorForShard(query_for_shard, main_table, table_func_ptr != nullptr, shard_info.shard_num);
+
+            /// A local shard reports the cursor of its read under the shard number (a remote one, by the `RemoteQueryExecutor`).
+            if (report_streaming_cursor)
+            {
+                auto mutable_shard_context = Context::createCopy(new_context);
+                mutable_shard_context->setStreamingCursor(
+                    StreamingCursor::createChild(new_context->getStreamingCursor(), {toString(shard_info.shard_num)}));
+                shard_context = std::move(mutable_shard_context);
+            }
+        }
 
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
@@ -717,7 +734,7 @@ void executeQuery(
             query_for_shard,
             main_table,
             table_func_ptr,
-            new_context,
+            shard_context,
             plans,
             remote_shards,
             static_cast<UInt32>(shards),

@@ -1130,6 +1130,11 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 if (!storage->supportsStreaming())
                     throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
 
+                /// An incremental refresh resumes from the cursor that the read reports, e.g. on a shard of a `Distributed` table.
+                if (scope.context && scope.context->getStreamingCursor() && !storage->reportsStreamingCursor())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Storage {} does not report the cursor of a streaming read, which an incremental refresh needs", storage->getName());
+
                 const auto & stream_settings = table_expression_modifiers->getStreamSettings();
                 const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 

@@ -86,6 +86,7 @@
 #include <Interpreters/ClientInfo.h>
 
 #include <Server/TCPHandler.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Server/ConnectionRegistry.h>
 
 #include <Common/config_version.h>
@@ -103,6 +104,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool report_streaming_cursor;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
@@ -1019,6 +1021,20 @@ void TCPHandler::runImpl()
             connection_handle.setActive(query_state->query_context->getCurrentQueryId());
             SCOPE_EXIT(connection_handle.setIdle());
 
+            /// The initiator of an incremental refresh from a `Distributed` table needs the cursor that the bounded streaming
+            /// read of this shard advances to, see `report_streaming_cursor`.
+            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+                && query_state->query_context->getSettingsRef()[Setting::report_streaming_cursor])
+            {
+                if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_STREAMING_CURSOR)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "The initiator of the query does not support receiving the cursor of a streaming read (protocol version {})",
+                        client_tcp_protocol_version);
+                auto cursor = std::make_shared<StreamingCursor>();
+                cursor->tree = std::make_shared<CursorTreeNode>();
+                query_state->query_context->setStreamingCursor(std::move(cursor));
+            }
+
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
 
@@ -1098,6 +1114,7 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(*callback_mutex);
                 sendLogs(*query_state);
+                sendStreamingCursor(*query_state);
                 sendEndOfStream(*query_state);
 
                 if (query_state->run_query_in_background && !query_state->read_all_data)
@@ -2130,6 +2147,24 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
     sendProfileEvents(state);
 }
 
+
+void TCPHandler::sendStreamingCursor(QueryState & state)
+{
+    if (query_kind != ClientInfo::QueryKind::SECONDARY_QUERY || !state.query_context->getSettingsRef()[Setting::report_streaming_cursor])
+        return;
+
+    auto cursor = state.query_context->getStreamingCursor();
+    chassert(cursor);
+    CursorTreeNodePtr tree;
+    {
+        std::lock_guard lock(cursor->mutex);
+        tree = cursor->tree;
+    }
+
+    writeVarUInt(Protocol::Server::StreamingCursor, *out);
+    writeFieldBinary(Field(cursorTreeToMap(tree)), *out);
+    out->finishChunk();
+}
 
 void TCPHandler::sendTimezone(QueryState & state)
 {
