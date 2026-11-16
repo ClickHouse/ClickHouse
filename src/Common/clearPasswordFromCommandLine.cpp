@@ -18,11 +18,14 @@ void clearPasswordFromCommandLine(int argc, char ** argv)
         {
             if (argument == option)
             {
-                if (arg + 1 < argc)
-                    memset(argv[arg + 1], 0, strlen(argv[arg + 1]));
+                /// clickhouse-client also accepts `--option = value`.
+                const int value = (arg + 2 < argc && argv[arg + 1] == "="sv) ? arg + 2 : arg + 1;
+                if (value < argc)
+                    memset(argv[value], 0, strlen(argv[value]));
                 break;
             }
-            if (argument.size() > option.size() && argument.starts_with(option) && argument[option.size()] == '=')
+            if (argument.size() > option.size() && argument.starts_with(option)
+                && (argument[option.size()] == '=' || argument[option.size()] == ':'))
             {
                 memset(argv[arg] + option.size() + 1, 0, argument.size() - option.size() - 1);
                 break;

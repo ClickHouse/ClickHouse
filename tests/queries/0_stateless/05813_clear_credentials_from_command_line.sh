@@ -71,6 +71,10 @@ echo "client, values after ="
 show_credential_options ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "$PORT" --query "SELECT 1" \
     --jwt="$JWT" --password=SECRET --ssh-key-passphrase=SECRET --one-time-password=SECRET --oauth-client-secret=SECRET
 
+echo "client, values after spaced ="
+show_credential_options ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "$PORT" --query "SELECT 1" \
+    --jwt = "$JWT" --password = SECRET --ssh-key-passphrase = SECRET --one-time-password = SECRET --oauth-client-secret = SECRET
+
 echo "client, --password without a value"
 show_credential_options ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "$PORT" --query "SELECT 1" \
     --password --jwt "$JWT"
@@ -78,3 +82,7 @@ show_credential_options ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "$PO
 echo "keeper-client"
 show_credential_options ${KEEPER_CLIENT} --host 127.0.0.1 --port "$PORT" --connection-timeout 60 --session-timeout 60 \
     --operation-timeout 60 --query "ls" --password SECRET --identity=user:SECRET
+
+echo "keeper-client, values after :"
+show_credential_options ${KEEPER_CLIENT} --host 127.0.0.1 --port "$PORT" --connection-timeout 60 --session-timeout 60 \
+    --operation-timeout 60 --query "ls" --password:SECRET --identity:user:SECRET
