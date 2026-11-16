@@ -52,7 +52,7 @@ SELECT format('plan: substituted={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_33 AS o WHERE EXISTS (SELECT 1 FROM t_inner_34 AS i WHERE i.c = o.x AND intDiv(1, 2 - o.x) >= 0));
 SELECT x FROM t_outer_33 AS o WHERE EXISTS (SELECT 1 FROM t_inner_34 AS i WHERE i.c = o.x AND intDiv(1, 2 - o.x) >= 0) ORDER BY x;
 
-SELECT '-- Case 36: guarded, the correlated column is used in the subquery projection';
+SELECT '-- Case 36: the correlated column is used only in the subquery projection, which EXISTS does not read, so it is removed and the subquery is substituted';
 CREATE TABLE t_outer_36 (x Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_36 (x Nullable(Int32), y Int32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_outer_36 VALUES (1), (3);

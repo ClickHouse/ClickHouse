@@ -4,11 +4,16 @@
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Storages/IStorage.h>
 
 #include <Analyzer/traverseQueryTree.h>
 
@@ -36,6 +41,41 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
+}
+
+/// Whether the rows of a query over this join tree do not depend on which columns it reads.
+/// `ARRAY JOIN` of a `Nested` column joins only the subcolumns that are read, which may have different sizes,
+/// and a view is read like an `ARRAY JOIN` subquery would be, so the projection must name the columns to read.
+bool rowsDoNotDependOnReadColumns(const TableExpressionNodePtr & join_tree_node)
+{
+    for (const auto & table_expression : extractTableExpressions(join_tree_node, /*add_array_join=*/ true))
+    {
+        switch (table_expression->getNodeType())
+        {
+            case QueryTreeNodeType::ARRAY_JOIN:
+                return false;
+            case QueryTreeNodeType::TABLE:
+                if (table_expression->as<TableNode &>().getStorage()->isView())
+                    return false;
+                break;
+            case QueryTreeNodeType::TABLE_FUNCTION:
+                if (const auto & storage = table_expression->as<TableFunctionNode &>().getStorage(); !storage || storage->isView())
+                    return false;
+                break;
+            case QueryTreeNodeType::QUERY:
+                if (!rowsDoNotDependOnReadColumns(table_expression->as<QueryNode &>().getJoinTreeNodeTyped()))
+                    return false;
+                break;
+            case QueryTreeNodeType::UNION:
+                for (const auto & query : table_expression->as<UnionNode &>().getQueries().getNodes())
+                    if (!rowsDoNotDependOnReadColumns(static_pointer_cast<ITableExpressionNode>(query)))
+                        return false;
+                break;
+            default:
+                return false;
+        }
+    }
+    return true;
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -177,9 +217,26 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);
 
-            /// Keep at least 1 column if used projection columns are empty
+            /// No projection column is used and none of them changes the number of rows: the query is read only
+            /// to count its rows, so it does not need to compute any of them, and the planner reads from its
+            /// tables only the columns that count the rows. With `ARRAY JOIN` the projection can change the
+            /// number of rows, see `rowsDoNotDependOnReadColumns`.
             if (used_projection_indexes.empty())
+            {
+                auto * query_node = query_or_union_node->as<QueryNode>();
+                if (query_node && !query_node->hasInterpolate() && query_node->getProjectionAliasesToOverride().empty()
+                    && rowsDoNotDependOnReadColumns(query_node->getJoinTreeNodeTyped()))
+                {
+                    NameAndTypePair projection_column{query_node->getProjectionColumns().front().name, std::make_shared<DataTypeUInt8>()};
+                    query_node->removeUnusedProjectionColumns({0});
+                    query_node->getProjection().getNodes().front() = std::make_shared<ConstantNode>(UInt64(0), projection_column.type);
+                    query_node->resolveProjectionColumns({std::move(projection_column)});
+                    continue;
+                }
+
+                /// Keep at least 1 column.
                 used_projection_indexes.insert(0);
+            }
 
             if (auto * union_node = query_or_union_node->as<UnionNode>())
                 union_node->removeUnusedProjectionColumns(used_projection_indexes);

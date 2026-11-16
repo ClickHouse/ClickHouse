@@ -1,5 +1,9 @@
 -- SELECT count() from Merge tables over tables that do not store a column added by ALTER TABLE ADD COLUMN.
 
+DROP TABLE IF EXISTS v;
+DROP TABLE IF EXISTS t_nested;
+DROP TABLE IF EXISTS vj;
+DROP TABLE IF EXISTS vn;
 DROP TABLE IF EXISTS mm;
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS ma;
@@ -63,6 +67,30 @@ SELECT count() FROM mk SETTINGS optimize_trivial_count_query = 0, optimize_use_i
 DROP ROW POLICY rp_dep ON t_dep;
 
 SELECT count() FROM mu SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, additional_table_filters = {'mu': 'domain != \'\''};
+
+-- Through a view and a subquery, which read the Merge table only to count the rows too.
+CREATE VIEW v AS SELECT * FROM m;
+CREATE VIEW vn AS SELECT n, k FROM m;
+SELECT count() FROM v SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM vn SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM vn SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, analyzer_inline_views = 1;
+SELECT count() FROM (SELECT n, k FROM m) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT n FROM m LIMIT 10) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+-- The projection still decides the number of rows here.
+SELECT count() FROM (SELECT k % 7 FROM m GROUP BY k % 7) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT arrayJoin([k, k]) FROM m) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT sum(k) FROM m) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT DISTINCT k % 3 FROM m) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+CREATE TABLE t_nested (`n.a` Array(UInt8), `n.c` Array(UInt8)) ENGINE = MergeTree ORDER BY tuple() SETTINGS share_nested_offsets = 0;
+INSERT INTO t_nested VALUES ([1, 2], [3]), ([4], [5, 6, 7]);
+SELECT count() FROM (SELECT n.c FROM t_nested ARRAY JOIN n) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM (SELECT c FROM (SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n)) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+CREATE VIEW vj AS SELECT n.a AS a, n.c AS c FROM t_nested ARRAY JOIN n;
+SELECT count() FROM (SELECT c FROM vj) SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE vj;
+DROP TABLE t_nested;
+DROP TABLE v;
+DROP TABLE vn;
 
 DROP TABLE mm;
 DROP TABLE m;

@@ -90,6 +90,8 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     return res;
 }
 
+}
+
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
     ASTPtr result_query;
@@ -132,6 +134,9 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
 
     return select_query;
 }
+
+namespace
+{
 
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
 {

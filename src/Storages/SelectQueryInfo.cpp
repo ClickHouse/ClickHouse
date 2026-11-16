@@ -3,6 +3,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
@@ -22,6 +24,24 @@ bool SelectQueryInfo::isFinal() const
 
     const auto & select = query->as<ASTSelectQuery &>();
     return select.final();
+}
+
+std::optional<String> SelectQueryInfo::getRowCountOnlyColumnName(const IStorage & storage, const ContextPtr & context) const
+{
+    if (!planner_context || !table_expression)
+        return {};
+
+    if (prewhere_info || row_level_filter || additional_filter_ast || getEffectiveRowPolicyFilter(storage, context)
+        || context->canUseParallelReplicasCustomKey())
+        return {};
+
+    const auto * data = planner_context->getTableExpressionDataOrNull(table_expression);
+    if (!data || !data->getRowCountOnlyColumnIdentifier())
+        return {};
+
+    if (const auto * column_name = data->getColumnNameOrNull(*data->getRowCountOnlyColumnIdentifier()))
+        return *column_name;
+    return {};
 }
 
 bool SelectQueryInfo::isStream() const

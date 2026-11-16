@@ -1185,14 +1185,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     QueryStatusPtr query_status = context->getProcessListElementSafe();
 
     /// The planner reads this column only to count the rows, unless a filter it attaches later reads it too.
-    const bool has_planner_filter = query_info.prewhere_info || query_info.row_level_filter || query_info.additional_filter_ast
-        || getEffectiveRowPolicyFilter(*storage_merge, context) || context->canUseParallelReplicasCustomKey();
     std::optional<String> row_count_only_column;
-    if (!has_planner_filter && common_processed_stage == QueryProcessingStage::FetchColumns && query_info.planner_context && query_info.table_expression)
-        if (const auto * data = query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression))
-            if (const auto & identifier = data->getRowCountOnlyColumnIdentifier())
-                if (const auto * column_name = data->getColumnNameOrNull(*identifier); column_name && common_header->has(*column_name))
-                    row_count_only_column = *column_name;
+    if (common_processed_stage == QueryProcessingStage::FetchColumns)
+        row_count_only_column = query_info.getRowCountOnlyColumnName(*storage_merge, context);
+    if (row_count_only_column && !common_header->has(*row_count_only_column))
+        row_count_only_column.reset();
 
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
