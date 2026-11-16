@@ -50,6 +50,13 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
+# A draft pull request runs only the fast test (and the docker images it runs in).
+DRAFT_PR_JOBS = [
+    JobNames.FAST_TEST,
+    JobNames.DOCKER_BUILDS_ARM,
+    JobNames.DOCKER_BUILDS_AMD,
+]
+
 # The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
 # (see `ci/workflows/pull_request.py`).
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
@@ -617,6 +624,14 @@ REVERT_PR_NOTE = (
     f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
 )
 
+DRAFT_PR_SKIP_REASON = (
+    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+DRAFT_PR_NOTE = (
+    "Draft PR: only the fast test runs. Mark the PR ready for review to run the full CI, "
+    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow."
+)
+
 
 def revert_depth(title):
     """Number of nested `Revert "..."` wrappers in the pull request title; see
@@ -641,6 +656,7 @@ def is_net_revert_pr(title):
 
 
 _revert_note_added = False
+_draft_note_added = False
 
 
 def _add_revert_note():
@@ -650,6 +666,15 @@ def _add_revert_note():
         return
     _revert_note_added = True
     _info_cache.add_workflow_note(REVERT_PR_NOTE)
+
+
+def _add_draft_note():
+    """Explain the skipped jobs once on the workflow report page."""
+    global _draft_note_added
+    if _draft_note_added or _info_cache is None:
+        return
+    _draft_note_added = True
+    _info_cache.add_workflow_note(DRAFT_PR_NOTE)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -922,6 +947,20 @@ def should_skip_job(job_name):
         or Labels.RELEASE_LTS in _info_cache.pr_labels
     ):
         return True, "Skipped for release PR"
+
+    # A draft is work in progress: the fast test gives the author quick feedback, and the
+    # full CI starts when the PR is marked ready for review (the PR workflow also runs on
+    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
+    # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
+    # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
+    # so a draft backport must still run its full CI.
+    if (
+        _info_cache.pr_is_draft
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and job_name not in DRAFT_PR_JOBS
+    ):
+        _add_draft_note()
+        return True, DRAFT_PR_SKIP_REASON
 
     if (
         _info_cache.pr_number > 0
