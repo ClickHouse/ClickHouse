@@ -77,7 +77,7 @@ namespace ErrorCodes
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
     DECLARE(Bool, use_real_disk_size, false, "Account cached file reservations of this cache in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of reserved bytes. This affects `current_size` of this cache. The process-wide `FilesystemCacheSize` metric and the eviction-size profile events sum over all caches, so they uniformly reflect the reservation footprint only when all caches use the same mode. Restart is required to change this setting.", 0) \
     DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
-    DECLARE(UInt64, efficiency_window_sec, 600, "Length of the cache efficiency window in seconds. In each window the cache splits its bytes into active (served from the cache in the window), passive (not served, in file segments with a cache hit in the window) and idle (in file segments with no cache hit in the window). 0 disables the tracking and the `FilesystemCacheEvictedNoHitBytes` event. Takes effect only after a server restart. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (one buffer, `prefetch_buffer_size` by default, cut at the end of the read), not the bytes that the query decompresses.", 0) \
+    DECLARE(UInt64, efficiency_window_sec, 600, "Length of the cache efficiency window in seconds, at most 86400 (one day). In each window the cache splits its bytes into active (served from the cache in the window), passive (not served, in file segments with a cache hit in the window) and idle (in file segments with no cache hit in the window). 0 disables the tracking and the `FilesystemCacheEvictedNoHitBytes` event. Takes effect only after a server restart. Only bytes served from the cache count; a read that fills the cache does not. A hit counts the bytes that the cache fills into the read buffer (one buffer, `prefetch_buffer_size` by default, cut at the end of the read), not the bytes that the query decompresses.", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
@@ -324,6 +324,15 @@ void FileCacheSettings::validate()
 
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
+    /// A longer window is of no use for the efficiency metrics, and the bound keeps the window length in milliseconds
+    /// from overflowing.
+    constexpr UInt64 max_efficiency_window_sec = 86400;
+    if (settings[FileCacheSetting::efficiency_window_sec] > max_efficiency_window_sec)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`efficiency_window_sec` ({}) must not exceed {} (one day)",
+            settings[FileCacheSetting::efficiency_window_sec].value, max_efficiency_window_sec);
 
     if (settings[FileCacheSetting::use_split_cache] && isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
         throw Exception(
