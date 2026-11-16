@@ -1,6 +1,7 @@
--- Tags: no-parallel-replicas
 -- an OR over the elements of several arrays gives each ARRAY JOIN the part of it that the step can compute
 
+-- a serialized plan does not fuse a filter into ARRAY JOIN
+SET serialize_query_plan = 0;
 SET query_plan_merge_filters = 1;
 SET query_plan_fuse_filter_into_array_join = 1;
 
