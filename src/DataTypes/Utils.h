@@ -1,9 +1,22 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
+
+/// The default of `type` as a value of its column `ColumnType` (a `ColumnVector` or `ColumnDecimal`).
+/// It differs from the column zero for an `Enum`, whose default is its first value.
+template <typename ColumnType>
+typename ColumnType::ValueType getTypeDefaultValue(const IDataType & type)
+{
+    if (type.isDefaultInsertTrivial())
+        return {};
+    auto column = type.createColumn();
+    type.insertDefaultInto(*column);
+    return assert_cast<const ColumnType &>(*column).getData()[0];
+}
 
 /** Returns true if from_type can be safely cast to to_type.
   *

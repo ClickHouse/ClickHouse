@@ -1,0 +1,78 @@
+-- An array element out of range and a missing Map key are the default of the element type.
+-- For an Enum that is its lowest member, not the column zero.
+
+DROP TABLE IF EXISTS t_enum_elem;
+DROP TABLE IF EXISTS t_enum_elem_buckets;
+DROP TABLE IF EXISTS t_enum_elem_memory;
+DROP TABLE IF EXISTS t_enum_elem_dst;
+
+CREATE TABLE t_enum_elem (id UInt8, arr Array(Enum8('x' = 1, 'y' = 2)), m Map(String, Enum8('x' = 1, 'y' = 2)))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_enum_elem VALUES (1, ['y'], {'k': 'y'}), (2, [], {});
+
+SELECT 'table';
+SELECT id, arr[1], arr[-1], arr[id + 1], m['k'] FROM t_enum_elem ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+
+SELECT 'const array';
+SELECT [CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')][number + 3] FROM numbers(1);
+SELECT [tuple(CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'), 1)][number + 3] FROM numbers(1);
+
+SELECT 'tuple';
+SELECT arrayElement(materialize([tuple(CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'), 1)]), 3);
+
+SELECT 'json';
+SELECT materialize([CAST('{"a":"y"}', 'JSON(a Enum8(\'x\' = 1, \'y\' = 2))')])[3];
+SELECT [CAST('{"a":"y"}', 'JSON(a Enum8(\'x\' = 1, \'y\' = 2))')][3];
+
+SELECT 'array of indexes';
+SELECT [CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')][[1, 5]];
+SELECT [tuple(CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'), 1)][[1, 5]];
+SELECT [CAST('{"a":"y"}', 'JSON(a Enum8(\'x\' = 1, \'y\' = 2))')][[1, 5]];
+
+SELECT 'replicated';
+SELECT arr[i] FROM (SELECT materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr) ARRAY JOIN [1, 5] AS i SETTINGS enable_lazy_columns_replication = 1;
+SELECT arr[i] FROM (SELECT materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr) ARRAY JOIN [1, 5] AS i SETTINGS enable_lazy_columns_replication = 0;
+
+SELECT 'map';
+SELECT map('a', CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'))[toString(number)] FROM numbers(1);
+
+CREATE TABLE t_enum_elem_buckets
+(
+    id UInt8,
+    m Map(String, Enum8('x' = 1, 'y' = 2)),
+    mt Map(String, Tuple(e Enum8('x' = 1, 'y' = 2), n UInt8)),
+    mn Map(String, Nullable(Enum8('x' = 1, 'y' = 2)))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0;
+INSERT INTO t_enum_elem_buckets VALUES (1, {'k': 'y'}, {'k': ('y', 1)}, {'k': 'y'}), (2, {}, {}, {});
+
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT m['k'] FROM t_enum_elem_buckets SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%m.key_k%';
+SELECT id, m['k'], mt['k'] FROM t_enum_elem_buckets ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT id, m['k'], mt['k'] FROM t_enum_elem_buckets ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+
+CREATE TABLE t_enum_elem_memory (m Map(String, Enum8('x' = 1, 'y' = 2))) ENGINE = Memory;
+INSERT INTO t_enum_elem_memory VALUES ({'k': 'y'}), ({});
+SELECT m.key_k FROM t_enum_elem_memory ORDER BY ALL;
+
+SELECT 'lowest member';
+SELECT [CAST('y', 'Enum8(\'a\' = -1, \'b\' = 0, \'y\' = 2)')][5], [CAST('y', 'Enum16(\'a\' = -1000, \'b\' = 0, \'y\' = 2)')][5];
+
+SELECT 'insert select';
+CREATE TABLE t_enum_elem_dst (e Enum8('x' = 1, 'y' = 2)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_enum_elem_dst SELECT arr[1] FROM t_enum_elem;
+SELECT e FROM t_enum_elem_dst ORDER BY ALL;
+
+SELECT 'unchanged';
+SELECT arrayElementOrNull([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')], 5);
+SELECT map('a', CAST('y', 'Nullable(Enum8(\'x\' = 1, \'y\' = 2))'))['b'];
+SELECT [CAST('y', 'Enum8(\'z\' = 0, \'y\' = 2)')][5];
+SELECT toInt8(assumeNotNull(arrayElementOrNull(materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]), 5)));
+SELECT toInt8(assumeNotNull(materialize([CAST('y', 'Nullable(Enum8(\'x\' = 1, \'y\' = 2))')])[5]));
+SELECT toInt8(assumeNotNull(map('a', CAST('y', 'Nullable(Enum8(\'x\' = 1, \'y\' = 2))'))[toString(number)])) FROM numbers(1);
+SELECT id, toInt8(assumeNotNull(mn['k'])) FROM t_enum_elem_buckets ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE t_enum_elem;
+DROP TABLE t_enum_elem_buckets;
+DROP TABLE t_enum_elem_memory;
+DROP TABLE t_enum_elem_dst;

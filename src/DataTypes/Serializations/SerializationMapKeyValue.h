@@ -23,6 +23,7 @@ private:
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
         const DataTypePtr & nested_type_,
+        const DataTypePtr & value_type_,
         bool read_whole_map_);
 
 public:
@@ -32,6 +33,7 @@ public:
         MergeTreeMapSerializationVersion serialization_version_,
         ColumnPtr key_,
         const DataTypePtr & nested_type_,
+        const DataTypePtr & value_type_,
         bool read_whole_map_);
 
     /// Does not support pooling because it stores runtime data (ColumnPtr key).
@@ -80,6 +82,8 @@ private:
     /// The type read by `map_nested_serialization`: Array(Tuple(key_type, value_type)), or the Map
     /// when `read_whole_map` is set.
     DataTypePtr nested_type;
+    /// The value type of the Map: a missing key is its default.
+    DataTypePtr value_type;
     /// Read all buckets instead of the bucket of the key.
     bool read_whole_map;
 };
