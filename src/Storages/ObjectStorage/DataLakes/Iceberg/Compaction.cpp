@@ -1178,9 +1178,11 @@ static bool writeMetadataFiles(
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
-            /// A `delete` snapshot removes files, so its ancestors hold rows that its children do not. Children start a new chain.
+            /// A `delete` snapshot that removes data files starts a new chain. Its ancestors hold rows that its children do not.
             /// TODO: Keep `delete` snapshots in the rewritten history. Then their children keep the real parent.
-            const bool removes_files = history_record.snapshot_summary->getOperation() == SnapshotSummaryOperation::DELETE;
+            const auto & summary = history_record.snapshot_summary;
+            const bool removes_files = summary->getOperation() == SnapshotSummaryOperation::DELETE
+                && summary->getUpdate<Iceberg::SnapshotSummaryUpdateDelete>().deleted_data_files > 0;
             nearest_kept[history_record.snapshot_id] = removes_files ? -1 : kept_parent_id;
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
