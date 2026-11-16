@@ -148,6 +148,10 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.hasPinnedBlockNumbers())
         return false;
 
+    /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
+    if (!ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext()))
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
