@@ -43,7 +43,7 @@ Granules: 4/50
 -- hasAnyTokens on string field with cast
 SELECT count() FROM ghdata WHERE hasAnyTokens(data.payload.pull_request.title::String, ['Fix', 'fix'])
 18
-Condition: (mode: Any; tokens: ["Fix", "fix"])
+Condition: (mode: Any; tokens: ["fix"])
 Parts: 1/1
 Granules: 50/50
 -- IN operator on string field (rare values, granules should be skipped)

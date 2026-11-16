@@ -7,7 +7,6 @@ SET enable_adaptive_aggregator = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET serialize_query_plan = 0;
-SET max_rows_to_group_by = 0;
 SET exact_rows_before_limit = 0;
 SET max_threads = 4;
 SET max_streams_to_max_threads_ratio = 0.25;

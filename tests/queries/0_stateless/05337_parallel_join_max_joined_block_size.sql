@@ -39,19 +39,19 @@ SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 65409, m
 SELECT max(blockSize()) BETWEEN 101 AND 200, sum(c), count() FROM (SELECT k, toUInt64(7) AS c FROM t_l) AS l JOIN t_r ON l.k = t_r.k
 SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 1600;
 
--- One stream of joined chunks of 3, 12, 4, 4, 4, 8, 9, 2, 5 rows (about 1 KB per row) and a 10-row minimum:
+-- One stream of `grace_hash` joined chunks of 3, 12, 4, 4, 4, 8, 9, 2, 5 rows (about 1 KB per row) and a 10-row minimum:
 -- chunks merge until the minimum is reached, but not past 15 rows or 16000 bytes.
 SELECT groupArray(b) FROM (SELECT blockSize() AS b, rowNumberInBlock() AS n FROM numbers(180) AS l JOIN t_r3 ON l.number = t_r3.k)
 WHERE n = 0
-SETTINGS join_algorithm = 'parallel_hash', max_threads = 1, max_block_size = 20, enable_join_runtime_filters = 0,
-    min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, max_threads = 1, max_block_size = 20,
+    enable_join_runtime_filters = 0, min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
     max_joined_block_size_rows = 15, max_joined_block_size_bytes = 0;
 
 SELECT groupArray(b) FROM (
     SELECT blockSize() AS b, rowNumberInBlock() AS n, t_r3.s AS s FROM numbers(180) AS l JOIN t_r3 ON l.number = t_r3.k)
 WHERE n = 0 AND length(s) = 1000
-SETTINGS join_algorithm = 'parallel_hash', max_threads = 1, max_block_size = 20, enable_join_runtime_filters = 0,
-    min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, max_threads = 1, max_block_size = 20,
+    enable_join_runtime_filters = 0, min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
     max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 16000;
 
 DROP TABLE t_l;
