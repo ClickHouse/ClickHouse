@@ -4,6 +4,7 @@
 #include <Common/UTF8Helpers.h>
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -61,7 +62,7 @@ void TextCanvas::put(size_t x, const size_t y, const std::string_view text)
 }
 
 void TextCanvas::box(
-    const size_t x, const size_t y, const size_t width, const std::vector<String> & text_lines, const std::vector<String> & details)
+    const size_t x, const size_t y, const size_t width, const VectorWithMemoryTracking<String> & text_lines, const VectorWithMemoryTracking<String> & details)
 {
     String horizontal;
     for (size_t i = 2; i < width; ++i)
@@ -146,11 +147,11 @@ String TextCanvas::replaceControlCharacters(const std::string_view text)
     return result;
 }
 
-std::vector<String> TextCanvas::wrapToWidth(const std::string_view raw_text, const size_t max_width)
+VectorWithMemoryTracking<String> TextCanvas::wrapToWidth(const std::string_view raw_text, const size_t max_width)
 {
     const String clean_text = replaceControlCharacters(raw_text);
 
-    std::vector<String> result;
+    VectorWithMemoryTracking<String> result;
     String line;
     size_t width = 0;
     /// The position in `line` after its last space, and the width of the text after it: where the line is broken.
