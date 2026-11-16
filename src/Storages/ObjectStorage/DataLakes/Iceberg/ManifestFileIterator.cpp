@@ -63,16 +63,19 @@ using namespace DB;
 
 namespace
 {
-    std::optional<DB::Range> getMaterializedRowLineageRange(
+    struct DeclaredRowLineageBounds
+    {
+        DB::Field lower;
+        DB::Field upper;
+        /// A row storing NULL has the inherited value instead.
+        bool may_store_nulls;
+    };
+
+    std::optional<DeclaredRowLineageBounds> getDeclaredRowLineageBounds(
         const ParsedManifestFileEntry & parsed_entry, Int32 field_id, const IcebergPathFromMetadata & path_to_manifest_file)
     {
         auto bounds = parsed_entry.value_bounds.find(field_id);
         if (bounds == parsed_entry.value_bounds.end())
-            return std::nullopt;
-
-        auto column_info = parsed_entry.columns_infos.find(field_id);
-        if (column_info == parsed_entry.columns_infos.end() || !column_info->second.nulls_count.has_value()
-            || *column_info->second.nulls_count != 0)
             return std::nullopt;
 
         String left_str;
@@ -87,8 +90,7 @@ namespace
             return std::nullopt;
 
         /// An inverted pair is dropped rather than repaired, for the reason spelled out at the guard for
-        /// ordinary columns below. Returning nothing here leaves the caller's fallback range, which
-        /// bounds every value the file can hold, a materialized one from an earlier write included.
+        /// ordinary columns below.
         if (accurateLess(*right, *left))
         {
             LOG_WARNING(
@@ -101,7 +103,10 @@ namespace
             return std::nullopt;
         }
 
-        return DB::Range(*left, true, *right, true);
+        auto column_info = parsed_entry.columns_infos.find(field_id);
+        const bool may_store_nulls = column_info == parsed_entry.columns_infos.end()
+            || !column_info->second.nulls_count.has_value() || *column_info->second.nulls_count != 0;
+        return DeclaredRowLineageBounds{*left, *right, may_store_nulls};
     }
 
     void addRowLineageHyperrectangles(
@@ -127,17 +132,22 @@ namespace
             const bool is_row_id = field_id == row_id_field_id;
             if (is_row_id && !row_ids_are_readable)
                 continue;
-            const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
 
-            if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
-            {
-                hyperrectangles.emplace(field_id, *range);
+            /// A file may store any value in a lineage column, so without declared bounds it is not pruned by it.
+            auto bounds = getDeclaredRowLineageBounds(parsed_entry, field_id, path_to_manifest_file);
+            if (!bounds)
                 continue;
-            }
 
-            /// A missing statistic says nothing about the column, and a materialized value always predates this file, so only the
-            /// upper end of the inherited block bounds every value the file can hold.
-            hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
+            if (bounds->may_store_nulls)
+            {
+                const DB::Field inherited_lower = is_row_id ? *entry.first_row_id : inherited_sequence_number;
+                const DB::Field inherited_upper = is_row_id ? last_inherited_row_id : inherited_sequence_number;
+                if (accurateLess(inherited_lower, bounds->lower))
+                    bounds->lower = inherited_lower;
+                if (accurateLess(bounds->upper, inherited_upper))
+                    bounds->upper = inherited_upper;
+            }
+            hyperrectangles.emplace(field_id, DB::Range(bounds->lower, true, bounds->upper, true));
         }
     }
 
@@ -210,6 +220,19 @@ namespace
                 left_str, column_type, true, /*compensate_rounding=*/false);
             declared_right = deserializeFieldFromBinaryRepr(
                 right_str, column_type, false, /*compensate_rounding=*/false);
+        }
+
+        /// A NaN bound does not bound the other values of the column.
+        if (left->isNaN() || right->isNaN())
+        {
+            LOG_DEBUG(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a NaN bound for column id {} of data file '{}'; "
+                "ignoring the bounds of this column",
+                path_to_manifest_file,
+                column_id,
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
         }
 
         /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
@@ -708,7 +731,13 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
         return it->second.get();
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
+        *schema_processor_ptr,
+        table_snapshot_schema_id,
+        schema_id,
+        filter_dag.get(),
+        partition_key_description.get(),
+        *common_partition_specification,
+        context);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 

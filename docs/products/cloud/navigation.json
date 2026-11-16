@@ -39,7 +39,8 @@
                 "products/cloud/features/autoscaling/make-before-break",
                 "products/cloud/features/autoscaling/idling",
                 "products/cloud/features/autoscaling/scaling-recommendations",
-                "products/cloud/features/autoscaling/scheduled-scaling"
+                "products/cloud/features/autoscaling/scheduled-scaling",
+                "products/cloud/features/scaling/preparing-for-traffic-spikes"
               ]
             },
             {
@@ -61,6 +62,7 @@
               "pages": [
                 "products/cloud/reference/service-uptime",
                 "products/cloud/reference/data-resiliency",
+                "products/cloud/guides/deletion-protection",
                 "products/cloud/features/admin-features/upgrades"
               ]
             },
@@ -69,6 +71,7 @@
               "group": "Production planning",
               "pages": [
                 "products/cloud/guides/best-practices/index",
+                "products/cloud/guides/best-practices/performance-optimization-playbook",
                 "products/cloud/guides/production-readiness",
                 "products/cloud/guides/best-practices/multitenancy",
                 "products/cloud/guides/best-practices/usagelimits"
@@ -128,6 +131,7 @@
               "pages": [
                 "products/cloud/guides/security/cloud-access-management/manage-my-account",
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                "products/cloud/guides/security/cloud-access-management/approved-domains",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
               ]
@@ -255,8 +259,6 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
-            "products/cloud/features/ai-ml/aichat/using-ai-chat",
-            "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
             "products/cloud/features/ai-ml/langfuse",
             {
               "expanded": false,
@@ -264,32 +266,6 @@
               "pages": [
                 "products/cloud/features/ai-ml/remote-mcp",
                 "products/cloud/features/ai-ml/mcp/remote-mcp"
-              ]
-            },
-            {
-              "group": "ClickHouse Agents",
-              "pages": [
-                "products/cloud/features/ai-ml/agents/index",
-                "products/cloud/features/ai-ml/agents/quickstart",
-                "products/cloud/features/ai-ml/agents/chat",
-                {
-                  "group": "Agent Builder",
-                  "pages": [
-                    "products/cloud/features/ai-ml/agents/builder/index",
-                    "products/cloud/features/ai-ml/agents/builder/model-parameters",
-                    "products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                    "products/cloud/features/ai-ml/agents/builder/web-search",
-                    "products/cloud/features/ai-ml/agents/builder/image-generation",
-                    "products/cloud/features/ai-ml/agents/builder/vision",
-                    "products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                    "products/cloud/features/ai-ml/agents/builder/skills",
-                    "products/cloud/features/ai-ml/agents/builder/subagents"
-                  ]
-                },
-                "products/cloud/features/ai-ml/agents/prompts",
-                "products/cloud/features/ai-ml/agents/memory",
-                "products/cloud/features/ai-ml/agents/marketplace",
-                "products/cloud/features/ai-ml/agents/sharing-and-access"
               ]
             },
             "products/cloud/features/ai-ml/model-developer-terms"
@@ -350,6 +326,5 @@
           "sourceRef": "ClickHouse/airgap-docs"
         }
   ],
-  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

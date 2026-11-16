@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnVariant.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -13,7 +13,7 @@ namespace DB
 class FormatFactory;
 
 /// The discriminators of the types of a `Geometry` column by the name of the type.
-using GeoJSONGeometryDiscriminators = std::unordered_map<String, ColumnVariant::Discriminator>;
+using GeoJSONGeometryDiscriminators = UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator>;
 GeoJSONGeometryDiscriminators getGeoJSONGeometryDiscriminators(const DataTypePtr & type);
 
 /// Read and validate a GeoJSON geometry object or a JSON `null`. When `col` is null the geometry is only

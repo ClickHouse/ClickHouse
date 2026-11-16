@@ -3,7 +3,7 @@
 
 DROP TABLE IF EXISTS t_non_candidate_fallback;
 
--- String has no specialized adaptive candidate, so its pool is NONE + the default codec.
+-- String has no specialized adaptive candidate, so its pool is the default codec alone.
 CREATE TABLE t_non_candidate_fallback
 (
     incompressible String,  -- pseudo-random bytes the default codec expands -> NONE
