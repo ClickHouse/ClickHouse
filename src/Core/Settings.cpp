@@ -10125,9 +10125,11 @@ Cloud default value: `1`.
     DECLARE(Bool, allow_experimental_table_namespaces, false, R"(
 Allow namespace-aware resolution of dotted table identifiers.
 
-When the setting is enabled, a dotted table path such as `db.ns.table` names table `ns.table` of database `db`,
-the same as the quoted name ``db.`ns.table` ``. Without the setting the path is rejected with
-`SUPPORT_IS_DISABLED` and the quoted name has to be used. When the setting is enabled, the analyzer additionally:
+When the setting is enabled, a dotted table path such as `db.ns.table` in a table expression names table `ns.table`
+of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting such a table expression is
+rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. Statements that name their target table
+directly (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting.
+When the setting is enabled, the analyzer additionally:
 - resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
   of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
   `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist and the user can access both;

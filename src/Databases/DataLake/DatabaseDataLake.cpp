@@ -2424,7 +2424,7 @@ The following settings are supported:
 Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
 with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
-`` catalog_name.`namespace.table` `` and needs the setting; without it the path is
+`` catalog_name.`namespace.table` `` and needs the setting in a table expression; without it the path is
 rejected and the quoted form has to be used.
 :::
 
@@ -2439,8 +2439,8 @@ SELECT * FROM catalog_name.`namespace.table`;
 
 You can also spell out every part with dots:
 
-- `db.ns.table` (three or more parts) requires `allow_experimental_table_namespaces`
-  and is parsed as the table path `ns.table` inside database `db`; it is then
+- `db.ns.table` (three or more parts) in a table expression requires `allow_experimental_table_namespaces`
+  and is read as the table path `ns.table` inside database `db`; it is then
   subject to the same two-part rule as `a.b` below, with `a` = `db`.
 - With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
   table expression is resolved as table `b` of database `a`, and also as table
@@ -2458,10 +2458,9 @@ You can also spell out every part with dots:
   server) always reads `a.b` as database `a`, table `b`; the query argument of
   table functions `view`, `viewIfPermitted`, `eval`, `obfuscate` and `explain`
   keeps the two-part rule. In a stored definition, reference a catalog table as
-  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` also works when
-  `allow_experimental_table_namespaces` is on at creation, except in a dictionary
-  `QUERY`, which runs in the dictionary's own context and needs the setting in the
-  query's own `SETTINGS` clause. In view bodies and column expressions, `` `ns.t` `` also
+  ``catalog_name.`ns.t` ``. The path form `catalog_name.ns.t` is stored as the quoted
+  name, except in a dictionary `QUERY`, which is kept as text, runs in the dictionary's
+  own context and needs the setting in the query's own `SETTINGS` clause. In view bodies and column expressions, `` `ns.t` `` also
   works when the catalog is the current database at creation: it is qualified
   then and stored as ``catalog_name.`ns.t` ``.
 

@@ -14,7 +14,6 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`ns.t\` (x Int32) ENGINE = MergeTree 
 
 echo '-- setting off'
 $CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.ns.t" 2>&1 | code
-$CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.ns.t VALUES (1)" 2>&1 | code
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t" 2>&1 | code
 
 echo '-- setting on'

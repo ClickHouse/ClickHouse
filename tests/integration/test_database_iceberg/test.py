@@ -3010,7 +3010,7 @@ def test_three_part_identifier(started_cluster):
 
     # without the setting, the multipart path is rejected, while the quoted name works
     error = node.query_and_get_error(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}")
-    assert "SUPPORT_IS_DISABLED" in error, f"multipart path should be disabled: {error}"
+    assert "INVALID_IDENTIFIER" in error, f"multipart path should be disabled: {error}"
     multipart = node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
     quoted = node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
     assert multipart == quoted, f"multipart path and quoted name differ: {multipart} vs {quoted}"
