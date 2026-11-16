@@ -232,7 +232,7 @@ struct IndexesSerializationType
                             "Expected ColumnUInt*, got {}", column.getName());
     }
 
-    DataTypePtr getDataType() const
+    [[nodiscard]] DataTypePtr getDataType() const
     {
         if (type == TUInt8)
             return std::make_shared<DataTypeUInt8>();

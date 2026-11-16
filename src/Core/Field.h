@@ -72,9 +72,9 @@ struct CustomType
     struct CustomTypeImpl
     {
         virtual ~CustomTypeImpl() = default;
-        virtual const char * getTypeName() const = 0;
-        virtual String toString(bool show_secrets) const = 0;
-        virtual bool isSecret() const = 0;
+        [[nodiscard]] virtual const char * getTypeName() const = 0;
+        [[nodiscard]] virtual String toString(bool show_secrets) const = 0;
+        [[nodiscard]] virtual bool isSecret() const = 0;
 
         virtual bool operator < (const CustomTypeImpl &) const = 0;
         virtual bool operator <= (const CustomTypeImpl &) const = 0;
@@ -86,10 +86,10 @@ struct CustomType
     CustomType() = default;
     explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
 
-    bool isSecret() const { return impl->isSecret(); }
-    const char * getTypeName() const { return impl->getTypeName(); }
-    String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    const CustomTypeImpl & getImpl() const { return *impl; }
+    [[nodiscard]] bool isSecret() const { return impl->isSecret(); }
+    [[nodiscard]] const char * getTypeName() const { return impl->getTypeName(); }
+    [[nodiscard]] String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
+    [[nodiscard]] const CustomTypeImpl & getImpl() const { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -114,7 +114,7 @@ struct NumberLiteral
     /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
     /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
     /// which the reader can't parse, fall back to strtod.
-    Float64 toFloat64() const;
+    [[nodiscard]] Float64 toFloat64() const;
 
     bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
     bool operator < (const NumberLiteral &) const;
@@ -137,9 +137,9 @@ public:
     {}
 
     operator T() const { return dec; } /// NOLINT
-    T getValue() const { return dec; }
-    T getScaleMultiplier() const;
-    UInt32 getScale() const { return scale; }
+    [[nodiscard]] T getValue() const { return dec; }
+    [[nodiscard]] T getScaleMultiplier() const;
+    [[nodiscard]] UInt32 getScale() const { return scale; }
 
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
@@ -475,16 +475,16 @@ public:
     }
 
 
-    Types::Which getType() const { return which; }
+    [[nodiscard]] Types::Which getType() const { return which; }
 
-    std::string_view getTypeName() const;
+    [[nodiscard]] std::string_view getTypeName() const;
 
-    bool isNull() const { return which == Types::Null; }
-    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
+    [[nodiscard]] bool isNull() const { return which == Types::Null; }
+    [[nodiscard]] bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
+    [[nodiscard]] bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
-    bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
-    bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
+    [[nodiscard]] bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
+    [[nodiscard]] bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
     template <typename T> bool tryGet(T & result)
     {
@@ -504,11 +504,11 @@ public:
         return true;
     }
 
-    template <typename T> const NearestFieldType<std::decay_t<T>> & safeGet() const &
+    template <typename T> [[nodiscard]] const NearestFieldType<std::decay_t<T>> & safeGet() const &
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
-    template <typename T> NearestFieldType<std::decay_t<T>> safeGet() const &&
+    template <typename T> [[nodiscard]] NearestFieldType<std::decay_t<T>> safeGet() const &&
     {
         return std::move(const_cast<Field *>(this)->safeGet<T>());
     }
@@ -580,13 +580,13 @@ public:
         }
     }
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
     /// If this Field is a NumberLiteral, resolve it to a concrete numeric type
     /// (Float64 for decimal-looking strings, UInt128/Int128/etc for big integers).
     /// Returns *this unchanged if it's not a NumberLiteral.
-    Field resolveNumberLiteral() const;
+    [[nodiscard]] Field resolveNumberLiteral() const;
 
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -612,7 +612,7 @@ private:
     }
 
     template <typename T>
-    NearestFieldType<std::decay_t<T>> & get() const
+    [[nodiscard]] NearestFieldType<std::decay_t<T>> & get() const
     {
         return const_cast<Field *>(this)->get<T>();
     }
