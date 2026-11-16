@@ -1,6 +1,10 @@
+#include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
@@ -8,6 +12,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/castColumn.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -25,6 +30,7 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
+#include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -219,12 +225,37 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
-    if (needExactLiteral(data_type))
+    if (!literal.isNull() && needExactLiteral(data_type))
     {
-        auto column = data_type->createColumn();
-        column->insert(literal);
-        return makeCastToTypeNameAST(
-            columnConstantToExactLiteralAST(std::move(column), 0, data_type, /*date_time_as_numbers=*/true), data_type->getName());
+        /// A single text literal of `data_type` with each `DateTime64` / `Time64` replaced by `Decimal128` of the same scale
+        /// and each `DateTime` by `UInt32`, so no leaf is written as local date-time text.
+        auto carrier_type = rewriteTypeTree(
+            data_type,
+            [](const DataTypePtr & type) -> DataTypePtr
+            {
+                if (isDateTime64(type) || isTime64(type))
+                    return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
+                if (isDateTime(type))
+                    return std::make_shared<DataTypeUInt32>();
+                return type;
+            },
+            CustomizationPolicy::Refuse);
+        if (carrier_type)
+        {
+            auto column = data_type->createColumn();
+            column->insert(literal);
+            auto carrier_column = castColumn({std::move(column), data_type, ""}, carrier_type);
+            /// `Map` is not cast from `String`, its nested `Array(Tuple(keys, values))` is.
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(carrier_type.get()))
+            {
+                carrier_column = assert_cast<const ColumnMap &>(*carrier_column).getNestedColumnPtr();
+                carrier_type = map_type->getNestedType();
+            }
+            WriteBufferFromOwnString text;
+            carrier_type->getDefaultSerialization()->serializeText(*carrier_column, 0, text, FormatSettings{});
+            return makeCastToTypeNameAST(
+                makeCastToTypeNameAST(make_intrusive<ASTLiteral>(text.str()), carrier_type->getName()), data_type->getName());
+        }
     }
     return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
 }
