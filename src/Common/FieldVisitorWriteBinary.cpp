@@ -57,6 +57,7 @@ public:
     size_t operator() (const UUID &) const { return sizeof(UUID); }
     size_t operator() (const IPv4 &) const { return sizeof(IPv4); }
     size_t operator() (const IPv6 &) const { return sizeof(IPv6); }
+    size_t operator() (const MacAddress &) const { return sizeof(UInt64); }
     size_t operator() (const CustomType & x) const { return getStringBinarySize(x.getTypeName()) + getStringBinarySize(x.toString()); }
     size_t operator() (const NumberLiteral & x) const { return getStringBinarySize(x.value); }
     size_t operator() (const DecimalField<Decimal32> &) const { return sizeof(Decimal32) + sizeof(UInt32); }

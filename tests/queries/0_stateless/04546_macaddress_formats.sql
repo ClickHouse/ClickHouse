@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the Fast test build has no Arrow, Parquet or ORC formats.
+
 -- `MacAddress` support in the columnar formats and in `JSONExtract` / `generateRandom`.
 SET allow_experimental_macaddress_type = 1;
 -- The files are named per database and truncated, so that repeated and parallel runs do not collide.

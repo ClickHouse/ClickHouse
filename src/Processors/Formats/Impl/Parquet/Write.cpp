@@ -2464,7 +2464,7 @@ void writeColumnChunkBody(
             break;
 
         case TypeIndex::MacAddress:
-            writeColumnImpl<parquet::Int64Type>(
+            writeColumnImpl<Int64Type>(
                 s, options, out, ConverterNumeric<ColumnVector<MacAddress>, Int64, UInt64>(
                     s.primitive_column));
             break;
