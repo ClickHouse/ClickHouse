@@ -2372,12 +2372,21 @@ void normalizeColumnExpression(ASTPtr & ast)
 }
 
 /// Constant values a lambda captures, by their name inside the lambda body.
-using CapturedConstants = std::unordered_map<String, ColumnPtr>;
+using CapturedConstants = std::unordered_map<String, ColumnWithTypeAndName>;
 
-void addCapturedConstant(CapturedConstants & captured, const String & name, const ColumnPtr & column)
+void addCapturedConstant(CapturedConstants & captured, const String & name, const ColumnPtr & column, const DataTypePtr & type)
 {
     if (column && isColumnConst(*column) && column->getDataType() != TypeIndex::Function)
-        captured[name] = column;
+        captured[name] = {column, type, name};
+}
+
+/// A literal keeps the value but not the type, so a constant of a type like `Date` is not named by one.
+bool canNameByLiteral(const DataTypePtr & type)
+{
+    const auto plain_type = removeNullable(removeLowCardinality(type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(plain_type.get()))
+        return canNameByLiteral(array_type->getNestedType());
+    return isNativeNumber(plain_type) || isString(plain_type);
 }
 
 /// Evaluates a node that only depends on constants, like `arrayFirst(y -> 1, ['1'])`, which the DAG does not fold.
@@ -2398,7 +2407,7 @@ std::optional<Field> tryEvaluateConstantNode(const ActionsDAG::Node & node, cons
         auto it = captured.find(input->result_name);
         if (it == captured.end())
             return {};
-        node_to_column[input] = {it->second->cloneResized(1), input->result_type, input->result_name};
+        node_to_column[input] = {it->second.column->cloneResized(1), input->result_type, input->result_name};
     }
 
     auto result = ActionsDAG::evaluatePartialResult(node_to_column, dag.getOutputs(), 1, {.skip_materialize = true});
@@ -2417,10 +2426,11 @@ const ActionsDAG * tryGetLambdaBodyDAG(const ActionsDAG::Node & node, CapturedCo
         const CapturedConstants outer_captured = captured;
         for (size_t i = 0; i < names.size() && i < node.children.size(); ++i)
         {
-            addCapturedConstant(captured, names[i], node.children[i]->column);
+            const auto & type = node.children[i]->result_type;
+            addCapturedConstant(captured, names[i], node.children[i]->column, type);
             if (!captured.contains(names[i]))
                 if (auto value = tryEvaluateConstantNode(*node.children[i], outer_captured))
-                    captured[names[i]] = node.children[i]->result_type->createColumnConst(1, *value);
+                    captured[names[i]] = {type->createColumnConst(1, *value), type, names[i]};
         }
         return &capture->getAcionsDAG();
     }
@@ -2435,7 +2445,7 @@ const ActionsDAG * tryGetLambdaBodyDAG(const ActionsDAG::Node & node, CapturedCo
             const auto & names = expression->getCapture().captured_names;
             const auto & columns = column_function->getCapturedColumns();
             for (size_t i = 0; i < names.size() && i < columns.size(); ++i)
-                addCapturedConstant(captured, names[i], columns[i].column);
+                addCapturedConstant(captured, names[i], columns[i].column, columns[i].type);
             return &expression->getAcionsDAG();
         }
     }
@@ -2463,7 +2473,8 @@ void foldConstantSubexpressions(ASTPtr & ast, const ActionsDAG & index_dag, cons
         const auto name = ast->getColumnName();
         if (auto it = captured.find(name); it != captured.end())
         {
-            ast = make_intrusive<ASTLiteral>((*it->second)[0]);
+            if (canNameByLiteral(it->second.type))
+                ast = make_intrusive<ASTLiteral>((*it->second.column)[0]);
             return;
         }
 
@@ -2474,13 +2485,15 @@ void foldConstantSubexpressions(ASTPtr & ast, const ActionsDAG & index_dag, cons
 
             if (node.column && isColumnConst(*node.column) && node.column->getDataType() != TypeIndex::Function)
             {
-                ast = make_intrusive<ASTLiteral>((*node.column)[0]);
+                if (canNameByLiteral(node.result_type))
+                    ast = make_intrusive<ASTLiteral>((*node.column)[0]);
                 return;
             }
 
             if (auto value = tryEvaluateConstantNode(node, captured))
             {
-                ast = make_intrusive<ASTLiteral>(*value);
+                if (canNameByLiteral(node.result_type))
+                    ast = make_intrusive<ASTLiteral>(*value);
                 return;
             }
 

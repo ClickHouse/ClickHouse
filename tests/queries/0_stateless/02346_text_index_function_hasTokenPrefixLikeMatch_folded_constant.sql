@@ -147,3 +147,13 @@ SELECT 'not folded identity hasTokenMatch', count() FROM tab_folded_constant WHE
 SELECT 'not folded identity hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(concat(tag, identity(materialize('1'))), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;
+
+-- A `Date` constant is not named by its number: the index is not the one of the expression with the `UInt16` number.
+CREATE TABLE tab_folded_constant (id UInt64, tag String, INDEX idx(formatRowNoNewline('CSV', tag, toDate('2026-01-01'))) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, 'env:prod-eu' FROM numbers(64);
+
+SELECT 'typed constant LIKE', count() FROM tab_folded_constant WHERE formatRowNoNewline('CSV', tag, toUInt16(toDate('2026-01-01'))) LIKE '%20454%' SETTINGS use_skip_indexes = 1;
+SELECT 'typed constant LIKE, no index', count() FROM tab_folded_constant WHERE formatRowNoNewline('CSV', tag, toUInt16(toDate('2026-01-01'))) LIKE '%20454%' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
