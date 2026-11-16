@@ -7,14 +7,21 @@ keywords: ['azure', 'private link', 'privatelink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
 Ce guide explique comment utiliser Azure Private Link pour assurer une connectivité privée via un réseau virtuel entre Azure (y compris les services détenus par les clients et les services de partenaires Microsoft) et ClickHouse Cloud. Azure Private Link simplifie l’architecture réseau et sécurise la connexion entre les endpoints dans Azure en évitant l’exposition des données à l’internet public.
 
-<Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Vue d’ensemble de PrivateLink" background="white" />
+<div className="ch-image-lg ch-image-background-white">
+
+<Frame>
+
+![Vue d’ensemble de PrivateLink](/images/cloud/security/azure-pe.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   Azure Private Link prend uniquement en charge les connexions initiées depuis votre VNet Azure vers ClickHouse Cloud. Il ne peut pas être utilisé pour des connexions initiées depuis ClickHouse Cloud vers des services dans votre VNet, comme une base de données privée.
@@ -57,7 +64,15 @@ Vous trouverez des exemples Terraform dans le [dépôt du Terraform Provider](ht
 
 Dans la console ClickHouse Cloud, ouvrez le service que vous souhaitez connecter via PrivateLink, puis ouvrez le menu **Paramètres**. Cliquez sur le bouton **Configurer un Private Endpoint**. Notez le `Service name` et le `DNS name`, qui seront utilisés pour configurer Private Link.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Points de terminaison privés" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Points de terminaison privés](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 Notez le `Service name` et le `DNS name` : ils seront nécessaires aux étapes suivantes.
 
@@ -118,11 +133,27 @@ Dans cette section, nous allons créer un Private Endpoint dans Azure. Vous pouv
 
 Dans Azure Portal, ouvrez **Private Link Center → Private Endpoints**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Ouvrir Azure Private Center" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ouvrir Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</Frame>
+
+</div>
 
 Ouvrez la boîte de dialogue de création d’un Private Endpoint en cliquant sur le bouton **Create**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Ouvrir Azure Private Center" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ouvrir Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -134,7 +165,15 @@ Dans l’écran suivant, renseignez les options suivantes :
 
 Après avoir terminé les étapes ci-dessus, cliquez sur le bouton **Next: Resource**.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Créer un point de terminaison privé - paramètres de base" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Créer un point de terminaison privé - paramètres de base](/images/cloud/security/azure-pe-create-basic.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -144,7 +183,15 @@ Pour **Resource ID or alias**, utilisez l’`endpointServiceId` obtenu à l’é
 
 Cliquez sur le bouton **Next: Virtual Network**.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Sélection de la ressource du point de terminaison privé" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélection de la ressource du point de terminaison privé](/images/cloud/security/azure-pe-resource.webp)
+
+</Frame>
+
+</div>
 
 ***
 
@@ -157,13 +204,29 @@ Facultatif :
 
 Cliquez sur le bouton **Next: DNS**.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Sélection du réseau virtuel du point de terminaison privé" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Sélection du réseau virtuel du point de terminaison privé](/images/cloud/security/azure-pe-create-vnet.webp)
+
+</Frame>
+
+</div>
 
 Cliquez sur le bouton **Next: Tags**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Configuration DNS du point de terminaison privé" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configuration DNS du point de terminaison privé](/images/cloud/security/azure-pe-create-dns.webp)
+
+</Frame>
+
+</div>
 
 Vous pouvez éventuellement ajouter des tags à votre Private Endpoint.
 
@@ -171,17 +234,41 @@ Cliquez sur le bouton **Next: Review + create**.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Tags du point de terminaison privé" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tags du point de terminaison privé](/images/cloud/security/azure-pe-create-tags.webp)
+
+</Frame>
+
+</div>
 
 Enfin, cliquez sur le bouton **Create**.
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Vérification du point de terminaison privé" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Vérification du point de terminaison privé](/images/cloud/security/azure-pe-create-review.webp)
+
+</Frame>
+
+</div>
 
 Le **Connection status** du Private Endpoint créé sera à l’état **Pending**. Il passera à l’état **Approved** une fois ce Private Endpoint ajouté à la liste d’autorisation du service.
 
 Ouvrez la network interface associée au Private Endpoint et copiez l’**adresse IPv4 privée** (10.0.0.4 dans cet exemple) ; vous aurez besoin de cette information dans les étapes suivantes.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Adresse IP du point de terminaison privé" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Adresse IP du point de terminaison privé](/images/cloud/security/azure-pe-ip.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### Option 2 : utiliser Terraform pour créer un Private Endpoint dans Azure
@@ -212,18 +299,42 @@ Pour utiliser Private Link, vous devez ajouter le Resource ID de la connexion Pr
 
 Le Private Endpoint Resource ID est visible dans Azure Portal. Ouvrez le Private Endpoint créé à l’étape précédente, puis cliquez sur **JSON View** :
 
-<Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Vue du Private Endpoint" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue du Private Endpoint](/images/cloud/security/azure-pe-view.webp)
+
+</Frame>
+
+</div>
 
 Copiez le champ `id` de niveau supérieur (le Resource ID du Private Endpoint, au format `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — n’utilisez pas les champs `id` imbriqués dans l’objet `properties` :
 
 **Méthode recommandée : utiliser le Resource ID**
 
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Private Endpoint Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+</Frame>
+
+</div>
 
 **Méthode héritée : utiliser resourceGUID**
 Vous pouvez toujours utiliser `resourceGuid` pour assurer la compatibilité descendante. Repérez le champ `resourceGuid` et copiez cette valeur :
 
-<Image img="/images/cloud/security/azure-pe-resource-guid.webp" size="lg" alt="Private Endpoint Resource GUID" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Private Endpoint Resource GUID](/images/cloud/security/azure-pe-resource-guid.webp)
+
+</Frame>
+
+</div>
 
 <div id="setting-up-dns-for-private-link">
   ## Configuration du DNS pour Private Link
@@ -264,7 +375,15 @@ Créez un enregistrement générique pointant vers votre Private Endpoint :
 4. Pour IP Address, saisissez l’adresse IP affichée pour le Private Endpoint.
 5. Sélectionnez **OK**.
 
-<Image img="/images/cloud/security/azure-pl-dns-wildcard.webp" size="lg" alt="Configuration d’un DNS générique pour Private Link" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Configuration d’un DNS générique pour Private Link](/images/cloud/security/azure-pl-dns-wildcard.webp)
+
+</Frame>
+
+</div>
 
 **Option 2 : Utilisation de Terraform**
 
@@ -326,7 +445,15 @@ Pour ajouter un endpoint à l’organisation, passez à l’étape [Ajouter le P
 
 Pour supprimer un endpoint, ouvrez **Organization details -&gt; Private Endpoints** et cliquez sur le bouton Supprimer pour retirer l’endpoint.
 
-<Image img="/images/cloud/security/azure-pe-remove-private-endpoint.webp" size="lg" alt="Supprimer le Private Endpoint" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Supprimer le Private Endpoint](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-1">
   ### Option 2 : API
@@ -404,7 +531,15 @@ Dans la console ClickHouse Cloud, ouvrez le service auquel vous souhaitez vous c
   Si vous souhaitez autoriser l’accès à partir d’une connexion PrivateLink existante, utilisez le menu déroulant de l’endpoint existant.
 </Note>
 
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="lg" alt="Filtre des Private Endpoints" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Filtre des Private Endpoints](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-1">
   ### Option 2 : API
@@ -473,7 +608,15 @@ Chaque service pour lequel Private Link est activé possède un endpoint public 
 
 Dans la console ClickHouse Cloud, accédez à **Settings**. Cliquez sur le bouton **Set up private endpoint**. Dans le volet qui s’ouvre, copiez le **DNS Name**.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="Nom DNS du Private Endpoint" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Nom DNS du Private Endpoint](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   #### Option 2 : API
