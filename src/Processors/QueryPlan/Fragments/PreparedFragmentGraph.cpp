@@ -15,6 +15,8 @@
 
 #include <ranges>
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -46,7 +48,7 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
 
     if (options.pretty)
     {
-        std::vector<const QueryPlan *> plans;
+        VectorWithMemoryTracking<const QueryPlan *> plans;
         plans.reserve(print_order.size());
         for (const auto * fragment : print_order)
             plans.push_back(&getPlan(*fragment));
@@ -64,7 +66,7 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
     {
         case FragmentExchange::Kind::Hash:
         {
-            std::vector<String> keys;
+            VectorWithMemoryTracking<String> keys;
             keys.reserve(exchange.keys.size());
             for (const auto & key : exchange.keys)
                 keys.push_back(column_names ? QueryPlanFormat::formatColumnPretty(key, *column_names) : key);
@@ -133,18 +135,18 @@ const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanSt
 
 FragmentInputs PreparedFragmentGraph::getFragmentInputs() const
 {
-    std::unordered_map<UInt32, const QueryPlan *> plan_by_id;
+    UnorderedMapWithMemoryTracking<UInt32, const QueryPlan *> plan_by_id;
     for (const auto & fragment : graph.fragments)
         plan_by_id.emplace(fragment.id, &getPlan(fragment));
 
-    std::unordered_map<std::string_view, const QueryPlan *> sender_by_exchange;
+    UnorderedMapWithMemoryTracking<std::string_view, const QueryPlan *> sender_by_exchange;
     for (const auto & exchange : graph.exchanges)
         sender_by_exchange.emplace(exchange.name, plan_by_id.at(exchange.from));
 
     FragmentInputs inputs;
     for (const auto & fragment : graph.fragments)
     {
-        std::vector<const QueryPlan::Node *> stack{getPlan(fragment).getRootNode()};
+        VectorWithMemoryTracking<const QueryPlan::Node *> stack{getPlan(fragment).getRootNode()};
         while (!stack.empty())
         {
             const auto * node = stack.back();
@@ -203,7 +205,7 @@ void writeLevelsSection(const FragmentGraph & graph, WriteBuffer & buf)
     {
         if (i != 0)
             buf << " -> ";
-        std::vector<String> names;
+        VectorWithMemoryTracking<String> names;
         names.reserve(levels[i].size());
         for (UInt32 id : levels[i])
             names.push_back(fmt::format("F{}", id));

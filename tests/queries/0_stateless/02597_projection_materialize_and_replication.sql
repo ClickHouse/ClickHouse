@@ -1,3 +1,6 @@
+-- Tags: no-shared-merge-tree
+-- Tag no-shared-merge-tree - in SMT this works differently
+
 CREATE TABLE test (
     `c_id` String,
     `p_id` String,
@@ -12,11 +15,14 @@ INSERT INTO test SELECT '2', '22', '22' FROM numbers(30);
 
 set mutations_sync=0;
 
-ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.1)) where 1;
+-- this mutation fails in background and blocks the next mutations until it is killed
+ALTER TABLE test UPDATE d = d || throwIf(1) where 1;
 
 ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
 ALTER TABLE test MATERIALIZE PROJECTION d_order;
 ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2; --{serverError BAD_ARGUMENTS}
+
+KILL MUTATION WHERE database = currentDatabase() AND command LIKE '%throwIf%' SYNC FORMAT Null;
 
 -- just to wait prev mutation
 ALTER TABLE test DELETE where d = 'Hello' SETTINGS mutations_sync = 2;

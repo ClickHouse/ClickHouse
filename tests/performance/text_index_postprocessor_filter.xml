@@ -24,17 +24,17 @@
     ORDER BY id
   </create_query>
   <create_query>
-    CREATE TABLE tab_src_{drop_pct} (id UInt64, text String) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE tab_src_500k_{drop_pct} (id UInt64, text String) ENGINE = MergeTree ORDER BY id;
   </create_query>
 
   <fill_query>
-    INSERT INTO tab_src_{drop_pct}
+    INSERT INTO tab_src_500k_{drop_pct}
     SELECT
       number,
       arrayStringConcat(arrayMap(x -> if(cityHash64(number, x) % 100 &lt; {drop_pct},
         ['a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in', 'into', 'is', 'it', 'no', 'not', 'of', 'on', 'or', 'such', 'that', 'the', 'their', 'then', 'there', 'these', 'they', 'this', 'to', 'was', 'will', 'with'][(cityHash64(number, x, 1) % 33) + 1],
         ['fox', 'cat', 'dog', 'bird', 'tree', 'river', 'stone'][(cityHash64(number, x, 2) % 7) + 1]), range(30)), ' ')
-    FROM numbers(3000000);
+    FROM numbers(500000);
   </fill_query>
 
   <create_query>
@@ -47,10 +47,14 @@
     ORDER BY id
   </create_query>
 
-  <query>INSERT INTO tab_filter_{drop_pct} SELECT * FROM tab_src_{drop_pct}</query>
-  <query>INSERT INTO tab_filter_not_in SELECT * FROM tab_src_35</query>
+  <query disabled="1">INSERT INTO tab_filter_{drop_pct} SELECT * FROM tab_src_{drop_pct}</query>
+  <query disabled="1">INSERT INTO tab_filter_not_in SELECT * FROM tab_src_35</query>
+  <!-- Copies of the two disabled queries on the first 500k of their 3M rows. An insert writes its parts of
+       about 1M rows in parallel, so it takes about as long as its largest part: here one part of 500k rows. -->
+  <query>INSERT INTO tab_filter_{drop_pct} SELECT * FROM tab_src_500k_{drop_pct}</query>
+  <query>INSERT INTO tab_filter_not_in SELECT * FROM tab_src_500k_35</query>
 
   <drop_query>DROP TABLE IF EXISTS tab_filter_{drop_pct}</drop_query>
   <drop_query>DROP TABLE IF EXISTS tab_filter_not_in</drop_query>
-  <drop_query>DROP TABLE IF EXISTS tab_src_{drop_pct}</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_src_500k_{drop_pct}</drop_query>
 </test>

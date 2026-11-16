@@ -781,6 +781,16 @@ bool IMergeTreeDataPart::isIndexLoaded() const
     return index != nullptr;
 }
 
+bool IMergeTreeDataPart::isIndexInMemory() const
+{
+    if (isIndexLoaded())
+        return true;
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    return index_cache
+        && index_cache->contains(PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart()));
+}
+
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
