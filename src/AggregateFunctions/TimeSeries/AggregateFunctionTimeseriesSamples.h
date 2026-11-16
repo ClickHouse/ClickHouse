@@ -38,6 +38,7 @@ public:
 
     void add(TimestampType timestamp, ValueType value)
     {
+        compactBeforeGrowth(1);
         /// Out-of-order and duplicate timestamps are rare (measured ~1 per 1.5 billion adds on production-shaped multithreaded reads), hence `[[unlikely]]`.
         if (!buffer.empty() && timestamp <= buffer.back().first) [[unlikely]]
         {
@@ -58,6 +59,7 @@ public:
         if (count == 0)
             return;
 
+        compactBeforeGrowth(count);
         const size_t old_size = buffer.size();
         buffer.resize(old_size + count);
         auto * __restrict appended = buffer.data() + old_size;
@@ -261,6 +263,18 @@ private:
     }
 
     bool isSorted() const { return unsorted_begin == SORTED; }
+
+    /// Duplicates (the same timestamps coming from many series) can make the unsorted tail much longer than the number of distinct timestamps.
+    /// So before the buffer would be reallocated, the unsorted tail is sorted and deduplicated, which can leave enough room to avoid growing.
+    /// If more than a half of the capacity is still used, the buffer is grown geometrically right away, so a nearly full buffer is not compacted again by every following add.
+    ALWAYS_INLINE void compactBeforeGrowth(size_t extra)
+    {
+        if (buffer.size() + extra <= buffer.capacity() || isSorted())
+            return;
+        sort();
+        if (buffer.size() > buffer.capacity() / 2)
+            buffer.reserve(std::max(buffer.size() + extra, 2 * buffer.capacity()));
+    }
 
     /// The value of `unsorted_begin` for a buffer with no unsorted tail.
     static constexpr size_t SORTED = std::numeric_limits<size_t>::max();
