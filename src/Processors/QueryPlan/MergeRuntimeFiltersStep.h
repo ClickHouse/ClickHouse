@@ -57,17 +57,17 @@ public:
     /// The streams that task `bucket_index` writes, in the order of `outputs`.
     static VectorWithMemoryTracking<ExchangeStreamId> outputStreams(const VectorWithMemoryTracking<Output> & outputs, size_t bucket_index, size_t fan_in);
 
-    String getName() const override { return "MergeRuntimeFilters"; }
+    [[nodiscard]] String getName() const override { return "MergeRuntimeFilters"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void describeActions(FormatSettings & settings) const override;
 

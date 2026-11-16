@@ -44,7 +44,7 @@ public:
         Int32 error_code,
         const String & error_message);
 
-    bool isInitialized() const { return log != nullptr; }
+    [[nodiscard]] bool isInitialized() const { return log != nullptr; }
 
     /// Optional context information
     String disk_name;

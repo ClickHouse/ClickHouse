@@ -23,7 +23,7 @@ template <typename Base>
 class ITableFunctionCluster : public Base
 {
 public:
-    String getName() const override = 0;
+    [[nodiscard]] String getName() const override = 0;
 
     static void updateStructureAndFormatArgumentsIfNeeded(ASTFunction * table_function, const String & structure_, const String & format_, const ContextPtr & context)
     {
@@ -46,8 +46,8 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
     }
 
-    bool canBeUsedToCreateTable() const override { return false; }
-    bool isClusterFunction() const override { return true; }
+    [[nodiscard]] bool canBeUsedToCreateTable() const override { return false; }
+    [[nodiscard]] bool isClusterFunction() const override { return true; }
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override
