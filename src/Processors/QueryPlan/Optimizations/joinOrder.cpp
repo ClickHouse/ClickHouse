@@ -122,6 +122,13 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
     return resolved;
 }
 
+/// Whether two columns have one type up to Nullable and LowCardinality. Only such equalities are transitive: `Int32` 0
+/// equals `Enum8('a' = 0)`, which equals the `String` 'a', which equals `Enum8('a' = 1)`, which equals `Int32` 1.
+static bool haveOneType(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return removeLowCardinalityAndNullable(lhs.getType())->equals(*removeLowCardinalityAndNullable(rhs.getType()));
+}
+
 void QueryGraph::buildColumnEquivalences()
 {
     for (const auto & edge : edges)
@@ -153,6 +160,11 @@ void QueryGraph::buildColumnEquivalences()
             continue;
 
         if (outer_join_conditions.contains(edge))
+            continue;
+
+        /// The search and the predicate cleanup both use these classes: a class may connect two relations only where
+        /// the cleanup can add an equality of them, else the join of the two would have no condition.
+        if (!haveOneType(*lhs_resolved, *rhs_resolved))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
@@ -196,9 +208,8 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
 ///      not when a side is a prepared storage.
-/// Both phases use only classes whose members have one type up to Nullable and LowCardinality:
-/// equality across types is not transitive. `Int32` 0 equals `Enum8('a' = 0)`, which equals the
-/// `String` 'a', which equals `Enum8('a' = 1)`, which equals `Int32` 1.
+/// Both phases use only equalities of one type up to Nullable and LowCardinality (see `haveOneType`), the same as
+/// `QueryGraph::column_equivalences`.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
@@ -210,15 +221,6 @@ static void cleanupJoinPredicates(
     {
         auto relation = side->relations.getSingleBit();
         return relation && prepared_storage_relations.test(*relation);
-    };
-
-    auto has_single_type = [](const EquivClasses::Class & members)
-    {
-        auto type = removeLowCardinalityAndNullable(members.front().getType());
-        return std::ranges::all_of(members, [&](const JoinActionRef & member)
-        {
-            return removeLowCardinalityAndNullable(member.getType())->equals(*type);
-        });
     };
 
     std::function<EquivClasses(const DPJoinEntryPtr &)> process =
@@ -264,7 +266,7 @@ static void cleanupJoinPredicates(
             /// Only propagate equivalences from inner joins to the parent;
             /// outer join equality holds only for matching rows
             /// and would be invalid for NULL-padded non-matching rows.
-            if (is_inner && has_single_type({*lhs_resolved, *rhs_resolved}))
+            if (is_inner && haveOneType(*lhs_resolved, *rhs_resolved))
                 equiv.add(*lhs_resolved, *rhs_resolved);
             return false;
         });
@@ -309,7 +311,7 @@ static void cleanupJoinPredicates(
                 if (!equiv_class || !visited.insert(equiv_class).second)
                     continue;
 
-                if (!has_single_type(*equiv_class) || (has_predicates && is_connected(*equiv_class)))
+                if (has_predicates && is_connected(*equiv_class))
                     continue;
 
                 for (const auto & other : *equiv_class)

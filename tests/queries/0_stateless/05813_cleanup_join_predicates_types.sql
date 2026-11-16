@@ -106,3 +106,32 @@ SELECT 'merge keys, written order', count()
 FROM m_t JOIN m_zero ON kt = k0 AND t = e0 JOIN m_text ON kt = ks AND e0 = s JOIN m_one ON kt = k1 AND s = e1
 JOIN m_v ON kt = kv AND e1 = v
 SETTINGS query_plan_optimize_join_order_limit = 0;
+
+-- `f.k` is `UInt64`, `a.k` and `b.k` are `UInt32`: no class connects `a` with `b`, so no join order joins them first
+-- without a condition, with any algorithm.
+CREATE TABLE w_f (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE w_a (k UInt32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE w_b (k UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO w_f SELECT number FROM numbers(50000);
+INSERT INTO w_a SELECT number FROM numbers(5000);
+INSERT INTO w_b SELECT number FROM numbers(5000);
+
+SELECT algorithm, countIf(explain LIKE '%ConstantJoin%') AS joins_without_condition
+FROM
+(
+    SELECT 'dpsub' AS algorithm, explain FROM (EXPLAIN SELECT count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k
+        SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_limit = 10)
+    UNION ALL
+    SELECT 'dphyp', explain FROM (EXPLAIN SELECT count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k
+        SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', query_plan_optimize_join_order_limit = 10)
+    UNION ALL
+    SELECT 'dpsize', explain FROM (EXPLAIN SELECT count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k
+        SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', query_plan_optimize_join_order_limit = 10)
+    UNION ALL
+    SELECT 'greedy', explain FROM (EXPLAIN SELECT count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k
+        SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 10)
+)
+GROUP BY algorithm
+ORDER BY algorithm;
+
+SELECT 'mixed integer keys', count() FROM w_f JOIN w_a ON w_f.k = w_a.k JOIN w_b ON w_f.k = w_b.k;
