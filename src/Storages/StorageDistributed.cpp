@@ -225,7 +225,6 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
-    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -1755,7 +1754,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1765,18 +1763,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
-        {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
-            if (!deps_mv.empty())
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv));
-            }
-        }
+        checkAlterKeepsDependentViews(commands, command, local_context);
     }
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
