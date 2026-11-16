@@ -25,7 +25,7 @@ public:
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
     void setColumnIdentifiers(NameToNameVector column_identifiers_) { column_identifiers = std::move(column_identifiers_); }
-    const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
+    [[nodiscard]] const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
 
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 private:

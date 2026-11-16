@@ -258,7 +258,7 @@ struct SelectQueryInfo
     [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 
     /// The (column identifier, column name) pairs of `buildNodeNameToInputNodeColumn`, sorted by identifier.
-    NameToNameVector getColumnIdentifiers() const;
+    [[nodiscard]] NameToNameVector getColumnIdentifiers() const;
     /// Keeps the pairs whose column exists in `storage_snapshot`, typed as stored there.
     void setColumnIdentifiers(const NameToNameVector & identifiers, const StorageSnapshotPtr & storage_snapshot);
 };

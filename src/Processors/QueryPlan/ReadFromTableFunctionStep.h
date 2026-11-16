@@ -22,7 +22,7 @@ public:
     [[nodiscard]] TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
     void setColumnIdentifiers(NameToNameVector column_identifiers_) { column_identifiers = std::move(column_identifiers_); }
-    const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
+    [[nodiscard]] const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
 
 private:
     std::string serialized_ast;
