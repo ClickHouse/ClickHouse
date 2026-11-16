@@ -350,14 +350,14 @@ public:
     const String & getName() const { return name; }
 
     /// Where the cluster was defined. Subclusters derived from an existing cluster keep the source of the original.
-    SourceId getSourceId() const { return source_id; }
+    [[nodiscard]] SourceId getSourceId() const { return source_id; }
 
     /// Human-readable `source` value for `system.clusters`. Empty for clusters without a persisted definition (e.g. `remote`).
     static String formatSourceIdForSystemTable(SourceId source_id);
 
-    String getCreateStatement(bool show_secrets) const;
+    [[nodiscard]] String getCreateStatement(bool show_secrets) const;
 
-    const String & getSQLCreateQuery() const { return create_query; }
+    [[nodiscard]] const String & getSQLCreateQuery() const { return create_query; }
 
     /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
     /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
