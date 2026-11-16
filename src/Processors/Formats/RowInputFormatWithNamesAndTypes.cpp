@@ -114,7 +114,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
         tryDetectHeader(column_names, type_names);
 
     if (!column_names.empty() && format_reader->readsTupleFromSeparateFields())
-        collapseCSVHeaderTupleNames(getPort().getHeader(), column_indexes_by_names, column_names, type_names, format_settings.with_types_use_header);
+        collapseCSVHeaderTupleNames(getPort().getHeader(), column_indexes_by_names, format_settings, column_names, type_names, format_settings.with_types_use_header);
 
     if (!column_names.empty())
     {
@@ -191,7 +191,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(VectorWi
     {
         collapsed_first_row = first_row_values;
         VectorWithMemoryTracking<String> no_types;
-        collapseCSVHeaderTupleNames(getPort().getHeader(), column_indexes_by_names, collapsed_first_row, no_types, false);
+        collapseCSVHeaderTupleNames(getPort().getHeader(), column_indexes_by_names, format_settings, collapsed_first_row, no_types, false);
         first_row_names = &collapsed_first_row;
     }
     UnorderedSetWithMemoryTracking<std::string_view> first_row_values_set(first_row_names->begin(), first_row_names->end());

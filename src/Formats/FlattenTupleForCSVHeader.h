@@ -8,6 +8,7 @@ namespace DB
 
 class Block;
 class CaseAwareBlockNameMap;
+struct FormatSettings;
 
 /// Builds the names and type names for a CSV-family WithNames(AndTypes) header.
 /// When `flatten` is true, every (named or unnamed) Tuple column is expanded recursively into
@@ -29,9 +30,11 @@ bool csvHeaderNamesMayProduceRawBytes(const Block & sample, bool flatten, bool w
 /// flattened element names of a bare Tuple column of `header`, none of which is a column itself, is replaced
 /// by that column's name, so the column is read from the whole run. `type_names`, when it has the same size,
 /// is collapsed in step to the column's type name; with `check_types` a different element type throws.
+/// Names are compared like column names, with `input_format_column_name_matching_mode`.
 void collapseCSVHeaderTupleNames(
     const Block & header,
     const CaseAwareBlockNameMap & column_indexes_by_names,
+    const FormatSettings & format_settings,
     VectorWithMemoryTracking<String> & names,
     VectorWithMemoryTracking<String> & type_names,
     bool check_types);

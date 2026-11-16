@@ -16,4 +16,11 @@ SELECT * FROM file(currentDatabase() || '_05815_types.csv', 'CSVWithNamesAndType
 INSERT INTO FUNCTION file(currentDatabase() || '_05815_custom.csv', 'CustomSeparatedWithNames') SELECT * FROM tr SETTINGS engine_file_truncate_on_insert = 1, format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
 SELECT * FROM file(currentDatabase() || '_05815_custom.csv', 'CustomSeparatedWithNames', 'id UInt64, name String, t Tuple(UInt64, String), nt Tuple(a UInt64, b String), nst Tuple(x UInt8, y Tuple(p UInt8, q String))') ORDER BY id SETTINGS format_custom_escaping_rule = 'CSV', format_custom_field_delimiter = ',';
 
+SELECT * FROM file(currentDatabase() || '_05815.csv', 'CSVWithNames', 'ID UInt64, NAME String, T Tuple(UInt64, String), NT Tuple(A UInt64, B String), NST Tuple(X UInt8, Y Tuple(P UInt8, Q String))') ORDER BY ID;
+SELECT * FROM file(currentDatabase() || '_05815.csv', 'CSVWithNames', 'ID UInt64, NAME String, T Tuple(UInt64, String), NT Tuple(A UInt64, B String), NST Tuple(X UInt8, Y Tuple(P UInt8, Q String))') ORDER BY ID SETTINGS input_format_column_name_matching_mode = 'ignore_case';
+SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(UInt64, String), `t.1` UInt64', $$"id","t.1","t.2"
+1,5,"x"$$);
+SELECT * FROM format(CSVWithNames, 'id UInt64, t Tuple(UInt64, String)', $$"id","t","t.1","t.2"
+1,5,6,"x"$$); -- { serverError INCORRECT_DATA }
+
 DROP TABLE tr;
