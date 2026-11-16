@@ -863,7 +863,7 @@ ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
 When enabled, merges that can only delete source rows (e.g. merges in `ReplacingMergeTree` and `CollapsingMergeTree`,
 merges applying lightweight deletes or `TTL ... DELETE`) merge text indexes and projections with the `_part_offset` column
 instead of rebuilding them for the resulting part. A text index of a column is still built for the resulting part
-when the merge keeps at most a tenth of the source rows.
+when a vertical merge keeps at most a tenth of the source rows.
 )", 0, \
         {"26.11", false, true, "New setting to merge text indexes and projections with the `_part_offset` column instead of rebuilding them in merges that can only delete rows"}) \
     DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(

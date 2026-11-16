@@ -2272,12 +2272,6 @@ namespace
 /// Building the text indexes of the resulting part is cheaper than merging them when it keeps at most one row per this many source rows.
 constexpr UInt64 SOURCE_ROWS_PER_BUILT_ROW = 10;
 
-/// Whether the index reads a column as is, so that keeping the values for a deferred build computes nothing.
-bool isTextIndexOfColumn(const IndexDescription & index)
-{
-    return index.column_names.size() == 1 && index.expression->getRequiredColumns() == index.column_names;
-}
-
 }
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
@@ -3080,8 +3074,8 @@ bool MergeTask::MergeTextIndexStage::prepare() const
 
     auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
-    /// Whether the index was built for the resulting part: always if the indexes are rebuilt, and in a merge that dropped
-    /// most rows unless the build was abandoned (see `createMergedStream` and `createPipelineForReadingOneColumn`).
+    /// Whether the index was built for the resulting part: always if the indexes are rebuilt,
+    /// and for a gathered column of a vertical merge that dropped most rows (see `createPipelineForReadingOneColumn`).
     auto is_built_for_result = [&](const String & index_name)
     {
         if (global_ctx->rebuild_text_indexes)
@@ -3091,10 +3085,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         if (it == global_ctx->build_text_index_transforms.end())
             return false;
 
-        return std::ranges::any_of(it->second, [&](const auto & transform)
-        {
-            return transform->hasIndex(index_name) && !transform->isAbandoned();
-        });
+        return std::ranges::any_of(it->second, [&](const auto & transform) { return transform->hasIndex(index_name); });
     };
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
@@ -4156,23 +4147,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addSkipIndexesExpressionSteps(merge_parts_query_plan, global_ctx->merging_skip_indexes, global_ctx);
 
     if (global_ctx->rebuild_text_indexes)
-    {
         addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
-    }
-    else if (global_ctx->merged_part_offsets && global_ctx->merged_part_offsets->isMappingWithDrops()
-        && !global_ctx->text_indexes_to_merge.empty() && std::ranges::all_of(global_ctx->text_indexes_to_merge, isTextIndexOfColumn))
-    {
-        /// How many rows the merge drops is known only at its end. Keep the surviving values of the indexed columns while
-        /// they are few and build the indexes of the resulting part from them, otherwise merge the source indexes.
-        addBuildTextIndexesStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx);
-
-        auto it = global_ctx->build_text_index_transforms.find(global_ctx->new_data_part->name);
-        if (it != global_ctx->build_text_index_transforms.end())
-        {
-            for (const auto & transform : it->second)
-                transform->deferBuild(global_ctx->merge_list_element_ptr->total_rows_count / SOURCE_ROWS_PER_BUILT_ROW);
-        }
-    }
 
     /// If merge may reduce rows, rebuild statistics for the resulting part.
     if (global_ctx->rows_reduction != RowsReduction::None)

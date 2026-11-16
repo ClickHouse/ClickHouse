@@ -29,5 +29,7 @@ t_text_lwd_rebuilt	Vertical	0	1
 built
 1000	1
 1
-t_text_built	0	1
-t_text_built_rebuilt	0	1
+1
+t_text_built	Vertical	0	1
+t_text_built_horizontal	Horizontal	1	0
+t_text_built_rebuilt	Vertical	0	1
