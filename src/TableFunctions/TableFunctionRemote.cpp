@@ -71,7 +71,7 @@ void TableFunctionRemote::skipLocalShardsWithoutTable(const ContextPtr & context
         return;
 
     const auto & shards = cluster->getShardsInfo();
-    std::vector<size_t> kept;
+    std::vector<size_t> kept; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (size_t i = 0; i < shards.size(); ++i)
     {
         bool has_table = true;
