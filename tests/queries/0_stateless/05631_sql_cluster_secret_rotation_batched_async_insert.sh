@@ -4,9 +4,10 @@
 # no-fasttest: inter-server `secret` needs SSL, and the fast test build has no failpoints.
 
 # `DistributedAsyncInsertBatch::sendBatch` borrows one connection for every file of the batch.
-# `IConnectionPool::Entry` does not keep the pool alive, so rotating the cluster secret while the
-# batch is in flight must not destroy that pool. The failpoint pauses after the first file, the
-# secret is changed, and the rest of the batch still has to land. A later insert uses the new secret.
+# `IConnectionPool::Entry` does not keep the pool alive. The failpoint pauses after the first file,
+# `ALTER CLUSTER` rotates the secret, and another async insert then calls `getDirectoryQueue` so the
+# queue drops the old pool while the batch is still paused. The rest of that batch must still land,
+# and the file queued during the pause must land with the new secret.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -94,6 +95,12 @@ ALTER CLUSTER ${cluster} (
 )
 "
 
+# `ALTER CLUSTER` only publishes the new cluster. The queue keeps its pool until the next async
+# insert calls `getDirectoryQueue` and `updatePool`. Do that while the batch is still paused, so the
+# in-flight `sendBatch` is left holding the only reference to the pool it borrowed.
+$CLICKHOUSE_CLIENT --distributed_foreground_insert 0 --prefer_localhost_replica 0 \
+    --query "INSERT INTO ${dist} (x) SELECT 1"
+
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT ${failpoint}"
 
 if ! wait "${flush_pid}"; then
@@ -105,9 +112,7 @@ flush_pid=""
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM ${data}"
 
-# The queue now signs with the rotated secret. This insert must still be delivered.
+# The file queued during the pause was not part of the paused batch. It is sent with the new secret.
 $CLICKHOUSE_CLIENT --query "SYSTEM START DISTRIBUTED SENDS ${dist}"
-$CLICKHOUSE_CLIENT --distributed_foreground_insert 0 --prefer_localhost_replica 0 \
-    --query "INSERT INTO ${dist} (x) SELECT 1"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH DISTRIBUTED ${dist}"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM ${data}"

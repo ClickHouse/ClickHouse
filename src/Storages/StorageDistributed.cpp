@@ -2072,16 +2072,26 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
-    /// `Address::operator==` does not compare the inter-server secret, but the queue's connection pool
-    /// signs every new request with it. Rotating only the secret replaces that pool in place.
-    /// An in-flight `sendBatch` keeps the pool it already borrowed.
+    /// `Address::operator==` identifies a replica (host, port, user, ...). The queue's connection pool
+    /// also snapshots the inter-server secret, compression, priority, chunked protocol and quota key
+    /// (`ConnectionPoolFactory::Key`). A change to only those fields must still replace the pool in
+    /// place: `PoolWithFailoverBase` copies `priority` once, at construction. An in-flight `sendBatch`
+    /// keeps the pool it already borrowed.
     auto addresses_changed = [](const Cluster::Addresses & lhs, const Cluster::Addresses & rhs)
     {
         if (lhs != rhs)
             return true;
         for (size_t i = 0; i < lhs.size(); ++i)
         {
-            if (lhs[i].cluster != rhs[i].cluster || lhs[i].cluster_secret != rhs[i].cluster_secret)
+            const auto & left = lhs[i];
+            const auto & right = rhs[i];
+            if (left.cluster != right.cluster
+                || left.cluster_secret != right.cluster_secret
+                || left.compression != right.compression
+                || left.priority.value != right.priority.value
+                || left.proto_send_chunked != right.proto_send_chunked
+                || left.proto_recv_chunked != right.proto_recv_chunked
+                || left.quota_key != right.quota_key)
                 return true;
         }
         return false;
