@@ -13,7 +13,7 @@ struct SelectQueryInfo;
 struct TimeSeriesSettings;
 
 /// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table
-/// by reading from its target tables "tags", "samples", "metric families". Only the target tables required by
+/// by reading from its target tables "tags", "samples", "histograms", "metric families". Only the target tables required by
 /// `requested_columns` are read; when none of them requires another table (e.g. for `SELECT count()`
 /// the planner requests just the smallest column, `metric_name`), the "tags" table is read, so the
 /// count equals the number of series.
@@ -31,7 +31,8 @@ ASTPtr makeASTSelectFromTimeSeries(
 
 /// The settings the generated read query must run with, independent of the caller's session/profile.
 /// Apply them to the (child) context that runs `makeASTSelectFromTimeSeries`.
-/// `final` is whether the outer query uses the `FINAL` keyword (see `SelectQueryInfo::isFinal`).
-SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final);
+/// `final` is whether the outer query uses the `FINAL` keyword (see `SelectQueryInfo::isFinal`),
+/// `reads_histograms` whether the column `histograms` is requested.
+SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final, bool reads_histograms);
 
 }

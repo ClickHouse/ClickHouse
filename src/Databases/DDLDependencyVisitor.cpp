@@ -135,7 +135,8 @@ namespace
                         || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
                         || target.kind == ViewTarget::Kind::TimeRanges
-                        || target.kind == ViewTarget::Kind::MetricFamilies)
+                        || target.kind == ViewTarget::Kind::MetricFamilies
+                        || target.kind == ViewTarget::Kind::Histograms)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
                         /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
