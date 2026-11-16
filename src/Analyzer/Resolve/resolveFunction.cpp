@@ -3271,11 +3271,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
+        ///
+        /// Server-constant functions (`hostName`, `tcpPort`, `serverUUID`, ...) capture
+        /// `context->isDistributed()` when they are built, and it decides whether they are folded to a
+        /// constant (see `FunctionConstantBase::isSuitableForConstantFolding`). A sub-SELECT over
+        /// `clusterAllReplicas` and the outer query disagree on it, so a base shared between them makes
+        /// the shard query and the local plan disagree on the header. Hence the flag is a part of the key.
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[hash];
+            function_base_cache = &functions_cache[{hash, scope.context->isDistributed()}];
         }
     }
 
