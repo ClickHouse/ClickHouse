@@ -275,7 +275,8 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
             default: return url_legal_name_chars.contains(c) ? original_size : skip_past_next_schema(offset + 1);
         }
     };
-    for (size_t i = 0; i < original_size;) {
+    for (size_t i = 0; i < original_size;)
+    {
         i = parse_schema_from_root(i);
         if (i < original_size)
             i = parse_after_authority(i);
