@@ -10926,6 +10926,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
 
         Coordination::Requests ops;
         std::vector<EphemeralLockInZooKeeper> delimiting_block_locks;
+        SCOPE_EXIT_SAFE(EphemeralLockInZooKeeper::unlockAll(delimiting_block_locks));
         std::vector<size_t> log_entry_ops_idx;
         ops.reserve(partition_ids.size() * 2);
         delimiting_block_locks.reserve(partition_ids.size());
