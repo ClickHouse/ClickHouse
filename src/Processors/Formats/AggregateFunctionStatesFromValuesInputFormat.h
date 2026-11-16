@@ -47,7 +47,7 @@ public:
     {
         underlying->setParseErrorDiagnosticProvider(std::move(provider));
     }
-    std::optional<size_t> getRowsReachedOnParseError() const override { return underlying->getRowsReachedOnParseError(); }
+    [[nodiscard]] std::optional<size_t> getRowsReachedOnParseError() const override { return underlying->getRowsReachedOnParseError(); }
     void setSerializationHints(const SerializationInfoByName & hints) override { underlying->setSerializationHints(hints); }
     size_t getApproxBytesReadForChunk() const override { return underlying->getApproxBytesReadForChunk(); }
     void needOnlyCount() override { underlying->needOnlyCount(); }

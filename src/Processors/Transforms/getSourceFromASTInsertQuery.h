@@ -146,7 +146,7 @@ public:
     /// segmentation thread while the parse-error diagnostic reads the capture from the thread that
     /// handles the exception, so the capture is taken under a lock and copied out: a `string_view` into
     /// the growing string would be read while another thread appends to it.
-    CapturedPrefix getCapturedPrefix(const String & format_name, const ContextPtr & context) const;
+    [[nodiscard]] CapturedPrefix getCapturedPrefix(const String & format_name, const ContextPtr & context) const;
 
     /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
     /// working as if the wrapper were not there.

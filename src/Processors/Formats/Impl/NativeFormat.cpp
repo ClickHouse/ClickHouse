@@ -121,7 +121,7 @@ public:
 
     /// The data carries named columns that the parser maps onto the destination by (exact) name,
     /// see `NativeReader::read`.
-    bool mapsColumnsByName() const override { return true; }
+    [[nodiscard]] bool mapsColumnsByName() const override { return true; }
 
     /// With `input_format_native_allow_types_conversion` enabled (the default) `NativeReader`
     /// `castColumn`s a source column of a different type to the destination type, and an unsigned
@@ -129,12 +129,12 @@ public:
     /// floating-point type into `IPv4` is not implemented). With the conversion disabled any type
     /// difference is rejected with `TYPE_MISMATCH` (not a parse error) before any value is parsed,
     /// so a numeric column really is a mismatch for an `IPv4` destination then.
-    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override
+    [[nodiscard]] NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override
     {
         return settings.native.allow_types_conversion ? NumericValueIntoIPv4Column::UnsignedIntegerOnly : NumericValueIntoIPv4Column::None;
     }
 
-    bool castsStringSourceColumns() const override { return settings.native.allow_types_conversion; }
+    [[nodiscard]] bool castsStringSourceColumns() const override { return settings.native.allow_types_conversion; }
 
 private:
     const FormatSettings settings;

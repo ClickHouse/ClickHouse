@@ -97,16 +97,16 @@ public:
     /// The values are typed MessagePack objects; the parser rejects a non-string value for a `String`
     /// destination column (see `insertInteger` and its siblings), unlike the flat-text formats, which
     /// read every field verbatim into a `String` column.
-    bool readsAnyValueIntoStringColumn() const override { return false; }
+    [[nodiscard]] bool readsAnyValueIntoStringColumn() const override { return false; }
 
     /// A MessagePack integer is read straight into an `IPv4` column (see `insertInteger`'s
     /// `TypeIndex::IPv4` arm).
-    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
+    [[nodiscard]] NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
     /// A MessagePack float is accepted only into the matching `Float*` column (`insertFloat32` /
     /// `insertFloat64`), and an integer is rejected for the `Float*` columns in turn
     /// (`insertInteger` has no floating-point arm).
-    bool storesTypedNumericValues() const override { return true; }
+    [[nodiscard]] bool storesTypedNumericValues() const override { return true; }
 
 private:
     msgpack::object_handle readObject();

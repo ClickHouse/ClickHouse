@@ -48,7 +48,7 @@ public:
     /// has reached the row after them (the same number the "at row N" message part is derived from).
     /// A failure while evaluating the deduced expression templates happens after the whole block has
     /// already been read, so in that case no further row was reached.
-    std::optional<size_t> getRowsReachedOnParseError() const override
+    [[nodiscard]] std::optional<size_t> getRowsReachedOnParseError() const override
     {
         return reading_row ? total_rows + 1 : total_rows;
     }
@@ -132,11 +132,11 @@ private:
     /// this does not depend on `input_format_values_interpret_expressions`: the retry first goes
     /// through `ConstantExpressionTemplate`, which parses and converts a literal on its own and is
     /// used regardless of that setting (only a genuine expression needs the interpreter).
-    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
+    [[nodiscard]] NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
     /// `ValuesBlockInputFormat::tryReadValue` reads a quoted string literal for an `Array` / `Tuple` /
     /// `Map` column with `tryDeserializeWholeText` before falling back to the expression parser.
-    bool readsQuotedStringsIntoNestedColumnsAsWholeText() const override { return true; }
+    [[nodiscard]] bool readsQuotedStringsIntoNestedColumnsAsWholeText() const override { return true; }
 
     PeekableReadBuffer buf;
     ParserExpression parser;

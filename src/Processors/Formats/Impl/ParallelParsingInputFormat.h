@@ -141,7 +141,7 @@ private:
     /// the unit's offset via `setRowsReadBefore`), so the value refers to the whole input, not the
     /// unit. `nullopt` when the recorded exception did not come from a row parser (e.g. from the
     /// segmentator thread).
-    std::optional<size_t> getRowsReachedOnParseError() const override;
+    [[nodiscard]] std::optional<size_t> getRowsReachedOnParseError() const override;
 
     void onFinish() final
     {

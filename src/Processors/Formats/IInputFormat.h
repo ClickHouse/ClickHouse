@@ -201,12 +201,12 @@ public:
     /// whose unit failed (its segmenting thread reads ahead of the parsers, but the child parsers
     /// count rows globally); `nullopt` means the format cannot tell, in which case the diagnostic
     /// falls back to sampling the data without a row bound.
-    virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
 
     /// The number of header rows (skipped first lines, column names, column types) read by `readPrefix`.
     /// They are not counted as data rows by the parser, but the file segmentation engine of
     /// `ParallelParsingInputFormat` counts them in the row offsets of the later units.
-    virtual size_t getNumberOfHeaderRows() const { return 0; }
+    [[nodiscard]] virtual size_t getNumberOfHeaderRows() const { return 0; }
 
     /// How many of the rows passed to `setRowsReadBefore` were header rows rather than data rows
     /// (see getNumberOfHeaderRows). The row numbers reported in parse errors exclude them, so they

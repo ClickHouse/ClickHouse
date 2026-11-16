@@ -96,7 +96,7 @@ protected:
     /// counter produces the "(at row N)" part of the message), so at that point it is the 1-based
     /// number of the row the parser had reached. An error thrown before any row was read (e.g. from
     /// a header in readPrefix) reports the first row, so the diagnostic may sample at least one row.
-    std::optional<size_t> getRowsReachedOnParseError() const override { return std::max<size_t>(getDataRowNum(), 1); }
+    [[nodiscard]] std::optional<size_t> getRowsReachedOnParseError() const override { return std::max<size_t>(getDataRowNum(), 1); }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -114,7 +114,7 @@ private:
     size_t header_rows_read_before = 0;
 
     /// The number of the current row among the data rows, excluding the header rows counted in `total_rows`.
-    size_t getDataRowNum() const { return total_rows - std::min(header_rows_read_before, total_rows); }
+    [[nodiscard]] size_t getDataRowNum() const { return total_rows - std::min(header_rows_read_before, total_rows); }
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;

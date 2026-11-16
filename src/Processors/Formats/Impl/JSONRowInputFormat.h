@@ -54,16 +54,16 @@ public:
     /// otherwise those declared types are ignored. Without a `meta` section the format falls back to
     /// `JSONEachRow` and the types are inferred (and widened) from the values. Both properties are
     /// therefore known only after `readSchema` has inspected the data.
-    bool hasExactTypesFromData() const override
+    [[nodiscard]] bool hasExactTypesFromData() const override
     {
         return read_metadata_from_input && !metadata_ignored_by_parser && format_settings.json.validate_types_from_metadata;
     }
-    bool schemaDescribesParsedData() const override
+    [[nodiscard]] bool schemaDescribesParsedData() const override
     {
         return !read_metadata_from_input || (!metadata_ignored_by_parser && format_settings.json.validate_types_from_metadata);
     }
     /// `JSONRowInputFormat::readPrefix` checks the declared types with `JSONUtils::validateMetadataByHeader`.
-    bool validatesSchemaAsMetadataByExactName() const override { return hasExactTypesFromData(); }
+    [[nodiscard]] bool validatesSchemaAsMetadataByExactName() const override { return hasExactTypesFromData(); }
 
 private:
     JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);

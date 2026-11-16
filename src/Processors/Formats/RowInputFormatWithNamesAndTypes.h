@@ -53,7 +53,7 @@ protected:
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
     bool supportsCustomSerializations() const override { return true; }
-    size_t getNumberOfHeaderRows() const override { return number_of_header_rows; }
+    [[nodiscard]] size_t getNumberOfHeaderRows() const override { return number_of_header_rows; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -196,16 +196,16 @@ public:
     /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix). The same
     /// applies to a types row auto-detected in the data of a plain format (`*_detect_header`), which
     /// `readSchema` latches in `types_detected_from_data`.
-    bool hasExactTypesFromData() const override
+    [[nodiscard]] bool hasExactTypesFromData() const override
     {
         return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
     }
 
     /// `RowInputFormatWithNamesAndTypes::readPrefix` compares the declared type name with `getName` of
     /// the destination type, not the types themselves.
-    bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
+    [[nodiscard]] bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
 
-    UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
+    [[nodiscard]] UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
 
     /// When a types row is present but the parser is configured to ignore it
     /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
@@ -213,7 +213,7 @@ public:
     /// describe what is parsed, so a comparison against it would attach a misleading explanation to an
     /// unrelated value-level parse error (e.g. a `CSVWithNamesAndTypes` types row declaring `String` for a
     /// `UInt8` destination that happily accepts the quoted number `"1"` in the data).
-    bool schemaDescribesParsedData() const override
+    [[nodiscard]] bool schemaDescribesParsedData() const override
     {
         return !((with_types || types_detected_from_data) && !format_settings.with_types_use_header);
     }
@@ -222,7 +222,7 @@ public:
     /// latched by `readSchema` in `names_detected_from_data`) makes the parser map the columns by name,
     /// like the -WithNames formats do, as long as the parser is configured to use a names header
     /// (`input_format_with_names_use_header`).
-    bool hasStrictOrderOfColumns() const override
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override
     {
         return !(names_detected_from_data && format_settings.with_names_use_header);
     }
@@ -233,16 +233,16 @@ public:
     /// see `RowInputFormatWithNamesAndTypes::readPrefix`. This covers the `*WithNames*` formats that do
     /// not advertise `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g.
     /// `RowBinaryWithNamesAndTypes`), which `hasStrictOrderOfColumns` alone does not capture.
-    bool mapsColumnsByName() const override
+    [[nodiscard]] bool mapsColumnsByName() const override
     {
         return (with_names || names_detected_from_data) && format_settings.with_names_use_header;
     }
 
     /// The header names are resolved against the destination through `CaseAwareBlockNameMap`
     /// (see `ColumnMapping::addColumns`), honoring `input_format_column_name_matching_mode`.
-    bool honorsColumnNameMatchingMode() const override { return true; }
+    [[nodiscard]] bool honorsColumnNameMatchingMode() const override { return true; }
 
-    bool readRowsAheadToDetectHeaderAndFoundNone() const override
+    [[nodiscard]] bool readRowsAheadToDetectHeaderAndFoundNone() const override
     {
         return header_detection_attempted && !names_detected_from_data && !types_detected_from_data;
     }

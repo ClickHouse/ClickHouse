@@ -135,7 +135,7 @@ public:
 
     /// `SQLiteInputFormat` selects the expected header columns by name and reads every value as text,
     /// so neither the declared column order nor the declared `SQLite` types describe what is parsed.
-    bool schemaDescribesParsedData() const override { return false; }
+    [[nodiscard]] bool schemaDescribesParsedData() const override { return false; }
 
     NamesAndTypesList readSchema() override
     {
