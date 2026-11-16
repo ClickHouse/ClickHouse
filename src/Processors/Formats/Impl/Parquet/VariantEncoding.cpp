@@ -1039,9 +1039,10 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
     const auto & members = type.getVariants();
     Columns variants(members.size());
     VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(members.size());
-    for (ColumnVariant::Discriminator local = 0; local < members.size(); ++local)
+    for (size_t local = 0; local < members.size(); ++local)
     {
-        const auto & written_type = written_variant_type->getVariant(written_variant.globalDiscriminatorByLocal(local));
+        const auto & written_type = written_variant_type->getVariant(
+            written_variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local)));
         const size_t member = std::find_if(
             written_types.begin(), written_types.end(), [&](const auto & t) { return t->equals(*written_type); }) - written_types.begin();
         variants[local] = castColumn({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);

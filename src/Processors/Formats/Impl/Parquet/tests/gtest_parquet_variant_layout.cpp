@@ -60,7 +60,7 @@ String hex(std::string_view bytes)
 {
     String res;
     for (size_t i = 0; i < bytes.size(); ++i)
-        res += fmt::format("{}{:02X}", i ? " " : "", static_cast<UInt8>(bytes[i]));
+        res += fmt::format("{}{:02X}", i ? " " : "", static_cast<unsigned>(static_cast<unsigned char>(bytes[i])));
     return res;
 }
 
@@ -175,7 +175,7 @@ TEST(ParquetVariantLayout, LargeObject)
     EXPECT_EQ(hex(encoded.value.substr(0, 5)), "46 00 01 00 00");
     EXPECT_EQ(encoded.value.size(), 1 + 4 + 256 + 257 * 2 + 512);
     for (size_t i = 0; i < 256; ++i)
-        EXPECT_EQ(static_cast<UInt8>(encoded.value[5 + i]), i);
+        EXPECT_EQ(static_cast<unsigned char>(encoded.value[5 + i]), i);
 
     const Encoded again = reencode(encoded);
     EXPECT_EQ(hex(again.metadata), hex(encoded.metadata));
