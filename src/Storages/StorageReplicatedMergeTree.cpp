@@ -10914,6 +10914,8 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
 {
     entries.reserve(partition_ids.size());
 
+    QueryStatusPtr process_list_element = query_context->getProcessListElementSafe();
+
     /// Retry if alter_partition_version changes
     for (size_t retry = 0; retry < 1000; ++retry)
     {
@@ -10930,7 +10932,12 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         log_entry_ops_idx.reserve(partition_ids.size());
 
         for (const auto & partition_id : partition_ids)
+        {
+            /// Every partition costs several Keeper round trips, so stop on KILL QUERY, max_execution_time or shutdown.
+            if (process_list_element)
+                process_list_element->checkTimeLimit(OverflowMode::THROW);
             addOpsToDropAllPartsInPartition(zookeeper, partition_id, detach, ops, entries, delimiting_block_locks, log_entry_ops_idx);
+        }
 
         /// Check and update version to avoid race with REPLACE_RANGE.
         /// Otherwise new parts covered by drop_range_info may appear after execution of current DROP_RANGE entry
