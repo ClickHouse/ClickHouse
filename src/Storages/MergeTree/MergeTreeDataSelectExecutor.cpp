@@ -1349,17 +1349,30 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
         const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
         const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
 
-        auto l_index_priority = l_is_minmax ? 1 : 2;
-        auto r_index_priority = r_is_minmax ? 1 : 2;
+        /// Keep minmax first because it is cheap and may quickly remove whole mark ranges
+        /// before more expensive row-level or vector skip indexes are evaluated.
+        auto l_index_priority = l_is_minmax ? 0 : 3;
+        auto r_index_priority = r_is_minmax ? 0 : 3;
+
+        /// row_bitmap must be evaluated before vector_similarity so its exact row bitmap can
+        /// be stored in read hints and consumed by the vector index in this same pass.
+        if (l_index->isRowBitmapIndex())
+            l_index_priority = 1;
+        if (r_index->isRowBitmapIndex())
+            r_index_priority = 1;
 
 #if USE_USEARCH
-        // A vector similarity index (if present) is the most selective, hence move it to front
+        /// A vector similarity index consumes row_bitmap filters, so run it after row_bitmap
+        /// indexes even though vector search is usually the most selective skip index.
         bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
         bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
         if (l_is_vectorsimilarity)
-            l_index_priority = 0;
+            /// Priority 2 means vector search runs after row_bitmap but before generic skip
+            /// indexes, preserving most of its original selectivity advantage.
+            l_index_priority = 2;
         if (r_is_vectorsimilarity)
-            r_index_priority = 0;
+            /// Use the same priority for the right-hand side of the stable sort comparison.
+            r_index_priority = 2;
 #endif
         // negated since we want to prioritize coarser indexes
         const auto neg_l_granularity = -l_index->getGranularity();
@@ -1489,6 +1502,24 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
             partial_eval_results.resize(
                 part.getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
+        /// Whether a vector similarity index of this part can consume a row bitmap in this pass.
+        /// Only then is the row bitmap of a row_bitmap index retained in the read hints.
+        bool has_in_traversal_vector_consumer = false;
+        for (size_t idx = 0; idx < num_indexes; ++idx)
+        {
+            const auto index_idx = skip_index_order ? (*skip_index_order)[idx] : idx;
+            const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+            if (!index_and_condition.index->isVectorSimilarityIndex() || !can_use_index(index_and_condition.index))
+                continue;
+
+            auto condition = index_and_condition.condition_template->generateForPart(part);
+            if (condition && condition->supportsInTraversalVectorFilter())
+            {
+                has_in_traversal_vector_consumer = true;
+                break;
+            }
+        }
+
         for (size_t idx = 0; idx < num_indexes; ++idx)
         {
             if (ranges.ranges.empty())
@@ -1524,9 +1555,15 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
                     params.mark_cache,
                     params.uncompressed_cache,
                     params.vector_similarity_index_cache,
+                    index_and_condition.index->isRowBitmapIndex() && has_in_traversal_vector_consumer,
                     params.use_skip_indexes_for_disjunctions,
                     partial_eval_results,
                     log);
+
+                /// The shortlist of a vector similarity index is final; a row bitmap collected for
+                /// this part is not passed on to the next one.
+                if (index_and_condition.index->isVectorSimilarityIndex())
+                    ranges.read_hints.vector_search_filters.clear();
             }
 
             stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1618,71 +1655,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             LoadedMergeTreeDataPartInfoForReader part_info(part.data_part, nullptr);
             auto index_order = computeSkipIndexOrder(part_info, skip_indexes.useful_indices, index_sizes);
-          
-            std::iota(index_order->begin(), index_order->end(), 0);
-
-            index_sizes.clear();
-
-            for (const auto & idx : skip_indexes.useful_indices)
-            {
-                size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
-
-                for (const auto & substream : format.substreams)
-                {
-                    String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
-                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
-                    /// reordering accounts for them instead of treating them as free.
-                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
-                }
-
-                index_sizes.emplace_back(index_size);
-            }
-
-            // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
-            {
-                const auto l_index = useful_indices[l].index;
-                const auto r_index = useful_indices[r].index;
-
-                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
-                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
-
-                /// Keep minmax first because it is cheap and may quickly remove whole mark ranges
-                /// before more expensive row-level or vector skip indexes are evaluated.
-                auto l_index_priority = l_is_minmax ? 0 : 3;
-                auto r_index_priority = r_is_minmax ? 0 : 3;
-
-                /// row_bitmap must be evaluated before vector_similarity so its exact row bitmap can
-                /// be stored in read hints and consumed by the vector index in this same pass.
-                if (l_index->isRowBitmapIndex())
-                    l_index_priority = 1;
-                if (r_index->isRowBitmapIndex())
-                    r_index_priority = 1;
-
-#if USE_USEARCH
-                /// A vector similarity index consumes row_bitmap filters, so run it after row_bitmap
-                /// indexes even though vector search is usually the most selective skip index.
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
-                    /// Priority 2 means vector search runs after row_bitmap but before generic skip
-                    /// indexes, preserving most of its original selectivity advantage.
-                    l_index_priority = 2;
-                if (r_is_vectorsimilarity)
-                    /// Use the same priority for the right-hand side of the stable sort comparison.
-                    r_index_priority = 2;
-#endif
-                // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
-
-                const auto l_size = idx_sizes[l];
-                const auto r_size = idx_sizes[r];
-
-                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
-            });
 
             {
                 std::lock_guard lock(order_cache.mutex);
@@ -1799,131 +1771,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , filter_context.context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
-                const auto & value_updated_columns = alter_conversions->getValueUpdatedColumns();
-                auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
-
-                auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
-                {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, ranges.data_part.get());
-                    if (!check_result)
-                    {
-                        return std::unexpected(PreformattedMessage::create(
-                            "Index {} is not used for part {}. Reason: {}",
-                            index->index.name, ranges.data_part->name, check_result.error().text));
-                    }
-
-                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
-                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
-                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
-                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
-                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
-                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
-                    /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
-                    /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
-                    const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
-                            && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
-                        || alter_conversions->hasDeleteMutation();
-                    if (index->isVectorSimilarityIndex() && has_deleted_rows)
-                    {
-                        return std::unexpected(PreformattedMessage::create(
-                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
-                            index->index.name, ranges.data_part->name));
-                    }
-                    return {};
-                };
-
-                const auto num_indexes = skip_indexes.useful_indices.size();
-
-                /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
-                const KeyCondition * rpn_template_for_part
-                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
-
-                PartialDisjunctionResult partial_eval_results;
-                if (rpn_template_for_part)
-                    partial_eval_results.resize(
-                        ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
-
-                bool has_in_traversal_vector_consumer = false;
-                for (const auto index_idx : skip_indexes.per_part_index_orders[part_index])
-                {
-                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
-                    if (!index_and_condition.index->isVectorSimilarityIndex() || !can_use_index(index_and_condition.index))
-                        continue;
-
-                    auto condition = index_and_condition.condition_template->generateForPart(ranges.data_part);
-                    if (condition && condition->supportsInTraversalVectorFilter())
-                    {
-                        has_in_traversal_vector_consumer = true;
-                        break;
-                    }
-                }
-
-                for (size_t idx = 0; idx < num_indexes; ++idx)
-                {
-                    if (ranges.ranges.empty())
-                        break;
-
-                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-                    const auto index_idx = index_order_at(part_index, idx);
-                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
-
-                    auto index_stat_idx = idx;
-                    if (settings[Setting::per_part_index_stats])
-                        index_stat_idx += num_indexes * part_index;
-
-                    auto & stat = useful_indices_stat[index_stat_idx];
-
-                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                    size_t total_granules = ranges.getMarksCount();
-                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-
-                    if (auto index_result = can_use_index(index_and_condition.index); !index_result)
-                    {
-                        LOG_TRACE(log, index_result.error());
-                        continue;
-                    }
-
-                    if (!is_index_supported_on_data_read(index_and_condition.index))
-                    {
-                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
-                            index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(ranges.data_part),
-                            rpn_template_for_part,
-                            part_info_for_reader,
-                            ranges.ranges,
-                            std::move(ranges.read_hints),
-                            reader_settings,
-                            mark_cache.get(),
-                            uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
-                            index_and_condition.index->isRowBitmapIndex() && has_in_traversal_vector_consumer,
-                            use_skip_indexes_for_disjunctions,
-                            partial_eval_results,
-                            log);
-
-                        if (index_and_condition.index->isVectorSimilarityIndex())
-                            ranges.read_hints.vector_search_filters.clear();
-                    }
-
-                    stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
-                    if (ranges.ranges.empty())
-                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                    skip_index_used_in_part[part_index] = 1; /// thread-safe
-                }
-
-                if (rpn_template_for_part)
-                {
-                    ranges.ranges = mergePartialResultsForDisjunctions(*part_info_for_reader,
-                                        ranges.ranges, *rpn_template_for_part,
-                                        partial_eval_results, reader_settings, log);
-
-                    sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-                }
-
-            }
+                return std::make_shared<LoadedMergeTreeDataPartInfoForReader>(data_part, std::move(alter_conversions));
+            };
             const size_t stats_offset = settings[Setting::per_part_index_stats] ? num_indexes * part_index : 0;
 
             if (analyzeSinglePart(

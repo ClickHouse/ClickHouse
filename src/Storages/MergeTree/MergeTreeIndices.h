@@ -187,6 +187,15 @@ public:
     /// explicit row-position filter and use it for exact filtered vector search.
     virtual bool supportsInTraversalVectorFilter() const { return false; }
 
+    /// Optional exact row predicate for vector-search hybrid filtering. Scalar indexes that store
+    /// row-position information can evaluate the current WHERE predicate on one index granule and
+    /// return a dense bitmap local to that granule. The vector index consumes this bitmap during
+    /// exact filtered search via VectorSearchFilter::contains().
+    virtual std::optional<VectorSearchFilter> calculateVectorSearchFilter(MergeTreeIndexGranulePtr /*granule*/) const
+    {
+        return std::nullopt;
+    }
+
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
