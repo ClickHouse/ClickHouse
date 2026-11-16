@@ -24,6 +24,7 @@ namespace DB::ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 namespace
@@ -219,6 +220,22 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     /// A name that is not a setting here stays a custom setting.
     ASSERT_TRUE(settings.isChanged("custom_unknown_here"));
     ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
+}
+
+GTEST_TEST(SettingFieldNumber, NonConvertibleFieldIsRejected)
+{
+    /// Rejecting a Field with no text representation must not format its value into the message
+    /// (because it could throw `LOGICAL_ERROR` instead of the clean `CANNOT_CONVERT_TYPE`).
+    SettingFieldUInt64 setting;
+    try
+    {
+        setting = Field(AggregateFunctionStateData{.name = "uniq", .data = ""});
+        FAIL();
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
 }
 
 GTEST_TEST(Settings, LegacyBinaryFormatRejectsZeroForANonZeroSetting)

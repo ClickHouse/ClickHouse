@@ -61,6 +61,12 @@ void forEachSecretArgumentNode(
             continue;
         }
 
+        if (const auto masked = secret_arguments.masked_arguments.find(n); masked != secret_arguments.masked_arguments.end())
+        {
+            on_secret(n, masked->second ? secretValueSlot(arguments[n]) : arguments[n]);
+            continue;
+        }
+
         if (secret_arguments.isSecretArgument(n))
             on_secret(n, secretValueSlot(arguments[n]));
     }

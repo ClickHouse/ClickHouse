@@ -722,13 +722,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     # DeltaLake table functions are not available under Memory Sanitizer (Rust code is not instrumented)
@@ -739,9 +739,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:
@@ -761,13 +761,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     if has_delta_lake:
@@ -777,9 +777,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:

@@ -113,6 +113,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool use_query_cache;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -2543,7 +2544,8 @@ static bool shouldUseQueryCacheForSubquery(
         for (const auto & change : query_node.getSettingsChanges())
         {
             if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
+                /// The node's context holds the clause as clamped and applied; the literal may be a string such as `'true'`.
+                return query_node.getContext()->getSettingsRef()[Setting::use_query_cache];
         }
     }
 

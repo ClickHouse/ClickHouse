@@ -151,7 +151,9 @@ BlockIO InterpreterDeleteQuery::execute()
         if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
         {
             MutationsInterpreter::Settings mutation_settings(false);
-            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+            auto validation_context = Context::createCopy(getContext());
+            validation_context->setAnalyzingBackgroundExpressions(true);
+            MutationsInterpreter(table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
         }
         table->mutate(mutation_commands, getContext());
         return {};

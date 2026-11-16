@@ -60,7 +60,19 @@ public:
     /// storage into its `*Cluster` variant with the cluster name argument, so that the nodes take their read
     /// tasks from the initiator instead of reading every file on their own. Called by `read` and by the
     /// distributed `INSERT ... SELECT` in `InterpreterInsertQuery`, which forwards the query the same way.
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    ///
+    /// `add_structure_and_format` tells whether to add the structure and format arguments. A `SELECT` needs them:
+    /// the initiator merges the streams of the nodes, so they must all produce its header. A forwarded
+    /// `INSERT ... SELECT` keeps the arguments as written: every node inserts on its own, and with an omitted or
+    /// `'auto'` structure it takes the structure from the insertion table
+    /// (`use_structure_from_insertion_table_in_table_functions`), which carries the `DEFAULT` expressions for the
+    /// fields missing in the files. The structure of the storage has names and types only, so adding it would make
+    /// the nodes fill those fields with the default values of their types.
+    virtual void updateQueryToSendIfNeeded(
+        ASTPtr & /*query*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const ContextPtr & /*context*/,
+        bool /*add_structure_and_format*/) {}
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}

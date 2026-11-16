@@ -132,6 +132,8 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
+    virtual void prefetch() {}
+
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
 protected:
