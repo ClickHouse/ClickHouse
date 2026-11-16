@@ -7,7 +7,9 @@ here. Function names and syntax sugar that the server already understands
 either natively or via a case-insensitive alias are left alone (e.g.
 `STDDEV`, `CARDINALITY`, `ARRAY_TO_STRING`, `REGEXP_SUBSTR`, `TRANSLATE`,
 `ARRAY_AGG`, `STRING_AGG`, `EXTRACT(EPOCH|DOW|... FROM ...)`,
-`date_part('unit', ...)`, `unnest(arr)` in expression position).
+`date_part('unit', ...)`, `unnest(arr)` in expression position,
+`AT TIME ZONE`, `FETCH FIRST n ROWS ONLY`, `OFFSET n ROWS FETCH ...`, and
+`[LEFT] JOIN LATERAL (subquery) ON TRUE` with `enable_lateral_join`).
 
 PostgreSQL `lhs = ANY(array_expr)` with a non-subquery operand is rewritten to
 `has(array_expr, lhs)`, since ClickHouse only understands `ANY(subquery)`.
@@ -20,7 +22,7 @@ import sys
 
 # String literals, quoted identifiers and comments are "protected spans": the
 # syntax rewrites below must never fire inside them, otherwise they would alter
-# literal values (e.g. `SELECT 'OFFSET 5 FETCH FIRST 10 ROWS ONLY'`) instead of
+# literal values (e.g. `SELECT 'OFFSET 5 LIMIT 10'`) instead of
 # dialect syntax. Before rewriting we replace each protected span with an opaque,
 # identifier-shaped placeholder that survives every rewrite as a single token,
 # and restore the original text at the end.
@@ -225,45 +227,20 @@ def rewrite_random(args):
     return f"rand({args})"
 
 
-def rewrite_age(args):
-    """age(timestamp) -> dateDiff('year', timestamp, now())
-       age(t1, t2) -> dateDiff('second', t2, t1)"""
-    parts = split_top_level_args(args)
-    if len(parts) == 1:
-        return f"dateDiff('year', {parts[0]}, now())"
-    elif len(parts) == 2:
-        return f"dateDiff('second', {parts[1]}, {parts[0]})"
-    return None
-
-
 def rewrite_functions(sql):
     """Rewrite PostgreSQL function calls that ClickHouse master does not yet
     accept. Function names with a built-in case-insensitive alias (STDDEV,
     CARDINALITY, ARRAY_TO_STRING, REGEXP_SUBSTR, TRANSLATE, ARRAY_AGG,
     STRING_AGG, unnest, date_part, ...) are left for the server to resolve."""
-    # STRING_AGGDistinct is a weird artifact — it's STRING_AGG(DISTINCT ...)
-    # that got mangled in the upstream extraction. Rewrite as a groupArray
-    # variant since `STRING_AGG(DISTINCT ...)` has no direct ClickHouse alias.
-    def rewrite_string_agg_distinct(args):
-        parts = split_top_level_args(args)
-        if len(parts) == 1:
-            parts.append("','")
-        if len(parts) != 2:
-            return None
-        return f"arrayStringConcat(arrayDistinct(assumeNotNull(groupArray(assumeNotNull({parts[0]})))), {parts[1]})"
-    sql = rewrite_function_call(sql, 'STRING_AGGDistinct', rewrite_string_agg_distinct)
-    sql = rewrite_function_call(sql, 'string_aggDistinct', rewrite_string_agg_distinct)
-
-    # string_to_array / STRING_TO_ARRAY (argument-reordered relative to splitByString)
+    # Function names are matched case-insensitively by `rewrite_function_call`.
+    # string_to_array (argument-reordered relative to splitByString)
     sql = rewrite_function_call(sql, 'string_to_array', rewrite_string_to_array)
-    sql = rewrite_function_call(sql, 'STRING_TO_ARRAY', rewrite_string_to_array)
 
-    # regexp_split_to_array / REGEXP_SPLIT_TO_ARRAY (argument-reordered relative
-    # to splitByRegexp). REGEXP_SPLIT_TO_TABLE in PostgreSQL returns a set; we
-    # approximate it as an array (caller has to ARRAY JOIN if a table is needed).
+    # regexp_split_to_array (argument-reordered relative to splitByRegexp).
+    # REGEXP_SPLIT_TO_TABLE in PostgreSQL returns a set; we approximate it as
+    # an array (caller has to ARRAY JOIN if a table is needed).
     sql = rewrite_function_call(sql, 'regexp_split_to_array', rewrite_regexp_split_to_array)
-    sql = rewrite_function_call(sql, 'REGEXP_SPLIT_TO_ARRAY', rewrite_regexp_split_to_array)
-    sql = rewrite_function_call(sql, 'REGEXP_SPLIT_TO_TABLE', rewrite_regexp_split_to_array)
+    sql = rewrite_function_call(sql, 'regexp_split_to_table', rewrite_regexp_split_to_array)
 
     # RANDOM(): PostgreSQL's returns Float64 in [0, 1); rand() returns UInt32.
     # The semantics differ but most SQLStorm queries treat the return as an
@@ -288,7 +265,6 @@ def rewrite_functions(sql):
         if len(parts) == 3:
             return f"splitByString({parts[1]}, {parts[0]})[{parts[2]}]"
         return None
-    sql = rewrite_function_call(sql, 'SPLIT_PART', rewrite_split_part)
     sql = rewrite_function_call(sql, 'split_part', rewrite_split_part)
 
     return sql
@@ -324,8 +300,16 @@ def rewrite_unnest_lateral(sql):
     matched here. The standalone `unnest(expr)` function call form in expression
     position is handled natively by an alias on master.
     """
-    # Remove LATERAL keyword (not supported in ClickHouse)
-    sql = re.sub(r'\bLATERAL\s+', '', sql, flags=re.IGNORECASE)
+    # `LATERAL` is kept for ordinary subqueries: the server runs
+    # `[LEFT] JOIN LATERAL (subquery) alias ON TRUE` with `enable_lateral_join`.
+    # It is dropped only in front of the unnest shapes that are turned into
+    # `ARRAY JOIN` below and in `rewrite_arrayjoin_to_array_join`.
+    sql = re.sub(
+        r'\bLATERAL\s+(?=(?:unnest|arrayJoin)\s*\(|\(\s*SELECT\s+unnest\s*\()',
+        '',
+        sql,
+        flags=re.IGNORECASE,
+    )
 
     # Pattern: [LEFT|CROSS|INNER] JOIN (SELECT unnest(expr) AS col) [AS] [alias] [ON TRUE]
     # -> [LEFT] ARRAY JOIN expr AS col
@@ -437,14 +421,12 @@ def rewrite_unnest_lateral(sql):
 
 def rewrite_pg_cast(sql):
     """Fix PostgreSQL-specific cast patterns that ClickHouse doesn't support.
-    ClickHouse supports :: for basic types, but not ::type[] (array casts),
-    ::jsonb, ::json, or ::regclass."""
+    ClickHouse supports :: for basic types, but not ::type[] (array casts) or
+    ::jsonb."""
     # ::int[] or ::integer[] -> remove (ClickHouse doesn't have array type cast syntax)
     sql = re.sub(r'::\s*(?:int|integer|bigint|text|varchar|float|double)\s*\[\s*\]', '', sql, flags=re.IGNORECASE)
     # ::jsonb / ::json -> remove (ClickHouse has no JSON type in this sense)
     sql = re.sub(r'::\s*jsonb?\b', '', sql, flags=re.IGNORECASE)
-    # ::regclass -> remove
-    sql = re.sub(r'::\s*regclass\b', '', sql, flags=re.IGNORECASE)
     # `CAST(expr AS JSON/JSONB)` -> `expr`. ClickHouse has no JSON type for
     # casts. This must run before the `->>` translation below: a JSON cast
     # feeding the operator (`CAST(data AS JSONB) ->> 'name'`) is first reduced to
@@ -737,36 +719,10 @@ def rewrite_query(sql):
     sql = rewrite_pg_cast(sql)
     sql = rewrite_any_array(sql)
 
-    # 3. Rewrite PostgreSQL `AT TIME ZONE 'tz'` -> `toTimezone(expr, 'tz')`.
-    #    The timezone literal is masked, so match its placeholder; it restores
-    #    to the original quoted string at the end.
-    sql = re.sub(
-        r"(\w+(?:\.\w+)?)\s+AT\s+TIME\s+ZONE\s+(" + _PLACEHOLDER + r")",
-        r"toTimezone(\1, \2)",
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # 4. Convert arrayJoin(...) in FROM/JOIN position to ARRAY JOIN syntax.
+    # 3. Convert arrayJoin(...) in FROM/JOIN position to ARRAY JOIN syntax.
     sql = rewrite_arrayjoin_to_array_join(sql)
 
-    # 5. Fix remaining "LEFT JOIN\nARRAY JOIN" -> "LEFT ARRAY JOIN" patterns.
-    sql = re.sub(
-        r'\bLEFT\s+JOIN\s*\n(\s*)ARRAY\s+JOIN\b',
-        r'LEFT ARRAY JOIN',
-        sql,
-        flags=re.IGNORECASE,
-    )
-    sql = re.sub(
-        r'\bCROSS\s+JOIN\s*\n(\s*)ARRAY\s+JOIN\b',
-        r'ARRAY JOIN',
-        sql,
-        flags=re.IGNORECASE,
-    )
-    sql = re.sub(r'\bLEFT\s+JOIN\s+ARRAY\s+JOIN\b', 'LEFT ARRAY JOIN', sql, flags=re.IGNORECASE)
-    sql = re.sub(r'\bCROSS\s+JOIN\s+ARRAY\s+JOIN\b', 'ARRAY JOIN', sql, flags=re.IGNORECASE)
-
-    # 6. Fix PostgreSQL `OFFSET X LIMIT Y` -> ClickHouse `LIMIT Y OFFSET X`.
+    # 4. Fix PostgreSQL `OFFSET X LIMIT Y` -> ClickHouse `LIMIT Y OFFSET X`.
     sql = re.sub(
         r'\bOFFSET\s+(\d+)\s+LIMIT\s+(\d+)',
         r'LIMIT \2 OFFSET \1',
@@ -774,27 +730,7 @@ def rewrite_query(sql):
         flags=re.IGNORECASE,
     )
 
-    # 7a. Rewrite SQL-standard `OFFSET N ROW[S] FETCH FIRST M ROW[S] ONLY` together.
-    #     ClickHouse accepts this form, but only with ORDER BY; rewriting to
-    #     `LIMIT M OFFSET N` works in both cases. Must run before 7b so that the
-    #     standalone FETCH rewrite below does not strip FETCH while leaving the
-    #     orphan `OFFSET ... ROWS` behind.
-    sql = re.sub(
-        r'\bOFFSET\s+(\d+)\s+ROWS?\s+FETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b',
-        r'LIMIT \2 OFFSET \1',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # 7b. Convert standalone `FETCH FIRST N ROWS ONLY` to `LIMIT N`.
-    sql = re.sub(
-        r'\bFETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b',
-        r'LIMIT \1',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # 8. Restore the string literals, quoted identifiers and comments hidden in
+    # 5. Restore the string literals, quoted identifiers and comments hidden in
     #    step 0.
     sql = restore_protected_spans(sql, protected_spans)
 

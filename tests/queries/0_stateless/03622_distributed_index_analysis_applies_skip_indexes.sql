@@ -17,7 +17,6 @@ set use_query_condition_cache=0;
 set use_statistics_for_part_pruning=0;
 -- Parallel replicas changes EXPLAIN output
 set allow_experimental_parallel_reading_from_replicas=0;
-set allow_experimental_analyzer=1;
 set optimize_move_to_prewhere=1;
 -- Ignore `Cannot connect to {}. It will not participate in distributed index analysis`
 set send_logs_level='error';

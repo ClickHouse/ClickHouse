@@ -1,3 +1,5 @@
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -56,6 +58,8 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const override;
 
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     std::shared_ptr<ElasticsearchConfiguration> configuration;
@@ -84,6 +88,20 @@ ColumnsDescription TableFunctionElasticsearch::getActualTableStructure(ContextPt
     if (!structure_columns.empty())
         return structure_columns;
     return StorageElasticsearch::getDefaultColumns();
+}
+
+VectorWithMemoryTracking<size_t> TableFunctionElasticsearch::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    const auto & arguments = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
+
+    VectorWithMemoryTracking<size_t> result;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        const auto * function_node = arguments[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "query")
+            result.push_back(i);
+    }
+    return result;
 }
 
 void TableFunctionElasticsearch::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -150,8 +168,8 @@ Allows `SELECT` queries on documents of an index in [Elasticsearch](https://www.
 ## Syntax {#syntax}
 
 ```sql
-elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
-elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch(named_collection[, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
 
 <Note>
@@ -170,6 +188,7 @@ SET enable_elasticsearch = 1;
 | `index`    | The index to read. It can also be an alias, a comma-separated list, or a wildcard pattern, as accepted by the Elasticsearch point in time API. A pattern that matches no index is an error. |
 | `user`     | The user name for HTTP basic authentication (optional). |
 | `password` | The password for HTTP basic authentication (optional, requires `user`). |
+| `query('...')` | An Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) object in JSON that selects the documents to read (optional). It must follow the positional arguments. Default: `{"match_all": {}}`. |
 
 The `url`, `index`, `user` and `password` arguments can also be given in the `key = value` form; positional arguments fill these slots in this order, and specifying an argument both positionally and as a key (or the same key twice) is an error.
 
@@ -181,7 +200,8 @@ The following arguments can be specified in the `key = value` form (or as keys o
 | `password`     | The password for HTTP basic authentication. |
 | `bearer_token` | A token sent as `Authorization: Bearer <token>`, for example an Elasticsearch service account token. |
 | `api_key`      | An Elasticsearch API key, sent as `Authorization: ApiKey <api_key>`. The value is the base64-encoded `id:api_key` string returned by the create API key API. |
-| `query`        | An Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) object in JSON that selects the documents to read. Default: `{"match_all": {}}`. |
+
+A named collection can contain the `query` key. To override it, pass `query('...')` or `query = '...'` after the collection name.
 
 In addition, the table function accepts:
 
@@ -233,8 +253,8 @@ Filter on the Elasticsearch side with a Query DSL object and tune the page size:
 ```sql
 SELECT _id
 FROM elasticsearch('https://localhost:9200', 'logs',
+                   query('{"term": {"level": "error"}}'),
                    bearer_token = '...',
-                   query = '{"term": {"level": "error"}}',
                    SETTINGS page_size = 1000);
 ```
 
@@ -272,7 +292,7 @@ SELECT * FROM elasticsearch(my_elasticsearch, index = 'logs');
 )DOCS_MD",
             .category = FunctionDocumentation::Category::TableFunction
         },
-        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password", "bearer_token", "api_key"}});
+        elasticsearchSecretArguments());
 }
 
 }
