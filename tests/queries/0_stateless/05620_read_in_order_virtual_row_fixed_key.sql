@@ -124,6 +124,13 @@ SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b
 SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a DESC, b, c DESC))
      = (SELECT arrayReverseSort(groupArray(c)) FROM t_fixed_key_3 WHERE a = 1 AND b = 2);
 
+SELECT '-- a fixed key which is not listed after a listed one: WHERE a = 1 AND b = 2 ORDER BY a, c';
+SELECT extract(explain, '(?:ReadType|Virtual row conversions).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a, c LIMIT 5) WHERE e != '';
+
+SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a, c))
+     = (SELECT arraySort(groupArray(c)) FROM t_fixed_key_3 WHERE a = 1 AND b = 2);
+
 SELECT '--- key (toDate(ts), b)';
 
 CREATE TABLE t_fixed_key_expr (ts DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (toDate(ts), b) SETTINGS index_granularity = 8;

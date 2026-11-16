@@ -47,6 +47,9 @@ ReadType: InOrder
 Virtual row conversions
 1
 1
+-- a fixed key which is not listed after a listed one: WHERE a = 1 AND b = 2 ORDER BY a, c
+ReadType: InOrder
+1
 --- key (toDate(ts), b)
 ReadType: InOrder
 Virtual row conversions
