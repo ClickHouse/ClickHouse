@@ -17,6 +17,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RenameColumnVisitor.h>
+#include <Storages/AlterCommands.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -218,6 +220,12 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    if (configuration->isDataLakeConfiguration() && !is_table_function)
+    {
+        data_lake_partition_by = partition_by_ ? partition_by_->clone() : nullptr;
+        data_lake_order_by = order_by_ ? order_by_->clone() : nullptr;
+    }
 
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
@@ -710,6 +718,9 @@ std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSna
     if (distributed_processing)
         return std::nullopt;
 
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     std::optional<DataLakeTableStateSnapshot> state;
     if (storage_snapshot && storage_snapshot->metadata)
         state = storage_snapshot->metadata->datalake_table_state;
@@ -728,6 +739,9 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         return std::nullopt;
 
     if (distributed_processing)
+        return std::nullopt;
+
+    if (query_context->totalsWithoutStorageAccess())
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
@@ -1403,8 +1417,33 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
+    /// The stored definition of a data lake table gets its `PARTITION BY` and `ORDER BY` with the renamed columns.
+    auto rename_columns = [&](const ASTPtr & ast) -> ASTPtr
+    {
+        if (!ast)
+            return nullptr;
+        auto renamed = ast->clone();
+        for (const auto & command : params)
+        {
+            if (command.type != AlterCommand::RENAME_COLUMN)
+                continue;
+            RenameColumnData rename_data{command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns};
+            RenameColumnVisitor(rename_data).visit(renamed);
+        }
+        return renamed;
+    };
+    ASTPtr new_data_lake_partition_by = rename_columns(data_lake_partition_by);
+    ASTPtr new_data_lake_order_by = rename_columns(data_lake_order_by);
+    StorageInMemoryMetadata metadata_to_store = new_metadata;
+    if (new_data_lake_partition_by && !metadata_to_store.isPartitionKeyDefined())
+        metadata_to_store.partition_key = KeyDescription::getKeyFromAST(
+            new_data_lake_partition_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+    if (new_data_lake_order_by && !metadata_to_store.isSortingKeyDefined())
+        metadata_to_store.sorting_key = KeyDescription::getKeyFromAST(
+            new_data_lake_order_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
-    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, metadata_to_store, context);
 
     if (params.isSettingsAlter())
     {
@@ -1419,7 +1458,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+        ->alterTable(context, storage_id, metadata_to_store, /*validate_new_create_query=*/true);
+    data_lake_partition_by = new_data_lake_partition_by;
+    data_lake_order_by = new_data_lake_order_by;
     setInMemoryMetadata(new_metadata);
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
@@ -1479,7 +1520,7 @@ Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 
