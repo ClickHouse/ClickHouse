@@ -207,7 +207,7 @@ namespace
         "CODEC `histograms.negative_float.index` (Delta, ZSTD(3)), CODEC `histograms.negative_float.count` (ZSTD(3)), "
         "CODEC `histograms.custom_values` (ZSTD(3))";
     /// The codecs declared for the elements of the generated `samples` column; the declarations follow the columns in the column list.
-    const String DEFAULT_SAMPLES_CODECS = ", CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(3))";
+    const String DEFAULT_SAMPLES_CODECS = ", CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(4))";
     /// The codec of the generated `bucket`, `min_time` and `max_time` columns: the same as for the timestamps.
     const String DEFAULT_TIMESTAMP_CODEC = " CODEC(Delta, T64, ZSTD(3))";
     const String DEFAULT_SAMPLES_COLUMNS = "`id` " + DEFAULT_ID_TYPE + ", `samples` " + DEFAULT_SAMPLES_TYPE + ", `histograms` " + DEFAULT_HISTOGRAMS_TYPE
@@ -215,7 +215,7 @@ namespace
         + ", `min_time` SimpleAggregateFunction(min, DateTime64(3))" + DEFAULT_TIMESTAMP_CODEC
         + ", `max_time` SimpleAggregateFunction(max, DateTime64(3))" + DEFAULT_TIMESTAMP_CODEC + DEFAULT_SAMPLES_CODECS + DEFAULT_HISTOGRAMS_CODECS;
     const String DEFAULT_SAMPLES_ENGINE = "AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) "
-        "SETTINGS index_granularity = 256, index_granularity_bytes = 524288";
+        "SETTINGS index_granularity = 256, index_granularity_bytes = 262144";
     const String DEFAULT_RECENT_SAMPLES_ENGINE = "AggregatingMergeTree PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5)) ORDER BY (id, bucket) "
         "TTL toDateTime(bucket) + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1";
 
@@ -859,7 +859,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesEngineSettings)
     /// A declared partition key is kept.
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(bucket)");
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"),
-        "AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 524288");
+        "AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 262144");
 
     /// The samples tables require an aggregating engine: the rows of the same series and bucket are merged.
     for (const String & engine : {"MergeTree", "ReplacingMergeTree", "Memory", "ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_samples', '{replica}')"})
@@ -1296,7 +1296,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, BucketedSamples)
     EXPECT_FALSE(extractInnerColumns(definition, "SAMPLES").contains("`timestamp`")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), DEFAULT_SAMPLES_COLUMNS);
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"),
-        "AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) SETTINGS index_granularity = 65536, index_granularity_bytes = 524288");
+        "AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) SETTINGS index_granularity = 65536, index_granularity_bytes = 262144");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"), DEFAULT_RECENT_SAMPLES_ENGINE);
 }
 

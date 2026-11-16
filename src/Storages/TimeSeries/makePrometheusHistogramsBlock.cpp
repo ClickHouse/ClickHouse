@@ -208,7 +208,7 @@ namespace
         {
         }
 
-        Float64 get(size_t bucket) const { return counts[static_cast<int>(bucket)]; }
+        [[nodiscard]] Float64 get(size_t bucket) const { return counts[static_cast<int>(bucket)]; }
 
     private:
         const google::protobuf::RepeatedField<double> & counts;

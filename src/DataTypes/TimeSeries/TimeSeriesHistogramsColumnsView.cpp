@@ -61,8 +61,8 @@ namespace
                     expected_size, tuple.tupleSize(), tuple.getName());
         }
 
-        auto & timestamps() const { return tuple.getColumn(Registry::getTimestampPosition()); }
-        auto & element(Element element) const { return tuple.getColumn(Registry::getTuplePosition(element)); }
+        [[nodiscard]] auto & timestamps() const { return tuple.getColumn(Registry::getTimestampPosition()); }
+        [[nodiscard]] auto & element(Element element) const { return tuple.getColumn(Registry::getTuplePosition(element)); }
         static const ColumnArray::Offsets * outerOffsets() { return nullptr; }
     };
 
@@ -77,9 +77,9 @@ namespace
 
         explicit BlockSource(const Block & block_) : block(block_), timestamp_array(getOuterArray(TimeSeriesColumnNames::Timestamp)) { }
 
-        const IColumn & timestamps() const { return timestamp_array.getData(); }
+        [[nodiscard]] const IColumn & timestamps() const { return timestamp_array.getData(); }
 
-        const IColumn & element(Element element) const
+        [[nodiscard]] const IColumn & element(Element element) const
         {
             const auto & array = getOuterArray(Registry::getName(element));
             if (!array.hasEqualOffsets(timestamp_array))
@@ -88,10 +88,10 @@ namespace
             return array.getData();
         }
 
-        const ColumnArray::Offsets * outerOffsets() const { return &timestamp_array.getOffsets(); }
+        [[nodiscard]] const ColumnArray::Offsets * outerOffsets() const { return &timestamp_array.getOffsets(); }
 
     private:
-        const ColumnArray & getOuterArray(std::string_view element_name) const
+        [[nodiscard]] const ColumnArray & getOuterArray(std::string_view element_name) const
         {
             const auto outer_name = Registry::getOuterColumnName(element_name);
             const auto & column = *block.getByName(outer_name).column;
@@ -108,8 +108,8 @@ namespace
         IColumn * timestamps_column = nullptr;
         const PayloadColumns & payload;
 
-        IColumn & timestamps() const { return *timestamps_column; }
-        IColumn & element(Element element) const { return *payload[static_cast<size_t>(element)]; }
+        [[nodiscard]] IColumn & timestamps() const { return *timestamps_column; }
+        [[nodiscard]] IColumn & element(Element element) const { return *payload[static_cast<size_t>(element)]; }
         static const ColumnArray::Offsets * outerOffsets() { return nullptr; }
     };
 
@@ -119,9 +119,9 @@ namespace
     {
         const View & view;
 
-        IColumn & timestamps() const { return view.timestamps; }
-        IColumn & element(Element element) const { return view.getPayloadColumn(element); }
-        const ColumnArray::Offsets * outerOffsets() const { return view.outer_offsets; }
+        [[nodiscard]] IColumn & timestamps() const { return view.timestamps; }
+        [[nodiscard]] IColumn & element(Element element) const { return view.getPayloadColumn(element); }
+        [[nodiscard]] const ColumnArray::Offsets * outerOffsets() const { return view.outer_offsets; }
     };
 
     template <typename View>

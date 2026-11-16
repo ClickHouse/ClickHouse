@@ -26,7 +26,7 @@ namespace
     public:
         explicit IntBucketsWriter(prometheus::Histogram & histogram_) : histogram(histogram_) { }
 
-        prometheus::BucketSpan * addSpan() const
+        [[nodiscard]] prometheus::BucketSpan * addSpan() const
         {
             if constexpr (positive)
                 return histogram.add_positive_spans();
@@ -55,7 +55,7 @@ namespace
     public:
         explicit FloatBucketsWriter(prometheus::Histogram & histogram_) : histogram(histogram_) { }
 
-        prometheus::BucketSpan * addSpan() const
+        [[nodiscard]] prometheus::BucketSpan * addSpan() const
         {
             if constexpr (positive)
                 return histogram.add_positive_spans();

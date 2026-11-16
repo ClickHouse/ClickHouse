@@ -622,8 +622,8 @@ namespace
     }
 
     /// The codecs of the generated columns of the samples tables: `Delta`, `T64`, `ZSTD(3)` for the timestamps (the columns `bucket`,
-    /// `min_time` and `max_time` of a table with buckets of samples get it too), `ALP`, `ZSTD(3)` for the values.
-    /// Near-monotonic timestamps barely compress under generic codecs.
+    /// `min_time` and `max_time` of a table with buckets of samples get it too), `ALP`, `ZSTD(3)` for the values (`ALP`, `ZSTD(4)`
+    /// with buckets of samples). Near-monotonic timestamps barely compress under generic codecs.
     ASTPtr getDefaultTimestampCodec()
     {
         return makeASTFunction(
@@ -633,9 +633,12 @@ namespace
             makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
     }
 
-    ASTPtr getDefaultValueCodec()
+    /// A granule of a table with buckets of samples gives ZSTD less than 128 KiB of ALP output. At that size level 3 matches at least
+    /// 5 bytes and leaves values with random decimal digits in Huffman-coded literals, which decode much slower; level 4 matches 4 bytes.
+    ASTPtr getDefaultValueCodec(const TimeSeriesSettings & settings)
     {
-        return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
+        UInt64 zstd_level = settings.hasBucketedSamples() ? 4 : 3;
+        return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(zstd_level)));
     }
 
     /// Parses a codec written as `CODEC(...)`, e.g. `CODEC(ALP, ZSTD(3))`: the form the registry of the histogram elements uses.
@@ -1026,7 +1029,7 @@ namespace
                             return true;
 
                         return timestamp_codec && value_codec
-                            && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultValueCodec());
+                            && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultValueCodec(settings));
                     }
 
                     /// The generated `histograms` column has no codec of its own either, the codecs are declared for the elements of its
@@ -1088,7 +1091,7 @@ namespace
                         return false;
                     if (!codec || is_version_0)
                         return true;
-                    return same_ast(*codec, *getDefaultValueCodec()) || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
+                    return same_ast(*codec, *getDefaultValueCodec(settings)) || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
                 }
 
                 return false;
@@ -1519,13 +1522,13 @@ namespace
 
                 if (time_series_settings.hasBucketedSamples())
                 {
-                    /// The generated `samples` column gets the codecs of the `timestamp` and `value` columns of the earlier versions, declared
-                    /// for the elements of its tuples; a declared column keeps the user's codecs.
+                    /// The generated `samples` column gets the codec of the `timestamp` column of the earlier versions and `ALP`, `ZSTD(4)`
+                    /// for the values, declared for the elements of its tuples; a declared column keeps the user's codecs.
                     auto samples_type = makeSamplesType(resolved_types.timestamp_type, resolved_types.value_type);
                     if (add_column_if_missing(TimeSeriesColumnNames::Samples, makeSimpleAggregate("timeSeriesGroupArray", samples_type)))
                     {
                         add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Timestamp, getDefaultTimestampCodec());
-                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultValueCodec());
+                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultValueCodec(time_series_settings));
                     }
 
                     /// The native histogram samples of the same series and bucket, sorted by timestamp, in the same row as the float
@@ -1557,7 +1560,7 @@ namespace
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
                     timestamp_decl->setCodec(getDefaultTimestampCodec());
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.value_type)))
-                    value_decl->setCodec(getDefaultValueCodec());
+                    value_decl->setCodec(getDefaultValueCodec(time_series_settings));
 
                 break;
             }

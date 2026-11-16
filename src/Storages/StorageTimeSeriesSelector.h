@@ -48,7 +48,8 @@ public:
         /// The columns the table function timeSeriesSelector() returns besides `id`, named by its argument `return_columns`:
         /// `samples` (of type `table_samples_type`), `histograms` (of type `table_histograms_type`, for a table storing histogram
         /// samples only) or both; or `timestamp` and `value` with one float sample per row. The returned rows are those with
-        /// samples of the returned kinds in the time range, whatever columns a query requests.
+        /// samples in the time range, whatever columns a query requests; for a range shorter than a bucket, only those with samples
+        /// of the returned kinds, so a longer range can return empty arrays.
         enum class ReturnColumns
         {
             Samples,

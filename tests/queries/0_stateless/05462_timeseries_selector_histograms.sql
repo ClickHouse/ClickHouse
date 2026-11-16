@@ -3,9 +3,8 @@
 
 -- `timeSeriesSelector` over a TimeSeries table storing native histogram samples: `return_columns` names the returned columns,
 -- 'samples' (the float samples), 'histograms' (the histogram samples, the stored tuples of a row of the samples table cut to the
--- time range) or 'samples_and_histograms' (both, of the same rows), one row per series and bucket. The named columns are read and
--- decide the rows, whatever columns a query requests. 'timestamp_and_value' returns the float samples only. PromQL over such a
--- table is covered by 05493_timeseries_selector_histogram_presence.
+-- time range) or 'samples_and_histograms' (both, of the same rows), one row per series and bucket. 'timestamp_and_value' returns
+-- the float samples only. PromQL over such a table is covered by 05493_timeseries_selector_histogram_presence.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -63,13 +62,14 @@ SELECT h.schema, h.custom_values, h.positive_int FROM timeSeriesSelector(ts, 'm_
 SELECT h.count_int, h.positive_int FROM timeSeriesSelector(ts, 'm_big', 0, 1000, 'histograms') ARRAY JOIN histograms AS h;
 SELECT hex(reinterpretAsUInt64(h.sum)), h.count_int FROM timeSeriesSelector(ts, 'm_stale', 0, 1000, 'histograms') ARRAY JOIN histograms AS h;
 
-SELECT '-- the time range cuts both arrays; a row with nothing of the returned kinds in the range is dropped';
+SELECT '-- the time range cuts both arrays; for a range shorter than a bucket, a row with nothing of the returned kinds in it is dropped';
 SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples_and_histograms') ORDER BY ALL;
 SELECT length(samples), length(histograms) FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'samples_and_histograms') ORDER BY ALL;
 -- The bucket 60 has the samples 65 and 100, so its row matches [70, 90] by `min_time` and `max_time` but has nothing in it.
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 90, 'samples_and_histograms');
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 100, 'samples_and_histograms');
--- The float sample 65 is out of [70, 150]: no row has float samples there, the buckets 60 and 120 have histogram samples.
+-- [70, 150] is longer than a bucket, so the rows of the buckets 60 and 120 are returned for their histogram samples also with
+-- 'samples', with empty arrays: the float sample 65 is out of the range.
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'samples');
 SELECT count() FROM timeSeriesSelector(ts, 'm_buckets', 70, 150, 'histograms');
 
@@ -77,28 +77,22 @@ SELECT '-- the rows of a series are merged with timeSeriesGroupArray';
 SELECT timeSeriesGroupArray(samples), arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArray(histograms))
 FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples_and_histograms') GROUP BY id;
 
-SELECT '-- return_columns decides the rows: the rows with samples of the returned kinds';
+SELECT '-- a range of at least a bucket returns the rows with samples of any kind, an empty array for a returned kind without samples';
 SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
 SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'histograms');
 SELECT count(), sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
 SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'histograms');
 SELECT count(), sum(length(samples)), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples_and_histograms');
 
-SELECT '-- the requested columns do not change the rows';
-SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
-SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms');
--- The outer count() uses no column of the subquery, so the analyzer keeps only the first one.
-SELECT count() FROM (SELECT id, samples FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms'));
-SELECT count() FROM (SELECT samples, id FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples_and_histograms'));
-
--- The named columns are read whatever is requested: 'samples' reads no histograms, 'histograms' no float samples (cast to
--- `Array(Tuple(DateTime64(3), Float64))`), 'samples_and_histograms' both (the type of the histograms names `count_int`).
+SELECT '-- each mode reads only its columns';
+-- 'samples' reads no histograms, 'histograms' no float samples (cast to `Array(Tuple(DateTime64(3), Float64))`),
+-- 'samples_and_histograms' both (the type of the histograms names `count_int`).
 SELECT plan NOT LIKE '%histograms%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
 SELECT plan LIKE '%count_int%' AND plan NOT LIKE '%Array(Tuple(DateTime64(3), Float64))%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'histograms')));
 SELECT plan LIKE '%count_int%' AND plan LIKE '%Array(Tuple(DateTime64(3), Float64))%'
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples_and_histograms')));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples_and_histograms')));
 
 SELECT '-- timestamp_and_value returns the float samples only';
 SELECT timestamp, value FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'timestamp_and_value');

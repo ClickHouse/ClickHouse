@@ -251,8 +251,12 @@ in the columns named by the argument `return_columns`:
   when it has no float samples there.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row.
 
-A row is returned when it has samples of a returned kind in the time range. The columns named by `return_columns` are read
-whichever of them the query requests, so the rows returned don't depend on the requested columns.
+A row is returned when it has samples in the time range. For a time range shorter than a time bucket (see the settings
+`samples_bucket_step_seconds` and `recent_samples_bucket_step_seconds` of the
+[TimeSeries engine](/reference/engines/table-engines/integrations/time-series#settings)), it must also have samples of a returned kind
+there; for a longer time range, `'samples'` or `'histograms'` can return a row with an empty array, for example a row with only
+histogram samples for `'samples'`. The columns named by `return_columns` are read whichever of them the query requests, so the rows
+returned don't depend on the requested columns.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions

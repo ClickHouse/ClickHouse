@@ -1,9 +1,10 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4.
 
--- `timeSeriesSelector` returns a row when the series has samples of a kind named by `return_columns` in the time range:
--- 'samples' the rows with float samples, 'histograms' the rows with histogram samples, 'samples_and_histograms' the rows with
--- either. PromQL reads the float samples only, with 'samples', and ignores the histogram samples.
+-- For a time range shorter than a bucket, as in all the `timeSeriesSelector` queries below, the function returns a row when the
+-- series has samples of a kind named by `return_columns` in the time range: 'samples' the rows with float samples, 'histograms'
+-- the rows with histogram samples, 'samples_and_histograms' the rows with either. PromQL reads the float samples only, with
+-- 'samples', and ignores the histogram samples.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';

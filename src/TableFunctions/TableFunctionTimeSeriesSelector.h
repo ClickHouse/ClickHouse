@@ -13,8 +13,8 @@ namespace DB
 /// `return_columns` names the columns besides `id`: 'samples' returns the column `samples` (an array of (timestamp, value) sorted by
 /// timestamp; a series can come in several rows, e.g. one per bucket of the samples table), 'histograms' the column `histograms` of
 /// a table storing native histograms (the stored tuples, see TimeSeriesHistogramsColumns), 'samples_and_histograms' both of the same
-/// rows, 'timestamp_and_value' the columns `timestamp` and `value` with one float sample per row. A row is returned when it has
-/// samples of a returned kind in the time range. The samples are converted when the table stores them the other way.
+/// rows, 'timestamp_and_value' the columns `timestamp` and `value` with one float sample per row. Returned rows have samples in
+/// the range, of a returned kind for a range shorter than a bucket. The samples are converted when the table stores them the other way.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

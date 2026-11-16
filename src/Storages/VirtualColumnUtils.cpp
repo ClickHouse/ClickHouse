@@ -13,7 +13,6 @@
 #include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -634,7 +633,9 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(value)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    HivePartitioningUtils::convertPartitionValueToType(
+                        value, *virtual_column.type, virtual_column.getNameInStorage(), virtual_values.path, hive_format_settings))
+                    ->convertToFullColumnIfConst());
         }
     }
 }

@@ -21,7 +21,7 @@ struct TimeSeriesHistogramBucketPairs
     std::span<const Int32> indexes;
     std::span<const Count> counts;
 
-    size_t size() const { return indexes.size(); }
+    [[nodiscard]] size_t size() const { return indexes.size(); }
 };
 
 /// Typed view of the payload columns of histogram samples, one row per sample: the elements of TimeSeriesHistogramsColumns after
@@ -59,7 +59,7 @@ public:
     /// The read-only view of a mutable view. Explicit because it checks the columns again: a loop must not convert per row.
     explicit TimeSeriesHistogramPayloadColumnsViewImpl(const TimeSeriesHistogramPayloadColumnsViewImpl<!is_const> & other) requires is_const;
 
-    size_t size() const { return flags.size(); }
+    [[nodiscard]] size_t size() const { return flags.size(); }
 
     Ref<ColumnUInt8> flags;
     Ref<ColumnUInt8> counter_reset_hint;
@@ -76,17 +76,17 @@ public:
     Ref<ColumnArray> negative_float;
     Ref<ColumnArray> custom_values;
 
-    Ref<IColumn> getPayloadColumn(TimeSeriesHistogramsColumn element) const;
+    [[nodiscard]] Ref<IColumn> getPayloadColumn(TimeSeriesHistogramsColumn element) const;
 
     /// The payload columns in the order of the stored tuple: `flags` first.
     using PayloadColumns = std::array<Ptr<IColumn>, NUM_PAYLOAD_COLUMNS>;
-    PayloadColumns getPayloadColumnsInStoredOrder() const;
+    [[nodiscard]] PayloadColumns getPayloadColumnsInStoredOrder() const;
 
     /// Whether sample `row` is a float histogram (bit `IsFloat` of its flags), otherwise it is an integer one.
-    bool isFloatAt(size_t row) const { return TimeSeriesHistogramFlags::isFloat(flags.getData()[row]); }
+    [[nodiscard]] bool isFloatAt(size_t row) const { return TimeSeriesHistogramFlags::isFloat(flags.getData()[row]); }
 
     /// The total count of the observations of sample `row` of either flavour, as `Float64`.
-    Float64 countAt(size_t row) const
+    [[nodiscard]] Float64 countAt(size_t row) const
     {
         return isFloatAt(row) ? count_float.getData()[row] : static_cast<Float64>(count_int.getData()[row]);
     }
@@ -150,7 +150,7 @@ public:
 
     /// All the columns in the order of the stored tuple: `timestamps` first, then the payload.
     using StoredColumns = std::array<Ptr<IColumn>, Base::NUM_PAYLOAD_COLUMNS + 1>;
-    StoredColumns getColumnsInStoredOrder() const;
+    [[nodiscard]] StoredColumns getColumnsInStoredOrder() const;
 
 private:
     /// `Source` gives the columns: `timestamps()`, `element(TimeSeriesHistogramsColumn)` and `outerOffsets()`.

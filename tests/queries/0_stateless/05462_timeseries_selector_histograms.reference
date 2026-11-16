@@ -18,7 +18,7 @@ samples	Array(Tuple(DateTime64(3), Float64))
 -53	[0.1,0.5,1]	[(0,1),(1,2),(2,4),(3,8)]
 9007199254740993	[(0,9007199254740993)]
 7FF0000000000002	0
--- the time range cuts both arrays; a row with nothing of the returned kinds in the range is dropped
+-- the time range cuts both arrays; for a range shorter than a bucket, a row with nothing of the returned kinds in it is dropped
 0	1
 0	1
 1	1
@@ -26,21 +26,17 @@ samples	Array(Tuple(DateTime64(3), Float64))
 0	1
 0
 1
-0
+2
 2
 -- the rows of a series are merged with timeSeriesGroupArray
 [('1970-01-01 00:01:05.000',1)]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:03:20.000',3)]
--- return_columns decides the rows: the rows with samples of the returned kinds
-0	0
+-- a range of at least a bucket returns the rows with samples of any kind, an empty array for a returned kind without samples
+1	0
 1	2
 1	0	2
-0	0
-1	2	0
--- the requested columns do not change the rows
-1
 1	0
-1
-1
+1	2	0
+-- each mode reads only its columns
 1
 1
 1

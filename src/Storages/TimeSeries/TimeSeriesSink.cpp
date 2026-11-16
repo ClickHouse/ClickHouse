@@ -515,7 +515,7 @@ namespace
             sortSamples(filter, offsets, *timestamps, new_sample_wins, kind, sorted_indices, sorted_offsets);
         }
 
-        bool isAbsent() const { return columns.empty(); }
+        [[nodiscard]] bool isAbsent() const { return columns.empty(); }
 
         const TimestampColumn * const timestamps;
         const std::vector<const IColumn *> columns;
@@ -552,8 +552,8 @@ namespace
         }
 
         /// Whether the row has samples left; they are sorted, so their buckets go in increasing order.
-        bool hasMore() const { return cursor < row_end; }
-        Decimal64 nextBucket() const { return bucketAt(cursor); }
+        [[nodiscard]] bool hasMore() const { return cursor < row_end; }
+        [[nodiscard]] Decimal64 nextBucket() const { return bucketAt(cursor); }
 
         /// Appends the array of the row being emitted: the samples of `bucket`, none if the next sample is in a later bucket.
         /// Returns the time range of the appended samples, unset for none.
@@ -587,8 +587,8 @@ namespace
         }
 
     private:
-        Decimal64 timestampAt(size_t position) const { return toDecimal64(source.timestamps->getData()[source.sorted_indices[position]]); }
-        Decimal64 bucketAt(size_t position) const { return getBucket(timestampAt(position), bucket_step); }
+        [[nodiscard]] Decimal64 timestampAt(size_t position) const { return toDecimal64(source.timestamps->getData()[source.sorted_indices[position]]); }
+        [[nodiscard]] Decimal64 bucketAt(size_t position) const { return getBucket(timestampAt(position), bucket_step); }
 
         /// Copies the samples `sorted_indices[begin, end)` of every column of the kind to the output columns.
         void appendSamples(size_t begin, size_t end)
