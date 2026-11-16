@@ -14,10 +14,10 @@ namespace DB
 class ParserRenameQuery : public IParserBase
 {
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const  override{ return "RENAME query"; }
+    [[nodiscard]] const char * getName() const  override{ return "RENAME query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

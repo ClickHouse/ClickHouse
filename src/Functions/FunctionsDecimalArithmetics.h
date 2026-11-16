@@ -238,25 +238,25 @@ public:
     static constexpr auto name = Transform::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsDecimalArithmetics>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
     /// Documentation-only — arithmetic on two `Decimal` operands; the optional
     /// third argument is a const-`UInt8` scale for the result. The output is
     /// a `Decimal256` with that scale; the legacy `getReturnTypeImpl` below
     /// stays authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Decimal, Decimal, [const UInt8]) -> Decimal256";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -298,7 +298,7 @@ public:
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -308,17 +308,17 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return resolveOverload(arguments, result_type, input_rows_count);
     }
 
 private:
     // long resolver to call proper templated func
-    ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());
