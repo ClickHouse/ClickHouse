@@ -234,6 +234,14 @@ private:
     /// Sorts the tail `[unsorted_begin, size)` of a buffer whose prefix `[0, unsorted_begin)` is sorted and unique, and merges the tail into the prefix.
     static void sortUnsortedTail(Buffer & buf, size_t unsorted_begin)
     {
+        /// With a short sorted prefix a merge would copy almost the whole buffer, so the buffer is sorted in place.
+        if (unsorted_begin < buf.size() / 2)
+        {
+            ::sort(buf.begin(), buf.end(), lessByTimestamp);
+            deduplicateSorted(buf);
+            return;
+        }
+
         auto tail_begin = buf.begin() + unsorted_begin;
         ::sort(tail_begin, buf.end(), lessByTimestamp);
 
@@ -260,7 +268,7 @@ private:
         unsorted_begin = SORTED;
     }
 
-    bool isSorted() const { return unsorted_begin == SORTED; }
+    [[nodiscard]] bool isSorted() const { return unsorted_begin == SORTED; }
 
     /// The value of `unsorted_begin` for a buffer with no unsorted tail.
     static constexpr size_t SORTED = std::numeric_limits<size_t>::max();
