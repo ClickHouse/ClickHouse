@@ -4,7 +4,7 @@
 SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE tab
     RENAME COLUMN missing TO renamed,
