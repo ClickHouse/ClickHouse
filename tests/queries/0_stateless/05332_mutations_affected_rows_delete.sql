@@ -186,3 +186,27 @@ SELECT 'all rows lightweight key', command, affected_rows FROM system.mutations 
 SYSTEM FLUSH LOGS part_log;
 SELECT 'all rows lightweight key empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_all_rows_lightweight_key' AND event_type = 'MutatePart';
 DROP TABLE t_all_rows_lightweight_key;
+
+-- 18. Mutations with the same condition applied together: the rows are counted for the first one, the next one deletes no row first
+SELECT '-- same condition';
+DROP TABLE IF EXISTS t_same_condition;
+CREATE TABLE t_same_condition (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_same_condition SELECT number FROM numbers(10);
+SYSTEM STOP MERGES t_same_condition;
+ALTER TABLE t_same_condition DELETE WHERE id < 3;
+ALTER TABLE t_same_condition DELETE WHERE id < 3;
+ALTER TABLE t_same_condition DELETE WHERE id = 5;
+SYSTEM START MERGES t_same_condition;
+ALTER TABLE t_same_condition DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_same_condition' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
+DROP TABLE t_same_condition;
+
+-- 19. Nondeterministic conditions that delete all rows of the part: the rows are counted in the evaluation that deletes them,
+-- so the counts add up to the rows of the part and none exceeds them
+SELECT '-- nondeterministic';
+DROP TABLE IF EXISTS t_nondeterministic;
+CREATE TABLE t_nondeterministic (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_nondeterministic VALUES (0), (1);
+ALTER TABLE t_nondeterministic DELETE WHERE rand() % 2 = 0, DELETE WHERE rand() % 2 = 0, DELETE WHERE 1 SETTINGS mutations_sync = 1;
+SELECT sum(affected_rows), max(affected_rows) <= 2 FROM system.mutations WHERE database = currentDatabase() AND table = 't_nondeterministic';
+DROP TABLE t_nondeterministic;

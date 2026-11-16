@@ -51,6 +51,7 @@
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -2243,12 +2244,20 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 /// and `CountAffectedRowsTransform` counts all rows into `rows_by_command_index[index]` without a branch.
                 auto filter_index_type = getCommandIndexType(affected_rows_counting.command_identifiers.size());
 
+                /// A filter equal to an earlier one deletes no row first, so it gets no branch: its index is never returned,
+                /// and its count stays 0. This keeps the number of distinct constants within the number of distinct filters,
+                /// e.g. many mutations with the same condition do not exceed `max_temporary_columns`.
+                QueryTreeNodePtrWithHashSet seen_filters;
                 auto multi_if_node = std::make_shared<FunctionNode>("multiIf");
                 auto & multi_if_arguments = multi_if_node->getArguments().getNodes();
                 for (size_t fi = 0; fi < num_filters; ++fi)
                 {
+                    const auto & filter = expression->getChildren()[fi];
+                    if (!seen_filters.emplace(filter).second)
+                        continue;
+
                     auto not_node = std::make_shared<FunctionNode>("not");
-                    not_node->getArguments().getNodes().push_back(expression->getChildren()[fi]);
+                    not_node->getArguments().getNodes().push_back(filter);
                     resolveOrdinaryFunctionNodeByName(*not_node, "not", execution_context);
                     multi_if_arguments.push_back(std::move(not_node));
                     multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(fi + 1)), filter_index_type));

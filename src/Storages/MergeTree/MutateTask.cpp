@@ -32,6 +32,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
@@ -5217,7 +5218,18 @@ bool MutateTask::prepare()
             return command.command_identifier.has_value();
         });
 
-        if (has_only_delete_commands)
+        /// The counts below are calculated by separate queries, and each of them evaluates the conditions again. A nondeterministic
+        /// condition (e.g. `rand()` or a subquery) may delete other rows in each evaluation, so the counts could disagree, e.g. a
+        /// prefix of the commands could delete fewer rows than a shorter prefix. In this case the part is mutated as usual, and the
+        /// rows are counted in the one evaluation that deletes them.
+        const bool has_nondeterministic_condition = count_affected_rows
+            && std::ranges::any_of(ctx->commands_for_part, [&](const auto & command)
+            {
+                const auto nondeterministic = findFirstNonDeterministicFunction(command, ctx->context);
+                return nondeterministic.nondeterministic_function_name.has_value() || nondeterministic.subquery;
+            });
+
+        if (has_only_delete_commands && !has_nondeterministic_condition)
         {
             /// There will be no interpreter call, so the rows deleted by each command are counted separately.
             if (count_affected_rows)
