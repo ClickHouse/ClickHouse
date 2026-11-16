@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is still loaded on ATTACH, and a warning about the settings is logged.
 
 WORKING_FOLDER="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -rf "${WORKING_FOLDER}"
+STDERR_FILE="${WORKING_FOLDER}.stderr"
+rm -rf "${WORKING_FOLDER}" "${STDERR_FILE}"
 mkdir -p "${WORKING_FOLDER}"
 
 ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --query "
@@ -19,8 +20,9 @@ ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --query "
 "
 
 # With `background_pool_size = 2` there are only 4 tasks in the pool, which is less than 10.
+# The log goes to its own file: the console logger writes from another thread and can split the result line.
 ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --log-level=warning --logger.console=1 \
-    --query "SELECT * FROM d.t" -- --background_pool_size=2 2>&1 \
-    | grep -o -E '^1$|Table settings did not pass the sanity check' | sort | uniq
+    --query "SELECT * FROM d.t" -- --background_pool_size=2 2>"${STDERR_FILE}"
+grep -o 'Table settings did not pass the sanity check' "${STDERR_FILE}" | uniq
 
-rm -rf "${WORKING_FOLDER}"
+rm -rf "${WORKING_FOLDER}" "${STDERR_FILE}"
