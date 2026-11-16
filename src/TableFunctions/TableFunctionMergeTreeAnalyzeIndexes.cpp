@@ -245,6 +245,13 @@ public:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr &) const override
+    {
+        if (resolve_by_uuid)
+            return {};
+        return QualifiedArguments{2, {source_table_id.database_name, source_table_id.table_name}};
+    }
+
     void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
     {
         /// The structure is static, so nothing is owed for resolving it. Only the database-and-table

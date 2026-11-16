@@ -83,6 +83,20 @@ public:
       */
     virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
 
+    /// The leading arguments of a call with the database it reads written out.
+    struct QualifiedArguments
+    {
+        /// How many leading arguments of the call `arguments` replace.
+        size_t num_arguments = 0;
+        Strings arguments;
+    };
+
+    /** The leading arguments that name what this call reads, with the database it reads written out, so that the call
+      * reads the same objects on a server whose current database is another one: `loop(t)` is `loop('db', 't')`,
+      * `dictionary('d')` is `dictionary('db.d')`. Called after `parseArguments`.
+      */
+    virtual std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr & /*context*/) const { return {}; }
+
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 

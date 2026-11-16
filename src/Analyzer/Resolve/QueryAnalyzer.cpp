@@ -66,16 +66,12 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageDictionary.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageLoop.h>
-#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
@@ -5987,54 +5983,41 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
-    /// The table of remote() or cluster() is read, and its structure described, by the remote server in its own database.
-    /// A query printed from a resolved query tree (e.g. a shard's plan built on the initiator) already went through the binders below.
-    if (remote_target || positional_arguments_already_resolved)
-    {
-        table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
-        return;
-    }
 
-    /// `merge` with one argument or with a database that evaluates to '' reads the current database, which the servers this query
-    /// is sent to do not share, so the database it resolved replaces any database argument except a `REGEXP`, which is not analyzed.
-    /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
-    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
-        merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    /// A call that reads the current database writes it out: the servers this query is sent to have another one.
+    /// The table of remote() or cluster() is resolved by the remote server, a query printed from a resolved query tree
+    /// is written out already, and a secondary query is left as sent: its `IN` set names are hashed from the query tree.
+    if (!remote_target && !positional_arguments_already_resolved
+        && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
-        auto database_node = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
-        if (argument_nodes.size() == 1)
-            argument_nodes.insert(argument_nodes.begin(), std::move(database_node));
-        else if (!std::ranges::contains(skip_analysis_arguments_indexes, 0))
-            argument_nodes[0] = std::move(database_node);
-    }
-
-    /// `loop` and `dictionary` with a name without a database read the current database as well.
-    if (scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
-        if (typeid_cast<const StorageLoop *>(table_function_storage.get()))
+        if (auto qualified = table_function_ptr->getQualifiedArguments(scope_context))
         {
-            const auto * table_identifier = argument_nodes.size() == 1 ? argument_nodes[0]->as<IdentifierNode>() : nullptr;
-            const auto * database_node = argument_nodes.size() == 2 ? argument_nodes[0]->as<ConstantNode>() : nullptr;
-            if (table_identifier && !table_identifier->getIdentifier().getFullName().contains('.'))
+            auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
+            if (qualified->num_arguments > argument_nodes.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function {} has {} arguments, but its qualified arguments replace {}",
+                    table_function_name, argument_nodes.size(), qualified->num_arguments);
+
+            auto is_written = [](const QueryTreeNodePtr & node, const String & value)
             {
-                QueryTreeNodePtr table_name_node = std::make_shared<ConstantNode>(table_identifier->getIdentifier().getFullName());
-                argument_nodes = {std::make_shared<ConstantNode>(scope_context->getCurrentDatabase()), std::move(table_name_node)};
+                if (const auto * constant_node = node->as<ConstantNode>())
+                    return constant_node->getValue() == Field(value);
+                const auto * identifier_node = node->as<IdentifierNode>();
+                return identifier_node && identifier_node->getIdentifier().getFullName() == value;
+            };
+            if (qualified->num_arguments != qualified->arguments.size()
+                || !std::ranges::equal(argument_nodes | std::views::take(qualified->num_arguments), qualified->arguments, is_written))
+            {
+                QueryTreeNodes qualified_nodes;
+                for (const auto & argument : qualified->arguments)
+                    qualified_nodes.push_back(std::make_shared<ConstantNode>(argument));
+                argument_nodes.erase(argument_nodes.begin(), argument_nodes.begin() + qualified->num_arguments);
+                argument_nodes.insert(argument_nodes.begin(), qualified_nodes.begin(), qualified_nodes.end());
+
+                /// The indexes of the arguments that follow move with them.
+                std::erase_if(skip_analysis_arguments_indexes, [&](size_t index) { return index < qualified->num_arguments; });
+                for (auto & index : skip_analysis_arguments_indexes)
+                    index = index + qualified->arguments.size() - qualified->num_arguments;
             }
-            else if (database_node && database_node->getValue().getType() == Field::Types::String
-                     && database_node->getValue().safeGet<String>().empty())
-                argument_nodes[0] = std::make_shared<ConstantNode>(scope_context->getCurrentDatabase());
-        }
-        else if (const auto * dictionary_storage = typeid_cast<const StorageDictionary *>(table_function_storage.get());
-                 dictionary_storage && argument_nodes.size() == 1)
-        {
-            const auto dictionary_name = dictionary_storage->getDictionaryName();
-            const auto qualified_name = scope_context->getExternalDictionariesLoader()
-                .qualifyDictionaryNameWithDatabase(dictionary_name, scope_context);
-            /// A dictionary name cannot carry a database name that contains a dot.
-            if (!qualified_name.database.contains('.') && qualified_name.getFullName() != dictionary_name)
-                argument_nodes[0] = std::make_shared<ConstantNode>(qualified_name.getFullName());
         }
     }
 

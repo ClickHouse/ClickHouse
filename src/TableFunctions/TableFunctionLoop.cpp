@@ -36,7 +36,9 @@ namespace DB
             const char * getStorageEngineName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+            std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr & context) const override;
 
+            size_t num_arguments = 0;
             // save the inner table function AST
             ASTPtr inner_table_function_ast;
             // save database and table
@@ -65,6 +67,7 @@ namespace DB
         auto & args = args_func.arguments->children;
         if (args.empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No arguments provided for table function 'loop'");
+        num_arguments = args.size();
 
         if (args.size() == 1)
         {
@@ -107,6 +110,13 @@ namespace DB
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'loop' must have 1 or 2 arguments.");
         }
+    }
+
+    std::optional<ITableFunction::QualifiedArguments> TableFunctionLoop::getQualifiedArguments(const ContextPtr & context) const
+    {
+        if (inner_table_function_ast)
+            return {};
+        return QualifiedArguments{num_arguments, {loop_database_name.empty() ? context->getCurrentDatabase() : loop_database_name, loop_table_name}};
     }
 
     ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const

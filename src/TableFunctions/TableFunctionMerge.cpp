@@ -61,7 +61,9 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    std::optional<QualifiedArguments> getQualifiedArguments(const ContextPtr & context) const override;
 
+    size_t num_arguments = 0;
     String source_database_name_or_regexp;
     String source_table_regexp;
     bool database_is_regexp = false;
@@ -95,6 +97,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
                         "merge(['db_name',] 'tables_regexp')");
 
     ASTs & args = args_func.at(0)->children;
+    num_arguments = args.size();
 
     if (args.size() == 1)
     {
@@ -130,6 +133,13 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
                         "Table function 'merge' requires from 1 to 2 parameters: "
                         "merge(['db_name',] 'tables_regexp')");
     }
+}
+
+std::optional<ITableFunction::QualifiedArguments> TableFunctionMerge::getQualifiedArguments(const ContextPtr &) const
+{
+    if (database_is_regexp)
+        return {};
+    return QualifiedArguments{num_arguments, {source_database_name_or_regexp, source_table_regexp}};
 }
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
