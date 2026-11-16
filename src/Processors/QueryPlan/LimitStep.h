@@ -30,7 +30,12 @@ public:
     [[nodiscard]] size_t getOffset() const { return offset; }
 
     /// Used by the read-in-order OFFSET-skip optimization to reduce the offset by the rows skipped on read.
-    void setOffset(size_t offset_) { offset = offset_; }
+    /// The skipped rows still count for `rows_before_limit_at_least`.
+    void setOffsetAfterSkippedRows(size_t offset_, size_t skipped_rows)
+    {
+        offset = offset_;
+        rows_skipped_before = skipped_rows;
+    }
 
     /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
     /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
@@ -83,6 +88,8 @@ private:
     bool with_ties;
     const SortDescription description;
     bool is_shard_limit = false;
+    /// Rows the read skipped instead of passing them to the offset, see `setOffsetAfterSkippedRows`.
+    size_t rows_skipped_before = 0;
 };
 
 }

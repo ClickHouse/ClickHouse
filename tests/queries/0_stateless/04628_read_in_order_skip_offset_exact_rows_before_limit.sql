@@ -14,4 +14,13 @@ SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0, max_th
     optimize_read_in_order = 1, query_plan_optimize_read_in_order_skip_offset = 1
 FORMAT JSONCompact;
 
+-- Without `exact_rows_before_limit`, LimitTransform counts the rows reaching it, so the rows skipped by the read are
+-- added to the count: it is at least the offset plus the rows returned.
+INSERT INTO t_skip_offset_exact_rows SELECT number FROM numbers(16, 84);
+OPTIMIZE TABLE t_skip_offset_exact_rows FINAL;
+SELECT k FROM t_skip_offset_exact_rows ORDER BY k LIMIT 3 OFFSET 40
+SETTINGS exact_rows_before_limit = 0, output_format_write_statistics = 0, max_threads = 1, max_block_size = 65536,
+    optimize_read_in_order = 1, query_plan_optimize_read_in_order_skip_offset = 1
+FORMAT JSONCompact;
+
 DROP TABLE t_skip_offset_exact_rows;

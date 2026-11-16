@@ -124,7 +124,7 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
         if (offset_order.empty())
             return;
         if (const size_t skipped_rows = reading->skipRowsForOffset(offset, offset_order))
-            set_offset(offset - skipped_rows);
+            set_offset(offset - skipped_rows, skipped_rows);
     };
 
     /// The tightest LIMIT walked past on the way up, if any. Such a limit cuts the prefix the offset above it
@@ -163,7 +163,7 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             if (intermediate_limit && (overflows || *intermediate_limit < offset + limit))
                 return;
 
-            apply(offset, [&](size_t new_offset) { limit_step->setOffset(new_offset); });
+            apply(offset, [&](size_t new_offset, size_t skipped_rows) { limit_step->setOffsetAfterSkippedRows(new_offset, skipped_rows); });
             return;
         }
 
@@ -173,7 +173,7 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             if (intermediate_limit)
                 return;
 
-            apply(offset_step->getOffset(), [&](size_t new_offset) { offset_step->setOffset(new_offset); });
+            apply(offset_step->getOffset(), [&](size_t new_offset, size_t /*skipped_rows*/) { offset_step->setOffset(new_offset); });
             return;
         }
 
