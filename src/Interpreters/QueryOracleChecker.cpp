@@ -1421,7 +1421,7 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
     forEachChild(ast, [&](const ASTPtr & child) { scanAggregatesSafe(child, out); });
 }
 
-/// The SELECT list can use any `WITH` alias, so an aggregate or window function defined there is evaluated by the query.
+/// The SELECT list may reference any `WITH` alias, so its aggregates and window functions count as the query's.
 SafeAggregateScan scanSelectListAndWith(const ASTSelectQuery & select)
 {
     SafeAggregateScan data;
