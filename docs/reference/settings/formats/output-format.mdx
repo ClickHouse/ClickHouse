@@ -153,6 +153,15 @@ Always use 64 bit integers for dictionary indexes in Arrow format
 
 Use signed integers for dictionary indexes in Arrow format
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}]}]}/>
+
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
