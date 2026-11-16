@@ -602,6 +602,7 @@ private:
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
             node = make_intrusive<ASTLiteral>(database_name);
+            node->setAlias(function.alias);
 
             if (parent)
             {

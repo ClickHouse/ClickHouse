@@ -26,6 +26,8 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut SET s = 'u' WHERE id IN (SELECT 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase() WHERE id = 5 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut UPDATE s = currentDatabase() WHERE id = 6 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1;
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ON CLUSTER test_shard_localhost UPDATE s = currentDatabase() WHERE id = 7 SETTINGS mutations_sync = 2, alter_update_mode = 'heavy';
+-- The bound `currentDatabase()` keeps its alias, which hides the column `s`: nothing is deleted.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mut DELETE WHERE (currentDatabase() AS s) != s SETTINGS mutations_sync = 2;
 SELECT id, if(s = currentDatabase(), 'session', s) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mut ORDER BY id;
 
 -- The same for a partition and for `ReplicatedMergeTree`.
