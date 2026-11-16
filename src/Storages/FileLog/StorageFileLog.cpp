@@ -1214,7 +1214,7 @@ A streaming query (`SELECT ... FROM file_log STREAM`, an experimental feature en
 SELECT _filename, _offset, * FROM file_log STREAM CURSOR {'app.log': 1024}
 ```
 
-A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name is read from the beginning. `STREAM BOUNDED` reads the files up to their sizes at the start of the query. `WATERMARK` is not supported.
+A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name is read from the beginning. `STREAM BOUNDED` reads the files up to their sizes at the start of the query, so a `FileLog` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The cursor that it keeps has the inode of every file too (`{'app.log': {'offset': 1024, 'inode': 123}}`), so a file replaced by log rotation or truncated is read from the beginning by the next refresh. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 

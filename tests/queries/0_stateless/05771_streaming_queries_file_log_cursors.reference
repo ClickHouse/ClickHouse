@@ -14,5 +14,8 @@ BAD_ARGUMENTS
 a.log 4
 c.log 30
 a.log 5
---- incremental refresh is not supported
-NOT_IMPLEMENTED
+--- incremental refresh
+round1	8	75
+round2	9	81
+round3	10	88
+round4	10	88

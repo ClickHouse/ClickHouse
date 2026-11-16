@@ -67,6 +67,7 @@ public:
 
     /// A streaming query reads the files with its own readers, see `FileLogStreamSource`.
     bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
 
     /// The names of the files of the table that currently exist, for a streaming query.
     Names listStreamFiles() const;

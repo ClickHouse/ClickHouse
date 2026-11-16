@@ -65,6 +65,7 @@ private:
 
     void updateFiles(bool initial);
     bool allFilesRead() const;
+    void reportFinalCursor() const;
 
     StorageFileLog & storage;
     StorageSnapshotPtr storage_snapshot;

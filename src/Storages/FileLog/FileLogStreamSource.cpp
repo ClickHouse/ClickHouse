@@ -79,14 +79,27 @@ void FileLogStreamSource::updateFiles(bool initial)
     const bool bounded = !stream_settings.subscribe_for_updates;
 
     /// A file name may contain dots, and the cursor tree splits the keys of the query by dots. So the offsets are taken
-    /// from the collapsed form of the tree, where the path of an offset is the file name.
-    std::map<String, Int64> cursor_offsets;
+    /// from the collapsed form of the tree, where the path of an offset is the file name. The cursor that a bounded
+    /// stream reports for an incremental refresh also has the inode of a file: `<file name>.offset` and `<file name>.inode`.
+    struct CursorEntry
+    {
+        std::optional<Int64> offset;
+        std::optional<UInt64> inode;
+    };
+    std::map<String, CursorEntry> cursor_entries;
     if (initial && stream_settings.cursor)
     {
         for (const auto & entry : cursorTreeToMap(stream_settings.cursor))
         {
             const auto & tuple = entry.safeGet<Tuple>();
-            cursor_offsets[tuple.at(0).safeGet<String>()] = tuple.at(1).safeGet<Int64>();
+            const auto & path = tuple.at(0).safeGet<String>();
+            const auto value = tuple.at(1).safeGet<Int64>();
+            if (path.ends_with(".offset"))
+                cursor_entries[path.substr(0, path.size() - strlen(".offset"))].offset = value;
+            else if (path.ends_with(".inode"))
+                cursor_entries[path.substr(0, path.size() - strlen(".inode"))].inode = static_cast<UInt64>(value);
+            else
+                cursor_entries[path].offset = value;
         }
     }
 
@@ -117,8 +130,20 @@ void FileLogStreamSource::updateFiles(bool initial)
             /// The cursor is read only at the start: a file that appears later is a new file.
             std::optional<Int64> offset;
             if (initial)
-                if (auto it_offset = cursor_offsets.find(file_name); it_offset != cursor_offsets.end())
-                    offset = it_offset->second;
+            {
+                if (auto it_entry = cursor_entries.find(file_name); it_entry != cursor_entries.end())
+                {
+                    offset = it_entry->second.offset;
+                    /// A file replaced by another one with the same name (log rotation by renaming), or truncated
+                    /// in place (copytruncate), since the cursor was taken: it is a new file.
+                    if (offset && it_entry->second.inode
+                        && (*it_entry->second.inode != inode || static_cast<UInt64>(*offset) >= size))
+                    {
+                        LOG_DEBUG(log, "File {} was replaced or truncated since the cursor, reading it from the beginning", file_name);
+                        offset.reset();
+                    }
+                }
+            }
 
             if (offset)
             {
@@ -147,6 +172,25 @@ void FileLogStreamSource::updateFiles(bool initial)
             it->second = std::move(state);
         }
     }
+}
+
+void FileLogStreamSource::reportFinalCursor() const
+{
+    /// Only an incremental refresh of a materialized view has the holder of the cursor.
+    auto streaming_cursor = context->getStreamingCursor();
+    if (!streaming_cursor)
+        return;
+
+    auto cursor = std::make_shared<CursorTreeNode>();
+    for (const auto & [file_name, state] : files)
+    {
+        if (state.last_offset < 0)
+            continue;
+        auto & entry = cursor->getSubtreeOrCreate(file_name);
+        entry->setValue("offset", state.last_offset);
+        entry->setValue("inode", static_cast<Int64>(state.inode));
+    }
+    streaming_cursor->merge(cursor);
 }
 
 std::optional<Chunk> FileLogStreamSource::tryGenerate()
@@ -288,6 +332,7 @@ Chunk FileLogStreamSource::generate()
         /// A pass without new records: everything up to the sizes at the start is read.
         if (bounded)
         {
+            reportFinalCursor();
             stream_finished = true;
             break;
         }

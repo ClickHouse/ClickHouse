@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, atomic-database
 
 # STREAM from a `FileLog` table reads the files without consuming them.
 # Its cursor is {file name: <offset of the last read record>}; a file name may contain dots.
@@ -43,11 +43,24 @@ printf 'e\n' >> "$dir/a.log"
 read_until "$fifo" "5"
 cleanup "$fifo" "$pid" > /dev/null
 
-echo "--- incremental refresh is not supported"
+echo "--- incremental refresh"
+refresh()
+{
+    $STREAMING_CLIENT -q "SYSTEM REFRESH VIEW mv; SYSTEM WAIT VIEW mv; SELECT '$1', count(), sum(k) FROM tgt"
+}
 $STREAMING_CLIENT -q "
     CREATE TABLE tgt (k UInt64) ENGINE = MergeTree ORDER BY k;
     CREATE MATERIALIZED VIEW mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO tgt EMPTY AS SELECT k FROM file_log;
-" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+"
+refresh round1
+printf '6,f\n' >> "$dir/a.log"
+refresh round2
+# A file truncated in place is read from the beginning.
+: > "$dir/b.log"
+printf '7,g\n' >> "$dir/b.log"
+refresh round3
+refresh round4
+$STREAMING_CLIENT -q "DROP TABLE mv"
 
 $STREAMING_CLIENT -q "DROP TABLE file_log"
 rm -rf "$dir"
