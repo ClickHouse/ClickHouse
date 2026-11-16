@@ -2,8 +2,8 @@
 Hello, World!
 col1	Nullable(Int64)					
 col2	Nullable(String)					
-col3	Nullable(String)					
-42	Hello, World!	[1, 2, 3]
+col3	Array(Nullable(Int64))					
+42	Hello, World!	[1,2,3]
 Row 1:
 ──────
 c.e:                  ls7xfkpm
