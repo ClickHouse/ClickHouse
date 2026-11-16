@@ -427,9 +427,9 @@ void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
     /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
-    /// performs no allocations on the signal path. The guard is ELF-only because Mach-O binaries never carry
-    /// the compact section, so on Darwin the index stays lazily initialized.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+    /// performs no allocations on the signal path. Mach-O binaries never carry the compact section, so on Darwin
+    /// this only builds the index.
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (daemon)
     {
         /// The daemon does not build the index at initialization, so this is the first time it is built,

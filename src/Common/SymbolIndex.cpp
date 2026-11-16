@@ -894,6 +894,23 @@ int findSelfBuildID(DynamicLinkingProgramHeaderInfo * info, size_t, void * conte
 
 #elif defined(OS_DARWIN)
 
+/// The build id equivalent of a Mach-O image: its LC_UUID, or an empty string.
+String getMachOUUID(const struct mach_header_64 * header)
+{
+    const uint8_t * cmd_ptr = reinterpret_cast<const uint8_t *>(header + 1);
+    for (uint32_t i = 0; i < header->ncmds; ++i)
+    {
+        const struct load_command * cmd = reinterpret_cast<const struct load_command *>(cmd_ptr);
+        if (cmd->cmd == LC_UUID)
+        {
+            const struct uuid_command * uuid_cmd = reinterpret_cast<const struct uuid_command *>(cmd);
+            return String(reinterpret_cast<const char *>(uuid_cmd->uuid), sizeof(uuid_cmd->uuid));
+        }
+        cmd_ptr += cmd->cmdsize;
+    }
+    return {};
+}
+
 /// Collect symbols from a single Mach-O image loaded in the current process.
 /// Uses the in-memory __LINKEDIT segment to access the symbol table (LC_SYMTAB)
 /// without opening any files.
@@ -905,6 +922,10 @@ void collectSymbolsFromMachOImage(
         = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(image_index));
     if (!header || header->magic != MH_MAGIC_64)
         return;
+
+    /// The build id of the main executable (image 0).
+    if (image_index == 0 && data.self_build_id.empty())
+        data.self_build_id = getMachOUUID(header);
 
     intptr_t slide = _dyld_get_image_vmaddr_slide(image_index);
     const char * image_name = _dyld_get_image_name(image_index);
@@ -943,16 +964,6 @@ void collectSymbolsFromMachOImage(
         else if (cmd->cmd == LC_SYMTAB)
         {
             symtab_cmd = reinterpret_cast<const struct symtab_command *>(cmd);
-        }
-        else if (cmd->cmd == LC_UUID)
-        {
-            /// Extract build ID (LC_UUID) for the main executable (image_index == 0)
-            if (image_index == 0 && data.self_build_id.empty())
-            {
-                /// uuid_command layout: { uint32_t cmd, uint32_t cmdsize, uint8_t uuid[16] }
-                const uint8_t * uuid_bytes = cmd_ptr + 8;
-                data.self_build_id.assign(reinterpret_cast<const char *>(uuid_bytes), 16);
-            }
         }
 
         cmd_ptr += cmd->cmdsize;
@@ -1442,6 +1453,15 @@ String SymbolIndex::getSelfBuildIDHex()
             context.build_id = Elf("/proc/self/exe").getBuildID();
         return buildIDToHex(context.build_id);
 #    endif
+    }();
+    return build_id_hex;
+#elif defined(OS_DARWIN)
+    static const String build_id_hex = []
+    {
+        const auto * header = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(0));
+        if (!header || header->magic != MH_MAGIC_64)
+            return String{};
+        return buildIDToHex(getMachOUUID(header));
     }();
     return build_id_hex;
 #else
