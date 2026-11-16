@@ -5,7 +5,7 @@
 # Tag no-shared-merge-tree: custom disk
 
 # A cross-database RENAME/EXCHANGE between Atomic databases on different metadata disks is refused.
-# ENC_A and ENC_B have no `path`, so they share the directory of BASE with each other.
+# ENC_A and ENC_B have no `path`, so all four databases keep their metadata in the directory of BASE.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,13 +34,13 @@ INSERT INTO ${DB}_plain.t VALUES (1);
 INSERT INTO ${DB}_enc_a.t VALUES (2);
 INSERT INTO ${DB}_enc_b.t VALUES (3);
 CREATE DICTIONARY ${DB}_enc_a.d (x UInt32) PRIMARY KEY x SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
-CREATE DICTIONARY ${DB}_enc_b.d (x UInt32) PRIMARY KEY x SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+CREATE DICTIONARY ${DB}_plain.d (x UInt32) PRIMARY KEY x SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
 
 RENAME TABLE ${DB}_plain.t TO ${DB}_enc_a.t2; -- { serverError NOT_IMPLEMENTED }
 RENAME TABLE ${DB}_enc_a.t TO ${DB}_enc_b.t2; -- { serverError NOT_IMPLEMENTED }
-EXCHANGE TABLES ${DB}_enc_a.t AND ${DB}_enc_b.t; -- { serverError NOT_IMPLEMENTED }
+EXCHANGE TABLES ${DB}_plain.t AND ${DB}_enc_a.t; -- { serverError NOT_IMPLEMENTED }
 RENAME DICTIONARY ${DB}_enc_a.d TO ${DB}_enc_b.d2; -- { serverError NOT_IMPLEMENTED }
-EXCHANGE DICTIONARIES ${DB}_enc_a.d AND ${DB}_enc_b.d; -- { serverError NOT_IMPLEMENTED }
+EXCHANGE DICTIONARIES ${DB}_plain.d AND ${DB}_enc_a.d; -- { serverError NOT_IMPLEMENTED }
 
 -- ATTACH re-reads the metadata file through the database's disk.
 DETACH TABLE ${DB}_plain.t;
