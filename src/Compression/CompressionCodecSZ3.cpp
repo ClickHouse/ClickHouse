@@ -31,34 +31,34 @@ class CompressionCodecSZ3 : public ICompressionCodec
 public:
     CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
-    UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
+    [[nodiscard]] UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
 
     void updateHash(SipHash & hash) const override;
 
     void setAndCheckVectorDimension(size_t dimension) override;
 
 protected:
-    bool isCompression() const override { return true; }
+    [[nodiscard]] bool isCompression() const override { return true; }
     /// SZ3 only applies to floating-point data, so it is not a generic codec. This also prevents it
     /// from being selected for structural substreams (e.g. array sizes) where only generic codecs are allowed.
-    bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
-    bool isLossyCompression() const override { return true; }
+    [[nodiscard]] bool isLossyCompression() const override { return true; }
     /// SZ3 must be applied to raw floating-point data, so it can not follow another (e.g. delta) codec;
     /// this flag makes the codec-stack validation reject such combinations (like ALP/Gorilla/FPC).
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    bool needsVectorDimensionUpfront() const override { return true; }
-    String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
+    [[nodiscard]] bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    [[nodiscard]] bool needsVectorDimensionUpfront() const override { return true; }
+    [[nodiscard]] String getDescription() const override { return "SZ3 is a lossy compressor for floating-point data with error bounds."; }
 
 private:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     std::optional<size_t> dimension;
     const UInt8 float_width;
@@ -337,9 +337,14 @@ UInt32 CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_
     return uncompressed_size;
 }
 
+static bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
 static UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!WhichDataType(column_type).isNativeFloat())
+    if (!isApplicableToType(column_type))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Codec 'SZ3' is not applicable for {} because the data type is not Float*", column_type.getName());
 
@@ -448,7 +453,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Codec SZ3 must have 0 or 3 arguments but {} arguments are given", arguments->children.size());
         }
     };
-    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size)

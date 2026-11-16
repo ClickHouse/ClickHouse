@@ -31,10 +31,13 @@ public:
     explicit ReadBufferFromMemory(std::string_view str)
         : SeekableReadBuffer(const_cast<char *>(str.data()), str.size(), 0) {}
 
-    bool isMemoryBuffer() const override { return true; }
+    [[nodiscard]] bool isMemoryBuffer() const override { return true; }
 
-    /// The caller guarantees 15 readable bytes after the range, e.g. it is inside a `PaddedPODArray`.
-    void setPadded() { padded = true; }
+    template <PaddedBufferStorage Storage>
+    void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
+    {
+        BufferBase::setPaddedStorage(storage, storage_offset, size, 0);
+    }
 
     off_t seek(off_t off, int whence) override
     {

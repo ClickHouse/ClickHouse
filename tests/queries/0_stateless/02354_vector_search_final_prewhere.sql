@@ -24,7 +24,7 @@ DROP TABLE IF EXISTS t_04839;
 
 CREATE TABLE t_04839 (id UInt32, vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2))
-ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 4;
+ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 4, allow_vector_similarity_index_in_specialized_merge_tree = 1;
 
 INSERT INTO t_04839 SELECT number, [toFloat32(number), toFloat32(number + 1)] FROM numbers(64);
 

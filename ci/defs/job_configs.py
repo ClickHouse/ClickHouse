@@ -125,7 +125,6 @@ build_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/relocation_headroom.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
@@ -159,7 +158,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
     ],
 )
 
@@ -342,6 +340,26 @@ common_integration_test_job_config = Job.Config(
 )
 
 
+# Cross-compiled builds that pull requests do not run: the merge queue builds them once per
+# merge instead of on every PR commit, and master builds them on every commit. Over
+# 2026-09-15 to 2026-11-14 each of them was the only failing build in 0 to 12 PRs (25 in
+# total, about 3 a week), while they cost about $2.4 per PR commit together.
+# `Build (arm_darwin)` stays in pull requests because `Fast test (arm_darwin)` needs its binary,
+# and so do `Build (wasm64)` (the only Emscripten build, 14 PRs) and `Build (arm_fuzzers)` (66 PRs).
+MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
+    BuildTypes.AMD_DARWIN,
+    BuildTypes.ARM_V80COMPAT,
+    BuildTypes.AMD_FREEBSD,
+    BuildTypes.AMD_ILLUMOS,
+    BuildTypes.PPC64LE,
+    BuildTypes.AMD_COMPAT,
+    BuildTypes.AMD_MUSL,
+    BuildTypes.RISCV64,
+    BuildTypes.S390X,
+    BuildTypes.LOONGARCH64,
+)
+
+
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
@@ -355,8 +373,8 @@ class JobConfigs:
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_TINY,
-        command="python3 ./ci/jobs/copilot_review_job.py --codex",
+        runs_on=RunnerLabels.ARM_SMALL_REVIEW,
+        command="python3 ./ci/jobs/codex_review_job.py",
         allow_failure=True,
         enable_gh_auth=True,
     )
@@ -448,7 +466,10 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG],
+            provides=[
+                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.UNITTEST_AMD_DEBUG,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -733,6 +754,21 @@ class JobConfigs:
         )
         for job in special_build_jobs
     ]
+    # See `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
+    special_build_pr_jobs = [
+        job
+        for job in special_build_jobs
+        if job.parameter not in MERGE_QUEUE_SPECIAL_BUILD_TYPES
+    ]
+    # Only checks that they compile: no artifacts, since no merge queue job uses them, and no post
+    # hooks, since the merge queue has no PR number, so `build_master_head_hook.py` would publish
+    # the binaries as the master ones and `build_profile_hook.py` would record the build as a
+    # master baseline.
+    special_build_mq_jobs = [
+        job.set_post_hooks([]).set_provides([], reset=True)
+        for job in special_build_jobs
+        if job.parameter in MERGE_QUEUE_SPECIAL_BUILD_TYPES
+    ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
     # the host, so it is a CMake project of its own driven by its own script in its own image -
@@ -956,11 +992,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
-    # The selection depends on the merge-queue entry (the tests `master` changed
-    # after the PR's last CI run) and on the attempt (`Targeting.selection_cutoff`),
-    # neither of which is in the digest, so a cached result must not stand in.
-    for job in stateless_tests_targeted_mq_jobs:
-        job.digest_config = None
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1197,11 +1228,18 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
-        Job.ParamSet(
-            parameter="arm_binary, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
+        # The sequential tests take about 48 minutes in total, so a single job ended about 25
+        # minutes after the rest of `CORE_BLOCKING_JOB_NAMES` in `ci/workflows/pull_request.py`
+        # and delayed every job gated by it. Two hash batches take about 24 minutes each.
+        *[
+            Job.ParamSet(
+                parameter=f"arm_binary, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL,
+                requires=[ArtifactNames.CH_ARM_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
     # optimized release binary instead of the plain `binary` build that PRs use (the
@@ -1271,6 +1309,14 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
+    # PRs run the azure configuration as one targeted job (the changed tests, the tests covering
+    # the changed lines and the tests that failed in the PR before) instead of the full suite:
+    # over 30 days its PR failure rate (1.55% parallel, 0.76% sequential) was the same as on
+    # master (1.79%, 0.61%), so the full run found nothing specific to the PRs, and at 85-100
+    # minutes it was the last job of a sixth of the PR runs. Master keeps the full suite.
+    functional_tests_azure_targeted_pr_jobs = targeted_variants(
+        functional_tests_jobs_azure, allow_failure=True
+    )
     # Per-arch Bugfix Validation Check (integration tests). See the rationale
     # and status-model comment above for `bugfix_validation_ft_pr_jobs`. Each
     # per-arch variant has `allow_failure=True` so a genuine `ERROR` doesn't
@@ -1335,7 +1381,6 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./rust",
             ],
             exclude_paths=test_data_submodules,
             with_git_submodules=True,
@@ -1351,7 +1396,19 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
+    # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
+    # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
+    # only into a plain build. `Build (amd_debug)` already builds `unit_tests_dbms`
+    # (`-DENABLE_TESTS=1`); the `amd_debug` job runs it, so these suites run in pull requests
+    # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
+    # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
+    # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_DEBUG],
+        ),
         Job.ParamSet(
             parameter="asan_ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1675,7 +1732,11 @@ class JobConfigs:
         ),
     )
     # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`.
+    # run leaves to `excluded_from_llvm`, except the modules that skip themselves on ARM
+    # (`is_arm()`: `test_storage_hdfs`, `test_storage_kafka`, `test_ytsaurus`, ...). Those are
+    # left to the targeted amd jobs, which select them by their per-module coverage;
+    # `test_ytsaurus` gets that coverage from the per-test coverage run only, see
+    # `PER_TEST_COVERAGE_KEEP_PREFIXES` in `integration_tests_configs.py`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (
         common_integration_test_job_config.parametrize(
             *[
@@ -1684,7 +1745,9 @@ class JobConfigs:
                     runs_on=RunnerLabels.ARM_MEDIUM,
                     requires=[ArtifactNames.CH_ARM_BINARY],
                 )
-                for total_batches in (4,)
+                # With 4 batches a batch took about 93 minutes and was the last job of a third
+                # of the PR runs.
+                for total_batches in (5,)
                 for batch in range(1, total_batches + 1)
             ],
         )
@@ -1707,9 +1770,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         )
     )
-    # Not cached, for the same reason as `stateless_tests_targeted_mq_jobs`.
-    for job in integration_test_targeted_mq_jobs:
-        job.digest_config = None
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
     # script via Info().pr_number and Info().workflow_name.
@@ -1942,7 +2002,28 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
-    performance_comparison_with_master_head_jobs = Job.Config(
+    # Separate instrumented run: no timings, comparison, sampling, or PR gate.
+    # Use the same per-test LLVM build as the stateless and integration collectors.
+    performance_coverage_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        # Whole instrumented XML files can exceed six hours even when placed
+        # alone. Allow the balanced collector twelve hours, including export.
+        timeout=12 * 3600,
+        digest_config=None,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/16",
+                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+            )
+            for batch in range(1, 17)
+        ],
+    )
+
+    performance_comparison_with_master_head_job = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -1954,6 +2035,12 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/performance_selection.py",
+                "./ci/jobs/scripts/performance_fixed_tests.json",
+                "./ci/jobs/scripts/coverage_selection.py",
+                "./ci/jobs/scripts/test_selection_config.py",
+                "./ci/jobs/scripts/find_tests.py",
+                "./ci/jobs/performance_coverage_sharding.py",
                 "./ci/jobs/scripts/seaweedfs_service.py",
                 "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
@@ -1968,7 +2055,8 @@ class JobConfigs:
         ),
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
-    ).parametrize(
+    )
+    performance_comparison_with_master_head_jobs = performance_comparison_with_master_head_job.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_release, master_head, {batch}/{total_batches}",
@@ -1987,6 +2075,25 @@ class JobConfigs:
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
+    )
+    # One family per architecture: six selected-test shards, or eight full-suite shards.
+    # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
+    performance_comparison_pr_job = performance_comparison_with_master_head_job.copy()
+    performance_comparison_pr_job.enable_gh_read_token = True
+    performance_comparison_pr_jobs = performance_comparison_pr_job.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{arch}_release, master_head, {batch}/{total_batches}",
+                runs_on=runner,
+                requires=[artifact],
+            )
+            for arch, runner, artifact in (
+                ("amd", RunnerLabels.FUNC_TESTER_AMD, ArtifactNames.CH_AMD_RELEASE),
+                ("arm", RunnerLabels.FUNC_TESTER_ARM, ArtifactNames.CH_ARM_RELEASE),
+            )
+            for total_batches in (6, 8)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     # The Iceberg configuration: the MergeTree tables of the tests are created as
     # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
@@ -2570,6 +2677,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/filter_coverage_lines.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
             ],
         ),

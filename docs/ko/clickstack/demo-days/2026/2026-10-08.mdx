@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-08
+title: '데모 데이 - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: '2026-10-08 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 히트맵 시계열 모드, PromQL 히트맵 및 명시적 세분화 수준 {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 히트맵에서 숫자 분포만 표시할 수 있었습니다. y축은 span 지속 시간과 같이 버킷 단위로 나눈 값이었고, 색상은 각 버킷의 이벤트 수를 나타냈습니다. 이번에 추가된 시계열 모드에서는 y축에 group-by 값이 표시되고, 색상은 각 시간 버킷(time bucket)에 대해 선택한 집계 결과를 나타냅니다. 다중 시계열 선 차트와 거의 같은 방식으로 동작하며, 값을 높이 대신 색상으로 표현한다는 점만 다릅니다. 빌더와 생성되는 쿼리도 시간 차트와 동일한 방식을 따릅니다.
+
+데모에서는 최근 하루 동안의 데이터를 서비스 이름별로 그룹화합니다. 오류 수 히트맵에서는 뚜렷하게 값이 높은 2개의 셀이 나타나 데모 환경에 연출된 장애를 쉽게 파악할 수 있습니다. 반면 오류가 아닌 집계를 사용한 옆의 동일한 차트는 평탄하게 보입니다. group-by 결과로 50개를 초과하는 시계열이 반환되면 경고를 표시하고 상위 50개만 그리며, 이때 시간 차트와 동일한 client-side 제한 로직을 사용합니다. 시계열 모드는 외부 대시보드 API와 MCP에서도 사용할 수 있습니다.
+
+PromQL 소스에서는 3가지 히트맵 모드를 사용할 수 있습니다. 시계열 모드는 앞서 설명한 것과 같이 동작하며, 매크로, 변수, 범례 템플릿을 지원하는 범위 쿼리를 사용합니다. 데모에서는 이 모드로 엔드포인트별 p95 지연 시간을 표시합니다.
+
+히스토그램 모드는 Prometheus에서 이미 버킷 단위로 집계된 메트릭을 사용합니다. 버킷 경계는 `le` 레이블에서 가져오며, 누적 값은 개별 버킷의 값으로 변환됩니다. 버킷 경계가 같은 시계열을 결합하려면 `sum by (le) (...)`를 사용하십시오.
+
+분포 모드는 히스토그램이 아닌 데이터를 숫자 분포로 보고자 할 때 사용합니다. 각 타임스탬프에서 반환된 샘플은 client-side에서 버킷으로 나뉘며, 버킷 간격은 차트 설정에서 선형 또는 로그 간격 중에서 선택할 수 있습니다. 색상은 각 버킷에 속한 샘플 수를 나타냅니다. 데모에서는 `sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})`를 사용해 14개 CPU 코어의 사용률 분포를 시간에 따라 표시합니다. 히스토그램 및 분포 관련 PR은 아직 머지되지 않았습니다.
+
+세분화 수준 선택 문제도 수정했습니다. 이전에는 히트맵이 명시적으로 선택한 값을 무시하고 항상 245개의 시간 버킷을 목표로 하는 auto를 사용했습니다. 이제는 선택한 값을 그대로 따르므로 대시보드의 다른 차트와 세분화 수준을 맞출 수 있습니다. auto 역시 메트릭 소스의 최소 세분화 수준을 준수합니다.
+
+개수 및 값 표현식 입력 항목은 대시보드와 차트 탐색기 모두에서 표시 설정이 아닌 차트 편집기로 옮겨졌습니다. 또한 이제 히트맵에서도 숫자 서식을 지원합니다.
+
+마지막으로, 호버 강조 표시가 오른쪽 아래로 치우치지 않고 셀 중앙에 표시됩니다. 셀 중앙이 커서 여백 안에 있어야만 선택되던 방식 대신, 경계가 커서 여백 안에 들어오는 가장 가까운 셀이 선택됩니다. 또한 커서가 차트 위에 있는 상태에서 데이터가 새로 고쳐지면 호버 상태도 함께 갱신됩니다.
+
+**관련 PR:** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) 히트맵 호버 상태 정렬 및 안정성 개선, [#3277](https://github.com/hyperdxio/hyperdx/pull/3277) 히트맵 입력 항목을 편집기 폼으로 이동, [#3291](https://github.com/hyperdxio/hyperdx/pull/3291) 빌더 히트맵에서 시계열 모드 지원, [#3298](https://github.com/hyperdxio/hyperdx/pull/3298) API 및 MCP에서 시계열 모드 히트맵 지원, [#3305](https://github.com/hyperdxio/hyperdx/pull/3305) 히트맵에서 명시적 세분화 수준 준수, [#3313](https://github.com/hyperdxio/hyperdx/pull/3313) PromQL 히트맵 지원(시계열 모드), [#3326](https://github.com/hyperdxio/hyperdx/pull/3326) PromQL 값으로 계산되는 분포 히트맵 추가(진행 중), [#3332](https://github.com/hyperdxio/hyperdx/pull/3332) Prometheus 히스토그램 기반 히트맵 지원(진행 중)
+
+## 단일 선택 대시보드 변수 {#single-select-dashboard-variables}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 모든 대시보드 변수가 다중 선택 방식이었습니다. 이제 변수를 단일 선택으로 구성할 수 있으며, 이때 다른 값을 선택하면 현재 값이 새 값으로 대체됩니다. URL에 단일 선택 변수의 값이 여러 개 포함되어 있으면 첫 번째 값이 사용됩니다.
+
+이 기능은 특히 PromQL에서 유용합니다. 다중 선택 변수는 정규식 대안(alternation)으로 확장되므로 `=~`에서는 동작하지만 `=`에서는 동작하지 않습니다. 이 때문에 동등 매처(equality matcher)에서 변수를 사용할 마땅한 방법이 없었습니다.
+
+또한 `promql` 변수 포맷이 추가되었습니다. 포맷을 지정하지 않으면 PromQL 표현식 내 변수 참조에는 이제 `regex` 대신 이 포맷이 기본으로 적용됩니다. 동작 방식은 `regex`와 같지만, 단일 선택 값은 정규식 이스케이프 처리되지 않습니다. 따라서 단일 선택 변수에서는 `field="$var"`를 사용할 수 있습니다. 다중 선택 값은 여전히 정규식 이스케이프 처리되므로 `field=~"$var"`를 사용해야 합니다.
+
+**관련 PR:** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) 단일 선택 대시보드 필터 지원, [#3297](https://github.com/hyperdxio/hyperdx/pull/3297) 유연한 이스케이프 처리를 위한 promql 변수 포맷 추가
+
+## 누적 선 차트 {#stacked-line-charts}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+시계열 차트 유형으로 기존 `stacked_bar`에 이어 `stacked_line`이 추가되었습니다. 차트 탐색기나 대시보드에서 선 차트를 누적 선 차트로 전환할 수 있습니다. 누적 선 차트는 각 시계열을 차례로 쌓아 올리고 그 아래 영역을 채워 표시하므로, 전체 합계와 함께 시계열별 기여도도 한눈에 확인할 수 있습니다.
+
+CLI에서는 이 차트가 누적 막대 차트로 렌더링됩니다. 두 방식이 보여 주는 정보는 사실상 같으며, 터미널에서는 누적과 채우기를 막대로 표시하는 편이 더 읽기 쉽습니다.
+
+**관련 PR:** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) 누적 선 차트 지원
+
+## ClickHouse 쿼리를 발행한 화면별로 식별하기 {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*데모 진행자: [@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이제 ClickStack이 ClickHouse로 보내는 모든 SQL 쿼리(SQL query)에는 JSON `log_comment`와 `hdx-<surface>-<uuid>` 형식의 `query_id`가 포함됩니다. 따라서 `system.query_log`의 행을 보고 해당 쿼리를 발행한 대시보드 타일, 저장된 검색, 알림 또는 MCP 도구를 역추적할 수 있습니다. 후속 작업에서는 그동안 태그 없이 전송되던 PromQL 쿼리에도 동일한 태그를 추가합니다.
+
+데모에서 검색 화면으로 쿼리 로그(query log)를 조회하자, `EXPLAIN` 쿼리와 히스토그램 막대 차트를 포함한 모든 쿼리에 검색에서 발행되었음을 나타내는 레이블이 지정되어 있었습니다. 기본 제공 ClickHouse 대시보드를 열면 사전 구성된 대시보드임을 나타내는 `clickhouse` 레이블이 붙은 대시보드 쿼리가 표시되었습니다. 사용자가 생성한 대시보드에서는 각 쿼리에 대시보드 ID와 해당 쿼리를 발행한 차트의 타일 ID가 포함되었습니다.
+
+ClickStack이 다른 워크로드(workloads)와 ClickHouse 클러스터를 공유하는 환경이라면, 이 기능으로 ClickStack의 쿼리를 더 쉽게 식별하고, 쿼리가 앱의 어느 부분에서 발생했는지 확인하며, 화면별 쿼리 비용을 추적할 수 있습니다. 내부적으로는 사용량을 분석할 때 쿼리 로그(query logs)를 대시보드 구성과 연결하는 데 활용할 수 있습니다. 또한 이제 느린 쿼리를 해당 쿼리를 생성한 타일과 연결할 수 있게 되었으므로, 자동 쿼리 최적화(query optimization)를 향한 첫걸음이기도 합니다.
+
+**관련 PR:** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) ClickHouse 쿼리를 발행한 화면별로 식별, [#3300](https://github.com/hyperdxio/hyperdx/pull/3300) PromQL 쿼리 식별
+
+## 객체 이름 지정을 위한 인라인 이름 입력 {#inline-name-inputs-for-naming-objects}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+이전에는 앱의 어느 화면이냐에 따라 이름을 지정하는 방식이 제각각이었습니다. 대시보드와 저장된 검색에서는 제목을 클릭해 편집하는 방식을 사용했는데, 마우스를 올리면 나타나는 연필 아이콘을 누르거나 더블 클릭해 편집한 뒤 **Save Name** 버튼을 눌러야 했습니다. 다른 곳에서는 테두리가 있는 텍스트 필드를 사용했습니다. 문서화된 패턴이 없다 보니 새 화면을 만들 때마다 각자의 방식을 추가하곤 했습니다. 이제 객체 이름을 지정하는 표준 방식으로 공통 `InlineNameInput` 구성 요소를 제공합니다.
+
+이 구성 요소는 평소에는 제목처럼 보이다가 마우스를 올리면 옅은 테두리가 나타납니다. 클릭하면 그 자리에서 바로 편집할 수 있습니다. `Enter`를 누르거나 다른 곳을 클릭하면 저장되고, `Escape`를 누르거나 이름을 비워 두면 원래 이름으로 되돌아갑니다. 연필 아이콘이나 별도의 저장 버튼은 없습니다. 저장한 후에는 저장된 값이 표시됩니다. 이름 변경에 실패하거나 동시에 진행된 대시보드 저장으로 이름이 덮어쓰이면, 저장되지 않은 이름을 화면에 그대로 두지 않고 표시된 이름도 함께 되돌립니다.
+
+긴 이름은 잘려서 표시되며, 이 구성 요소는 `xs`, `sm`, `md` 크기로 제공됩니다. 페이지 제목에는 `md`(18px)를 사용하며, 이전의 약 22px보다 작아졌습니다. 화면 낭독기가 인식할 수 있도록 제목은 여전히 heading 요소 안에서 렌더링됩니다.
+
+이제 대시보드와 저장된 검색 페이지에서 이 구성 요소를 사용하며, 기존 `EditablePageName` 구성 요소는 제거되었습니다. 또한 상위 폼과 함께 저장되는 `InlineNameInputControlled` 변형도 있습니다. 전체 페이지 타일 편집기의 초안 작업용으로 만들어졌지만 아직 앱에서는 사용되지 않습니다. 차트 편집기는 인라인 버전을 적용하려면 먼저 레이아웃을 조정해야 하므로 당분간 기존 **Chart Name** 필드를 유지합니다.
+
+이 패턴은 `agent_docs/naming_objects.md`, `naming-objects` 에이전트 스킬, 그리고 Storybook의 Guidelines 및 Components 항목에 문서화되어 있습니다. 이를 통해 리포지토리에서 작업하는 코딩 에이전트가 이름 지정 기능을 새로 추가할 때 이 구성 요소를 쉽게 찾아 재사용할 수 있습니다.
+
+**관련 PR:** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) 객체 이름을 지정하는 단일 방식으로 InlineNameInput 추가
+
+## 저장된 검색을 검색 아래에 중첩하기 {#nesting-saved-searches-under-search}
+
+*데모 진행자: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**이 작업은 탐색 단계이며, 출시가 확정된 것은 아닙니다.**
+
+현재 저장된 검색은 검색과 별개로 자체 목록 페이지와 사이드바 항목을 가지고 있습니다. 한 곳에서 검색을 저장한 뒤, 이를 찾고 관리하려면 다른 곳으로 이동해야 합니다. 목록에서 검색을 복제하려는 고객은 먼저 해당 검색을 연 다음 그 안에서 복제해야 했습니다. 별도의 목록은 대시보드에는 적합하지만, 저장된 검색에는 다소 어색하게 느껴집니다.
+
+이 초안은 저장된 검색을 검색 안으로 통합합니다. 최상위 **Saved searches** 사이드바 항목이 없어지고, 즐겨찾기한 검색은 대시보드처럼 검색 아래에 표시됩니다. 도구 모음의 **Saved searches** 버튼을 누르면 오른쪽에 드로어가 열리며, 여기에서 검색, **All** 및 **Favorites** 탭, 태그 필터링을 사용할 수 있고 각 행에서 이름 변경, 복제, 삭제 작업을 수행할 수 있습니다. 드로어는 앱 탐색 영역을 가리지 않도록 오른쪽에서 열립니다. 기존 `/search/list` 링크로 접속해도 드로어가 열립니다.
+
+저장된 검색을 선택하면 버튼에 해당 검색의 이름이 표시됩니다. 버튼 옆의 배지에는 **Unsaved**, **Saved** 또는 **Edited**가 표시되며, **Edited**는 변경된 쿼리를 실행한 후에 나타납니다. 비교는 URL에 포함된 검색 구성을 기준으로 하며 빈 값과 결측값을 동등하게 취급하므로, 저장된 검색을 로딩하기만 해서는 편집됨으로 표시되지 않습니다.
+
+브레드크럼, 제목, 생성/갱신 정보 줄을 포함한 별도의 저장된 검색 헤더는 제거됩니다. 즐겨찾기, 태그, Terraform 및 작업 메뉴는 도구 모음으로 옮겨지고, 생성/갱신 세부 정보는 버튼의 도구 설명으로 표시됩니다. 이를 통해 저장된 검색과 저장되지 않은 검색의 레이아웃(layout)이 일관되게 유지됩니다. 제목을 더블 클릭하여 이름을 변경하는 기능은 헤더와 함께 없어지지만, 드로어의 행 메뉴나 **Update** 모달 대화 상자에서 계속 이름을 변경할 수 있습니다. 갱신에 모달 대화 상자가 꼭 필요한지는 아직 결정되지 않았습니다. 이상적으로는 이름 변경 기능 없이 한 번의 작업으로 갱신할 수 있어야 합니다.
+
+이 기능은 아직 초안 단계이며, 동작에 대한 피드백을 기다리고 있습니다. 드로어 테스트 모음의 엔드투엔드 테스트 4개가 아직 실패하고 있어, 초안 단계를 벗어나기 전에 수정해야 합니다.
+
+**관련 PR:** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) 저장된 검색을 드로어 형태로 검색 아래에 중첩 (진행 중). (초안). 이는 출시된 기능이 아닌 탐색 작업입니다.

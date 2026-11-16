@@ -1,4 +1,5 @@
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 
 #if USE_GPU
 
@@ -16,6 +17,8 @@ namespace DB::ServerSetting
 {
     extern const ServerSettingsUInt64 gpu_memory_pool_release_threshold;
     extern const ServerSettingsUInt64 gpu_pinned_memory_pool_release_threshold;
+    extern const ServerSettingsUInt64 gpu_expression_kernel_cache_size;
+    extern const ServerSettingsUInt64 gpu_expression_kernel_cache_elements_size;
 }
 
 namespace DB::GPU
@@ -43,6 +46,8 @@ GPUDeviceSettings GPUDeviceSettings::fromServerSettings(const ServerSettings & s
     return {
         .memory_pool_release_threshold = server_settings[ServerSetting::gpu_memory_pool_release_threshold],
         .pinned_memory_pool_release_threshold = server_settings[ServerSetting::gpu_pinned_memory_pool_release_threshold],
+        .kernel_cache_max_size_in_bytes = server_settings[ServerSetting::gpu_expression_kernel_cache_size],
+        .kernel_cache_max_count = server_settings[ServerSetting::gpu_expression_kernel_cache_elements_size],
     };
 }
 
@@ -77,6 +82,7 @@ GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
       }
     , upload_stream(createStream())
     , decompression_stream(createStream())
+    , kernel_cache(std::make_unique<GPUKernelCache>(settings.kernel_cache_max_size_in_bytes, settings.kernel_cache_max_count))
 {
     gpu_resources.upload = cuda::stream_ref{upload_stream.get()};
     gpu_resources.decompression = cuda::stream_ref{decompression_stream.get()};

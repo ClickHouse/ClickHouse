@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 #
 # Deletion-vector / Puffin payload error cases. Split from the former monolithic
 # 04257 suite so slow CI builds stay under the 300s timeout. Cases still run in
