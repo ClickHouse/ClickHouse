@@ -36,6 +36,13 @@ LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 4096 WRITE_BUFFER_SIZE 0 MAX_PARTITIO
 SYSTEM RELOAD DICTIONARY d_invalid_zero_buffer;
 " 2>&1 | grep -o -F -m1 'BAD_ARGUMENTS'
 
+$CLICKHOUSE_LOCAL --query "
+CREATE DICTIONARY d_invalid_zero_buffer (k UInt64, v String DEFAULT '') PRIMARY KEY k
+SOURCE(NULL()) LIFETIME(1)
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 4096 WRITE_BUFFER_SIZE 0 MAX_PARTITIONS_COUNT 1 PATH '$dir/d_invalid_zero_buffer'));
+SYSTEM RELOAD DICTIONARY d_invalid_zero_buffer;
+" 2>&1 | grep -o -F -m1 'BAD_ARGUMENTS'
+
 # At the boundary (`MAX_PARTITIONS_COUNT 2`: capacity 8192 == `write_buffer_size`) the dictionaries load,
 # and 100 KB of values pass through the cache, so the write buffer is flushed to the file many times.
 $CLICKHOUSE_LOCAL --query "

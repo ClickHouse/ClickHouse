@@ -93,6 +93,12 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
             full_name,
             layout_type);
 
+    if (write_buffer_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "{}: dictionary of layout '{}' setting 'write_buffer_size' must be greater than 0",
+            full_name,
+            layout_type);
+
     if (write_buffer_size % block_size != 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "{}: dictionary of layout '{}' setting 'write_buffer_size' must be a multiple of block_size",
