@@ -62,7 +62,7 @@ private:
         uint64_t offset = 0;
         VectorWithMemoryTracking<StackEntry> stack;
 
-        bool eof() const { return offset == end_offset; }
+        [[nodiscard]] bool eof() const { return offset == end_offset; }
 
         UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & data);
     };
