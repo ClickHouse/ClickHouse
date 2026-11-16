@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/QueueWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h>
@@ -12,6 +13,7 @@ namespace DB
   * For each group of consecutive identical values of the sorting key
   *   (the columns by which the data is sorted, including specially specified version column),
   *   merges any pair of consecutive rows with opposite sign.
+  * Rows whose sign is neither 1 nor -1 are kept as is.
   */
 class VersionedCollapsingAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
@@ -40,8 +42,16 @@ private:
 
     QueueWithMemoryTracking<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
+    /// Rows whose sign is neither 1 nor -1 that a vertical merge keeps, copied by value (a `RowRef` would pin a
+    /// shared chunk) until the rows read before them are emitted.
+    MutableColumns invalid_sign_columns;
+    VectorWithMemoryTracking<size_t> invalid_sign_block_sizes;
+    size_t next_invalid_sign_row = 0;
+
     void insertGap(size_t gap_size);
     void insertRow(size_t skip_rows, const RowRef & row);
+    void bufferInvalidSignRow(const RowRef & row);
+    void insertBufferedInvalidSignRow();
 };
 
 }
