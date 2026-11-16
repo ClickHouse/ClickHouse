@@ -2,6 +2,12 @@
 
 SELECT value FROM system.settings WHERE name = 'allow_ai_functions';
 
+-- An older `compatibility` does not disable AI functions.
+SELECT getSetting('allow_ai_functions') SETTINGS compatibility = '26.6';
+
+-- `allow_experimental_ai_functions` is an alias.
+SELECT aiGenerate('x') SETTINGS allow_experimental_ai_functions = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 SET allow_ai_functions = 0;
 
 SELECT aiGenerate('x'); -- { serverError SUPPORT_IS_DISABLED }
