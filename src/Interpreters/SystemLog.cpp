@@ -846,6 +846,7 @@ SystemLog<LogElement>::SystemLog(
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
     , flush_overcommit_wait_time_microseconds(settings_.flush_overcommit_wait_time_microseconds)
+    , flush_memory_tracker_description("System log flush of " + table_id.getFullTableName())
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(getSystemTableSkipAliasColumnsOption(context_->getConfigRef())))
 {
     for (const auto * column : {"clickhouse_version", "system_processor"})
@@ -947,7 +948,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         if (flush_overcommit_wait_time_microseconds != 0)
         {
             flush_thread_group = ThreadGroup::createWithoutQueryContext(getContext());
-            flush_thread_group->memory_tracker.setDescription("System log flush");
+            flush_thread_group->memory_tracker.setDescription(flush_memory_tracker_description.c_str());
             flush_thread_group->memory_tracker.setOvercommitWaitingTime(flush_overcommit_wait_time_microseconds);
         }
         ThreadGroupSwitcher thread_group_switcher(flush_thread_group, ThreadName::SYSTEM_LOG_FLUSH);

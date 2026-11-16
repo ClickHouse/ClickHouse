@@ -1809,6 +1809,8 @@ private:
     const bool union_table_merge_rotated_tables;
     const String union_table_cluster;
     const UInt64 flush_overcommit_wait_time_microseconds;
+    /// Outlives the flush thread group, whose memory tracker keeps only a pointer to it.
+    const String flush_memory_tracker_description;
     std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
     String create_query;
     String old_create_query;

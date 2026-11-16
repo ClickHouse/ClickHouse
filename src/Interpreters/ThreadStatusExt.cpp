@@ -132,13 +132,13 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createWithoutQueryContext
 ThreadGroup::ThreadGroup(const ContextWeakPtr & global_context_)
     : master_thread_id(CurrentThread::get().thread_id)
     , global_context(global_context_)
     , with_query_context(false)
     , os_threads_nice_value(0)
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>())
+    , memory_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
 }
 
