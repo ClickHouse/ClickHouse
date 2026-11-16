@@ -2192,9 +2192,10 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
 
         /// Walked by hand rather than with `extractTableExpressions`: an unresolved query, such as the argument
         /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
-        if (const auto * query_node = node->as<QueryNode>())
+        /// A scope without a `SELECT` to identify its tables by records none of them, and its subqueries are its children.
+        const auto * query_node = node->as<QueryNode>();
+        if (const auto * scope_select = query_node ? getScopeSelect(query_node->getOriginalAST().get()) : nullptr)
         {
-            const auto * scope_select = getScopeSelect(query_node->getOriginalAST().get());
             /// Taken at the first table found in this scope, and then for all of them.
             std::optional<SipHash> scope_hash;
             std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
@@ -2223,12 +2224,15 @@ TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
                 {
                     const auto & table_expression_ast = table_expression->getOriginalAST();
                     std::vector<size_t> path;
-                    if (!scope_select || !table_expression_ast
-                        || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                    if (!table_expression_ast || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
                         continue;
 
                     if (!scope_hash)
                         scope_hash = hashScopeSelect(*scope_select);
+                    /// Every table of one scope shares its hash: in `FROM d, t AS a, t AS b` both reads of `t` would get one
+                    /// identity, be counted twice and never be paired. The path to the table under `FROM` tells them
+                    /// apart, and it is the same in both builds: it is taken in the AST, which passes reordering the
+                    /// join tree do not touch.
                     SipHash hash = *scope_hash;
                     hash.update(path.size());
                     for (size_t index : path)
