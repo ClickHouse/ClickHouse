@@ -90,8 +90,7 @@ Chunk IRowInputFormat::read()
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
-        /// `countRows` skips rows without parsing them, so it cannot skip bad rows as allowed by `input_format_allow_errors_*`.
-        if (need_only_count && supportsCountRows() && params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
+        if (need_only_count && supportsCountRows())
         {
             num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)

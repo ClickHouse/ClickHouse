@@ -960,8 +960,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    // ORDER BY, SHUFFLE
-    if (query_node.hasOrderBy() || query_node.isShuffle())
+    // ORDER BY
+    if (query_node.hasOrderBy())
         return default_stage;
 
     // LIMIT
@@ -2423,11 +2423,10 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>((*distributed_settings)[DistributedSetting::max_delay_to_insert]) * 1'000 * 0.05));
         UInt64 delayed_ms = 0;
 
-        /// Nothing is left to throttle once the server shuts down, and throwing then would drop the rows it flushes.
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (!getContext()->isShutdownCalled() && *totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
+        } while (*totalBytes(getContext()) > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && delayed_ms < (*distributed_settings)[DistributedSetting::max_delay_to_insert]*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
@@ -2438,7 +2437,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
             formatReadableSizeWithBinarySuffix(new_total_bytes),
             delayed_ms);
 
-        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert] && !getContext()->isShutdownCalled())
+        if (new_total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_delay_insert])
         {
             ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
             throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,

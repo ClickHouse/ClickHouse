@@ -91,10 +91,6 @@ private:
     /// SYSTEM RELOAD USERS or next startup runs reloadAllAndRebuildLists() and resolves the issues.
     bool has_stale_files_on_disk TSA_GUARDED_BY(mutex) = false;
 
-    /// Whether the pending `.list` rewrite must be synced. `writeLists` can run without the query context
-    /// of the changes made before it runs, so their `fsync_metadata` is accumulated here.
-    bool pending_lists_fsync TSA_GUARDED_BY(mutex) = false;
-
     /// List files are written in a separate thread.
     std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
 
@@ -102,10 +98,6 @@ private:
     std::condition_variable lists_writing_thread_should_exit;
 
     bool lists_writing_thread_is_waiting = false;
-
-    /// Written under `mutex`, so an exit request made before `listsWritingThreadFunc` starts waiting
-    /// is still visible to the predicate of that wait.
-    bool lists_writing_thread_must_exit = false;
 
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;

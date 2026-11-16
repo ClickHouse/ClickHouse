@@ -38,7 +38,6 @@
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
@@ -95,15 +94,35 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
 static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
     NameSet res;
-    visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
+
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        /// We treat all INPUT as identifier
-        if (cur->type == ActionsDAG::ActionType::INPUT)
-            res.emplace(cur->result_name);
-        else
-            addImpliedIndexHintInputs(*cur, res);
-        return VisitResult::Continue;
-    });
+        res.emplace(node->result_name);
+        return res;
+    }
+
+    std::queue<const ActionsDAG::Node *> queue;
+    queue.push(node);
+
+    while (!queue.empty())
+    {
+        const auto * top = queue.front();
+        addImpliedIndexHintInputs(*top, res);
+        for (const auto * child : top->children)
+        {
+            if (child->type == ActionsDAG::ActionType::INPUT)
+            {
+                res.emplace(child->result_name);
+            }
+            else
+            {
+                /// Only push non INPUT child into the queue
+                queue.push(child);
+            }
+        }
+        queue.pop();
+    }
     return res;
 }
 
@@ -246,10 +265,8 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-    auto new_filter = std::make_unique<FilterStep>(
+    node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-    new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-    node.step = std::move(new_filter);
     node.step->setStepDescription(*filter);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
@@ -1196,16 +1213,27 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
             stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
 
-    return anyReachableNode({conjunct}, [](const ActionsDAG::Node * node)
+    stack.push_back(conjunct);
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
     {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
             if (name == "equals" || name == "isNotDistinctFrom")
                 return true;
         }
-        return false;
-    });
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -1445,13 +1473,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            auto new_filter = std::make_unique<FilterStep>(
+            filter_node.step = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
-            new_filter->setOptimizeConstantColumnsAfterFilter(filter->getOptimizeConstantColumnsAfterFilter());
-            filter_node.step = std::move(new_filter);
         }
 
         ///       - Filter - Something

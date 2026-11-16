@@ -16,7 +16,6 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -381,7 +380,7 @@ void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_nod
             name, step.getName(), former_header->dumpStructure(), header.dumpStructure());
 }
 
-/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter, ArrayJoin and JoinStepLogical ->
+/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter and JoinStepLogical ->
 /// sources` so that the columns the frontier defers are read for the rows the `LIMIT` returns only.
 ///
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
@@ -475,16 +474,8 @@ public:
 
             const auto & origin = merged.getOrigin(value);
             Carrying carrying{.value = value, .name = makeCarriedName(carried.size())};
-            /// An alias has the values of what it names, so the step outputting an alias of the value outputs the value,
-            /// as an `ARRAY JOIN` does its elements.
             const auto & values = merged.step_outputs.at(origin.plan_node);
-            const auto output_it = std::ranges::find_if(values, [value](const auto * output)
-            {
-                while (output != value && output->type == ActionsDAG::ActionType::ALIAS)
-                    output = output->children.front();
-                return output == value;
-            });
-            if (output_it != values.end())
+            if (const auto output_it = std::ranges::find(values, value); output_it != values.end())
                 carrying.position = output_it - values.begin();
             else if (origin.step_node
                 && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
@@ -1267,14 +1258,12 @@ private:
     NameSet added_names;
 };
 
-/// Whether a step can produce a block of totals: `WITH TOTALS`, a remote read, whose query can have it, or a read of a
-/// cached result that has it. Such a block goes through the joins up to the `LIMIT` with no rows to read lazily, so it
-/// would reach the expression above the `LIMIT` without the columns read lazily; and a value computed below a join is
-/// that join's default in it, which recomputing the value above the `LIMIT` would not give.
+/// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
+/// goes through the joins up to the `LIMIT` with no rows to read lazily, so it would reach the expression above the
+/// `LIMIT` without the columns read lazily; and a value computed below a join is that join's default in it, which
+/// recomputing the value above the `LIMIT` would not give.
 bool canProduceTotals(const IQueryPlanStep & step)
 {
-    if (const auto * cache_read = typeid_cast<const ReadFromQueryResultCacheStep *>(&step))
-        return cache_read->hasTotals();
     return typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ReadFromRemote *>(&step)
         || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
 }

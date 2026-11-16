@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -175,9 +174,9 @@ void StorageObjectStorageConfiguration::initialize(
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
     {
-        const auto storage_settings = configuration_to_initialize.getDataLakeSettings();
-        disk_name = (*storage_settings)[DataLakeStorageSetting::disk].changed
-            ? (*storage_settings)[DataLakeStorageSetting::disk].value
+        const auto & storage_settings = configuration_to_initialize.getDataLakeSettings();
+        disk_name = storage_settings[DataLakeStorageSetting::disk].changed
+            ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
     if (engine_args.empty() && table_id)
@@ -267,28 +266,6 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     auto columns_str = columns.getAllPhysical().toString();
     hash.update(columns_str.data(), columns_str.size());
     return getSipHash128AsHexString(hash);
-}
-
-StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
-{
-    SharedLockGuard lock(paths_mutex);
-    return getPathsImpl();
-}
-
-void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
-{
-    std::lock_guard lock(paths_mutex);
-    setPathsImpl(paths);
-}
-
-void StorageObjectStorageConfiguration::addPath(const Path & path)
-{
-    std::lock_guard lock(paths_mutex);
-    auto paths = getPathsImpl();
-    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
-        return;
-    paths.push_back(path);
-    setPathsImpl(paths);
 }
 
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)

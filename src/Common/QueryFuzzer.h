@@ -28,7 +28,6 @@ namespace DB
 {
 
 class ASTExpressionList;
-class ASTColumns;
 class ASTFunction;
 class ASTIdentifier;
 class ASTOrderByElement;
@@ -329,18 +328,15 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
     void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
-    void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
+    void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
-    /// The `CODEC <path> (...)` entries of a column list, added to a list that has none.
-    void fuzzCodecDeclarations(ASTColumns & columns_list);
-    /// Point a codec target at a subcolumn inside it, or at its parent.
-    void fuzzCodecTarget(String & name);
     ASTPtr makeTextIndexTokenizer();
     String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
@@ -368,8 +364,6 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
-    void fuzzProxyDatabaseEngine(ASTStorage & storage);
-    void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeFuzzedLikePattern();
     String makeBraceExpansion();

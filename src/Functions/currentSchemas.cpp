@@ -9,6 +9,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 namespace
 {
@@ -39,9 +43,14 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Bool) -> Array(String)";
+        // For compatibility, function implements the same signature as Postgres'
+        const bool argument_is_valid = arguments.size() == 1 && isBool(arguments.front());
+        if (!argument_is_valid)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be bool", getName());
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
     bool isDeterministic() const override { return false; }

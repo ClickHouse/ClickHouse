@@ -213,7 +213,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                     else
                     {
-                        const auto & allSettings = allColumnSettings.at(teng);
+                        const auto & allSettings = allTableSettings.at(teng);
                         auto * svs = cdef.mutable_setting_values();
 
                         for (int j = 0; j < svs->other_values_size() + 1; j++)
@@ -405,7 +405,7 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
     if (is_clickhouse)
         return db ? ("`" + escapeSQLString(db->getName(), '`') + "`.`" + escapeSQLString(tname, '`') + "`")
                   : ("`" + escapeSQLString(tname, '`') + "`");
-    return "`" + escapeSQLString(sc.database, '`') + "`.`" + escapeSQLString(tname, '`') + "`";
+    return "`test`.`" + escapeSQLString(tname, '`') + "`";
 }
 
 String MySQLIntegration::truncateStatement()
@@ -983,16 +983,6 @@ void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
 template <typename T>
 constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream::document>;
 
-/// Types handled by `documentAppendBottomType`
-static bool isMongoBottomType(SQLType * tp)
-{
-    return dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp)
-        || dynamic_cast<DateTimeType *>(tp) || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp)
-        || dynamic_cast<const BoolType *>(tp) || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp)
-        || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp) || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp)
-        || dynamic_cast<TimeType *>(tp);
-}
-
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const String & cname, T & output, SQLType * tp)
 {
@@ -1122,8 +1112,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         const uint32_t left = detp->precision.value_or(10) - right;
         String buf = appendDecimal(rg, false, left, right);
 
-        /// `b_decimal128` throws on more than 34 significant digits, and `appendDecimal` may add one
-        if (left + right < 34 && rg.nextBool())
+        if (rg.nextBool())
         {
             bsoncxx::types::b_decimal128 decimal_value(buf.c_str());
 
@@ -1302,27 +1291,28 @@ void MongoDBIntegration::documentAppendArray(
             /// Min-Key Value
             array << bsoncxx::types::b_minkey{};
         }
-        else if (dynamic_cast<LowCardinality *>(tp) || dynamic_cast<Nullable *>(tp) || isMongoBottomType(tp))
+        else if (
+            dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
+            || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
+            || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
+            || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
         {
-            SQLType * btp = tp;
-
-            if (auto * lc = dynamic_cast<LowCardinality *>(btp))
+            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype.get());
+        }
+        else if (auto * lc = dynamic_cast<LowCardinality *>(tp))
+        {
+            if (auto * nl = dynamic_cast<Nullable *>(lc->subtype.get()))
             {
-                btp = lc->subtype.get();
-            }
-            if (auto * nl = dynamic_cast<Nullable *>(btp))
-            {
-                btp = nl->subtype.get();
-            }
-            if (isMongoBottomType(btp))
-            {
-                documentAppendBottomType<decltype(array)>(rg, "", array, btp);
+                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
             }
             else
             {
-                /// Workaround for unknown types such as `Nullable(QBit)`, insert null
-                array << bsoncxx::types::b_null{};
+                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype.get());
             }
+        }
+        else if (auto * nl = dynamic_cast<Nullable *>(tp))
+        {
+            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
         }
         else if (dynamic_cast<ArrayType *>(tp))
         {
@@ -1369,7 +1359,11 @@ void MongoDBIntegration::documentAppendAnyValue(
         /// Min-Key Value
         document << cname << bsoncxx::types::b_minkey{};
     }
-    else if (isMongoBottomType(tp))
+    else if (
+        dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
+        || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
+        || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
+        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
     {
         documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
@@ -1445,8 +1439,6 @@ bool MongoDBIntegration::performTableIntegration(
     }
     catch (const std::exception & e)
     {
-        /// Don't leak this table's documents into the next insert
-        documents.clear();
         LOG_ERROR(fc.log, "MongoDB connection error: {}", e.what());
         return false;
     }
@@ -1515,8 +1507,6 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
     /// Resolve through the DNS cache instead of letting Poco resolve the host on connect.
     session.setResolvedHost(DB::DNSResolver::instance().resolveHost(uri.getHost()).toString());
-    /// Each request starts a Spark session and runs one operation, which can exceed Poco's default 60 s on a loaded host.
-    session.setTimeout(Poco::Timespan(10, 0), Poco::Timespan(600, 0), Poco::Timespan(600, 0));
     Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     req.setContentType("application/json");
     req.setContentLength(static_cast<int>(body.size()));
@@ -1719,7 +1709,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
             R"({}{{"name":"{}","type":"{}"}})",
             first ? "" : ",",
             escapeJSON(entry.getBottomName()),
-            escapeJSON(entry.getBottomType()->typeName(false, false)));
+            escapeJSON(entry.getBottomType()->typeName(false, true)));
         first = false;
     }
     buf += "]";
