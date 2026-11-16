@@ -7,7 +7,7 @@
 -- granule may have rows admitted by changed bounds of a condition but not by the earlier ones: wider bounds
 -- read every granule. Narrower bounds need no primary key and still reuse the entries of the earlier bounds.
 
-SET use_query_condition_cache = 1, enable_analyzer = 1,
+SET use_query_condition_cache = 1, use_query_condition_cache_for_changing_bounds = 1, enable_analyzer = 1,
     merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
     merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0;
 

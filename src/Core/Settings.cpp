@@ -7425,8 +7425,8 @@ Possible values:
 - 1 - Enabled
 )", 0, \
         {"26.8", false, true, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; enabled by default. The gate is disabled in 26.7, so `compatibility` with an earlier version keeps it off."}) \
-    DECLARE(Bool, use_query_condition_cache_for_changing_bounds, true, R"(
-Let the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables serve conditions with bounds that change from query to query, e.g. a dashboard query `WHERE time >= now() - INTERVAL 1 HOUR AND message LIKE '%error%'`, the same with literal bounds such as `WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654)` that move with every refresh, or `WHERE price > 100 AND category = 'books'` repeated with another threshold.
+    DECLARE(Bool, use_query_condition_cache_for_changing_bounds, false, R"(
+Experimental. Let the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables serve conditions with bounds that change from query to query, e.g. a dashboard query `WHERE time >= now() - INTERVAL 1 HOUR AND message LIKE '%error%'`, the same with literal bounds such as `WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654)` that move with every refresh, or `WHERE price > 100 AND category = 'books'` repeated with another threshold.
 
 A bound is a comparison (`<`, `<=`, `>`, `>=`) of an expression with a constant of a numeric type (including `Decimal`, `Date`, `Date32`, `DateTime` and `DateTime64`, and constants computed from the current time, e.g. by `now()` or `today()`), or with a string constant if the expression has a date/time type. A condition that is non-deterministic only because of such bounds is cached under its own key, which includes the values of the bounds.
 
@@ -7440,8 +7440,8 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
-)", 0, \
-        {"26.11", false, true, "New setting to let the query condition cache serve conditions with bounds that change from query to query (e.g. `WHERE time >= now() - INTERVAL 10 DAY`, literal bounds moved by a dashboard refresh, or another threshold of a numeric condition) by reusing the entries of earlier variants with other bounds; enabled by default."}) \
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to let the query condition cache serve conditions with bounds that change from query to query (e.g. `WHERE time >= now() - INTERVAL 10 DAY`, literal bounds moved by a dashboard refresh, or another threshold of a numeric condition) by reusing the entries of earlier variants with other bounds; disabled by default."}) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.

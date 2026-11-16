@@ -90,7 +90,7 @@ A bound is a comparison (`<`, `<=`, `>`, `>=`) of an expression with a constant 
 Bounds may be combined with each other and with other conditions using `AND`, `OR` and `NOT`.
 A condition which is non-deterministic in another way than by its bounds, e.g. with `rand()`, is not cached.
 
-This can be disabled with the setting [`use_query_condition_cache_for_changing_bounds`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+This is experimental and is enabled with the setting [`use_query_condition_cache_for_changing_bounds`](/reference/settings/session-settings/use-query) (default: disabled), which only takes effect if `use_query_condition_cache` is also enabled.
 It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
 Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top_k_dynamic_filtering`) reuse the entries written by other queries with the same condition, but do not write entries for conditions involving the current time themselves, except for the granules skipped by a `PREWHERE` when the dynamic filter cannot be added to it (see [below](#top-k-queries)).
 
