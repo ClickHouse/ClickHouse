@@ -1206,7 +1206,7 @@ void StorageEmbeddedRocksDB::initDB()
 class ReadFromEmbeddedRocksDB : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromEmbeddedRocksDB"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromEmbeddedRocksDB"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -1641,6 +1641,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
+        .stores_data_on_disk = true,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, SecretArgumentsSpec{}, features, Documentation{

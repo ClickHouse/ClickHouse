@@ -12,7 +12,7 @@ import re
 from ..ltypes import LType
 from ..model import ID_COLUMN, arrow_schema, rows_to_arrow
 from ..predicates import clickhouse_literal, pred_from_json, render
-from .base import Capabilities, ForeignReadError, Source, Writer
+from .base import Capabilities, ForeignReadError, Source, Writer, is_tool_error
 from .spark_common import q
 
 ICEBERG_PREFIX = "var/lib/clickhouse/user_files/fwf_ch_iceberg"
@@ -39,17 +39,24 @@ def _ch_partition(p):
 
 
 def _iceberg_kinds(gates):
-    kinds = ["int", "long", "float", "double", "decimal", "date", "timestamp", "string"]
-    if not gates.active("clickhouse_iceberg_bool"):
-        kinds.append("boolean")
+    kinds = [
+        "int",
+        "long",
+        "float",
+        "double",
+        "decimal",
+        "date",
+        "timestamp",
+        "string",
+        "boolean",
+    ]
     if not gates.active("clickhouse_iceberg_timestamp_ntz"):
         kinds.append("timestamp_ntz")
     return tuple(kinds)
 
 
 def _iceberg_options(rng, gates):
-    versions = [2] if gates.active("clickhouse_iceberg_v1_metadata") else [1, 2, 2]
-    return {"format_version": rng.choice(versions)}
+    return {"format_version": rng.choice([1, 2, 2])}
 
 
 def _latest_metadata(metadata_dir):
@@ -120,7 +127,13 @@ class ClickHouseIcebergWriter(Writer):
     def adjust_caps(caps, gates):
         import dataclasses
 
-        return dataclasses.replace(caps, primitive_kinds=_iceberg_kinds(gates))
+        caps = dataclasses.replace(caps, primitive_kinds=_iceberg_kinds(gates))
+        if gates.active("clickhouse_iceberg_compaction_after_schema_change"):
+            caps = dataclasses.replace(
+                caps,
+                op_weights={k: v for k, v in caps.op_weights.items() if k != "compact"},
+            )
+        return caps
 
     @property
     def ch_table(self):
@@ -194,7 +207,9 @@ class ClickHouseIcebergWriter(Writer):
             result["pyiceberg"] = (
                 StaticTable.from_metadata(metadata).scan().to_arrow().select(names)
             )
-        except Exception as e:
+        except BaseException as e:
+            if not is_tool_error(e):
+                raise
             raise ForeignReadError(
                 f"PyIceberg cannot read the ClickHouse-written table {metadata}: {type(e).__name__}: {e}"
             ) from None
@@ -295,7 +310,9 @@ class ClickHouseDeltaWriter(Writer):
                 .to_pyarrow_table()
                 .select(names)
             )
-        except Exception as e:
+        except BaseException as e:
+            if not is_tool_error(e):
+                raise
             raise ForeignReadError(
                 f"delta-rs cannot read the ClickHouse-written table: {type(e).__name__}: {e}"
             ) from None

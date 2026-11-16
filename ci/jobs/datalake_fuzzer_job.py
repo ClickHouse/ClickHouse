@@ -171,9 +171,10 @@ def main():
     # Server logs, Spark logs and the minimal failing histories (`foreign_writer_fuzz_*.json`) are
     # under the cluster's instances directory.
     logs_archive = f"{temp_path}/datalake_fuzzer_logs.tar.zst"
+    # The job runs as root, so no `chown` is needed to read them; one would hand the checkout to
+    # root in a local run.
     Shell.check(
-        f"sudo chown -R $(id -u):$(id -g) {FUZZER_DIR} 2>/dev/null;"
-        f" cd {FUZZER_DIR} && tar --zstd -cf {logs_archive} _instances*/ || :",
+        f"cd {FUZZER_DIR} && tar --zstd -cf {logs_archive} _instances*/ || :",
         verbose=True,
     )
     files = [
