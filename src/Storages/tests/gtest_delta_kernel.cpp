@@ -590,7 +590,7 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         auto [object_storage, configuration, metadata] = make_table(/* follows_session_restriction */ true);
         ASSERT_FALSE(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
 
-        expectAccessDenied([&] { return metadata->update(restricted); });
+        expectAccessDenied([&] { metadata->update(restricted); });
         expectAccessDenied([&] { return metadata->getTableSchema(restricted); });
         expectAccessDenied([&] { return metadata->getTableStateSnapshot(restricted); });
         expectAccessDenied([&] { return metadata->buildStorageMetadataFromState(DeltaLake::TableStateSnapshot{}, restricted); });
@@ -616,7 +616,7 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         ASSERT_NE(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
 
         /// An opted-in session passes the check.
-        expectNotAccessDenied([&] { return metadata->update(allowed); });
+        expectNotAccessDenied([&] { metadata->update(allowed); });
         log_output.str("");
         ASSERT_FALSE(metadata->totalRows(allowed, std::nullopt).has_value());
         ASSERT_EQ(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
@@ -625,7 +625,7 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
     {
         /// A disk keeps the server's identity for every session.
         auto [object_storage, configuration, metadata] = make_table(/* follows_session_restriction */ false);
-        expectNotAccessDenied([&] { return metadata->update(restricted); });
+        expectNotAccessDenied([&] { metadata->update(restricted); });
         log_output.str("");
         ASSERT_FALSE(metadata->totalRows(restricted, std::nullopt).has_value());
         ASSERT_EQ(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
