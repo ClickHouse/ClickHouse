@@ -43,3 +43,9 @@ abc	String
 1	42	UInt16	Date	Date
 2	42	UInt16	Date	Date
 42	UInt16
+FixedString(3)	1
+Tuple(x UInt8)	1
+FixedString(3)
+[42]	UInt16
+1	[42]	UInt16
+2	[42]	UInt16

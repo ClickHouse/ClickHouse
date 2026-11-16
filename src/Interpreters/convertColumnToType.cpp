@@ -449,12 +449,31 @@ bool isTypeKeptByField(const IDataType & type)
         return isTypeKeptByField(*array->getNestedType());
     if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
         return isTypeKeptByField(*map->getKeyType()) && isTypeKeptByField(*map->getValueType());
+    /// A `Field` has no element names.
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
-        return std::ranges::all_of(tuple->getElements(), [](const DataTypePtr & element) { return isTypeKeptByField(*element); });
+        return !tuple->hasExplicitNames()
+            && std::ranges::all_of(tuple->getElements(), [](const DataTypePtr & element) { return isTypeKeptByField(*element); });
 
+    /// A `Field` has no width of a `FixedString`.
     const WhichDataType which(type);
-    return which.isInteger() || which.isFloat() || which.isDecimal() || which.isStringOrFixedString() || which.isUUID()
+    return which.isInteger() || which.isFloat() || which.isDecimal() || which.isString() || which.isUUID()
         || which.isIPv4() || which.isIPv6() || which.isNothing();
+}
+
+/// Whether `type` has a `Variant`, whose alternative a `Field` does not tell.
+bool hasVariant(const IDataType & type)
+{
+    if (isVariant(type))
+        return true;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return hasVariant(*nullable->getNestedType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return hasVariant(*array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return hasVariant(*map->getKeyType()) || hasVariant(*map->getValueType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const DataTypePtr & element) { return hasVariant(*element); });
+    return false;
 }
 
 }
@@ -471,9 +490,9 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
         return column;
     };
 
-    /// A `Variant` source keeps its alternative in a `Variant` destination, which the `Field` does not tell.
-    const bool is_variant_from_variant = isVariant(*type) && (isVariant(*source_type) || isDynamic(*source_type));
-    if ((!type->hasDynamicStructure() && !is_variant_from_variant) || value.isNull() || source.isNullAt(row))
+    /// A `Variant` of the source keeps its alternative in a `Variant` of the destination, which the `Field` does not tell.
+    const bool keeps_variant_alternatives = hasVariant(*type) && (hasVariant(*source_type) || source_type->hasDynamicStructure());
+    if ((!type->hasDynamicStructure() && !keeps_variant_alternatives) || value.isNull() || source.isNullAt(row))
         return insert_value();
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&source))
@@ -483,7 +502,7 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
         auto nested = createColumnFromFieldKeepingDynamicTypes(nullable_type->getNestedType(), value, source, source_type, row);
-        return ColumnNullable::create(std::move(nested), ColumnUInt8::create(1, static_cast<UInt8>(0)));
+        return ColumnNullable::create(nested, ColumnUInt8::create(1, static_cast<UInt8>(0)));
     }
 
     if (isDynamic(*type) || isObject(*type))
@@ -496,9 +515,9 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
         if (isDynamic(*type) && !isTypeKeptByField(*source_type))
         {
             const DataTypePtr value_type = recursiveRemoveLowCardinality(source_type);
-            auto value_column = value_type->createColumn();
-            value_column->insert(value);
-            return castColumn(ColumnWithTypeAndName(std::move(value_column), value_type, ""), type);
+            const ColumnPtr source_value = recursiveRemoveLowCardinality(source.cut(row, 1));
+            auto value_column = createColumnFromFieldKeepingDynamicTypes(value_type, value, *source_value, value_type, 0);
+            return castColumn(ColumnWithTypeAndName(value_column, value_type, ""), type);
         }
 
         return insert_value();
@@ -514,7 +533,7 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
         {
             const DataTypePtr & alternative = variant_type->getVariant(*discriminator);
             auto alternative_column = castColumn(ColumnWithTypeAndName(source_value, source_type, ""), alternative);
-            return castColumn(ColumnWithTypeAndName(std::move(alternative_column), alternative, ""), type);
+            return castColumn(ColumnWithTypeAndName(alternative_column, alternative, ""), type);
         }
 
         /// Otherwise into the one `IColumn::insert` chooses for the `Field`, keeping the types inside it.
@@ -524,7 +543,7 @@ ColumnPtr createColumnFromFieldKeepingDynamicTypes(
             return inserted;
         const DataTypePtr & alternative = variant_type->getVariant(inserted_discriminator);
         auto alternative_column = createColumnFromFieldKeepingDynamicTypes(alternative, value, source, source_type, row);
-        return castColumn(ColumnWithTypeAndName(std::move(alternative_column), alternative, ""), type);
+        return castColumn(ColumnWithTypeAndName(alternative_column, alternative, ""), type);
     }
 
     /// A `Dynamic` or `Variant` source holding a composite: convert the composite itself.

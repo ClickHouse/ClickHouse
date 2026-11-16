@@ -100,3 +100,18 @@ INSERT INTO t_dynamic_values_variant SELECT
 SELECT id, toString(d), dynamicType(d), dynamicType(variantElement(v, 'JSON').d), dynamicType(variantElement(w, 'Array(Dynamic)')[1]) FROM t_dynamic_values_variant ORDER BY id;
 DROP TABLE t_dynamic_values_variant;
 SELECT toString(d), dynamicType(d) FROM values('d Dynamic', CAST(toUInt16(42) AS Variant(Date, UInt16)));
+
+-- A `Field` has neither the width of a `FixedString` nor the element names of a tuple: typed reads still find the values.
+SELECT dynamicType(d), dynamicElement(d, 'FixedString(3)') = toFixedString('a', 3) FROM values('d Dynamic', toFixedString('a', 3));
+SELECT dynamicType(d), dynamicElement(d, 'Tuple(x UInt8)').x FROM values('d Dynamic', CAST(tuple(1) AS Tuple(x UInt8)));
+SELECT dynamicType(a[1]) FROM values('a Array(Dynamic)', [toFixedString('a', 3)]);
+
+-- The alternative of a `Variant` nested in the source is kept, as by `INSERT SELECT`.
+SELECT toString(d), variantType(dynamicElement(d, 'Array(Variant(Date, UInt16))')[1]) FROM values('d Dynamic', [CAST(toUInt16(42) AS Variant(Date, UInt16))]);
+DROP TABLE IF EXISTS t_dynamic_values_nested_variant;
+CREATE TABLE t_dynamic_values_nested_variant (id UInt8, a Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_dynamic_values_nested_variant SETTINGS input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (1, CAST([CAST(toUInt16(42) AS Variant(Date, UInt16))] AS Array(Variant(Date, UInt16))));
+INSERT INTO t_dynamic_values_nested_variant SELECT 2, CAST([CAST(toUInt16(42) AS Variant(Date, UInt16))] AS Array(Variant(Date, UInt16)));
+SELECT id, toString(a), dynamicType(a[1]) FROM t_dynamic_values_nested_variant ORDER BY id;
+DROP TABLE t_dynamic_values_nested_variant;
