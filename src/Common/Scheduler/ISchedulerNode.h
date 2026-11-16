@@ -98,7 +98,7 @@ public:
 
     virtual ~ISchedulerNode();
 
-    virtual std::string_view getTypeName() const = 0;
+    [[nodiscard]] virtual std::string_view getTypeName() const = 0;
 
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
@@ -113,19 +113,19 @@ public:
     /// Returns full path string using names of every parent.
     /// WARNING: Not thread-safe - only call from scheduler thread.
     /// For logging outside scheduler thread, use `basename` instead.
-    String getPath() const;
+    [[nodiscard]] String getPath() const;
 
     /// Attach to a parent (used by attachChild)
     void setParentNode(ISchedulerNode * parent_);
 
     /// Return workload name this node belongs to (if any)
-    const String & getWorkloadName() const;
+    [[nodiscard]] const String & getWorkloadName() const;
 
     /// Return resource name this node belongs to (if any)
-    const String & getResourceName() const;
+    [[nodiscard]] const String & getResourceName() const;
 
     /// Return readable string for a cost value
-    String formatReadableCost(ResourceCost cost) const;
+    [[nodiscard]] String formatReadableCost(ResourceCost cost) const;
 
     EventQueue & event_queue;
     String basename;

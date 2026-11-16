@@ -1073,7 +1073,7 @@ This is equivalent to declaring the `samples` column of the samples table in the
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))),
-                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(3)))
+                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(4)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -1116,11 +1116,11 @@ The _samples_ table must have columns:
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |
 
 The `samples` column the engine creates itself gets time-series compression codecs declared for the elements of its tuples, as codecs for subcolumns:
-`CODEC samples.timestamp (Delta, T64, ZSTD(3))` and `CODEC samples.value (ALP, ZSTD(3))`. Near-monotonic timestamps barely compress under
+`CODEC samples.timestamp (Delta, T64, ZSTD(3))` and `CODEC samples.value (ALP, ZSTD(4))`. Near-monotonic timestamps barely compress under
 generic codecs and can otherwise dominate the on-disk size of the samples table. The `bucket`, `min_time` and `max_time` columns the engine
 creates itself get the codec of the timestamps, `CODEC(Delta, T64, ZSTD(3))`: they dominate the size of the rows with few samples.
 Tables of [version](#schema-versioning) 10 and earlier store one sample per row in the columns `timestamp` and `value`, and the columns the engine
-created itself got the same codecs: `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
+created itself got the codecs `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`.
 The engine enables the codecs for subcolumns for its inner samples and recent samples tables without requiring the setting
 [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs) to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
@@ -1234,9 +1234,9 @@ SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta, T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
-SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC')) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 262144
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1245,7 +1245,7 @@ RECENT SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta, T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5)) ORDER BY (id, bucket) TTL toDateTime(bucket) + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -1293,12 +1293,12 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta(8), T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(toDateTime(bucket, 'UTC'))
 ORDER BY (id, bucket)
-SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+SETTINGS index_granularity = 256, index_granularity_bytes = 262144
 ```
 
 ```sql
@@ -1310,7 +1310,7 @@ CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta(8), T64, ZSTD(3)),
     CODEC `samples.timestamp` (Delta(8), T64, ZSTD(3)),
-    CODEC `samples.value` (ALP, ZSTD(3))
+    CODEC `samples.value` (ALP, ZSTD(4))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))
@@ -1396,7 +1396,7 @@ The same can be done by declaring the `samples` column of the samples table:
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))),
-                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(3)))
+                       CODEC samples.timestamp (Delta, T64, ZSTD(3)), CODEC samples.value (ALP, ZSTD(4)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:
@@ -1561,7 +1561,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `tags_deduplication_cache_size_bytes` | UInt64 | 104857600 | Maximum size in bytes of the deduplication cache of the [tags](#tags-table) table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time` (tables of [version](#schema-versioning) 7 or earlier store them unless `store_min_time_and_max_time` is disabled), because otherwise every insert changes these columns: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also `tags_deduplication_cache_expiration_seconds` |
 | `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. The actual lifetime of an entry is uniformly random in the range `[0.8 * expiration_seconds, expiration_seconds]`, so the time series written together aren't all written again at the same moment. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time`, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. The default is 32768 for tables of [version](#schema-versioning) 10 or earlier, which store one sample per row |
-| `samples_index_granularity_bytes` | UInt64 | 524288 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for a non-MergeTree engine |
+| `samples_index_granularity_bytes` | UInt64 | 262144 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional [recent samples](#recent-samples-table) target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(bucket) + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)` derived from this setting (overriding any TTL from the engine declaration): a row expires when all its samples are older than the TTL. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_bucket_step_seconds` | UInt64 | 900 | The length in seconds of the time buckets of the [recent samples](#recent-samples-table) table, see `samples_bucket_step_seconds`. The default is 15 minutes; the effective value is pinned into the table definition at CREATE time. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))` | Partition key of the inner [recent samples](#recent-samples-table) table, for example `toStartOfHour(toDateTime(bucket, 'UTC'))`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
