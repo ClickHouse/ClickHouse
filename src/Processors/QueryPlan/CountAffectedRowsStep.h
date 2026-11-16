@@ -13,7 +13,7 @@ class CountAffectedRowsStep : public ITransformingStep
 public:
     explicit CountAffectedRowsStep(const SharedHeader & input_header_, String command_index_column_name_, AffectedRowsCounterPtr counter_);
 
-    String getName() const override { return "CountAffectedRows"; }
+    [[nodiscard]] String getName() const override { return "CountAffectedRows"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

@@ -20,7 +20,7 @@ AffectedRowsCounter::AffectedRowsCounter(size_t num_commands_)
 {
 }
 
-void AffectedRowsCounter::add(const std::vector<UInt64> & affected_rows)
+void AffectedRowsCounter::add(const VectorWithMemoryTracking<UInt64> & affected_rows)
 {
     chassert(affected_rows.size() == rows_by_command_index.size(),
     "`affected_rows` should have `num_commands + 1` elements, indexed like the totals");
@@ -28,7 +28,7 @@ void AffectedRowsCounter::add(const std::vector<UInt64> & affected_rows)
         rows_by_command_index[i] += affected_rows[i];
 }
 
-std::vector<UInt64> AffectedRowsCounter::get() const
+VectorWithMemoryTracking<UInt64> AffectedRowsCounter::get() const
 {
     return rows_by_command_index;
 }
@@ -38,7 +38,7 @@ namespace
 
 /// Counts the rows by command index of the index column of type `T`.
 template <typename T>
-void countRows(const IColumn & column, std::vector<UInt64> & rows_by_command_index)
+void countRows(const IColumn & column, VectorWithMemoryTracking<UInt64> & rows_by_command_index)
 {
     for (auto command_index : assert_cast<const ColumnVector<T> &>(column).getData())
         ++rows_by_command_index[command_index];

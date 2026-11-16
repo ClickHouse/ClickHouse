@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
 #include <functional>
@@ -19,18 +20,18 @@ class AffectedRowsCounter
 public:
     explicit AffectedRowsCounter(size_t num_commands);
 
-    size_t getNumCommands() const { return num_commands; }
+    [[nodiscard]] size_t getNumCommands() const { return num_commands; }
 
     /// Adds the counts of one transform to the totals.
-    void add(const std::vector<UInt64> & affected_rows);
+    void add(const VectorWithMemoryTracking<UInt64> & affected_rows);
 
     /// Returns the totals, indexed by the 1-based index of the command (see above).
-    std::vector<UInt64> get() const;
+    [[nodiscard]] VectorWithMemoryTracking<UInt64> get() const;
 
 private:
     const size_t num_commands;
 
-    std::vector<UInt64> rows_by_command_index;
+    VectorWithMemoryTracking<UInt64> rows_by_command_index;
 };
 
 using AffectedRowsCounterPtr = std::shared_ptr<AffectedRowsCounter>;
@@ -55,10 +56,10 @@ protected:
 
 private:
     /// Counts the rows of a full index column, chosen for the type of the column.
-    std::function<void(const IColumn & column, std::vector<UInt64> & rows_by_command_index)> count_rows;
+    std::function<void(const IColumn & column, VectorWithMemoryTracking<UInt64> & rows_by_command_index)> count_rows;
 
     const size_t command_index_column_position;
-    std::vector<UInt64> rows_by_command_index;
+    VectorWithMemoryTracking<UInt64> rows_by_command_index;
     AffectedRowsCounterPtr counter;
 };
 

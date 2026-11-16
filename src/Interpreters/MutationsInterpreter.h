@@ -205,7 +205,7 @@ public:
 
     /// The number of rows affected by each `DELETE` and `UPDATE` command. A row is counted for the
     /// first command that deletes it, and for each command that updates it.
-    AffectedRowsByMutationCommandsMap getAffectedRows() const;
+    [[nodiscard]] AffectedRowsByMutationCommandsMap getAffectedRows() const;
 
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
@@ -343,20 +343,20 @@ private:
             AffectedRowsCounterPtr counter;
 
             /// Whether the rows affected by the commands of the stage are counted.
-            bool needToCount() const { return !command_identifiers.empty(); }
+            [[nodiscard]] bool needToCount() const { return !command_identifiers.empty(); }
 
             /// Whether the rows updated by the `UPDATE` command of the stage are counted.
             /// If so, the update step is followed by a `CountAffectedRowsStep`.
-            bool needToCountUpdatedRows() const { return update_condition != nullptr; }
+            [[nodiscard]] bool needToCountUpdatedRows() const { return update_condition != nullptr; }
 
             /// A stage might contain multiple `DELETE` commands, but only one `UPDATE` command in the end. Multiple update
             ///commands cannot be in the same stage. Then the number of cascaded delete commands can be calculated as the
             /// number of commands minus one if there is an update command.
-            size_t getNumDeleteCommands() const { return command_identifiers.size() - (needToCountUpdatedRows() ? 1 : 0); }
+            [[nodiscard]] size_t getNumDeleteCommands() const { return command_identifiers.size() - (needToCountUpdatedRows() ? 1 : 0); }
 
             /// Whether the rows deleted by each filter of the stage are counted.
             /// If so, the filter step is executed as an `ExpressionStep`, a `CountAffectedRowsStep` and a `FilterStep`.
-            bool needToCountDeletedRows() const { return getNumDeleteCommands() > 0; }
+            [[nodiscard]] bool needToCountDeletedRows() const { return getNumDeleteCommands() > 0; }
         };
 
         AffectedRowsCounting affected_rows_counting;
