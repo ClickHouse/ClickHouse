@@ -15,14 +15,19 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
+#include <DataTypes/Serializations/SerializationMapSize.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationStringSize.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
@@ -217,6 +222,34 @@ TEST(SerializationIsColumnCompatible, SubObjectRequiresColumnObject)
 
     const auto json_type = DataTypeFactory::instance().get("JSON(a.b UInt32)");
     EXPECT_TRUE(serialization->isColumnCompatible(*json_type->createColumn()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+TEST(SerializationIsColumnCompatible, StringSizeRequiresColumnUInt64)
+{
+    const auto serialization = SerializationStringSize::create(MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt64::create()));
+    /// A sparse column of sizes is still the wrong destination.
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnSparse::create(ColumnUInt64::create())));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+TEST(SerializationIsColumnCompatible, MapSizeRequiresColumnUInt64)
+{
+    const auto size_serialization = SerializationNumber<UInt64>::create();
+    const auto serialization = SerializationMapSize::create(size_serialization, MergeTreeMapSerializationVersion::WITH_BUCKETS);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnUInt64::create()));
+    EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
+}
+
+TEST(SerializationIsColumnCompatible, MapKeysOrValuesRequiresColumnArray)
+{
+    const auto array_serialization = SerializationArray::create(SerializationString::create());
+    const auto serialization = SerializationMapKeysOrValues::create(array_serialization, MergeTreeMapSerializationVersion::WITH_BUCKETS);
+
+    EXPECT_TRUE(serialization->isColumnCompatible(*ColumnArray::create(ColumnString::create())));
     EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
 }
 
