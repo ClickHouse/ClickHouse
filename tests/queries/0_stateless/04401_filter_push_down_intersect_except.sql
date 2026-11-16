@@ -146,12 +146,16 @@ SELECT 'const branch except off', count() FROM (SELECT DISTINCT x FROM ((SELECT 
 SELECT 'const branch intersect', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) INTERSECT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'const branch intersect off', count() FROM (SELECT DISTINCT x FROM ((SELECT DISTINCT NULL AS x GROUP BY 'z', NULL) INTERSECT ALL (SELECT DISTINCT NULL AS x GROUP BY NULL)) WHERE isNullable(-0.)) AS t0 WHERE t0.x > t0.x SETTINGS query_plan_filter_push_down = 0;
 
--- IntersectOrExceptTransform uniformizes only the main ports, so a WITH TOTALS branch whose main port
--- constant-folds leaves the outer DISTINCT comparing a Const main port against a full totals one.
+-- A branch that produces totals keeps the filter above the set operation: pushed into it, the filter could
+-- sink below TotalsHaving and change the totals. Pushdown on and off must give the same rows and totals.
 SELECT 'totals except', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'totals except off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
 SELECT 'totals intersect', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'totals intersect off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+SELECT 'totals value except';
+SELECT x, c FROM (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x WITH TOTALS EXCEPT ALL SELECT 2, 3) WHERE x = 1 SETTINGS query_plan_filter_push_down = 1;
+SELECT 'totals value intersect';
+SELECT x, c FROM (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x WITH TOTALS INTERSECT ALL SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x) WHERE x = 1 SETTINGS query_plan_filter_push_down = 1;
 
 -- The filter cloned into each branch keeps the `optimize_constant_columns_after_filter` value of the query it
 -- was planned in, so the subquery SETTINGS decide for every branch whether its filter emits a Const column.

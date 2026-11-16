@@ -70,21 +70,6 @@ static const ActionsDAG::Node * resolvePassThroughInput(const ActionsDAG::Node *
     return node && node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
 }
 
-/// True if the subplan rooted at `node` contains a step that emits a totals port
-/// (WITH TOTALS / CUBE / ROLLUP).
-static bool subplanEmitsTotals(const QueryPlan::Node * node)
-{
-    if (!node || !node->step)
-        return false;
-    const auto & name = node->step->getName();
-    if (name == "TotalsHaving" || name == "Cube" || name == "Rollup")
-        return true;
-    for (const auto * child : node->children)
-        if (subplanEmitsTotals(child))
-            return true;
-    return false;
-}
-
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
 {
@@ -1521,10 +1506,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (isSensitiveToEvaluationCount(filter->getExpression()))
             return 0;
 
-        /// A pushed-down filter can leave a branch main port constant-folded while its totals port
-        /// stays full, and a downstream Main-only transform then aborts on the mismatch.
-        for (const auto * branch : child_node->children)
-            if (subplanEmitsTotals(branch))
+        /// In a branch that produces totals the filter could sink below TotalsHaving and change the totals.
+        for (auto * branch : child_node->children)
+            if (canProduceTotals(*branch))
                 return 0;
 
         /// Forcing the filter's output header onto a branch whose input header is not the output one
