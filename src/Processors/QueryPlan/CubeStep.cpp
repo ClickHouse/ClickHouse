@@ -194,7 +194,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
-    checkDeserializedAggregatesMatchHeader(aggregates, *ctx.input_headers.front(), /*only_merge=*/ true);
+    checkDeserializedMergedAggregatesLayout(keys, aggregates, ctx.input_headers.front()->getColumnsWithTypeAndName());
 
     const auto & query_settings = ctx.context->getSettingsRef();
 

@@ -346,6 +346,49 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
+/// With grouping sets, `MergingAggregatedTransform` removes `__grouping_set` from the input and, for every set,
+/// moves its keys to the front (see `makeReorderingActions`) and drops the other keys. Check the layout it merges.
+static void checkMergedAggregatesLayout(
+    const Names & keys, const GroupingSetsParamsList & grouping_sets_params, const AggregateDescriptions & aggregates, const Block & header)
+{
+    if (grouping_sets_params.empty())
+    {
+        checkDeserializedMergedAggregatesLayout(keys, aggregates, header.getColumnsWithTypeAndName());
+        return;
+    }
+
+    if (!header.has("__grouping_set"))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized `MergingAggregated` step with grouping sets has no `__grouping_set` column");
+
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        NameSet keys_of_set(grouping_set.used_keys.begin(), grouping_set.used_keys.end());
+        keys_of_set.insert(grouping_set.missing_keys.begin(), grouping_set.missing_keys.end());
+
+        ColumnsWithTypeAndName layout;
+        for (const auto & key : grouping_set.used_keys)
+        {
+            const auto * column = header.findByName(key);
+            if (!column || key == "__grouping_set")
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Key {} of a grouping set is not in the input of a deserialized `MergingAggregated` step", key);
+            layout.push_back(*column);
+        }
+        /// The transform removes the first `__grouping_set` only.
+        bool grouping_set_column_skipped = false;
+        for (const auto & column : header)
+        {
+            if (!grouping_set_column_skipped && column.name == "__grouping_set")
+                grouping_set_column_skipped = true;
+            else if (!keys_of_set.contains(column.name))
+                layout.push_back(column);
+        }
+
+        checkDeserializedMergedAggregatesLayout(grouping_set.used_keys, aggregates, layout);
+    }
+}
+
 QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
@@ -394,7 +437,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
-    checkDeserializedAggregatesMatchHeader(aggregates, *ctx.input_headers.front(), /*only_merge=*/ true);
+    checkMergedAggregatesLayout(keys, grouping_sets_params, aggregates, *ctx.input_headers.front());
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);

@@ -1584,7 +1584,19 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
-    checkDeserializedAggregatesMatchHeader(aggregates, *ctx.input_headers.front(), only_merge);
+    const auto & input_header = *ctx.input_headers.front();
+    if (only_merge)
+    {
+        /// The step merges the states only for an aggregate projection, which is never combined with grouping sets
+        /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
+        if (has_grouping_sets)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
+        checkDeserializedMergedAggregatesLayout(keys, aggregates, input_header.getColumnsWithTypeAndName());
+    }
+    else
+    {
+        checkDeserializedAggregateArguments(aggregates, input_header);
+    }
 
     UInt64 stats_key = 0;
     if (has_stats_key)

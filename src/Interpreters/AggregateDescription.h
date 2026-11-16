@@ -4,6 +4,7 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
@@ -44,10 +45,15 @@ void serializeAggregateDescriptionsWithoutArguments(
 void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
 
 /// The aggregate functions of a deserialized query plan are resolved from the types written in the plan,
-/// but they are executed on the columns of the step's input, found by name. The plan may come from an
-/// untrusted client, so check that they agree, or a function would interpret a column of another type.
-/// With `only_merge` the input has the states of the aggregates (named by `column_name`), otherwise
-/// their arguments. Throws `INCORRECT_DATA`.
-void checkDeserializedAggregatesMatchHeader(const AggregateDescriptions & aggregates, const Block & header, bool only_merge);
+/// but they are executed on the columns of the step's input. The plan may come from an untrusted client,
+/// so check that they agree, or a function would interpret a column of another type. Both throw `INCORRECT_DATA`.
+
+/// The arguments of the aggregates are found in the input by name and must have the types the functions are resolved for.
+void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header);
+
+/// The steps merging the states read the keys and then the states by position: `layout` (the input as it reaches
+/// the `Aggregator`) must start with `keys` and then the states of `aggregates` (named by `column_name`), in order.
+void checkDeserializedMergedAggregatesLayout(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout);
 
 }

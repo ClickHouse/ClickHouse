@@ -2,7 +2,9 @@
 # The aggregate functions of a deserialized `Aggregating` step are resolved from the argument types written
 # in the plan, but they are executed on the input columns of the same names. A plan with other types made a
 # function interpret a column of another type. `AggregatingStep::deserialize` (and the merging steps for the
-# states) now check the types against the input header. The last plan is well-formed, so the refusals are specific.
+# states) now check the types against the input header. The steps merging the states read the keys and then the
+# states by position, so their input must have them in the order of the plan, without duplicates.
+# The well-formed plans are accepted, so the refusals are specific.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -86,11 +88,20 @@ def forge(label, payload, children=(), version=VERSION, out_columns=()):
         print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, code))
 
 FINAL, ONLY_MERGE = 1, 128
+AF = b"\x25"   # BinaryTypeIndex::AggregateFunction
 
-def aggregating(flags, argument_type):
-    # Flags, no keys, then one aggregate `a` = any(x): name, arguments with their types, function, parameters.
-    # The final `vu(0)` is the number of sets of the plan.
-    return bytes([flags]) + vu(0) + vu(1) + sb("a") + vu(1) + sb("x") + argument_type + sb("any") + vu(0) + vu(0)
+def state(function, argument_type):   # AggregateFunction(function, argument_type), version 0
+    return AF + vu(0) + sb(function) + vu(0) + vu(1) + argument_type
+
+def aggregating(flags, argument_type=None, keys=(), aggregates=None):
+    # Flags, keys, then the aggregates: name, arguments with their types, function, parameters.
+    # The final `vu(0)` is the number of sets of the plan. By default one aggregate `a` = any(x).
+    if aggregates is None:
+        aggregates = [("a", "x", argument_type, "any")]
+    out = bytes([flags]) + vu(len(keys)) + b"".join(sb(k) for k in keys) + vu(len(aggregates))
+    for name, argument, a_type, function in aggregates:
+        out += sb(name) + vu(1) + sb(argument) + a_type + sb(function) + vu(0)
+    return out + vu(0)
 
 X = [("x", U64)]
 A = [("a", U64)]
@@ -98,6 +109,16 @@ forge("argument type differs from the input", aggregating(FINAL, STR), [X], VERS
 forge("argument is not in the input", aggregating(FINAL, U64), [[("y", U64)]], VERSION, A)
 forge("merged column is not a state", aggregating(FINAL | ONLY_MERGE, U64), [A], VERSION, A)
 forge("well-formed", aggregating(FINAL, U64), [X], VERSION, A)
+
+# The merge reads the keys and then the states by position, so the input must have them in the order of the plan.
+ANY_SUM = [("a", "x", U64, "any"), ("b", "x", U64, "sum")]
+STATES = [("a", state("any", U64)), ("b", state("sum", U64))]
+AB = [("a", U64), ("b", U64)]
+forge("merged states are reordered", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES[::-1]], VERSION, AB)
+forge("merged state is duplicated", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM[:1] * 2), [STATES[:1] * 2], VERSION, [("a", U64)] * 2)
+forge("merged key is after the states", aggregating(FINAL | ONLY_MERGE, keys=["k"], aggregates=ANY_SUM[:1]),
+      [STATES[:1] + [("k", U64)]], VERSION, [("k", U64), ("a", U64)])
+forge("well-formed merge", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES], VERSION, AB)
 PYEOF
 
 # The server has to be serving after each refusal.

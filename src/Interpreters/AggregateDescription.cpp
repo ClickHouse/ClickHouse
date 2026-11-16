@@ -308,26 +308,10 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
     }
 }
 
-void checkDeserializedAggregatesMatchHeader(const AggregateDescriptions & aggregates, const Block & header, bool only_merge)
+void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header)
 {
     for (const auto & aggregate : aggregates)
     {
-        if (only_merge)
-        {
-            const auto * column = header.findByName(aggregate.column_name);
-            if (!column)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "The state of aggregate function {} is not in the input of a deserialized query plan step", aggregate.column_name);
-
-            const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column->type.get());
-            if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
-                    "which is not a state of {}",
-                    aggregate.column_name, column->type->getName(), aggregate.function->getName());
-            continue;
-        }
-
         /// `AggregateFunctionFactory` resolves functions for the types without `LowCardinality`,
         /// and the `Aggregator` removes it from the argument columns accordingly.
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -351,6 +335,54 @@ void checkDeserializedAggregatesMatchHeader(const AggregateDescriptions & aggreg
                     "but the function is resolved for {}",
                     name, aggregate.column_name, column->type->getName(), argument_types[i]->getName());
         }
+    }
+}
+
+void checkDeserializedMergedAggregatesLayout(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout)
+{
+    const size_t keys_size = keys.size();
+    if (layout.size() < keys_size + aggregates.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized query plan step merging aggregate states has {} columns "
+            "for {} keys and {} aggregate functions",
+            layout.size(), keys_size, aggregates.size());
+
+    /// The `Aggregator` looks up the types of the keys and the states by name, but merges the columns
+    /// by position. With distinct names at the expected positions, both refer to the same columns.
+    NameSet names;
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (!names.insert(keys[i]).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states", keys[i]);
+        if (layout[i].name != keys[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Key {} is expected at position {} of the input of a deserialized query plan step merging aggregate states, "
+                "but there is {}",
+                keys[i], i, layout[i].name);
+    }
+
+    for (size_t i = 0; i < aggregates.size(); ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & column = layout[keys_size + i];
+        if (!names.insert(aggregate.column_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                aggregate.column_name);
+        if (column.name != aggregate.column_name)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is expected at position {} of the input of a deserialized query plan step, "
+                "but there is {}",
+                aggregate.column_name, keys_size + i, column.name);
+
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column.type->getName(), aggregate.function->getName());
     }
 }
 
