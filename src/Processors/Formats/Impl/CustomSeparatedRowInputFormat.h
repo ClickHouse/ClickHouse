@@ -83,7 +83,7 @@ public:
     bool checkForSuffixImpl(bool check_eof);
     void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
-    EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
+    [[nodiscard]] EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
 
@@ -115,8 +115,8 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
-    bool readsNumericValueIntoBoolColumn() const override { return false; }
+    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
+    [[nodiscard]] bool readsNumericValueIntoBoolColumn() const override { return false; }
 
     /// `CustomSeparatedFormatReader::readField` routes every field through
     /// `deserializeFieldByEscapingRule` with the configured `format_custom_escaping_rule`, so the
@@ -124,9 +124,9 @@ private:
     /// deserializer exactly like `MySQLDump`, and `JSON` reads typed JSON value tokens. The other
     /// rules (`Escaped`, `CSV`, `Raw`) read the raw text of the field, matching the defaults, and
     /// `XML` never reads a value at all (it fails before any parse error), so it keeps them too.
-    bool readsTypedJSONValueTokens() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON; }
-    bool readsQuotedTextValues() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::Quoted; }
-    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override
+    [[nodiscard]] bool readsTypedJSONValueTokens() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON; }
+    [[nodiscard]] bool readsQuotedTextValues() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::Quoted; }
+    [[nodiscard]] BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override
     {
         return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON
             ? BoolValueIntoNumericColumn::AllNumeric

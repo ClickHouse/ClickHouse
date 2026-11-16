@@ -77,7 +77,7 @@ public:
 
     bool checkForEndOfRow() override;
 
-    bool yieldStrings() const { return yield_strings; }
+    [[nodiscard]] bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
 };
@@ -91,7 +91,7 @@ public:
     bool readsStringValuesAsWholeText() const override { return reader.yieldStrings(); }
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
+    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 

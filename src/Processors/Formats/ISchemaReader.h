@@ -57,21 +57,21 @@ public:
 
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
-    virtual bool hasStrictOrderOfColumns() const { return true; }
+    [[nodiscard]] virtual bool hasStrictOrderOfColumns() const { return true; }
 
     /// True if the column types are declared in the data itself (e.g. the second header row of the
     /// -WithNamesAndTypes formats) and are validated by the parser against the destination types
     /// exactly, rather than inferred from the data values (and therefore widened). A caller that
     /// compares an inferred schema against an expected one can use this to know when an exact type
     /// comparison mirrors the parser and a loose (supertype-based) one would be wrong.
-    virtual bool hasExactTypesFromData() const { return false; }
+    [[nodiscard]] virtual bool hasExactTypesFromData() const { return false; }
 
     /// True if, in addition to `hasExactTypesFromData`, the parser validates the declared types by their
     /// names rather than by type equality: the -WithNamesAndTypes formats compare the declared type name
     /// against `getName` of the destination type, so e.g. a declared `Bool` is rejected for a `UInt8`
     /// column even though both types compare equal (`Bool` is a customized `UInt8`). The metadata-based
     /// `JSON*` formats compare types with `equals` instead and keep the default.
-    virtual bool validatesDeclaredTypesByName() const { return false; }
+    [[nodiscard]] virtual bool validatesDeclaredTypesByName() const { return false; }
 
     /// The type names exactly as declared in the data by the last `readSchema` call, before they are
     /// parsed and canonicalized by `DataTypeFactory` (a declared `Boolean` becomes `Bool`). Meaningful
@@ -80,7 +80,7 @@ public:
     /// `readSchemaFromFormat` drops the columns with empty names and may reorder the rest, so a
     /// position in the types row does not identify an inferred column. A name declared more than once
     /// is left out. Empty if unknown.
-    virtual UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const { return {}; }
+    [[nodiscard]] virtual UnorderedMapWithMemoryTracking<String, String> getDeclaredTypeNames() const { return {}; }
 
     /// True when the schema returned by `readSchema` describes the structure the parser actually reads
     /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
@@ -92,7 +92,7 @@ public:
     /// order and types, and for `Freeform`, whose parser maps fields by name or by position depending
     /// on whether the data names them. In these cases a caller comparing an inferred schema
     /// against an expected one must not draw any conclusion from it.
-    virtual bool schemaDescribesParsedData() const { return true; }
+    [[nodiscard]] virtual bool schemaDescribesParsedData() const { return true; }
 
     /// True if the format legally accepts a number of columns that differs from the destination: missing
     /// trailing columns are filled with defaults and/or extra columns are skipped, so the number of columns
@@ -100,12 +100,12 @@ public:
     /// columnar `JSONCompactColumns` format and setting-gated for `CSV` / `TSV` / `CustomSeparated` /
     /// `JSONCompactEachRow` (their `*_allow_variable_number_of_columns` settings). It is also consulted by
     /// `IRowSchemaReader::readSchema` to decide whether rows with a varying number of values are allowed.
-    virtual bool allowVariableNumberOfColumns() const { return false; }
+    [[nodiscard]] virtual bool allowVariableNumberOfColumns() const { return false; }
 
     /// True when the parser accepts fewer input columns than the destination, filling the missing
     /// trailing columns with defaults. Most formats that allow a variable number of columns also
     /// accept extra columns; `JSONCompactColumns` is the notable exception.
-    virtual bool allowsFewerColumnsThanExpected() const { return allowVariableNumberOfColumns(); }
+    [[nodiscard]] virtual bool allowsFewerColumnsThanExpected() const { return allowVariableNumberOfColumns(); }
 
     /// True if the parser of the format reads typed JSON value tokens (a bare number, `true` / `false`,
     /// an array, an object) and consults the `input_format_json_read_*_as_strings` settings to decide
@@ -119,7 +119,7 @@ public:
     /// A caller that compares an inferred schema against an expected one can use this to
     /// know when an inferred non-`String` type going into a `String` destination follows the JSON
     /// settings and when it is unconditionally accepted.
-    virtual bool readsTypedJSONValueTokens() const { return false; }
+    [[nodiscard]] virtual bool readsTypedJSONValueTokens() const { return false; }
 
     /// True if every value in the format is a string whose content the parser re-parses with the
     /// whole-text deserializer of the destination type (the `-Strings` JSON variants,
@@ -129,14 +129,14 @@ public:
     /// formats hand the `Bool` deserializer the raw (still quoted) field. A caller that compares an
     /// inferred schema against an expected one can use this to know when an inferred `String` says
     /// nothing about the parsability of its content into the destination type.
-    virtual bool readsStringValuesAsWholeText() const { return false; }
+    [[nodiscard]] virtual bool readsStringValuesAsWholeText() const { return false; }
 
     /// True when the parser reads a quoted string literal given for a top-level `Array` / `Tuple` /
     /// `Map` column with the whole-text deserializer of the column type, as `Values` does
     /// (`('[1,2]')` is a valid value for an `Array(UInt8)` column there). A caller that compares an
     /// inferred schema against an expected one can use this to know when an inferred `String` may
     /// still be valid for a nested destination.
-    virtual bool readsQuotedStringsIntoNestedColumnsAsWholeText() const { return false; }
+    [[nodiscard]] virtual bool readsQuotedStringsIntoNestedColumnsAsWholeText() const { return false; }
 
     /// True when, with `input_format_import_nested_json` enabled, the parser maps a top-level object
     /// field (`{"n": {...}}`) onto the dotted columns of a `Nested` destination (`n.i`, ...). Only the
@@ -144,7 +144,7 @@ public:
     /// (`Form`, `TSKV`, the formats with a configurable escaping rule, ...) look field names up exactly
     /// regardless of that setting. A caller comparing an inferred schema against an expected one uses
     /// this to know when that mapping, which schema inference cannot represent, can apply.
-    virtual bool importsNestedJSONObjects() const { return false; }
+    [[nodiscard]] virtual bool importsNestedJSONObjects() const { return false; }
 
     /// True if the parser reads the raw representation of a field of any type verbatim into a `String`
     /// destination column, as the flat-text formats (`TSV`, `CSV`, ...) do. It is false for formats
@@ -154,7 +154,7 @@ public:
     /// above). A caller that compares an inferred schema against an expected one can use this to know
     /// when an inferred non-`String` type going into a `String` destination is a genuine structure
     /// mismatch.
-    virtual bool readsAnyValueIntoStringColumn() const { return true; }
+    [[nodiscard]] virtual bool readsAnyValueIntoStringColumn() const { return true; }
 
     /// True when the parser reads every field with the quoted-text deserializer
     /// (`ISerialization::deserializeTextQuoted`), as `MySQLDump` does: there the on-wire form of a value
@@ -175,7 +175,7 @@ public:
     /// inferred `Array` / `Tuple` / `Map` / `Bool` — derived only from an unquoted bracket or word
     /// token — going into a `String` destination, whose quoted-text deserializer also requires an
     /// opening quote.
-    virtual bool readsQuotedTextValues() const { return false; }
+    [[nodiscard]] virtual bool readsQuotedTextValues() const { return false; }
 
     /// True when the parser maps the input's fields to destination columns by name rather than by
     /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
@@ -192,7 +192,7 @@ public:
     /// by name without advertising the subset capability. A caller comparing an inferred schema against
     /// an expected one uses this to match columns by name (tolerating a reordered header) instead of
     /// positionally.
-    virtual bool mapsColumnsByName() const { return false; }
+    [[nodiscard]] virtual bool mapsColumnsByName() const { return false; }
 
     /// True when the parser resolves the input's field names against the destination columns through
     /// `CaseAwareBlockNameMap`, honoring `input_format_column_name_matching_mode` (`auto` by default:
@@ -204,11 +204,11 @@ public:
     /// schema against an expected one uses this to resolve names the same way the parser does: treating
     /// a case-only difference as a match for an exact-lookup parser would suppress a mismatch the
     /// parser detects (an unknown-field error), and the reverse would invent one.
-    virtual bool honorsColumnNameMatchingMode() const { return false; }
+    [[nodiscard]] virtual bool honorsColumnNameMatchingMode() const { return false; }
 
     /// True when the parser matches input column names case-insensitively through a
     /// format-specific setting rather than `input_format_column_name_matching_mode`.
-    virtual bool usesCaseInsensitiveColumnMatching() const { return false; }
+    [[nodiscard]] virtual bool usesCaseInsensitiveColumnMatching() const { return false; }
 
     /// Describes which bare numeric values the parser accepts into an `IPv4` destination column. Most
     /// formats require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number —
@@ -231,13 +231,13 @@ public:
     /// numeric type going into an `IPv4` column as a structure mismatch for these formats.
     /// (`UUID` and `IPv6` still require binary data of the exact size in every format, so they stay a
     /// mismatch regardless of this capability.)
-    virtual NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const { return NumericValueIntoIPv4Column::None; }
+    [[nodiscard]] virtual NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const { return NumericValueIntoIPv4Column::None; }
 
     /// True when the parser casts a decoded source `String` column to the requested destination
     /// type. For the columnar formats this means the schema reader cannot tell whether a source
     /// `String` column is a mismatch: individual values may cast cleanly into scalar or nested
     /// destinations, and another column may be the one that actually caused the parse error.
-    virtual bool castsStringSourceColumns() const { return false; }
+    [[nodiscard]] virtual bool castsStringSourceColumns() const { return false; }
 
     /// True when the parser may accept a numeric value other than the literal `0` / `1` into a `Bool`
     /// destination column. The formats that read numeric values by value into the `UInt8`-backed
@@ -255,7 +255,7 @@ public:
     /// caller already identifies them via `readsTypedJSONValueTokens`, so they keep the default. A
     /// caller comparing an inferred schema against an expected one uses this (together with the actual
     /// sampled values) to know when a numeric value is a genuine structure mismatch for a `Bool` column.
-    virtual bool readsNumericValueIntoBoolColumn() const { return true; }
+    [[nodiscard]] virtual bool readsNumericValueIntoBoolColumn() const { return true; }
 
     /// Describes whether the parser accepts a `Bool` value for a numeric (non-`Bool`) destination
     /// column. The flat-text row formats hand the raw field to the numeric deserializer
@@ -273,7 +273,7 @@ public:
     /// `readAndInsertInteger` accept a BSON boolean. A caller comparing an inferred schema against
     /// an expected one uses this to know when an inferred `Bool` is a genuine structure mismatch for
     /// a numeric destination column.
-    virtual BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const { return BoolValueIntoNumericColumn::AllNumeric; }
+    [[nodiscard]] virtual BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const { return BoolValueIntoNumericColumn::AllNumeric; }
 
     /// True when the format stores numeric values with their on-wire numeric kind and the parser does
     /// not convert them across the integer / floating-point family boundary. The text / JSON parsers
@@ -285,7 +285,7 @@ public:
     /// them. A caller comparing an inferred schema against an expected one uses this to know that an
     /// inferred floating-point type is a genuine structure mismatch for a non-floating-point
     /// destination (and vice versa) in such formats.
-    virtual bool storesTypedNumericValues() const { return false; }
+    [[nodiscard]] virtual bool storesTypedNumericValues() const { return false; }
 
     /// True when the schema reader reports a logical date / time type (`Date32`, `DateTime64`) for a
     /// value that the format physically stores as a plain integer, and the parser reads that integer
@@ -295,7 +295,7 @@ public:
     /// `Float64`, `Decimal32`, `IPv4`, ... column. A caller comparing an inferred schema against an
     /// expected one uses this to know that such an inferred type is not a structure mismatch for
     /// those destinations, even though it shares no supertype with them.
-    virtual bool readsLogicalDateTimeValuesAsNumbers() const { return false; }
+    [[nodiscard]] virtual bool readsLogicalDateTimeValuesAsNumbers() const { return false; }
 
     /// True when the parser skips input fields that are absent from the destination unconditionally,
     /// without consulting `input_format_skip_unknown_fields`. `Avro` recurses past a path with no
@@ -304,7 +304,7 @@ public:
     /// the rest of the file. A caller comparing an inferred schema against an expected one uses this
     /// to know that a field present in the data but unknown to the destination is not a structure
     /// mismatch for such a format even when `input_format_skip_unknown_fields` = 0.
-    virtual bool alwaysSkipsUnknownFields() const { return false; }
+    [[nodiscard]] virtual bool alwaysSkipsUnknownFields() const { return false; }
 
     /// True when a parser that maps columns by name (see `mapsColumnsByName`) fills destination
     /// columns absent from the input with defaults. This holds for most by-name formats, but the
@@ -313,14 +313,14 @@ public:
     /// `input_format_orc_allow_missing_columns` is enabled. A caller comparing an inferred schema
     /// against an expected one uses this to know that a destination column missing from the data is
     /// a structure mismatch for such a format.
-    virtual bool allowsMissingNamedColumns() const { return true; }
+    [[nodiscard]] virtual bool allowsMissingNamedColumns() const { return true; }
 
     /// True when `readSchema` read rows ahead to auto-detect a header (`*_detect_header`) and decided
     /// that the data has none. That lookahead reads up to a few rows regardless of
     /// `input_format_max_rows_to_read_for_schema_inference` and keeps their types, so a caller that
     /// needs inference to honor a strict row bound has to disable the detection: the first row is data
     /// then, exactly as the reader decided.
-    virtual bool readRowsAheadToDetectHeaderAndFoundNone() const { return false; }
+    [[nodiscard]] virtual bool readRowsAheadToDetectHeaderAndFoundNone() const { return false; }
 
     /// True when the inferred schema is a metadata section of the input that the parser validates
     /// against the destination with `JSONUtils::validateMetadataByHeader`: a declared name is looked
@@ -329,13 +329,13 @@ public:
     /// comparing the inferred schema against an expected one uses this to compare the declared types
     /// by the same rules: a case-only difference in a declared name is not a type constraint on the
     /// column the data field is matched to.
-    virtual bool validatesSchemaAsMetadataByExactName() const { return false; }
+    [[nodiscard]] virtual bool validatesSchemaAsMetadataByExactName() const { return false; }
 
-    virtual bool needContext() const { return false; }
+    [[nodiscard]] virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
-    virtual size_t getNumRowsRead() const { return 0; }
+    [[nodiscard]] virtual size_t getNumRowsRead() const { return 0; }
 
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
     virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
@@ -353,7 +353,7 @@ class IIRowSchemaReader : public ISchemaReader
 public:
     IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
 
-    bool needContext() const override { return !hints_str.empty(); }
+    [[nodiscard]] bool needContext() const override { return !hints_str.empty(); }
     void setContext(const ContextPtr & context) override;
 
 protected:
@@ -362,7 +362,7 @@ protected:
         max_rows_to_read = max_rows;
         max_bytes_to_read = max_bytes;
     }
-    size_t getNumRowsRead() const override { return rows_read; }
+    [[nodiscard]] size_t getNumRowsRead() const override { return rows_read; }
 
     virtual void transformFinalTypeIfNeeded(DataTypePtr &) {}
 
@@ -404,7 +404,7 @@ protected:
     size_t field_index{};
 
 private:
-    DataTypePtr getDefaultType(size_t column) const;
+    [[nodiscard]] DataTypePtr getDefaultType(size_t column) const;
     void initColumnNames(const String & column_names_str);
 
     DataTypes default_types;
@@ -421,7 +421,7 @@ class IRowWithNamesSchemaReader : public IIRowSchemaReader
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
-    bool hasStrictOrderOfColumns() const override { return false; }
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override { return false; }
 
 protected:
     /// Read one row and determine types of columns in it.

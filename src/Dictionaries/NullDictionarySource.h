@@ -36,16 +36,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for NullDictionarySource");
     }
 
-    bool isModified() const override { return false; }
+    [[nodiscard]] bool isModified() const override { return false; }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return false; }
 
     ///Not supported for NullDictionarySource
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<NullDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<NullDictionarySource>(*this); }
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
 private:
     SharedHeader sample_block;

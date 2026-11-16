@@ -47,7 +47,7 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    bool hasStrictOrderOfColumns() const override { return false; }
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override { return false; }
 
     /// When the input carries a `meta` section the types come from it, and the parser validates them
     /// against the destination exactly iff `input_format_json_validate_types_from_metadata` is enabled;
