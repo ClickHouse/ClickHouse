@@ -270,7 +270,7 @@ public:
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
 
-    size_t getLoadedColumnsCount() const { return loaded_columns; }
+    [[nodiscard]] size_t getLoadedColumnsCount() const { return loaded_columns; }
 private:
     const RangesInDataParts & parts;
     VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> indices;
