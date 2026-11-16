@@ -76,7 +76,7 @@ struct RelationEstimateInfo
     UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 
     /// `name[source~rows]`, e.g. `a[no_stats~1000]`, `b[100]`, `c[hint~?]`.
-    String displayName() const
+    [[nodiscard]] String displayName() const
     {
         if (composite)
             return name;
