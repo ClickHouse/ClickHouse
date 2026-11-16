@@ -25,9 +25,10 @@ trap cleanup EXIT
 ROLLOVER="iceberg_insert_max_rows_in_data_file = 2, max_insert_threads = 1, max_block_size = 2,
           max_insert_block_size = 2, min_insert_block_size_rows = 2, min_insert_block_size_bytes = 0"
 
-# Every manifest-list entry must report how many manifest entries the manifest it points at really
-# has. One INSERT rolls over into several data files that all land in the same manifest, so the
-# count is not always 1, and a reader that trusts it plans the scan with the wrong number of files.
+# Every manifest-list entry must report how many entries, and how many EXISTING entries, the
+# manifest it points at really has. One INSERT rolls over into several data files that all land in
+# the same manifest, so the count is not always 1, and a reader that trusts it plans the scan with
+# the wrong number of files.
 check()
 {
     local label=$1
@@ -41,8 +42,9 @@ check()
         SELECT splitByChar('/', manifest_path)[-1], added_files_count, existing_files_count
         FROM file('${snapshot}', Avro)
     " | while IFS=$'\t' read -r manifest added existing; do
-        entries=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM file('${table_path}metadata/${manifest}', Avro)")
-        echo -e "${label}\tadded_files_count=${added}\tmanifest_entries=${entries}\tmatches=$([ "${added}" = "${entries}" ] && echo yes || echo "no (existing_files_count=${existing})")"
+        read -r entries existing_entries <<< "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count(), countIf(status = 0) FROM file('${table_path}metadata/${manifest}', Avro)")"
+        echo -e "${label}\tadded_files_count=${added}\tmanifest_entries=${entries}\tmatches=$([ "${added}" = "${entries}" ] && echo yes || echo no)\texisting_files_count=${existing}\texisting_entries=${existing_entries}"
     done | sort
 }
 
@@ -66,6 +68,10 @@ for version in 1 2; do
 
     check "v${version}" "${table_path}"
 done
+
+# A second INSERT carries the first manifest forward; neither manifest has EXISTING entries.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_V1} SELECT 10"
+check "v1 second insert" "${PATH_V1}"
 
 # One manifest per partition key, each with its own number of data files.
 ${CLICKHOUSE_CLIENT} --query "

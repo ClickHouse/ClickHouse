@@ -1,6 +1,7 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessControl.h>
+#include <Access/Authentication.h>
 #include <Access/ContextAccess.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/EnabledRolesInfo.h>
@@ -9,6 +10,7 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
+#include <Access/OneTimePasswordUsageTracker.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -23,11 +25,13 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -38,6 +42,12 @@
 
 namespace DB
 {
+namespace ServerSetting
+{
+    extern const ServerSettingsBool totp_track_used_codes_in_keeper;
+    extern const ServerSettingsString totp_used_codes_keeper_path;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
@@ -45,6 +55,7 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
+    extern const int WRONG_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
 }
@@ -304,6 +315,7 @@ AccessControl::AccessControl()
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
+      one_time_password_usage_tracker(std::make_unique<OneTimePasswordUsageTracker>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
       password_rules(std::make_unique<PasswordComplexityRules>())
@@ -368,6 +380,19 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
+
+    /// Defaults to false for backwards compatibility — some deployments create SQL policies targeting `default`.
+    setForbidSQLAccessEntitiesTargetingUsersConfig(config_.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
+
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config_);
+    if (server_settings[ServerSetting::totp_track_used_codes_in_keeper])
+    {
+        if (!zkutil::hasZooKeeperConfig(config_))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `totp_track_used_codes_in_keeper` requires ZooKeeper or ClickHouse Keeper to be configured");
+        one_time_password_usage_tracker = std::make_unique<OneTimePasswordUsageTracker>(
+            get_zookeeper_function_, server_settings[ServerSetting::totp_used_codes_keeper_path]);
+    }
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
@@ -871,24 +896,33 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
     auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
-    if (authentication_quota)
-    {
-        /// Reserve a single try from the quota to check whether we have another authentication try.
-        /// This is required for correct behavior in this situation:
-        /// User has 1 login failures quota.
-        /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
-        /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
-        ///
-        /// The authentication failures counter will be reset after successful authentication.
-        authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
-    }
 
     try
     {
+        if (authentication_quota)
+        {
+            /// Reserve a single try from the quota to check whether we have another authentication try.
+            /// This is required for correct behavior in this situation:
+            /// User has 1 login failures quota.
+            /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
+            ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+            /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
+            ///   and don't let the user authenticate.
+            ///
+            /// The authentication failures counter will be reset after successful authentication.
+            /// Inside the try block, so that an exceeded quota is reported like any other authentication failure
+            /// and doesn't reveal whether the user exists.
+            authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
+        }
+
         const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
                                                                      allow_no_password, allow_plaintext_password);
+
+        /// The code is marked as used only after the whole authentication succeeded: the credential checks in the storages
+        /// are pure, so a failed attempt (e.g. a wrong password combined with a valid code) cannot consume a valid code.
+        if (!Authentication::consumeOneTimePassword(credentials, auth_result.user_name, auth_result.authentication_data, *one_time_password_usage_tracker))
+            throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
+
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
@@ -1213,6 +1247,21 @@ std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInf
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)
 {
     return settings_profiles_cache->getSettingsProfileInfo(profile_id);
+}
+
+
+bool AccessControl::isEntityFromUsersConfig(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    return storage && (strcmp(storage->getStorageType(), UsersConfigAccessStorage::STORAGE_TYPE) == 0);
+}
+
+
+bool AccessControl::shouldSkipSQLAccessEntityForUser(const UUID & policy_id, const UUID & user_id) const
+{
+    return doesForbidSQLAccessEntitiesTargetingUsersConfig()
+        && isEntityFromUsersConfig(user_id)
+        && !isEntityFromUsersConfig(policy_id);
 }
 
 

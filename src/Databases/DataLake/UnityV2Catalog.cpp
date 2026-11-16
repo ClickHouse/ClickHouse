@@ -20,7 +20,7 @@
 #include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <fmt/ranges.h>
@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -137,7 +138,8 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url_str(base_url_)
@@ -145,6 +147,7 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     maybeSetAuthHeader(catalog_credential_, auth_header_);
     if (auth_header)
@@ -276,6 +279,18 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
         return makeHTTPRequestAndReadJSON(
             base_url / route, getContext(), /* bearer_token = */ "", {}, headers,
             Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
+    });
+}
+
+void UnityV2Catalog::deleteRequest(const std::string & route) const
+{
+    requestWithRetry([&](bool force_refresh)
+    {
+        auto buf = createReadBuffer(
+            base_url / route, getContext(), /* bearer_token = */ "", {}, getAuthHeaders(force_refresh),
+            Poco::Net::HTTPRequest::HTTP_DELETE);
+        /// The response body carries no useful data.
+        buf->ignoreAll();
     });
 }
 
@@ -431,7 +446,7 @@ std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
     checkNamespaceExists(namespace_name);
 
     auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto & object = json.extract<Poco::JSON::Object::Ptr>();
 
     /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
     /// and then the table engine arguments have to name the location explicitly.
@@ -449,16 +464,58 @@ void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) c
     checkNamespaceExists(namespace_name);
 }
 
+void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
+{
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, namespace_name, table_name);
+
+    /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
+    /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
+    const auto table_type = getTableType(full_table_name);
+    const bool data_will_be_deleted = table_type == "MANAGED";
+    if (data_will_be_deleted != delete_data)
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Table {}.{} has table_type {} in Unity catalog, so Databricks {} its data on drop. "
+            "Set `iceberg_delete_data_on_drop` to {} to drop it",
+            namespace_name, table_name, table_type, data_will_be_deleted ? "deletes" : "keeps", data_will_be_deleted ? 1 : 0);
+
+    LOG_DEBUG(log, "Dropping table {} from Unity catalog", full_table_name);
+
+    try
+    {
+        deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+    }
+    catch (...)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to drop table {}.{} from Unity catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
+}
+
+String UnityV2Catalog::getTableType(const String & full_table_name) const
+{
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    if (!hasValueAndItsNotNone("table_type", object))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unity catalog did not report the table_type of table {}", full_table_name);
+    return object->get("table_type").extract<String>();
+}
+
 bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    const String & base_catalog_metadata_location,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_snapshot, new_metadata);
     });
 }
 
@@ -466,12 +523,13 @@ bool UnityV2Catalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, previous_schema_id);
     });
 }
 
@@ -505,7 +563,19 @@ bool UnityV2Catalog::tryGetTableMetadata(
 {
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
 
-    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    Poco::Dynamic::Var json;
+    try
+    {
+        json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            throw;
+
+        LOG_DEBUG(log, "Unity table {} does not exist", full_table_name);
+        return false;
+    }
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)
@@ -541,14 +611,14 @@ bool UnityV2Catalog::tryGetTableMetadata(
         {
             /// Status codes for a refused request are undocumented, so any failure marks the table unreadable.
             std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
-            auto reason = fmt::format(
+            auto reason = PreformattedMessage::create(
                 "Cannot read Iceberg table `{}`: the Unity Iceberg REST endpoint `{}` returned an error: {}. "
                 "Reading managed Iceberg tables from Unity requires 'External data access' to be enabled on the metastore "
                 "and the `EXTERNAL USE SCHEMA` privilege for the principal; "
                 "check these if the error above indicates a permission problem.",
                 full_table_name, iceberg_rest_url, DB::getCurrentExceptionMessage(false));
-            LOG_DEBUG(log, "{}", reason);
-            result.setTableIsNotReadable(reason);
+            LOG_DEBUG(log, reason);
+            result.setTableIsNotReadable(reason.text);
             return true;
         }
     }
@@ -592,6 +662,12 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
             full_table_name));
     }
 
+#if !USE_DELTA_KERNEL_RS
+    if (result.isDefaultReadableTable())
+        result.setTableIsNotReadable(fmt::format(
+            "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
+
     LOG_DEBUG(log, "Processing Delta table {} is default readable {}", full_table_name, result.isDefaultReadableTable());
 
     if (result.requiresSchema())
@@ -615,14 +691,14 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
                         String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                         data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                     }
                     else
                     {
                         Poco::JSON::Parser parser;
                         auto parsed_json_type = parser.parse(type_json_str);
-                        data_type = DB::DeltaLakeMetadata::getFieldType(
+                        data_type = DB::getDeltaLakeFieldType(
                             parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     }
                 }
@@ -812,7 +888,8 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         /* oauth_server_use_request_body= */ false,
         /// Unity namespaces are single-level schemas. Only matters for namespace listing, which this catalog never does.
         /* flat_namespaces= */ true,
-        getContext());
+        getContext(),
+        snapshot_loading_mode);
 
     std::lock_guard lock(token_mutex);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.

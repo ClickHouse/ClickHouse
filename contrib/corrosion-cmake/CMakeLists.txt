@@ -22,6 +22,8 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
             set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-s390x")
+            set(Rust_CARGO_TARGET "s390x-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -37,7 +39,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2026-03-22")
+set(Rust_TOOLCHAIN "nightly-2026-11-02")
 
 macro(find_rust)
     set_rust_target()
@@ -151,7 +153,7 @@ if (CXX_PUBLIC_DEFS)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
 endif()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
+if(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -192,6 +194,14 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
+endif()
+
+# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
+# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
+# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
+if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
 # Force `rustix` to use its libc backend under sanitizers.
@@ -245,6 +255,10 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
+# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
+# after the manifest path string, so this is what makes them share one.
+set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
+
 # Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
 # and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
@@ -256,9 +270,9 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
-    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
+    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
@@ -278,6 +292,47 @@ incremental = false
 ")
 else()
     set(RUST_DEV_PROFILE "")
+endif()
+
+# ccache cannot wrap rustc, so a new build directory compiles every Rust crate again. With RUST_BUILD_CACHE_DIR, Cargo keeps
+# its intermediate artifacts (`build.build-dir`) there, one subdirectory per Rust configuration, and other build directories
+# reuse them; Cargo's fingerprints decide what to rebuild. The directory is not size-limited.
+set(RUST_BUILD_CACHE_DIR "" CACHE PATH "Directory where Cargo keeps compiled Rust crates for other build directories to reuse (empty: in the build directory)")
+set(RUST_BUILD_DIR_CONFIG "")
+if (RUST_BUILD_CACHE_DIR)
+    if (Rust_CARGO_VERSION VERSION_LESS "1.91")
+        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR needs Cargo 1.91 or newer (`build.build-dir`), found ${Rust_CARGO_VERSION}")
+    endif()
+    # Cargo does not track the headers that build scripts compile C/C++ code against (libc++ and the compiler's implicit include
+    # directories: libc and the compiler's own headers), so their contents are part of the key, and changing them (directories
+    # included, for added and removed files) re-runs CMake.
+    set(_rust_native_dirs ${CXX_INCLUDE_DIR} ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+    list(REMOVE_DUPLICATES _rust_native_dirs)
+    set(_rust_native_headers "")
+    foreach (_dir IN LISTS _rust_native_dirs)
+        file(GLOB_RECURSE _files LIST_DIRECTORIES true "${_dir}/*")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_dir}" ${_files})
+        foreach (_file IN LISTS _files)
+            if (IS_SYMLINK "${_file}" AND IS_DIRECTORY "${_file}")
+                file(READ_SYMLINK "${_file}" _file_hash)
+            elseif (IS_DIRECTORY "${_file}")
+                continue()
+            else()
+                file(SHA256 "${_file}" _file_hash)
+            endif()
+            string(APPEND _rust_native_headers "${_file} ${_file_hash}\n")
+        endforeach()
+    endforeach()
+    string(SHA256 _rust_native_headers "${_rust_native_headers}")
+    set(_rust_build_key "${Rust_CARGO_TARGET}|${Rust_COMPILER_CACHED}|${Rust_VERSION}|${Rust_CARGO_CACHED}|${Rust_CARGO_VERSION}|${CMAKE_C_COMPILER}|${CMAKE_C_COMPILER_VERSION}|${CMAKE_CXX_COMPILER}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_BUILD_TYPE_UC}|${ENABLE_THINLTO}|${RUSTFLAGS}|${RUST_CARGO_BUILD_STD}|${RUST_CFLAGS}|${RUST_CXXFLAGS}|${RUSTCWRAPPER}|${RUST_RELEASE_PROFILE_EXTRA}|${RUST_DEV_PROFILE}|${_rust_native_headers}")
+    string(FIND "${_rust_build_key}" "${CMAKE_BINARY_DIR}/" _rust_build_key_has_build_dir)
+    if (NOT _rust_build_key_has_build_dir EQUAL -1)
+        message(FATAL_ERROR "RUST_BUILD_CACHE_DIR does not work for this configuration: its Rust compiler flags contain the build directory (as in musl builds), so no other build directory could reuse the cache")
+    endif()
+    string(SHA256 _rust_build_key "${_rust_build_key}")
+    string(SUBSTRING "${_rust_build_key}" 0 16 _rust_build_key)
+    set(RUST_BUILD_DIR_CONFIG "[build]\nbuild-dir = \"${RUST_BUILD_CACHE_DIR}/${_rust_build_key}/{workspace-path-hash}\"\n")
+    message(STATUS "Cargo build directory: ${RUST_BUILD_CACHE_DIR}/${_rust_build_key}")
 endif()
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
@@ -320,9 +375,82 @@ function(clickhouse_import_crate)
     enable_dummy_launchers_if_needed()
 endfunction()
 
-# Configure a Rust crate target with ClickHouse-specific flags.
-function(clickhouse_config_crate_flags target_name)
-    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
+# Set the location of an imported library the way Corrosion does: generic and per configuration.
+function(_clickhouse_set_rust_lib_location target_name location)
+    set_property(TARGET ${target_name} PROPERTY IMPORTED_LOCATION "${location}")
+    foreach (_config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${_config}" _config)
+        set_property(TARGET ${target_name} PROPERTY "IMPORTED_LOCATION_${_config}" "${location}")
+    endforeach()
+endfunction()
+
+# Post-process the static library of a Rust crate with
+#     bash SCRIPT <library.a> ARGS...
+# where SCRIPT rewrites the library in place.
+#
+# Corrosion runs cargo on every build and copies its output to IMPORTED_LOCATION with
+# `copy_if_different`, so an unchanged library keeps its timestamp and nothing is relinked.
+# Rewriting that copy in place would break this: it no longer matches the cargo output, so
+# every build copies it again, rewrites it again and relinks every binary that uses it.
+# Instead, the result of each step goes to its own file, the step runs only when its input
+# changes, and the binaries link the result of the last step.
+#
+#     clickhouse_postprocess_rust_lib(<target> STEP <name> SCRIPT <script> [ARGS ...] [DEPENDS ...] [COMMENT ...])
+function(clickhouse_postprocess_rust_lib target_name)
+    cmake_parse_arguments(ARG "" "STEP;SCRIPT;COMMENT" "ARGS;DEPENDS" ${ARGN})
+
+    # The input is the result of the previous step, if any, otherwise the copy made by Corrosion.
+    get_target_property(_input ${target_name} CLICKHOUSE_RUST_LIB)
+    get_target_property(_previous_step ${target_name} CLICKHOUSE_RUST_LIB_STEP)
+    if (NOT _previous_step)
+        set(_previous_step cargo-build_${target_name})
+    endif()
+    if (NOT _input)
+        get_target_property(_input ${target_name} IMPORTED_LOCATION)
+        if (NOT _input OR _input MATCHES "NOTFOUND")
+            set(_input "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
+        endif()
+    endif()
+    get_filename_component(_name "${_input}" NAME)
+    set(_output "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}/${_name}")
+
+    add_custom_command(OUTPUT "${_output}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${ARG_STEP}"
+        COMMAND ${CMAKE_COMMAND} -E copy "${_input}" "${_output}.tmp"
+        COMMAND bash "${ARG_SCRIPT}" "${_output}.tmp" ${ARG_ARGS}
+        COMMAND ${CMAKE_COMMAND} -E rename "${_output}.tmp" "${_output}"
+        DEPENDS "${_input}" "${ARG_SCRIPT}" ${ARG_DEPENDS}
+        COMMENT "${ARG_COMMENT}"
+        VERBATIM
+    )
+    add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
+    # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
+    add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
+    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
+    set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
+
+    # Link the result. Corrosion sets IMPORTED_LOCATION of `<target>-static` in a call deferred to
+    # the end of the directory that imported the crate, so override it at the end of the top-level
+    # one. A deferred call expands variables when it runs, hence EVAL with the values substituted now.
+    cmake_language(EVAL CODE "
+        cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL
+            _clickhouse_set_rust_lib_location [[${target_name}-static]] [[${_output}]])
+    ")
+endfunction()
+
+# Not the target directory of cargo (corrosion passes `--target-dir`): only build scripts read it, the one of
+# `delta_kernel_ffi` writes its headers there.
+set(RUST_BUILD_SCRIPT_TARGET_DIR "${CMAKE_BINARY_DIR}/contrib/delta-kernel-rs/include" CACHE INTERNAL "Rust config")
+
+# The environment of a cargo run in the workspace.
+function(clickhouse_config_crate_env target_name)
+    # Every member of the workspace gets the same environment: they share one target directory, and a build script whose
+    # environment differs between two of them reruns, with everything depending on it, on every build.
+    #
+    # The build-script for `openssl-sys` expects all includes to be in one path
+    # but the CMake build for OpenSSL results in headers in two different places
+    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
@@ -350,6 +478,21 @@ function(clickhouse_config_crate_flags target_name)
     #
     # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
+    # The build script of `delta_kernel_ffi` runs `cargo metadata` (cbindgen), which finds the vendored sources only through this.
+    corrosion_set_env_vars(${target_name} "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/")
+    # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+    # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto`.
+    corrosion_set_env_vars(${target_name}
+        "OPENSSL_LIBS="
+        "OPENSSL_STATIC=1"
+        "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
+        "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/")
+    corrosion_set_env_vars(${target_name} "CARGO_TARGET_DIR=${RUST_BUILD_SCRIPT_TARGET_DIR}")
+endfunction()
+
+# Configure a Rust crate target with ClickHouse-specific flags.
+function(clickhouse_config_crate_flags target_name)
+    clickhouse_config_crate_env(${target_name})
     corrosion_link_libraries(${target_name} cxx)
 
     # Localize all C-namespace symbols from Rust static libraries so they
@@ -360,8 +503,7 @@ function(clickhouse_config_crate_flags target_name)
     #
     # For workspace crates the .a may land in a parent directory rather than
     # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong (see wasmtime for an
-    # example).
+    # calling this function if the default path is wrong.
     get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
     if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
         set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
@@ -393,7 +535,7 @@ function(clickhouse_config_crate_flags target_name)
         # caller of this function.
         set(_localize_ref_libs "")
         set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc clang_rt_builtins)
+        foreach (_ref_target libllvmlibc aor clang_rt_builtins)
             if (TARGET ${_ref_target})
                 list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
                 list(APPEND _localize_ref_deps ${_ref_target})
@@ -482,20 +624,32 @@ function(clickhouse_config_crate_flags target_name)
         endif()
 
         if (_localize_ref_libs)
-            add_custom_target(localize_rust_c_${target_name}
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
-                    "${_rust_lib_path}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
-                    ${_localize_ref_libs}
+            clickhouse_postprocess_rust_lib(${target_name}
+                STEP localize_rust_c
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}" ${_localize_ref_libs}
+                DEPENDS ${_localize_ref_deps} ${CH_RUST_LOCALIZE_MATHLIB}
                 COMMENT "Localizing C-namespace symbols in ${target_name}"
-                VERBATIM
             )
-            add_dependencies(localize_rust_c_${target_name}
-                cargo-build_${target_name} ${_localize_ref_deps})
-            add_dependencies(${target_name} localize_rust_c_${target_name})
         else()
             message(STATUS
                 "localize_rust_c_symbols: no reference C libraries for this "
                 "platform; skipping symbol localization for ${target_name}")
         endif()
     endif()
+endfunction()
+
+# Add a member of the Rust workspace: the interface target `<crate>`, which links the one static library of the
+# workspace, `_ch_rust_workspace` (imported by `contrib/rust-contrib-workspace` after every member), and enables the
+# feature of the root package that re-exports the member.
+#
+#     clickhouse_add_rust_member(<crate> FEATURE <feature> [BUILD_DEPENDS <target> ...])
+#
+# BUILD_DEPENDS are targets the cargo run needs to be built first, such as libraries a build script looks for.
+function(clickhouse_add_rust_member crate)
+    cmake_parse_arguments(ARG "" "FEATURE" "BUILD_DEPENDS" ${ARGN})
+    add_library(${crate} INTERFACE)
+    target_link_libraries(${crate} INTERFACE _ch_rust_workspace)
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_FEATURES ${ARG_FEATURE})
+    set_property(GLOBAL APPEND PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS ${ARG_BUILD_DEPENDS})
 endfunction()

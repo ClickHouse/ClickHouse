@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -24,6 +25,10 @@ namespace DB
  * When the limit on number of dynamic types is exceeded, all values
  * with new types are inserted into special shared variant with type String
  * that contains values and their types in binary format.
+ *
+ * Values nest into each other through variants like Array(Dynamic) to a depth that comes
+ * from the data, not from the declared type, so methods that recurse into the Variant
+ * column call checkStackSize.
  */
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
@@ -116,12 +121,14 @@ public:
 
     MutableColumnPtr cloneEmpty() const override
     {
+        checkStackSize();
         /// Keep current dynamic structure
         return Base::create(variant_column->cloneEmpty(), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
+        checkStackSize();
         return Base::create(variant_column->cloneResized(size), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
@@ -186,6 +193,7 @@ public:
 
     void popBack(size_t n) override
     {
+        checkStackSize();
         variant_column_ptr->popBack(n);
     }
 
@@ -219,42 +227,50 @@ public:
 
     void updateHashFast(SipHash & hash) const override
     {
+        checkStackSize();
         variant_column_ptr->updateHashFast(hash);
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
     {
+        checkStackSize();
         variant_column_ptr->filter(filt);
         statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
     {
+        checkStackSize();
         variant_column_ptr->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
+        checkStackSize();
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
     {
+        checkStackSize();
         VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
@@ -278,6 +294,7 @@ public:
 
     bool hasEqualValues() const override
     {
+        checkStackSize();
         return variant_column_ptr->hasEqualValues();
     }
 
@@ -308,31 +325,37 @@ public:
 
     void shrinkToFit() override
     {
+        checkStackSize();
         variant_column_ptr->shrinkToFit();
     }
 
     void ensureOwnership() override
     {
+        checkStackSize();
         variant_column_ptr->ensureOwnership();
     }
 
     size_t byteSize() const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSize();
     }
 
     size_t byteSizeAt(size_t n) const override
     {
+        checkStackSize();
         return variant_column_ptr->byteSizeAt(n);
     }
 
     size_t allocatedBytes() const override
     {
+        checkStackSize();
         return variant_column_ptr->allocatedBytes();
     }
 
     void protect() override
     {
+        checkStackSize();
         variant_column_ptr->protect();
     }
 
@@ -344,14 +367,21 @@ public:
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
+        /// Callers like IColumn::mutate recurse into the subcolumns through this method.
+        checkStackSize();
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        checkStackSize();
+        callback(variant_column);
+    }
 
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
         variant_column->forEachMutableSubcolumnRecursively(callback);
@@ -359,6 +389,7 @@ public:
 
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
+        checkStackSize();
         callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
@@ -394,11 +425,13 @@ public:
 
     void finalize() override
     {
+        checkStackSize();
         variant_column_ptr->finalize();
     }
 
     bool isFinalized() const override
     {
+        checkStackSize();
         return variant_column_ptr->isFinalized();
     }
 

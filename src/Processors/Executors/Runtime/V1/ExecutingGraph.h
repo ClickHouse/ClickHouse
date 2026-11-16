@@ -84,7 +84,7 @@ class ExecutingGraph
         /// Stable, monotonically-assigned id. Never reused. Used only for diagnostics (logs, system.processors_profile_log).
         uint64_t processors_id = 0;
 
-        IProcessor * processor() const { return processor_iter->get(); }
+        [[nodiscard]] IProcessor * processor() const { return processor_iter->get(); }
 
         /// Direct edges are for output ports, back edges are for input ports.
         Edges direct_edges;
@@ -142,10 +142,26 @@ public:
         Cancelled,
     };
 
+    /// Working memory of `updateNode`. The caller keeps it between the calls,
+    /// so that memory is not allocated every time a processor is updated.
+    struct UpdateNodeBuffers
+    {
+        DevectorWithMemoryTracking<Edge *> updated_edges;
+        DevectorWithMemoryTracking<Node *> updated_processors;
+        VectorWithMemoryTracking<Node *> pending_expansion;
+
+        /// A buffer that has grown larger than this number of elements is released instead of being kept,
+        /// so that a single wide wave of updates does not hold its memory until the end of the execution.
+        static constexpr size_t max_kept_capacity = 1024;
+
+        /// Empty the buffers before the next use.
+        void reset();
+    };
+
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
@@ -191,14 +207,14 @@ private:
     void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
-    Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
+    Edge & addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to);
 
     /// Edges newly appended for a node by a call to addEdges.
     struct NewEdges
     {
         VectorWithMemoryTracking<Edge *> back;    // back edges added (inputs side of this node)
         VectorWithMemoryTracking<Edge *> direct;  // direct edges added (outputs side of this node)
-        bool empty() const { return back.empty() && direct.empty(); }
+        [[nodiscard]] bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
     void removeAffectedEdges(Node & node, const UnorderedSetWithMemoryTracking<Node *> & removed_nodes);

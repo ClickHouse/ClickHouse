@@ -35,6 +35,9 @@ public:
         const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_);
 
+    /// Like a move to another S3 bucket, a move to another Azure container must carry its own credentials.
+    static void checkAzureMoveDestination(const String & move_connection_string, const String & move_container);
+
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
     void process(
@@ -42,7 +45,7 @@ public:
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
-    String getName() const { return engine_name; }
+    [[nodiscard]] String getName() const { return engine_name; }
 
     void doWithRetries(std::function<void()> action) const;
 

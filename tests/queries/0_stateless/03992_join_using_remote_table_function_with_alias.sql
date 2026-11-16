@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 
 -- Without `remote`, the join works fine.
