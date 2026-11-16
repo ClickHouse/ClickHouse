@@ -2,6 +2,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Common/Exception.h>
+#include <tuple>
 
 using namespace DB;
 using Iceberg::IcebergPathResolver;
@@ -130,8 +131,8 @@ TEST(IcebergPathResolver, NativeGCSRejectsForeignBucket)
     using Iceberg::IcebergPathFromMetadata;
     EXPECT_EQ(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-a/table/data/a.parquet")), "table/data/a.parquet");
     EXPECT_EQ(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-a/other/table/data/a.parquet")), "table/data/a.parquet");
-    EXPECT_THROW(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-b/table/data/a.parquet")), DB::Exception);
-    EXPECT_THROW(resolver.resolve(IcebergPathFromMetadata::deserialize("s3://bucket-b/table/data/a.parquet")), DB::Exception);
+    EXPECT_THROW(std::ignore = resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-b/table/data/a.parquet")), DB::Exception);
+    EXPECT_THROW(std::ignore = resolver.resolve(IcebergPathFromMetadata::deserialize("s3://bucket-b/table/data/a.parquet")), DB::Exception);
 }
 
 /// Iceberg implementations resolve Google Cloud Storage locations by the `gs` scheme, not by the
