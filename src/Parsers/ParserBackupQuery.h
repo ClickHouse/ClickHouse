@@ -42,7 +42,7 @@ namespace DB
 class ParserBackupQuery : public IParserBase
 {
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     [[nodiscard]] const char * getName() const override { return "BACKUP or RESTORE query"; }
