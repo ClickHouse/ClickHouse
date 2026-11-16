@@ -3940,17 +3940,17 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             auto operation_data_parts_lock = lockOperationsWithParts();
 
-            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
-            if (!part)
-                throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
-
-            /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
-            /// anything is written, so that the usual case fails without any side effect at all.
-            /// It is only a fast path, not a reservation: the removal itself is what decides, so the
-            /// clone to `detached/` is made after it, out of `covered_parts`.
-            checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
-
             {
+                auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+                if (!part)
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
+
+                /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
+                /// anything is written, so that the usual case fails without any side effect at all.
+                /// It is only a fast path, not a reservation: the removal itself is what decides, so the
+                /// clone to `detached/` is made after it, out of `covered_parts`.
+                checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
+
                 auto future_parts = initCoverageWithNewEmptyParts({part});
 
                 LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
@@ -4055,47 +4055,49 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
             auto operation_data_parts_lock = lockOperationsWithParts();
 
-            DataPartsVector parts;
-            FailPointInjection::pauseFailPoint(FailPoints::mt_pause_after_detach_operations_lock);
-
-            if (partition_ast && partition_ast->all)
             {
-                parts = getVisibleDataPartsVector(query_context);
+                DataPartsVector parts;
+                FailPointInjection::pauseFailPoint(FailPoints::mt_pause_after_detach_operations_lock);
+
+                if (partition_ast && partition_ast->all)
+                {
+                    parts = getVisibleDataPartsVector(query_context);
+                }
+                else
+                {
+                    String partition_id = getPartitionIDFromQuery(partition, query_context);
+                    parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+                }
+
+                /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
+                /// only once the removal has gone through.
+                checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
+
+                auto future_parts = initCoverageWithNewEmptyParts(parts);
+
+                LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                         future_parts.size(), parts.size(),
+                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                         transaction.getTID());
+
+
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+
+                if (detach)
+                {
+                    clonePartsToDetached(removed_parts, query_context);
+                    for (const auto & new_part : new_data_parts)
+                        empty_part_names.push_back(new_part->name);
+                }
+
+                PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
+
+                const auto * op = detach ? "Detached" : "Dropped";
+                LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
+                         op, parts.size(), future_parts.size(),
+                         transaction.getTID());
             }
-            else
-            {
-                String partition_id = getPartitionIDFromQuery(partition, query_context);
-                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
-            }
-
-            /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
-            /// only once the removal has gone through.
-            checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
-
-            auto future_parts = initCoverageWithNewEmptyParts(parts);
-
-            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
-                     future_parts.size(), parts.size(),
-                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
-                     transaction.getTID());
-
-
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
-
-            if (detach)
-            {
-                clonePartsToDetached(removed_parts, query_context);
-                for (const auto & new_part : new_data_parts)
-                    empty_part_names.push_back(new_part->name);
-            }
-
-            PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
-
-            const auto * op = detach ? "Detached" : "Dropped";
-            LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
-                     op, parts.size(), future_parts.size(),
-                     transaction.getTID());
             if (detach)
                 dropEmptyPartsCoveringDetachedParts(empty_part_names);
         }
