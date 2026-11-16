@@ -32,36 +32,55 @@ SETTINGS use_hedged_requests = 1, log_comment = '05038_hedged_plan_limits_fallba
 SELECT sum(a), count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_plan_limits_hedged_fallback)
 SETTINGS use_hedged_requests = 0, log_comment = '05038_hedged_plan_limits_no_fallback';
 
-SYSTEM FLUSH LOGS query_log, text_log;
+SYSTEM FLUSH LOGS query_log;
 
--- The firing oracle: the hedged query logged the SQL fallback on the initiator. Resolve the newest
--- matching initial query by `log_comment` (CI reuses one database across executions in some jobs,
--- so aggregate over history could be satisfied by an earlier run).
-SELECT count() > 0
-FROM system.text_log
-WHERE query_id = (
-        SELECT argMax(query_id, event_time_microseconds)
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-          AND log_comment = '05038_hedged_plan_limits_fallback'
-          AND type = 'QueryFinish'
-          AND is_initial_query
-          AND event_date >= yesterday() AND event_time >= now() - 600)
-  AND message LIKE 'Sending query as SQL because a replica does not support query-plan serialization version%'
-  AND event_date >= yesterday() AND event_time >= now() - 600;
+-- Both oracles read the replica legs' own `query_log` rows: a replica that receives SQL counts `SelectQuery`,
+-- a replica that executes a shipped query plan creates no interpreter and does not.
+-- The newest initial query is resolved by `log_comment` (CI reuses one database across executions in some
+-- jobs, so an aggregate over history could be satisfied by an earlier run); a missing row prints nothing.
 
--- The control oracle: the non-hedged query did not fall back.
-SELECT count()
-FROM system.text_log
-WHERE query_id = (
-        SELECT argMax(query_id, event_time_microseconds)
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-          AND log_comment = '05038_hedged_plan_limits_no_fallback'
-          AND type = 'QueryFinish'
-          AND is_initial_query
-          AND event_date >= yesterday() AND event_time >= now() - 600)
-  AND message LIKE 'Sending query as SQL because a replica does not support query-plan serialization version%'
-  AND event_date >= yesterday() AND event_time >= now() - 600;
+-- The firing oracle: every replica of the hedged query received SQL.
+SELECT all_sql
+FROM
+(
+    SELECT count() AS legs, min(ProfileEvents['SelectQuery']) > 0 AS all_sql
+    FROM system.query_log
+    WHERE initial_query_id = (
+            SELECT query_id
+            FROM system.query_log
+            WHERE current_database = currentDatabase()
+              AND log_comment = '05038_hedged_plan_limits_fallback'
+              AND type = 'QueryFinish'
+              AND is_initial_query
+              AND event_date >= yesterday() AND event_time >= now() - 600
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1)
+      AND NOT is_initial_query
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday() AND event_time >= now() - 600
+)
+WHERE legs > 0;
+
+-- The control oracle: the replica of the non-hedged query executed the shipped plan.
+SELECT max_select_queries
+FROM
+(
+    SELECT count() AS legs, max(ProfileEvents['SelectQuery']) AS max_select_queries
+    FROM system.query_log
+    WHERE initial_query_id = (
+            SELECT query_id
+            FROM system.query_log
+            WHERE current_database = currentDatabase()
+              AND log_comment = '05038_hedged_plan_limits_no_fallback'
+              AND type = 'QueryFinish'
+              AND is_initial_query
+              AND event_date >= yesterday() AND event_time >= now() - 600
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1)
+      AND NOT is_initial_query
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday() AND event_time >= now() - 600
+)
+WHERE legs > 0;
 
 DROP TABLE t_plan_limits_hedged_fallback;

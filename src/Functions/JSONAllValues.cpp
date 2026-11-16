@@ -47,16 +47,16 @@ public:
     {
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    String getSignatureString() const override { return "(JSON) -> Array(String)"; }
+    [[nodiscard]] String getSignatureString() const override { return "(JSON) -> Array(String)"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto & elem = arguments[0];
         const auto * column_object = typeid_cast<const ColumnObject *>(elem.column.get());
@@ -80,7 +80,7 @@ private:
         bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
     };
 
-    ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
+    [[nodiscard]] ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
         auto result_data_column = ColumnString::create();
         auto offsets_column = ColumnArray::ColumnOffsets::create();

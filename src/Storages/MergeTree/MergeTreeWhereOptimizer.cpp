@@ -440,13 +440,14 @@ static bool conditionMayThrow(const ActionsDAG::Node * node)
 ///   2. Build a temporary `ConjunctInfo` for each conjunct: collect referenced columns,
 ///      check primary-index usability, and determine whether the conjunct is viable
 ///      (i.e., eligible to be moved to PREWHERE).
-///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
-///      conditions on the same column set are scored together (better selectivity estimate).
+///   3. Group viable conjuncts by their exact `NameSet` of referenced columns and by whether they can use
+///      the primary key, so that conditions on the same column set are scored together (better selectivity estimate).
 ///      Conjuncts over physical columns where a condition that may throw follows another condition
 ///      are grouped by these physical columns instead, so that the throwing one is not moved ahead.
 ///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
 ///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
-///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
+///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group;
+///      `pk_positions` gets the key position of each member that can use the primary key.
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
 {
     /// Flatten the top-level AND chain into individual conjuncts.
@@ -534,25 +535,38 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         }
     }
 
+    auto is_guarded = [&](const ConjunctInfo & info)
+    {
+        return std::ranges::find(storage_columns_guarding_throwing_condition, info.storage_columns)
+            != storage_columns_guarding_throwing_condition.end();
+    };
+
     auto group_key = [&](const ConjunctInfo & info) -> const NameSet &
     {
-        if (std::ranges::find(storage_columns_guarding_throwing_condition, info.storage_columns)
-            != storage_columns_guarding_throwing_condition.end())
+        if (is_guarded(info))
             return info.storage_columns;
         return info.columns;
+    };
+
+    /// The end of PREWHERE is chosen per group, so a conjunct that cannot use the primary key must not share a group with one that can.
+    auto uses_primary_key = [&](const ConjunctInfo & info)
+    {
+        return where_optimizer_context.move_primary_key_columns_to_end_of_prewhere && !is_guarded(info) && info.may_use_primary_index
+            && findMinPosition(info.columns, primary_key_names_positions) != std::numeric_limits<Int64>::max() - 1;
     };
 
     struct Group
     {
         NameSet columns;
+        bool uses_primary_key = false;
         std::vector<size_t> indices;
     };
     std::vector<Group> groups;
 
-    auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
+    auto find_group_idx = [&](const NameSet & cols, bool uses_pk) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].columns == cols && !infos[groups[g].indices.front()].expensive)
+            if (groups[g].columns == cols && groups[g].uses_primary_key == uses_pk && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
@@ -565,11 +579,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (!infos[i].viable)
             continue;
         const auto & key = group_key(infos[i]);
-        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key);
+        const bool uses_pk = uses_primary_key(infos[i]);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(key, uses_pk);
         if (!g.has_value())
         {
             group_of[i] = groups.size();
-            groups.push_back({key, {i}});
+            groups.push_back({key, uses_pk, {i}});
         }
         else
         {
@@ -646,7 +661,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 cond.min_position_in_primary_key = findMinPosition(group_columns, primary_key_names_positions);
                 if (!group_may_use_primary_index)
                     cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
-                pk_positions.emplace(cond.min_position_in_primary_key);
+                /// A guard group cannot be split by key usability, so the prefix of the key counts each of its members that can use the key.
+                for (size_t idx : group.indices)
+                    if (infos[idx].may_use_primary_index)
+                        pk_positions.emplace(findMinPosition(infos[idx].columns, primary_key_names_positions));
             }
 
             /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:

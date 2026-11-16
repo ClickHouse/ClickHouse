@@ -94,7 +94,7 @@ public:
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
 
-    const Configuration & getConfiguration() const
+    [[nodiscard]] const Configuration & getConfiguration() const
     {
         return configuration;
     }

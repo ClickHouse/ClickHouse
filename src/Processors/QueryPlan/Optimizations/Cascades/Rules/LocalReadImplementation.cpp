@@ -15,13 +15,13 @@ namespace DB
 class LocalReadImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "LocalRead"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] String getName() const override { return "LocalRead"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr;
     }
-    Promise getPromise() const override { return 1; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 1; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override

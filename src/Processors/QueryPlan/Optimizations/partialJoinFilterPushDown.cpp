@@ -53,7 +53,7 @@ struct ConditionList
     ActionsDAG::NodeRawConstPtrs existing_nodes;
     VectorWithMemoryTracking<ConditionList> subconditions;
 
-    bool assumedTrue() const
+    [[nodiscard]] bool assumedTrue() const
     {
         return existing_nodes.empty() &&
             (subconditions.empty() || (subconditions.size() == 1 && subconditions.front().assumedTrue()));
