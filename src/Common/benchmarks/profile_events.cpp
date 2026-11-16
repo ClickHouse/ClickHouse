@@ -244,7 +244,7 @@ struct LatencyHist
     /// Percentile over the in-histogram samples only (nearest-rank): overflow samples are OS
     /// descheduling (reported separately as `descheduled`), not coherence, and must not be able
     /// to turn a tail percentile into a preemption outlier.
-    double percentile(double p) const
+    [[nodiscard]] double percentile(double p) const
     {
         const uint64_t in_range = count - overflow;
         if (!in_range)

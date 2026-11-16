@@ -47,12 +47,12 @@ public:
         size_t max_block_size_bytes_,
         size_t limit_hint_ = 0);
 
-    const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
+    [[nodiscard]] MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
 
 private:
     Chunk prepareToMerge();
@@ -77,7 +77,7 @@ private:
         State(const Chunk & chunk, const SortDescriptionWithPositions & description, Int64 total_bytes_);
         State() = default;
 
-        bool isValid() const { return current_row < num_rows; }
+        [[nodiscard]] bool isValid() const { return current_row < num_rows; }
     };
 
     size_t num_inputs;

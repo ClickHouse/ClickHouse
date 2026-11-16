@@ -6,6 +6,7 @@
 #include <Interpreters/ArrayJoin.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -98,7 +99,7 @@ void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, c
     if (!settings.lower_array_join_function)
         return;
 
-    std::vector<QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         auto * node = stack.back();
