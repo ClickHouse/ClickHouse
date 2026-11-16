@@ -62,8 +62,7 @@ def test_shutdown_during_update(started_cluster):
         time.sleep(0.1)
 
     # The server must wait for the update while everything it uses is still alive.
-    main_node.stop_clickhouse(stop_wait_sec=60)
-    assert not main_node.clickhouse_forced_stop
+    assert main_node.stop_clickhouse(stop_wait_sec=60) is True
     assert not main_node.contains_in_log("<Fatal>", from_host=True)
 
     main_node.start_clickhouse()
