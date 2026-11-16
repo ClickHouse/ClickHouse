@@ -1,4 +1,4 @@
-import Heap from 'https://cdn.skypack.dev/heap-js';
+import Heap from './vendor/heap-js.es5.js';
 
 export class Event
 {
