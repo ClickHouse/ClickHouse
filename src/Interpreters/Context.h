@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -125,6 +126,8 @@ class ColumnsCache;
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 struct ColumnsCacheWriteBudget;
 using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
+class QueryMaxThreadsSnapshot;
+using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -327,7 +330,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class ContextTimeSeriesTagsCollector;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
@@ -378,7 +381,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -684,6 +687,9 @@ protected:
     /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
     /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
     bool is_automatic_parallel_replicas_probe = false;
+    /// Set for the context `system.tables` reads table totals with: a storage that would have to read remote
+    /// storage (e.g. data lake metadata) to compute `totalRows`/`totalBytes` returns nullopt instead.
+    bool totals_without_storage_access = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -695,6 +701,10 @@ protected:
     /// Resource classifier for a query, holds smart pointers required for ResourceLink
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
+
+    /// The query changes only metadata (see `isMetadataQuery`), so it is exempt from workload scheduling.
+    /// Copied to child contexts, so the sub-queries it runs are exempt too.
+    bool is_metadata_query = false;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -742,6 +752,8 @@ protected:
     /// makeQueryContext and shared across all of the query's read pools so the
     /// columns-cache write budgets apply per query rather than per pool.
     ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
+
+    QueryMaxThreadsSnapshotPtr query_max_threads_snapshot;
 
 public:
     /// Some counters for current query execution.
@@ -1064,6 +1076,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Marks the query as a metadata query (see `is_metadata_query`).
+    /// Must be called before the workload classifier is first acquired.
+    void setMetadataQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -2108,6 +2123,9 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
+
     ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType : uint8_t
@@ -2295,6 +2313,10 @@ public:
     /// Shared across all read pools of the query so the write budgets apply per query.
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
+    const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
+    /// For a query context made for a part of the query of `from`.
+    void shareQueryMaxThreadsSnapshot(const Context & from);
+
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
@@ -2455,23 +2477,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

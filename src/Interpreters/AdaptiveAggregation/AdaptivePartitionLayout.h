@@ -3,13 +3,10 @@
 #include <bit>
 
 #include <base/types.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 
 namespace DB
 {
-
-/// The staged records route by the two-level bucket of their key's hash, and their partitions nest in those
-/// buckets, so the staging and the merge come in the same 256 buckets as the two-level hash tables.
-inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
 /// How the staged records of a session are partitioned, and the chunks of the producers' staging buffers: the first
 /// chunk of every partition and the cap its chunks double up to. The partitions and the chunks are chosen together (see
@@ -31,28 +28,33 @@ public:
     /// first chunks, down to the smallest the staging buffer takes. The four free hash bits allow at most 16 partitions
     /// per bucket.
     ///
-    /// The chunks of a partition double up to the staging buffer's default cap, and up to half of it with more than 4
-    /// partitions per bucket. Every partition of a producer leaves the unused end of its last chunk, so this slack
-    /// grows with the partitions, which grow with the producers, and at 8 partitions per bucket a smaller cap takes a
-    /// few percent off the peak memory of the high-cardinality aggregations of ClickBench at 64 threads at no cost in
-    /// time. At 4 per bucket it does not pay: there long records such as URLs leave the ends of the smaller chunks
-    /// unused instead.
+    /// The chunks of a partition double up to a cap, which trades the merge's cost per chunk against
+    /// memory. The merge follows a partition's chunks from header to header, and the hardware prefetchers
+    /// start a new stream at every chunk, so a small cap makes the merge of a large partition several
+    /// percent slower. But every partition of a producer leaves the unused end of its last chunk, up to a
+    /// whole chunk, and the number of partitions grows with the producers. So the cap is the largest power
+    /// of two at which one unused chunk in every partition of every producer fits in 128 MiB, clamped to
+    /// 4-32 KiB. Without an external-aggregation threshold, that is 32 KiB up to 4 producers, 16 KiB up to
+    /// 8, 8 KiB up to 16 and 4 KiB above, where even 4 KiB exceeds the budget. These keep the caps measured
+    /// at 16 and 64 threads: at 64, 4 KiB takes a few percent off the peak memory of the high-cardinality
+    /// aggregations of ClickBench at no cost in time, while at 16 it does not pay, because long records
+    /// such as URLs leave the ends of the smaller chunks unused instead.
     static AdaptivePartitionLayout forProducers(size_t producers, size_t max_bytes_before_external_group_by);
 
     /// The first chunk of every partition in a producer's staging buffer (see `PartitionedRecordBuffer`).
-    size_t firstChunkBytes() const { return first_chunk_bytes; }
+    [[nodiscard]] size_t firstChunkBytes() const { return first_chunk_bytes; }
     /// The cap that the chunks of every partition double up to.
-    size_t maxChunkBytes() const { return max_chunk_bytes; }
+    [[nodiscard]] size_t maxChunkBytes() const { return max_chunk_bytes; }
 
-    size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
-    size_t numPartitions() const { return partition_mask + 1; }
-    size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
+    [[nodiscard]] size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
+    [[nodiscard]] size_t numPartitions() const { return partition_mask + 1; }
+    [[nodiscard]] size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
 
     /// The partitions of a bucket are consecutive: they start at `firstPartition(bucket)`, and `subOf` is a
     /// partition's place among them.
-    size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
-    size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
-    size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
+    [[nodiscard]] size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
+    [[nodiscard]] size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
+    [[nodiscard]] size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
 
 private:
     /// The two-level tables take the bucket from the top `bucket_bits` of the low 32 bits of the hash. The kernels

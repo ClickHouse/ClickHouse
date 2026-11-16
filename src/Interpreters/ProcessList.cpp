@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -118,6 +120,56 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+bool isMetadataQuery(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Move: /// MOVE of access entities
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        case IAST::QueryKind::Create: /// Also ATTACH
+        {
+            /// A `SELECT` (also of a view) is analyzed and a table function is read to infer the structure.
+            const auto * create = ast.as<ASTCreateQuery>();
+            return !create || (!create->select && !create->as_table_function);
+        }
+        case IAST::QueryKind::Alter:
+        {
+            const auto * alter = ast.as<ASTAlterQuery>();
+            if (!alter || !alter->command_list)
+                return true;
+            for (const auto & child : alter->command_list->children)
+            {
+                const auto * command = child->as<ASTAlterCommand>();
+                if (!command)
+                    continue;
+                switch (command->type)
+                {
+                    /// Copy parts in the query.
+                    case ASTAlterCommand::MOVE_PARTITION:
+                    case ASTAlterCommand::REPLACE_PARTITION: /// Also ATTACH PARTITION ... FROM
+                    case ASTAlterCommand::FETCH_PARTITION:
+                    case ASTAlterCommand::ATTACH_PARTITION:
+                    case ASTAlterCommand::FREEZE_PARTITION:
+                    case ASTAlterCommand::FREEZE_ALL:
+                    case ASTAlterCommand::EXECUTE_COMMAND:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 ProcessList::EntryPtr ProcessList::insert(
@@ -555,7 +607,8 @@ QueryStatus::QueryStatus(
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
-    , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , total_watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
+    , execution_watch(CLOCK_MONOTONIC)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
@@ -722,7 +775,7 @@ bool QueryStatus::checkTimeLimit()
 
 bool QueryStatus::checkTimeLimit(OverflowMode mode)
 {
-    auto elapsed_ns = watch.elapsed();
+    auto elapsed_ns = execution_watch.elapsed();
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
     return limits.checkTimeLimit(elapsed_ns, mode);
@@ -755,7 +808,7 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    return limits.checkTimeLimit(execution_watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
@@ -1098,7 +1151,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
-    res.elapsed_microseconds = watch.elapsedMicroseconds();
+    res.elapsed_microseconds = total_watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.is_internal       = is_internal;
