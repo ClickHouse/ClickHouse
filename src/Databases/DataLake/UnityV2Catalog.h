@@ -29,7 +29,8 @@ public:
         const std::string & auth_scope_,
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     ~UnityV2Catalog() override;
 
@@ -39,14 +40,22 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
+    /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
+    /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
     void createTable(
         const String & namespace_name,
         const String & table_name,
         const String & table_location,
         Poco::JSON::Object::Ptr metadata_content) const override;
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,
@@ -74,6 +83,9 @@ public:
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
+    /// Delta tables only: Iceberg tables get write credentials from the Iceberg REST catalog.
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.
     bool isTransactional() const override { return true; }
@@ -83,14 +95,24 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_snapshot) const override;
+        const String & base_catalog_metadata_location,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
+
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
 
 private:
     const std::string base_url_str;
@@ -104,6 +126,7 @@ private:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
+    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
     mutable std::mutex token_mutex;
@@ -123,7 +146,12 @@ private:
 
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
-        std::function<void(std::ostream &)> out_stream_callback) const;
+        std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
+
+    void deleteRequest(const std::string & route) const;
+
+    /// The `table_type` field of the table, such as `MANAGED` or `EXTERNAL`.
+    String getTableType(const String & full_table_name) const;
 
     std::string getBearerToken(bool force_refresh = false) const;
 
@@ -154,8 +182,11 @@ private:
         const Poco::JSON::Object::Ptr & table_json,
         TableMetadata & result) const;
 
-    /// Asks the catalog for temporary read credentials for Delta tables.
-    std::shared_ptr<IStorageCredentials> getDeltaCredentials(const std::string & table_id, StorageType storage_type) const;
+    /// Asks the catalog for temporary credentials for Delta tables, `operation` is `READ` or `READ_WRITE`.
+    std::shared_ptr<IStorageCredentials> getDeltaCredentials(
+        const std::string & table_id, StorageType storage_type, const std::string & operation) const;
+
+    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation);
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;

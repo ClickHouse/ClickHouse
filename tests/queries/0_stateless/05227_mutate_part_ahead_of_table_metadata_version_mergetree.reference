@@ -1,0 +1,8 @@
+the part metadata version: 1
+the table metadata version: 0
+the part type: Compact
+the part still has the dropped column: 1
+rows after the delete: 99
+the rewrite dropped the column: 0
+unfinished mutations: 0
+the rewritten part is consistent: 1

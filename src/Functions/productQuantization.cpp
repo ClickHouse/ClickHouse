@@ -79,7 +79,7 @@ struct CodebookView
 {
     const float * data = nullptr;
     size_t stride = 0;
-    const float * row(size_t r) const { return data + r * stride; }
+    [[nodiscard]] const float * row(size_t r) const { return data + r * stride; }
 };
 
 CodebookView getCodebook(const ColumnWithTypeAndName & arg, const String & fn, size_t expected_floats)
@@ -88,7 +88,7 @@ CodebookView getCodebook(const ColumnWithTypeAndName & arg, const String & fn, s
     size_t stride = 0;
     if (const auto * cb_const = checkAndGetColumnConst<ColumnFixedString>(arg.column.get()))
         col_codebook = &assert_cast<const ColumnFixedString &>(cb_const->getDataColumn()); /// const codebook
-    else if ((col_codebook = checkAndGetColumn<ColumnFixedString>(arg.column.get())))
+    else if (col_codebook = checkAndGetColumn<ColumnFixedString>(arg.column.get()); col_codebook)
         stride = expected_floats; /// per-row codebook
     if (!col_codebook || col_codebook->empty())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Codebook argument of function {} must be a (constant) FixedString", fn);
@@ -109,15 +109,15 @@ class FunctionPQDistance : public IFunction
 public:
     static constexpr auto name = "__productQuantizationDistance";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 7; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 7; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
     /// The codebook (arg 1) is NOT a query constant in the planner path - it is the per-part codebook read as a
     /// per-block ColumnConst. Only the scalar params (and the query vector) are required constant.
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4, 5, 6}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2, 3, 4, 5, 6}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!checkAndGetDataType<DataTypeFixedString>(arguments[0].type.get()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} (a PQ code) must be a FixedString", name);
@@ -132,7 +132,7 @@ public:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnFloat32::create();

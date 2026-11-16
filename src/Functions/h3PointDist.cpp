@@ -19,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -38,32 +37,23 @@ public:
         return std::make_shared<FunctionH3PointDist>(name, func);
     }
 
-    std::string getName() const override { return function_name; }
+    [[nodiscard]] std::string getName() const override { return function_name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), i + 1, getName());
-        }
-        return std::make_shared<DataTypeFloat64>();
+        return "(Float64, Float64, Float64, Float64) -> Float64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)

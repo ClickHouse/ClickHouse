@@ -4,11 +4,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Functions/AI/AIRequestExecutor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 
-#include <exception>
 #include <functional>
 #include <map>
 #include <optional>
@@ -52,18 +52,19 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) {}
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfBackgroundExpression(context); }
 
-    bool isStateful() const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool isExpensive() const override { return true; }
     /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     /// Helpers for nullable col handling
 
@@ -103,11 +104,11 @@ public:
         AINamedCollectionConfig collection;
         AIParamValues values;
 
-        bool has(std::string_view key) const { return values.contains(key); }
+        [[nodiscard]] bool has(std::string_view key) const { return values.contains(key); }
 
-        String getString(std::string_view key) const;
-        Float64 getFloat(std::string_view key) const;
-        UInt64 getUInt(std::string_view key) const;
+        [[nodiscard]] String getString(std::string_view key) const;
+        [[nodiscard]] Float64 getFloat(std::string_view key) const;
+        [[nodiscard]] UInt64 getUInt(std::string_view key) const;
     };
 
     /// Type validator for the optional trailing parameter argument: a `Map(String, String)`.
@@ -128,20 +129,23 @@ public:
     /// Parameters common to every AI function. Function-specific params are appended by `functionParams`.
     static AIParamSpecs commonParams();
 
-    /// Exponential backoff delay capped at one minute, so adversarial values of
-    /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
-    /// sleep or overflow `std::chrono::milliseconds`.
-    static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
-
-    /// Whether a failed provider request should be retried: transient network failures and
-    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
-    static bool isRetriableProviderError(std::exception_ptr exception);
+    /// Read the `ai_function_*` settings that govern how one provider request runs. The same policy
+    /// applies to every request the query issues.
+    static AIRequestPolicy makeRequestPolicy(const ContextPtr & context);
 
     /// Parameters accepted by the embedding functions (`aiEmbed`, `aiSimilarity`) in their optional trailing
     /// `Map(String, String)` argument. Unlike the text functions, they take no `max_tokens`, and `model` is a
     /// required positional argument (not read from the map or the named collection). `dimensions` requests a
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
+
+    /// Throws if the context has no user. Background work (merges, mutations, `Buffer` flushes) evaluates
+    /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
+    static void checkHasUser(const ContextPtr & context);
+
+    /// Throws if the context analyzes expressions that are executed in the background (mutations, expressions stored
+    /// in a table definition), where `checkHasUser` throws.
+    static void throwIfBackgroundExpression(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
@@ -153,45 +157,46 @@ public:
         UInt64 texts_skipped = 0;
     };
 
-    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
-    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
-    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
+    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching
+    /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
+    /// up to `max_concurrent_requests` of those calls are in flight at once.
+    /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
     static void embedTexts(
-        IAIProvider & provider,
+        const std::shared_ptr<IAIProvider> & provider,
         const String & model,
         UInt64 dimensions,
         const String & function_name,
+        const String & query_id,
+        const String & initial_query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
-        UInt64 max_retries,
-        UInt64 retry_delay_ms,
-        bool throw_on_error,
-        AIQuotaTracker & quota,
-        const ConnectionTimeouts & timeouts,
+        size_t max_concurrent_requests,
+        const AIRequestPolicy & policy,
+        const AIQuotaTrackerPtr & quota,
         EmbeddingResult & result);
 
 protected:
     ContextPtr context;
-    ContextPtr getContext() const { return context; }
+    [[nodiscard]] ContextPtr getContext() const { return context; }
 
     /// Function-specific parameters accepted in the trailing `Map(String, String)` argument, on top
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.
-    virtual AIParamSpecs functionParams() const { return {}; }
+    [[nodiscard]] virtual AIParamSpecs functionParams() const { return {}; }
 
     /// Performs additional validation of the input arguments.
     virtual void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const {}
 
     /// A system prompt  applies to each request. AI funcs will probably want to provide a default on a per-function basis.
-    virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const = 0;
+    [[nodiscard]] virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const = 0;
 
     /// The user prompt is appended to the system prompt, this is usually what is contained in each row.
-    virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
+    [[nodiscard]] virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
 
     /// How the response should be formatted. Different AI providers treat this differently. OpenAI-like providers have a specific field
     /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
-    virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
+    [[nodiscard]] virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
     /// Insert a post-processed provider response into the result column.
     /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types
@@ -200,7 +205,7 @@ protected:
 
 private:
     /// Full parameter spec for this function: `commonParams` followed by `functionParams`.
-    AIParamSpecs allParams() const;
+    [[nodiscard]] AIParamSpecs allParams() const;
 };
 
 }

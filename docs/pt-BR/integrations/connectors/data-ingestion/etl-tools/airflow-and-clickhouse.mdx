@@ -19,9 +19,12 @@ import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseS
 
 O provedor `apache-airflow-providers-clickhousedb` conecta o Airflow ao ClickHouse, permitindo executar consultas, criar tabelas e carregar dados como parte de um DAG. Ele se conecta pela [interface HTTP](/pt-BR/concepts/features/interfaces/http) usando o cliente [`clickhouse-connect`](/pt-BR/integrations/language-clients/python/index) e expõe o ClickHouse por meio do framework SQL padrão do Airflow, para que o `SQLExecuteQueryOperator` padrão lide com DDL, DML e consultas analíticas sem exigir um operador específico do ClickHouse.
 
-<div id="install-the-provider">
-  ## Instale o provedor
-</div>
+<Note>
+  Já usa o `airflow-clickhouse-plugin` da comunidade? Ele utiliza um driver, protocolo e porta diferentes. Siga o
+  [guia de migração](/pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin) para mover DAGs e conexões existentes para o provedor.
+</Note>
+
+## Instale o provedor {#install-the-provider}
 
 Instale o provedor no ambiente onde o scheduler e os workers do Airflow são executados:
 
@@ -35,9 +38,7 @@ O provedor depende de `apache-airflow-providers-common-sql` e `clickhouse-connec
 pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 ```
 
-<div id="create-a-clickhouse-connection">
-  ## Criar uma conexão com o ClickHouse
-</div>
+## Criar uma conexão com o ClickHouse {#create-a-clickhouse-connection}
 
 O provedor registra um tipo de conexão `clickhouse`. Crie uma conexão pela UI do Airflow em **Admin &gt; Connections** ou defina uma pela CLI ou por uma variável de ambiente.
 
@@ -53,26 +54,22 @@ Na UI, selecione **ClickHouse** como tipo de conexão e preencha os campos:
 
 Para o [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro) ou qualquer cluster self-hosted com TLS habilitado, defina `secure` como `true` no campo **Extra** e use a porta TLS (`8443`).
 
-<div id="extra-connection-options">
-  ### Opções extras de conexão
-</div>
+### Opções extras de conexão {#extra-connection-options}
 
 O provedor disponibiliza opções adicionais como campos específicos no formulário de conexão. Se, em vez disso, você definir a conexão por URI, JSON ou variável de ambiente, informe essas opções como chaves no objeto JSON `extra`. Todas são opcionais:
 
-| chave `extra`          | campo da UI                         | padrão  | descrição                                                                                                                                                                           |
-| ---------------------- | ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `secure`               | Usar TLS (HTTPS)                    | `false` | Habilita HTTPS/TLS.                                                                                                                                                                 |
-| `verify`               | Verificar certificado SSL           | `true`  | Verifica o certificado TLS do servidor quando `secure` é `true`. Defina `false` para certificados autoassinados.                                                                    |
-| `connect_timeout`      | Tempo limite de conexão (segundos)  | `10`    | Tempo limite da conexão HTTP, em segundos.                                                                                                                                          |
-| `send_receive_timeout` | Tempo limite da consulta (segundos) | `300`   | Tempo limite de leitura/gravação da consulta, em segundos. Aumente esse valor para consultas analíticas de longa duração.                                                           |
-| `compress`             | Habilitar compactação LZ4           | `true`  | Habilita a compactação LZ4 dos resultados.                                                                                                                                          |
-| `client_name`          | Nome do cliente                     | (vazio) | Um rótulo acrescentado ao identificador da versão do Airflow no `User-Agent` do ClickHouse e à coluna `client_name` de [`system.query_log`](/pt-BR/reference/system-tables/query_log).    |
-| `session_settings`     | Configurações da sessão (JSON)      | (vazio) | [Configurações de sessão do ClickHouse](/pt-BR/reference/settings/session-settings) aplicadas a cada consulta nessa conexão, por exemplo `{"max_execution_time": 300, "max_threads": 8}`. |
-| `client_kwargs`        | kwargs do cliente (JSON)            | (vazio) | Argumentos de palavra-chave adicionais encaminhados para `clickhouse_connect.get_client()`, por exemplo um `http_proxy`.                                                            |
+| chave `extra`          | campo da UI                         | padrão  | descrição                                                                                                                                                                                        |
+| ---------------------- | ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secure`               | Usar TLS (HTTPS)                    | `false` | Habilita HTTPS/TLS.                                                                                                                                                                              |
+| `verify`               | Verificar certificado SSL           | `true`  | Verifica o certificado TLS do servidor quando `secure` é `true`. Defina `false` para certificados autoassinados.                                                                                 |
+| `connect_timeout`      | Tempo limite de conexão (segundos)  | `10`    | Tempo limite da conexão HTTP, em segundos.                                                                                                                                                       |
+| `send_receive_timeout` | Tempo limite da consulta (segundos) | `300`   | Tempo limite de leitura/gravação da consulta, em segundos. Aumente esse valor para consultas analíticas de longa duração.                                                                        |
+| `compress`             | Habilitar compactação LZ4           | `true`  | Habilita a compactação LZ4 dos resultados.                                                                                                                                                       |
+| `client_name`          | Nome do cliente                     | (vazio) | Um rótulo acrescentado ao identificador da versão do Airflow no cabeçalho HTTP `User-Agent`, registrado na coluna `http_user_agent` de [`system.query_log`](/pt-BR/reference/system-tables/query_log). |
+| `session_settings`     | Configurações de sessão (JSON)      | (vazio) | [Configurações de sessão do ClickHouse](/pt-BR/reference/settings/session-settings) aplicadas a cada consulta nessa conexão, por exemplo `{"max_execution_time": 300, "max_threads": 8}`.              |
+| `client_kwargs`        | kwargs do cliente (JSON)            | (vazio) | Argumentos de palavra-chave adicionais encaminhados para `clickhouse_connect.get_client()`, por exemplo um `http_proxy`.                                                                         |
 
-<div id="define-a-connection-without-the-ui">
-  ### Defina uma conexão sem a UI
-</div>
+### Defina uma conexão sem a UI {#define-a-connection-without-the-ui}
 
 Defina a conexão por meio de uma variável de ambiente. O formato de URI abrange host, credenciais e banco de dados:
 
@@ -102,9 +99,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 
 Todos os hooks e operadores usam o ID de conexão `clickhouse_default`, a menos que você especifique outro.
 
-<div id="run-queries">
-  ## Executar consultas com SQLExecuteQueryOperator
-</div>
+## Executar consultas com SQLExecuteQueryOperator {#run-queries}
 
 Defina o `conn_id` do operador para a sua conexão do ClickHouse. O DAG a seguir cria uma tabela, insere linhas, lê essas linhas novamente e exclui a tabela:
 
@@ -112,7 +107,7 @@ Defina o `conn_id` do operador para a sua conexão do ClickHouse. O DAG a seguir
 from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.hooks.handlers import fetch_all_handler
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 CLICKHOUSE_CONN_ID = "clickhouse_default"
@@ -163,9 +158,7 @@ with DAG(
 
 Os resultados da consulta são recuperados com o `handler` padrão (`fetch_all_handler`). Para retornar algo diferente do conjunto completo de resultados, passe um `handler` diferente, como `fetch_one_handler`, para retornar apenas a primeira linha.
 
-<div id="target-a-different-database">
-  ### Use um banco de dados diferente por tarefa
-</div>
+### Use um banco de dados diferente por tarefa {#target-a-different-database}
 
 Quando uma conexão aponta para um cluster e tarefas individuais fazem consultas em bancos de dados diferentes, sobrescreva o banco de dados por meio de `hook_params` em vez de criar uma conexão separada:
 
@@ -178,9 +171,7 @@ read_rows = SQLExecuteQueryOperator(
 )
 ```
 
-<div id="use-the-hook-directly">
-  ## Use o hook diretamente
-</div>
+## Use o hook diretamente {#use-the-hook-directly}
 
 Para casos que não se encaixam em um operador SQL — inserção em massa, streaming ou chamadas específicas do cliente ClickHouse — use `ClickHouseHook` dentro de uma tarefa em Python.
 
@@ -206,9 +197,7 @@ client = hook.get_client()
 total = client.query("SELECT count() FROM events").result_rows[0][0]
 ```
 
-<div id="apply-session-settings">
-  ### Aplicar configurações de sessão
-</div>
+### Aplicar configurações de sessão {#apply-session-settings}
 
 Passe [configurações de sessão](/pt-BR/reference/settings/session-settings) ao construir o hook, seja diretamente ou por meio do `hook_params` de um operador. As configurações passadas ao construtor são mescladas com quaisquer `session_settings` definidas no campo **Extra** da conexão, e os valores do construtor prevalecem em caso de conflito entre chaves:
 
@@ -219,10 +208,9 @@ hook = ClickHouseHook(
 )
 ```
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
+* [Migrar do airflow-clickhouse-plugin](/pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)
 * [`clickhouse-connect` cliente Python](/pt-BR/integrations/language-clients/python/index)
 * [interface HTTP do ClickHouse](/pt-BR/concepts/features/interfaces/http)
 * [referência das configurações de sessão do ClickHouse](/pt-BR/reference/settings/session-settings)

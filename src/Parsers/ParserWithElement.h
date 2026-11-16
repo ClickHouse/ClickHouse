@@ -10,8 +10,11 @@ namespace DB
   */
 class ParserWithElement : public IParserBase
 {
+public:
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
+
 protected:
-    const char * getName() const override { return "WITH element"; }
+    [[nodiscard]] const char * getName() const override { return "WITH element"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

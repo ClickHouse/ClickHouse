@@ -66,13 +66,18 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-/// Since version 1 the version is followed by a bool with the `with_source` argument.
 /// A type is encoded with the oldest version that can represent it: encoded types are stored inside
 /// Dynamic columns on disk and sent over the Native protocol, so encodings of types without new
 /// arguments must stay readable by older servers.
-const UInt8 TYPE_JSON_INITIAL_SERIALIZATION_VERSION = 0;
-const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE = 1;
+/// Version 1 adds a flags byte after each typed path name; it is written for types with SHARED paths.
+/// Version 2 additionally writes a bool with the `with_source` argument right after the version byte;
+/// it is written for types declared with `with_source=1` and also carries the version 1 per-path flags.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS = 1;
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE = 2;
 const UInt8 TYPE_JSON_MAX_SERIALIZATION_VERSION = TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE;
+/// Flags of a typed path in version >= 1. Other bits are reserved.
+const UInt8 TYPED_PATH_FLAG_SHARED = 0x1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
@@ -242,7 +247,7 @@ DataTypePtr decodeEnum(ReadBuffer & buf)
     for (size_t i = 0; i != size; ++i)
     {
         String name;
-        readStringBinary(name, buf);
+        readStringBinaryGrowing(name, buf);
         T value;
         readBinaryLittleEndian(value, buf);
         values.emplace_back(name, value);
@@ -289,7 +294,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
 std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
     String function_name;
-    readStringBinary(function_name, buf);
+    readStringBinaryGrowing(function_name, buf);
     size_t num_parameters = 0;
     readVarUInt(num_parameters, buf);
     if (num_parameters > MAX_ARRAY_SIZE)
@@ -298,7 +303,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     Array parameters;
     parameters.reserve(num_parameters);
     for (size_t i = 0; i != num_parameters; ++i)
-        parameters.push_back(decodeField(buf));
+        parameters.push_back(decodeField(buf, complexity, max_complexity));
     size_t num_arguments = 0;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
@@ -526,7 +531,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            const UInt8 serialization_version = object_type.hasSource() ? TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE : TYPE_JSON_INITIAL_SERIALIZATION_VERSION;
+            UInt8 serialization_version;
+            if (object_type.hasSource())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE;
+            else if (object_type.hasSharedTypedPaths())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS;
+            else
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION;
             writeBinary(serialization_version, buf);
             if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE)
                 writeBinary(object_type.hasSource(), buf);
@@ -537,6 +548,8 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             for (const auto & [path, path_type] : typed_paths)
             {
                 writeStringBinary(path, buf);
+                if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS)
+                    writeBinary(UInt8(object_type.isSharedTypedPath(path) ? TYPED_PATH_FLAG_SHARED : 0), buf);
                 encodeDataTypeImpl<encode_for_hash_calculation>(path_type, buf);
             }
             const auto & paths_to_skip = object_type.getPathsToSkip();
@@ -616,7 +629,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::DateTimeWithTimezone:
         {
             String time_zone;
-            readStringBinary(time_zone, buf);
+            readStringBinaryGrowing(time_zone, buf);
             return std::make_shared<DataTypeDateTime>(time_zone);
         }
         case BinaryTypeIndex::DateTime64UTC:
@@ -630,7 +643,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             UInt8 scale = 0;
             readBinary(scale, buf);
             String time_zone;
-            readStringBinary(time_zone, buf);
+            readStringBinaryGrowing(time_zone, buf);
             return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
         case BinaryTypeIndex::Time:
@@ -675,7 +688,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != size; ++i)
             {
                 names.emplace_back();
-                readStringBinary(names.back(), buf);
+                readStringBinaryGrowing(names.back(), buf);
                 elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
@@ -782,6 +795,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             size_t version = 0;
             readVarUInt(version, buf);
             const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            DataTypeAggregateFunction::checkSupportedFunctions(function);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
@@ -803,7 +817,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != size; ++i)
             {
                 names.emplace_back();
-                readStringBinary(names.back(), buf);
+                readStringBinaryGrowing(names.back(), buf);
                 elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
@@ -812,7 +826,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::Custom:
         {
             String type_name;
-            readStringBinary(type_name, buf);
+            readStringBinaryGrowing(type_name, buf);
             return DataTypeFactory::instance().get(type_name);
         }
         case BinaryTypeIndex::JSON:
@@ -841,11 +855,21 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             if (typed_paths_size > DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, DataTypeObject::MAX_TYPED_PATHS);
 
-            std::unordered_map<String, DataTypePtr> typed_paths;
+            DataTypeObject::TypedPathsMap typed_paths;
+            std::unordered_set<String> shared_typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, buf);
+                readStringBinaryGrowing(path, buf);
+                if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS)
+                {
+                    UInt8 flags = 0;
+                    readBinary(flags, buf);
+                    if (flags & ~TYPED_PATH_FLAG_SHARED)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown flags {} of typed path '{}' in JSON type binary encoding", UInt32(flags), path);
+                    if (flags & TYPED_PATH_FLAG_SHARED)
+                        shared_typed_paths.insert(path);
+                }
                 typed_paths[path] = decodeDataTypeImpl(buf, complexity, max_complexity);
             }
             size_t paths_to_skip_size = 0;
@@ -858,7 +882,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != paths_to_skip_size; ++i)
             {
                 String path;
-                readStringBinary(path, buf);
+                readStringBinaryGrowing(path, buf);
                 paths_to_skip.insert(path);
             }
 
@@ -872,7 +896,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != path_regexps_to_skip_size; ++i)
             {
                 String regexp;
-                readStringBinary(regexp, buf);
+                readStringBinaryGrowing(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
             return std::make_shared<DataTypeObject>(
@@ -882,6 +906,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 path_regexps_to_skip,
                 max_dynamic_paths,
                 max_dynamic_types,
+                shared_typed_paths,
                 with_source);
         }
     }

@@ -3,7 +3,7 @@
 # Remote IO is left out: it wants libcurl, which ClickHouse does not carry in contrib, and
 # ClickHouse has its own S3 and HTTP stack anyway. That drops the whole KvikIO_REMOTE_SUPPORT
 # block - hdfs.cpp, remote_handle.cpp, shim/libcurl.cpp and detail/{multi_poll_reactor,
-# remote_callback, tls, url}.cpp - so the list below is upstream's base set verbatim.
+# remote_callback, tls, url, curl_share, http_retry, transfer_plan}.cpp - so the list below is upstream's base set verbatim.
 #
 # cuFile (GPUDirect Storage) is compiled in from the toolkit's cufile.h, but the library
 # itself is only dlopen'd at run time, so a host without the cuFile driver still runs the
@@ -29,17 +29,23 @@ add_library (_kvikio
     "${KVIKIO_DIR}/src/http_status_codes.cpp"
     "${KVIKIO_DIR}/src/logger.cpp"
     "${KVIKIO_DIR}/src/mmap.cpp"
+    "${KVIKIO_DIR}/src/observation.cpp"
     "${KVIKIO_DIR}/src/stream.cpp"
     "${KVIKIO_DIR}/src/utils.cpp"
+    "${KVIKIO_DIR}/src/statistics/counters.cpp"
+    "${KVIKIO_DIR}/src/statistics/summary.cpp"
     "${KVIKIO_DIR}/src/cufile/config.cpp"
     "${KVIKIO_DIR}/src/cufile/driver.cpp"
     "${KVIKIO_DIR}/src/detail/bounce_buffer_cache.cpp"
     "${KVIKIO_DIR}/src/detail/concurrent_request_limiter.cpp"
     "${KVIKIO_DIR}/src/detail/env.cpp"
     "${KVIKIO_DIR}/src/detail/event.cpp"
+    "${KVIKIO_DIR}/src/detail/io_event_barrier.cpp"
     "${KVIKIO_DIR}/src/detail/nvtx.cpp"
+    "${KVIKIO_DIR}/src/detail/observation_recorder.cpp"
     "${KVIKIO_DIR}/src/detail/posix_io.cpp"
     "${KVIKIO_DIR}/src/detail/stream.cpp"
+    "${KVIKIO_DIR}/src/detail/string_utils.cpp"
     "${KVIKIO_DIR}/src/detail/utils.cpp"
     "${KVIKIO_DIR}/src/shim/cuda.cpp"
     "${KVIKIO_DIR}/src/shim/cufile.cpp"

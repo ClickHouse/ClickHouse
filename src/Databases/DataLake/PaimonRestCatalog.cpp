@@ -41,6 +41,7 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
@@ -325,6 +326,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
         DB::HTTPHeaderEntries request_headers(headers);
         const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
         validateBearerToken(context, bearer_token);
+        /// The `dlf` provider adds headers built from the database settings (`dlf_access_key_id`, `region`).
+        context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(request_headers);
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
@@ -514,7 +517,7 @@ bool PaimonRestCatalog::existsTable(const String & database_name, const String &
 {
     try
     {
-        createReadBuffer(
+        (void)createReadBuffer(
             std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database_name / TABLES_ENDPOINT / table_name, "GET");
     }
     catch (const DB::HTTPException & e)
