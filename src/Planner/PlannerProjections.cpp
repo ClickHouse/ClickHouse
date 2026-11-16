@@ -121,26 +121,27 @@ String calculateStoredName(const QueryTreeNodePtr & node)
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_node = node->as<FunctionNode &>();
+            /// the analysis drops the written name and nulls action of an aggregate function and the right side of IN, the AST has them
+            const auto * function_ast = node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
+            const auto * aggregate_ast = function_node.isAggregateFunction() ? function_ast : nullptr;
 
             const auto & arguments = function_node.getArguments().getNodes();
             Strings argument_names(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                /// only the AST has this name: the hash of the AST of a subquery; the analysis replaces the right side of IN
-                if (isTableExpressionNodeType(arguments[i]->getNodeType()) && node->hasOriginalAST())
-                    argument_names[i] = node->getOriginalAST()->as<ASTFunction &>().arguments->children.at(i)->getColumnName();
+                if (function_ast && isTableExpressionNodeType(arguments[i]->getNodeType()))
+                    argument_names[i] = function_ast->arguments->children.at(i)->getColumnName();
                 else
                     argument_names[i] = calculateStoredName(arguments[i]);
             }
 
-            /// the analysis replaces the name of an aggregate function and clears its nulls action
-            String result = function_node.isAggregateFunction() ? function_node.getSourceFunctionName() : function_node.getFunctionName();
+            String result = aggregate_ast ? aggregate_ast->name : function_node.getFunctionName();
             if (const auto & parameters = function_node.getParameters().getNodes(); !parameters.empty())
                 result += fmt::format("({})", fmt::join(parameters | std::views::transform(calculateStoredName), ", "));
             result += fmt::format("({})", fmt::join(argument_names, ", "));
-            if (function_node.getSourceNullsAction() == NullsAction::RESPECT_NULLS)
+            if (aggregate_ast && aggregate_ast->getNullsAction() == NullsAction::RESPECT_NULLS)
                 result += " RESPECT NULLS";
-            else if (function_node.getSourceNullsAction() == NullsAction::IGNORE_NULLS)
+            else if (aggregate_ast && aggregate_ast->getNullsAction() == NullsAction::IGNORE_NULLS)
                 result += " IGNORE NULLS";
             return result;
         }
