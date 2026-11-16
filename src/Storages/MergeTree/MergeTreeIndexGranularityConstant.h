@@ -9,22 +9,18 @@ namespace DB
 class MergeTreeIndexGranularityConstant final : public MergeTreeIndexGranularity
 {
 private:
-    size_t constant_granularity{};
-    size_t last_mark_granularity{};
+    size_t constant_granularity;
+    size_t last_mark_granularity;
 
     size_t num_marks_without_final = 0;
     bool has_final_mark = false;
 
     size_t getMarkUpperBoundForRow(size_t row_index) const;
 
-    void writeDataImpl(WriteBuffer & out) const override;
-    void readDataImpl(ReadBuffer & in) override;
 public:
     MergeTreeIndexGranularityConstant() = default;
     explicit MergeTreeIndexGranularityConstant(size_t constant_granularity_);
     MergeTreeIndexGranularityConstant(size_t constant_granularity_, size_t last_mark_granularity_, size_t num_marks_without_final_, bool has_final_mark_);
-
-    MergeTreeIndexGranularityType getType() const override { return MergeTreeIndexGranularityType::CONSTANT; }
 
     std::optional<size_t> getConstantGranularity() const override { return constant_granularity; }
     size_t getRowsCountInRange(size_t begin, size_t end) const override;
@@ -56,7 +52,6 @@ public:
 
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override { return nullptr; }
     std::string describe() const override;
-    std::shared_ptr<MergeTreeIndexGranularity> clone() const override { return std::make_shared<MergeTreeIndexGranularityConstant>(*this); }
 };
 
 }

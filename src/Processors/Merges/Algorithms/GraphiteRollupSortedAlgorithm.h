@@ -42,10 +42,10 @@ public:
 
     struct ColumnsDefinition
     {
-        size_t path_column_num{};
-        size_t time_column_num{};
-        size_t value_column_num{};
-        size_t version_column_num{};
+        size_t path_column_num;
+        size_t time_column_num;
+        size_t value_column_num;
+        size_t version_column_num;
 
         DataTypePtr time_column_type;
 

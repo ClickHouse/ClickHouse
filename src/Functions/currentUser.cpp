@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -11,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentUser final : public IFunction
+class FunctionCurrentUser : public IFunction
 {
     const String user_name;
 
@@ -35,9 +34,9 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -90,7 +89,6 @@ SELECT CURRENT_USER
     factory.registerFunction<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("session_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
 
 }
