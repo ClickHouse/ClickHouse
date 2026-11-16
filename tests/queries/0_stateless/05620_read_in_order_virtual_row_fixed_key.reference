@@ -11,12 +11,15 @@ Virtual row conversions
 -- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 -- WHERE a = 1 ORDER BY b: the fixed key column is not listed
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 -- WHERE a = 1 ORDER BY b DESC
 Read type: InReverseOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 -- WHERE x = 1 ORDER BY x, a, b: a fixed column which is not in the sorting key
 Read type: InOrder
 Virtual row conversions
@@ -68,16 +71,33 @@ Virtual row conversions
 -- fixed middle key, not listed: WHERE b = 1 ORDER BY a, c
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: b = 1
 1
 1
 -- two fixed keys, not listed: WHERE a = 1 AND b = 2 ORDER BY c
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
+Virtual row fixed key: b = 2
 1
 1
 -- two fixed keys: WHERE a = 1 AND b = 2 ORDER BY a, b, c
 Read type: InOrder
 Virtual row conversions
+1
+1
+--- key (a, b, c, d)
+-- a fixed key after the last compared column is not checked: WHERE a = 1 AND c = 2 ORDER BY b
+Read type: InOrder
+Virtual row conversions
+Virtual row fixed key: a = 1
+1
+1
+-- a fixed key between compared columns: WHERE a = 1 AND c = 2 ORDER BY b, d
+Read type: InOrder
+Virtual row conversions
+Virtual row fixed key: a = 1
+Virtual row fixed key: c = 2
 1
 1
 --- key (toDate(ts), b)
@@ -88,6 +108,7 @@ Virtual row conversions
 -- not listed
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: toDate(ts) = 19724
 1
 --- key (ts, b): `toDate(ts) = ...` fixes `toDate(ts)` but not the key column `ts`, which still determines the order
 977
@@ -103,7 +124,17 @@ Virtual row conversions
 -- the key column is fixed and listed through a function
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: ts = 1704085200
 995
+--- UNION ALL: every read has its own fixed value
+Read type: InOrder
+Virtual row conversions
+Virtual row fixed key: a = 1
+Read type: InOrder
+Virtual row conversions
+Virtual row fixed key: a = 2
+1
+1
 --- INNER JOIN: reading in order needs the virtual row
 Read type: InOrder
 Virtual row conversions
@@ -124,9 +155,11 @@ Read type: Default
 -- the fixed key column is not listed, or is listed in the other direction
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 Read type: Default
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 Read type: Default
 21	63
 35	105
@@ -155,5 +188,6 @@ Read type: Default
 1
 Read type: InOrder
 Virtual row conversions
+Virtual row fixed key: a = 1
 Read type: Default
 1

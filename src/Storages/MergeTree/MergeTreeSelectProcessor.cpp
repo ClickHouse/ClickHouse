@@ -564,9 +564,13 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 }
 
 void MergeTreeSelectProcessor::setVirtualRowConversions(
-    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_)
+    ExpressionActionsPtr virtual_row_conversions_,
+    VirtualRowFixedKeys virtual_row_fixed_keys_,
+    Block pk_block_header_,
+    bool read_in_reverse_order_)
 {
     virtual_row_conversions = std::move(virtual_row_conversions_);
+    virtual_row_fixed_keys = std::move(virtual_row_fixed_keys_);
     pk_block_header = std::move(pk_block_header_);
     read_in_reverse_order = read_in_reverse_order_;
 }
@@ -606,6 +610,8 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
         pk_columns.push_back({std::move(column), header_col.type, header_col.name});
     }
     Block pk_block(std::move(pk_columns));
+    if (!virtualRowMatchesFixedKeys(pk_block, virtual_row_fixed_keys))
+        return {};
 
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());

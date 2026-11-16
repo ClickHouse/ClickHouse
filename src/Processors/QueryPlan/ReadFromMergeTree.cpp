@@ -84,6 +84,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -1249,7 +1250,8 @@ Pipe ReadFromMergeTree::readInOrder(
         processor->addPartLevelToChunk(isQueryWithFinal());
 
         if (use_virtual_row_per_block)
-            processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
+            processor->setVirtualRowConversions(
+                virtual_row_conversion, virtual_row_fixed_keys, pk_header, read_type == ReadType::InReverseOrder);
 
         Pipe pipe;
         if (seal_gate_refiner)
@@ -1279,7 +1281,8 @@ Pipe ReadFromMergeTree::readInOrder(
 
         if (use_virtual_row)
         {
-            if (auto pk_block = getVirtualRowBound(part_with_ranges, pk_header, read_type == ReadType::InReverseOrder))
+            auto pk_block = getVirtualRowBound(part_with_ranges, pk_header, read_type == ReadType::InReverseOrder);
+            if (pk_block && virtualRowMatchesFixedKeys(*pk_block, virtual_row_fixed_keys))
             {
                 pipe.addSimpleTransform([&](const SharedHeader & header)
                 {
@@ -2962,7 +2965,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 enable_vertical_final,
                 read_in_reverse);
 
-            if (use_virtual_row && pipes_virtual_rows[i])
+            if (use_virtual_row && pipes_virtual_rows[i] && virtualRowMatchesFixedKeys(*pipes_virtual_rows[i], virtual_row_fixed_keys))
             {
                 pipes[i].addSimpleTransform([&](const SharedHeader & header)
                 {
@@ -4456,7 +4459,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
-bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_, VirtualRowFixedKeys virtual_row_fixed_keys_)
 {
     if (!context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
         return false;
@@ -4465,6 +4468,7 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
         return false;
 
     virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    virtual_row_fixed_keys = std::move(virtual_row_fixed_keys_);
     return true;
 }
 
@@ -6521,6 +6525,11 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Virtual row conversions" << '\n';
         if (!format_settings.compact)
             virtual_row_conversion->describeActions(format_settings.out, prefix);
+
+        const auto & key_names = storage_snapshot->metadata->getPrimaryKey().column_names;
+        for (const auto & [key_index, value] : virtual_row_fixed_keys)
+            format_settings.out << prefix << "Virtual row fixed key: " << key_names[key_index] << " = "
+                << applyVisitor(FieldVisitorToString(), value) << '\n';
     }
 }
 
@@ -6583,6 +6592,15 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (virtual_row_conversion)
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
+
+    if (!virtual_row_fixed_keys.empty())
+    {
+        const auto & key_names = storage_snapshot->metadata->getPrimaryKey().column_names;
+        auto fixed_keys = std::make_unique<JSONBuilder::JSONMap>();
+        for (const auto & [key_index, value] : virtual_row_fixed_keys)
+            fixed_keys->add(key_names[key_index], applyVisitor(FieldVisitorToString(), value));
+        map.add("Virtual row fixed keys", std::move(fixed_keys));
+    }
 }
 
 namespace

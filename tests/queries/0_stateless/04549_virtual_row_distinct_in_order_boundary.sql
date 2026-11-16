@@ -84,12 +84,12 @@ SELECT
 DROP TABLE t_virtual_row_widen;
 
 -- A fixed MIDDLE key (WHERE b = 1 ORDER BY a, c on key (a, b, c)) is skipped without adding it to
--- the virtual row, so the columns after it are no longer a contiguous key prefix. The virtual row
--- builder used to index key columns densely, so the skipped key shifted every later column onto the
--- wrong key column: a wrong value tripped "Virtual row boundary violated" (STID 2651-3359), and a
--- wrong type (e.g. Nullable key) tripped "Virtual row has different type" (STID 1637-309b). The
--- virtual row now has every key column of the prefix and the merge compares the skipped one as a
--- hidden column, so the reads must not throw and stay correct.
+-- the sort description, so the columns after it are not a contiguous key prefix. Indexing the key
+-- columns of the virtual row densely would shift every later column onto the wrong key column: a
+-- wrong value trips "Virtual row boundary violated" (STID 2651-3359), and a wrong type (e.g. Nullable
+-- key) trips "Virtual row has different type" (STID 1637-309b). The virtual row has every key column
+-- of the prefix and is built only from an index entry with the fixed value of the skipped key, so the
+-- reads must not throw and stay correct.
 DROP TABLE IF EXISTS t_virtual_row_fixed_key;
 
 CREATE TABLE t_virtual_row_fixed_key (a UInt32, b UInt32, c UInt32)
