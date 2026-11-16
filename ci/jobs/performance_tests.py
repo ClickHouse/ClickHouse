@@ -2213,17 +2213,17 @@ def read_slower_queries(path):
     for line in filter(None, lines):
         fields = line.split("\t")
         if (
-            len(fields) != 9
-            or not _TSV_UINT_RE.fullmatch(fields[5])
-            or not _TSV_UINT_RE.fullmatch(fields[7])
+            len(fields) != 13
+            or not _TSV_UINT_RE.fullmatch(fields[9])
+            or not _TSV_UINT_RE.fullmatch(fields[11])
             or not _TSV_FLOAT_RE.fullmatch(fields[3])
             or not math.isfinite(float(fields[3]))
         ):
             print(f"WARNING: unexpected row in [{path}]: {line[:200]!r}")
             return None
         diff = float(fields[3])
-        if int(fields[5]) and diff >= 0:
-            slower[(fields[6], int(fields[7]))] = (fields[8], diff)
+        if int(fields[9]) and diff >= 0:
+            slower[(fields[10], int(fields[11]))] = (fields[12], diff)
     return slower
 
 

@@ -91,7 +91,7 @@ public:
     ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);
     bool checkForSuffix();
 
-    void setReadBuffer(PeekableReadBuffer & buf_) { buf = &buf_; }
+    void setReadBuffer(PeekableReadBuffer & buf_) { buf = &buf_; row_num = 0; }
 
     void skipDelimiter(size_t index);
     void skipRowEndDelimiter();
