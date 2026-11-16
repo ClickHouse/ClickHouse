@@ -62,6 +62,14 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${proxy_db}.* TO ${bob}"
 as_bob "SELECT s FROM ${proxy_db}.secret"
 as_bob "INSERT INTO ${proxy_db}.secret VALUES (4, 'forged')"
 
+echo "--- Remote database engine referring to itself"
+# Must end with an error rather than hang or recurse. The exact error depends on the connection retry settings.
+self_db="${CLICKHOUSE_DATABASE}_self"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${self_db} ENGINE = Remote('127.0.0.2:${port}', '${self_db}', '${svc}', '')"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${self_db}.* TO ${bob}"
+${CLICKHOUSE_CLIENT} --user "${bob}" --password bob --query "SELECT s FROM ${self_db}.secret" 2>&1 | grep -q "Exception" && echo "error" || echo "no error"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${self_db}"
+
 echo "--- an unrelated table function target is allowed"
 as_bob "SELECT * FROM remote('127.0.0.2:${port}', numbers(3), '${svc}', '')"
 

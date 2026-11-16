@@ -39,6 +39,8 @@ ACCESS_DENIED
 --- Remote database engine
 ACCESS_DENIED
 ACCESS_DENIED
+--- Remote database engine referring to itself
+error
 --- an unrelated table function target is allowed
 0
 1

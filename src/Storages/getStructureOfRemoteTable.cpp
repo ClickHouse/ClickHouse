@@ -4,6 +4,7 @@
 #include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseRemote.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Cluster.h>
@@ -196,10 +197,16 @@ ColumnsDescription getStructureOfRemoteTable(
         if (table_func_ptr)
             TableFunctionFactory::instance().get(table_func_ptr, context)->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
         else
-            /// Not `getTable`: for a missing table it builds name hints, which enumerate the tables of every database,
-            /// and that can recurse into a `Remote` database whose resolution calls this function (see `DatabaseRemote`).
-            /// A table that does not exist here exposes nothing, and the connection reports it as missing.
-            checkDescribeTableAccess(DatabaseCatalog::instance().tryGetTable(table_id, context), table_id, context);
+        {
+            /// The grant first: a caller without it is rejected before anything is looked up.
+            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+            StoragePtr storage;
+            if (auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+                database && !dynamic_cast<const DatabaseRemote *>(database.get()))
+                storage = database->tryGetTable(table_id.getTableName(), context);
+
+            checkDescribeTableAccess(storage, table_id, context);
+        }
     }
 
     for (const auto & shard_info : shards_info)
