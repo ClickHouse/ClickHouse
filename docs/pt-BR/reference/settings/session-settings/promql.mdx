@@ -34,6 +34,19 @@ Especifica o nome do banco de dados usado pelo dialeto &#39;promql&#39;. Uma str
 
 Define o tempo de avaliação a ser usado com o dialeto promql, como um timestamp Unix em segundos com uma parte fracionária opcional. &#39;auto&#39; significa a hora atual.
 
+## promql_push_down_label_matchers {#promql_push_down_label_matchers}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para copiar os matchers de label do PromQL entre operadores binários."}]}]} />
+
+Copia os matchers de label de um lado de um operador binário do PromQL para os seletores do outro lado, considerando os labels pelos quais o operador faz a correspondência das séries. Assim, `b / on(job) a{job="x"}` lê apenas as séries de `b` com `job="x"`.
+Um matcher não é copiado quando as séries que ele exclui poderiam fazer o Prometheus reportar séries duplicadas: para o lado &quot;one&quot; do operador, a menos que esse lado seja uma agregação pelos labels correspondentes; para um operador entre dois vetores que não seja `and` ou `unless`; e através de uma função sobre um intervalo ou de um operador com um escalar, a menos que a entrada seja uma única métrica selecionada pelo nome.
+Uma comparação sem `bool` preserva o nome da métrica, portanto os matchers sempre passam por ela. Outras funções e o menos unário bloqueiam a propagação dos matchers.
+Um matcher copiado transforma o seletor de uma métrica inteira em um seletor filtrado, o que pode deixar a consulta mais lenta em uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) com um `id` agrupado por métrica (o padrão) caso o matcher mantenha a maior parte das séries da métrica. Desative a configuração nessas consultas.
+
 ## promql_table {#promql_table}
 
 <PrivatePreviewBadge />

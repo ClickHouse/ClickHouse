@@ -373,7 +373,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="Nuestras soluciones"
+          title="Nuestros productos"
           galaxyEvent="docs.home.solutions"
           description="Quiero conocer las soluciones de ClickHouse"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -384,7 +384,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -401,7 +401,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="Analítica en tiempo real" galaxyEvent="docs.home.real-time-analytics" description="Obtén insights instantáneos y dashboards a escala. Analiza miles de millones de filas en tiempo real con resultados en milisegundos." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="Observabilidad" galaxyEvent="docs.home.observability" description="Almacena y consulta logs, métricas y trazas a escala con ClickStack, la pila de observabilidad de código abierto impulsada por ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="Observabilidad" galaxyEvent="docs.home.observability" description="Almacena y consulta logs, métricas y trazas a escala con ClickHouse Observability, la pila de observabilidad de código abierto impulsada por ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="Data warehousing" galaxyEvent="docs.home.data-warehousing" description="Analiza y explora datos al instante para obtener insights y crear aplicaciones. Escala más rápido descargando las cargas de trabajo pesadas." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -444,7 +444,7 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="La pila de observabilidad todo en uno basada en ClickHouse, que te ofrece consultas ultrarrápidas y potentes agregaciones sobre logs, métricas, trazas, reproducciones de sesiones y errores." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="La pila de observabilidad todo en uno basada en ClickHouse, que te ofrece consultas ultrarrápidas y potentes agregaciones sobre logs, métricas, trazas, reproducciones de sesiones y errores." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
             <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Servicio de Postgres rápido, escalable y de nivel empresarial, integrado de forma nativa con ClickHouse. Combina fácilmente Postgres para transacciones y ClickHouse para analítica." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
