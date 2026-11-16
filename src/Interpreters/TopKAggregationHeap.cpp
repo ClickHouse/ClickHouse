@@ -55,7 +55,7 @@ size_t TopKAggregationHeapBase::initBase(
     collated_skip_sample_full = false;
     collated_skip_sample_rows = 0;
     collated_skip_sample_string = heap_key_count == 1 && typeid_cast<const ColumnString *>(key_columns[0]);
-    collated_skip_sample_now = has_collators && !is_prefix_mode;
+    collated_skip_sample_now = has_collators && !is_prefix_mode && profitability_window != 0;
     collated_skip_sample_by_bytes = true;
     for (size_t i = 0; i < heap_key_count; ++i)
     {
@@ -154,8 +154,8 @@ void TopKAggregationHeapBase::init(
 /// table of the distinct keys. So a collated heap freezes once its skipped rows repeat few keys: at least
 /// `collated_skip_repeats` skipped rows per distinct skipped key, estimated from a 1/64 hash sample of those keys, before
 /// the sample holds `collated_skip_sample_cap` keys (about 262K distinct) or `collated_skip_sample_max_rows` rows; past
-/// either cap it stays. Release build, 20M rows: 1K or 10K keys in cycles go from 3-6x slower than off to within 1.5x of
-/// it; `hits` `URL` streams repeat a key 8-48 times early on, and 32 keeps their heaps.
+/// either cap it stays. Release build, 20M rows: 1K keys in cycles go from 3-6x slower than off to 1.0-1.3x, 10K keys to
+/// 1.1-1.8x; `hits` `URL` streams repeat a key 8-48 times early on, and 32 keeps their heaps.
 static constexpr size_t collated_skip_sample_shift = 6;
 static constexpr size_t collated_skip_sample_cap = 4096;
 static constexpr UInt64 collated_skip_sample_max_rows = 1ULL << 22;
