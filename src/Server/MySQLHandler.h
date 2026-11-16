@@ -82,7 +82,7 @@ protected:
     void comStmtReset(ReadBuffer & payload);
 
     /// Returns the query to execute instead of `query`, if `query` is a MySQL-specific statement that ClickHouse emulates.
-    std::optional<String> getReplacementQuery(const String & query) const;
+    [[nodiscard]] std::optional<String> getReplacementQuery(const String & query) const;
 
     /// Analyzes the prepared statement without executing it and returns the header of its result
     /// (empty if the statement does not return a result set) and the origins of the result columns.
