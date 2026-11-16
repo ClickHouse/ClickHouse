@@ -4,10 +4,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+
+#include <limits>
 
 
 namespace DB
@@ -20,6 +23,7 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -558,6 +562,45 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 arguments[i].type->getName(),
                 input_rows_count,
                 current_size);
+    }
+}
+
+void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name)
+{
+    /// A constant column holds a single value, and Nullable keeps its values in the nested column.
+    const IColumn * values = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values))
+        values = &column_const->getDataColumn();
+
+    /// The value behind a NULL is undefined, so it is not checked.
+    const ColumnUInt8::Container * null_map = nullptr;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(values))
+    {
+        null_map = &column_nullable->getNullMapData();
+        values = &column_nullable->getNestedColumn();
+    }
+
+    /// Only UInt64 can exceed Int64: every other integer type fits it by construction.
+    const auto * column_uint64 = typeid_cast<const ColumnVector<UInt64> *>(values);
+    if (!column_uint64)
+        return;
+
+    /// IColumn::getInt() returns Int64, so a value of 2^63 or more would be read as a negative
+    /// number. Report it instead of letting the caller apply its negative-argument meaning.
+    constexpr UInt64 limit = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+    const auto & data = column_uint64->getData();
+    for (size_t i = 0, rows = data.size(); i < rows; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+
+        if (data[i] > limit)
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "The {} argument of function {} is out of range for Int64: {}",
+                argument_name,
+                function_name,
+                data[i]);
     }
 }
 }

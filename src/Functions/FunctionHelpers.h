@@ -226,4 +226,11 @@ bool plusMinusWithConstantsIsInjective(
 bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
+
+/// Checks that every value of an integer argument column can be represented as Int64, and throws
+/// VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE otherwise. Functions that read their offset/length/count
+/// arguments with IColumn::getInt() need this: a UInt64 value of 2^63 or more is returned as a
+/// negative Int64, and would then be interpreted as "count from the other end" instead of being
+/// reported as out of range. A constant column and an ordinary column are both accepted.
+void checkIntegerArgumentFitsInt64(const IColumn & column, std::string_view function_name, std::string_view argument_name);
 }

@@ -54,6 +54,12 @@ public:
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
 
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_start, name, "offset");
+        if (number_of_arguments == 3)
+            checkIntegerArgumentFitsInt64(*arguments[2].column, name, "length");
+
         std::optional<Int64> start_const;
         std::optional<Int64> length_const;
 

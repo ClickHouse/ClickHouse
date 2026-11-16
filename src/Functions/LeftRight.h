@@ -144,6 +144,10 @@ public:
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_length = arguments[1].column;
 
+        /// The length is read with IColumn::getInt() below, so a UInt64 value that does not fit
+        /// Int64 must be rejected here rather than read as a negative length.
+        checkIntegerArgumentFitsInt64(*column_length, name, "length");
+
         const ColumnConst * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 
         Int64 length_value = 0;

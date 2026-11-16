@@ -105,6 +105,12 @@ public:
         if (number_of_arguments == 3)
             column_length = arguments[2].column;
 
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_offset, function_name, "offset");
+        if (column_length)
+            checkIntegerArgumentFitsInt64(*column_length, function_name, "length");
+
         const ColumnConst * column_offset_const = checkAndGetColumn<ColumnConst>(column_offset.get());
         const ColumnConst * column_length_const = nullptr;
         if (number_of_arguments == 3)
