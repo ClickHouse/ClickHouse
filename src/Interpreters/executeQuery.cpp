@@ -2979,6 +2979,9 @@ static BlockIO executeQueryImpl(
     /// Such a query is not charged against the quotas over profile events on failure either.
     bool quota_ignored = false;
 
+    /// Whether the result stored in the query result cache is exempt from quotas for every query that reads it.
+    bool cache_entry_ignores_quota = false;
+
     /// A result read from the query result cache is not charged against the predefined quota counters, but
     /// it is against the quotas over profile events: they are checked before the query and charged with
     /// what reading the result has produced (network traffic, for example) at its end.
@@ -3474,7 +3477,7 @@ static BlockIO executeQueryImpl(
                     {
                         /// A query exempt from quotas stays exempt when it is served from the cache (see
                         /// `QueryResultCache::Key::ignore_quota`).
-                        quota_ignored = reader->entryIgnoresQuota();
+                        quota_ignored = flags.ignore_quota || reader->entryIgnoresQuota();
                         if (!quota_ignored)
                             query_result_cache_hit_quota = context->getQuota();
                         if (query_result_cache_hit_quota)
@@ -3564,7 +3567,8 @@ static BlockIO executeQueryImpl(
 
                 /// A helper query (see `QueryFlags::ignore_quota`) is exempt from the user's quotas even when
                 /// no interpreter claims the exemption, so it must be counted once per request, not per helper.
-                if (flags.ignore_quota || (interpreter && interpreter->ignoreQuota()))
+                cache_entry_ignores_quota = interpreter && interpreter->ignoreQuota();
+                if (flags.ignore_quota || cache_entry_ignores_quota)
                     quota_ignored = true;
 
                 if (!quota_ignored && !quota_checked)
@@ -3649,7 +3653,8 @@ static BlockIO executeQueryImpl(
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
                             /// A hit is charged like the query itself, including the scalar subqueries it executed on its own.
-                            key.ignore_quota = quota_ignored && !chargesExemptQueryProfileEvents(context->getProcessListElement());
+                            /// The exemption of a helper query (`QueryFlags::ignore_quota`) is not stored: another query can read the entry.
+                            key.ignore_quota = cache_entry_ignores_quota && !chargesExemptQueryProfileEvents(context->getProcessListElement());
                             if (result_column_origins.size() == key.header->columns())
                                 key.result_column_origins = result_column_origins;
 
