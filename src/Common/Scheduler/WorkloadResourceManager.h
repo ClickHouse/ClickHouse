@@ -294,7 +294,7 @@ private:
         ~Workload();
 
         void updateWorkload(const ASTPtr & new_entity);
-        String getParent() const;
+        [[nodiscard]] String getParent() const;
     };
 
     class Classifier : public IClassifier

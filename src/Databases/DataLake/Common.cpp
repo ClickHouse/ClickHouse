@@ -14,7 +14,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+
+#include <cctype>
 
 namespace DB::ErrorCodes
 {
@@ -111,6 +117,94 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
 
     return nullable ? DB::makeNullable(DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name))
                     : DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name);
+}
+
+namespace
+{
+
+String icebergPrimitiveTypeToGlueType(const String & type_name_arg)
+{
+    using namespace DB::Iceberg;
+
+    /// Glue/Hive spell parameterized types without inner whitespace: `decimal(9,2)`.
+    String type_name;
+    type_name.reserve(type_name_arg.size());
+    for (char c : type_name_arg)
+        if (!std::isspace(static_cast<unsigned char>(c)))
+            type_name += c;
+
+    if (type_name == f_boolean)
+        return "boolean";
+    if (type_name == f_int)
+        return "int";
+    if (type_name == f_long)
+        return "bigint";
+    if (type_name == f_float)
+        return "float";
+    if (type_name == f_double)
+        return "double";
+    if (type_name == f_date)
+        return "date";
+    /// Hive has no time-of-day type; Iceberg's Glue integration stores it as string.
+    if (type_name == f_time)
+        return "string";
+    /// Glue uses `timestamp` for all variants; ClickHouse recovers the exact type from `metadata.json`.
+    if (type_name == f_timestamp || type_name == f_timestamptz || type_name == f_timestamp_ns || type_name == f_timestamptz_ns)
+        return "timestamp";
+    if (type_name == f_string || type_name == f_uuid)
+        return "string";
+    if (type_name == f_binary || type_name.starts_with("fixed["))
+        return "binary";
+    if (type_name.starts_with("decimal("))
+        return type_name;
+
+    /// Pass unknown Iceberg types through; Glue accepts them even if some consumers cannot.
+    return type_name;
+}
+
+}
+
+String icebergTypeToGlueType(const Poco::Dynamic::Var & type)
+{
+    using namespace DB::Iceberg;
+
+    if (type.isString())
+        return icebergPrimitiveTypeToGlueType(type.extract<String>());
+
+    Poco::JSON::Object::Ptr type_object;
+    if (type.type() == typeid(Poco::JSON::Object::Ptr))
+        type_object = type.extract<Poco::JSON::Object::Ptr>();
+    else if (type.type() == typeid(Poco::JSON::Object))
+        type_object = new Poco::JSON::Object(type.extract<Poco::JSON::Object>());
+    else
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unexpected representation of Iceberg type in schema: {}", type.toString());
+
+    const auto type_name = type_object->getValue<String>(f_type);
+
+    if (type_name == f_struct)
+    {
+        auto fields = type_object->getArray(f_fields);
+        String result = "struct<";
+        for (size_t i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<unsigned>(i));
+            if (i != 0)
+                result += ",";
+            result += field->getValue<String>(f_name);
+            result += ":";
+            result += icebergTypeToGlueType(field->get(f_type));
+        }
+        result += ">";
+        return result;
+    }
+
+    if (type_name == f_list)
+        return "array<" + icebergTypeToGlueType(type_object->get(f_element)) + ">";
+
+    if (type_name == f_map)
+        return "map<" + icebergTypeToGlueType(type_object->get(f_key)) + "," + icebergTypeToGlueType(type_object->get(f_value)) + ">";
+
+    throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unknown Iceberg complex type: {}", type_name);
 }
 
 std::pair<std::string, std::string> parseTableName(const std::string & name)

@@ -17,7 +17,7 @@ template <bool allow_default = false>
 struct ParserBoolOption : public IParserBase
 {
 protected:
-    const char * getName() const override { return "bool option with default"; }
+    [[nodiscard]] const char * getName() const override { return "bool option with default"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -40,7 +40,7 @@ protected:
 struct ParserTablespaceName : public IParserBase
 {
 protected:
-    const char * getName() const override { return "table space name"; }
+    [[nodiscard]] const char * getName() const override { return "table space name"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

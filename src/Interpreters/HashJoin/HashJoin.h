@@ -517,9 +517,14 @@ public:
         std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
         std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
-        void create(Type which)
+        void create(Type which, bool robin_hood_allowed)
         {
-            visit(which, []<typename Table>(std::shared_ptr<Table> & map) { map = std::make_shared<Table>(); });
+            visit(which, [robin_hood_allowed]<typename Table>(std::shared_ptr<Table> & map)
+            {
+                map = std::make_shared<Table>();
+                if constexpr (requires { map->setRobinHoodAllowed(robin_hood_allowed); })
+                    map->setRobinHoodAllowed(robin_hood_allowed);
+            });
         }
 
         /// Calls `f` with the map of type `which`, a `std::shared_ptr` that is null until `create`.
@@ -536,7 +541,7 @@ public:
             UNREACHABLE();
         }
 
-        size_t getTotalByteCountImpl(Type which) const
+        [[nodiscard]] size_t getTotalByteCountImpl(Type which) const
         {
             switch (which)
             {
@@ -547,7 +552,7 @@ public:
             }
         }
 
-        size_t getBufferSizeInCells(Type which) const
+        [[nodiscard]] size_t getBufferSizeInCells(Type which) const
         {
             switch (which)
             {
@@ -583,7 +588,7 @@ public:
             selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
         }
 
-        size_t allocatedBytes() const;
+        [[nodiscard]] size_t allocatedBytes() const;
     };
 
     using NullmapList = std::deque<NullMapHolder>;
@@ -687,7 +692,7 @@ public:
 
         KeyRange key_range;
 
-        size_t avgPerKeyRows() const
+        [[nodiscard]] size_t avgPerKeyRows() const
         {
             if (keys_to_join == 0)
                 return 0;

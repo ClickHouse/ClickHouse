@@ -12,19 +12,19 @@ DROP TABLE IF EXISTS t_proj_ratio_plain;
 
 CREATE TABLE t_proj_ratio_replicated (a UInt64, b UInt64, s String, PROJECTION p1 (SELECT a, b, s ORDER BY b))
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_proj_ratio_replicated', 'r1') ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_columns_to_activate_adaptive_write_buffer = 0,
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760, min_columns_to_activate_adaptive_write_buffer = 0,
     max_memory_ratio_to_activate_adaptive_write_buffer = 0.000000001, adaptive_write_buffer_initial_size = 4096,
     max_compress_block_size = 1048576, min_compress_block_size = 65536, enable_vertical_merge_algorithm = 0;
 
 CREATE TABLE t_proj_no_ratio_replicated (a UInt64, b UInt64, s String, PROJECTION p1 (SELECT a, b, s ORDER BY b))
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_proj_no_ratio_replicated', 'r1') ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_columns_to_activate_adaptive_write_buffer = 0,
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760, min_columns_to_activate_adaptive_write_buffer = 0,
     max_memory_ratio_to_activate_adaptive_write_buffer = 0, adaptive_write_buffer_initial_size = 4096,
     max_compress_block_size = 1048576, min_compress_block_size = 65536, enable_vertical_merge_algorithm = 0;
 
 CREATE TABLE t_proj_ratio_plain (a UInt64, b UInt64, s String, PROJECTION p1 (SELECT a, b, s ORDER BY b))
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_columns_to_activate_adaptive_write_buffer = 0,
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760, min_columns_to_activate_adaptive_write_buffer = 0,
     max_memory_ratio_to_activate_adaptive_write_buffer = 0.000000001, adaptive_write_buffer_initial_size = 4096,
     max_compress_block_size = 1048576, min_compress_block_size = 65536, enable_vertical_merge_algorithm = 0;
 
