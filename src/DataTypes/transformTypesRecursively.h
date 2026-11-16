@@ -37,7 +37,13 @@ using PairedLeafCallback = std::function<DataTypePtr(const DataTypePtr & left, c
 /// the common type was built: a named and an unnamed Tuple by position, through a custom name on `right` alone
 /// (`Nested`), and the typed paths of two JSON types by path. A `Nothing` on `right` (the element of an empty
 /// array) contributes nothing to the common type, so that part of `left` is kept as is.
+/// With as_json_text, the pairs are those of a JSON text written from `left` and parsed into `right`: named Tuples pair only
+/// when their names match, a Variant is not walked (any alternative of `right` can parse the text) and custom names are ignored.
 DataTypePtr replaceNestedTypesInPair(
-    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool left_is_common_type = false);
+    const DataTypePtr & left,
+    const DataTypePtr & right,
+    const PairedLeafCallback & on_leaf,
+    bool left_is_common_type = false,
+    bool as_json_text = false);
 
 }

@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -2053,41 +2054,38 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 namespace
 {
 
-/// The text of a `DateTime` has no time zone. For a cast from JSON returns the types to write it and to parse it into `to` with,
-/// in which the `DateTime` typed paths of both are in UTC; that does not change their columns. A path below another typed path
-/// is kept, because an object at that typed path can be written or read whole.
-std::pair<DataTypePtr, DataTypePtr> withDateTimeTypedPathsInUTC(const DataTypePtr & from_type, const DataTypeObject & to)
+/// The text of a `DateTime` has no time zone, so a cast between two JSON types writes and parses the `DateTime`s that pair up
+/// in UTC: returns `type` with them in UTC, which does not change its column. A typed path overlapping another typed path is
+/// kept, because an object at either one can be written or read whole.
+DataTypePtr withPairedDateTimesInUTC(const DataTypeObject & object, const DataTypeObject & other)
 {
-    const auto * from = checkAndGetDataType<DataTypeObject>(from_type.get());
-    if (!from)
-        return {};
-    auto to_utc = [](const DataTypePtr & node) -> DataTypePtr
+    auto to_utc = [](const DataTypePtr & leaf, const DataTypePtr & other_leaf) -> DataTypePtr
     {
-        if (isDateTime(node))
+        if (isObject(leaf) && isObject(other_leaf))
+            return withPairedDateTimesInUTC(assert_cast<const DataTypeObject &>(*leaf), assert_cast<const DataTypeObject &>(*other_leaf));
+        if (!isDateTimeOrDateTime64(other_leaf))
+            return leaf;
+        if (isDateTime(leaf))
             return std::make_shared<DataTypeDateTime>("UTC");
-        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(node.get()))
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(leaf.get()))
             return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
-        return node;
+        return leaf;
     };
-    auto is_date_time = [](const DataTypePtr & type) { return isDateTimeOrDateTime64(removeLowCardinalityAndNullable(type)); };
-    auto from_paths = from->getTypedPaths();
-    auto to_paths = to.getTypedPaths();
-    for (auto & [path, type] : from_paths)
+    const auto & other_paths = other.getTypedPaths();
+    auto typed_paths = object.getTypedPaths();
+    for (auto & [path, path_type] : typed_paths)
     {
-        auto it = to_paths.find(path);
-        auto is_below = [&](const auto & typed_path) { return path.starts_with(typed_path.first + "."); };
-        if (it == to_paths.end() || !is_date_time(type) || !is_date_time(it->second) || std::ranges::any_of(from_paths, is_below)
-            || std::ranges::any_of(to_paths, is_below))
+        auto it = other_paths.find(path);
+        auto overlaps = [&](const auto & typed_path)
+        { return path.starts_with(typed_path.first + ".") || typed_path.first.starts_with(path + "."); };
+        if (it == other_paths.end() || std::ranges::any_of(object.getTypedPaths(), overlaps) || std::ranges::any_of(other_paths, overlaps))
             continue;
-        type = rewriteTypeTree(type, to_utc, CustomizationPolicy::Keep);
-        it->second = rewriteTypeTree(it->second, to_utc, CustomizationPolicy::Keep);
+        auto relabeled = replaceNestedTypesInPair(path_type, it->second, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true);
+        if (relabeled && replaceNestedTypesInPair(it->second, path_type, to_utc, /*left_is_common_type=*/ false, /*as_json_text=*/ true))
+            path_type = relabeled;
     }
-    auto with_typed_paths = [](const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths) -> DataTypePtr
-    {
-        return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
-            object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
-    };
-    return {with_typed_paths(*from, std::move(from_paths)), with_typed_paths(to, std::move(to_paths))};
+    return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+        object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
 }
 
 }
@@ -2126,7 +2124,13 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        auto [text_from_type, text_to_type] = withDateTimeTypedPathsInUTC(from_type, *to_object);
+        DataTypePtr text_from_type;
+        DataTypePtr text_to_type;
+        if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
+        {
+            text_from_type = withPairedDateTimesInUTC(*from_object, *to_object);
+            text_to_type = withPairedDateTimesInUTC(*to_object, *from_object);
+        }
         return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
