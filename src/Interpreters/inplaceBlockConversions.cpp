@@ -1,6 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
-#include <map>
+#include <vector>
 #include <mutex>
 #include <utility>
 
@@ -302,7 +302,7 @@ public:
         /// The lock is held while the sets are built, so that the threads that need the same set wait for it
         /// instead of building it as well.
         std::lock_guard lock(mutex);
-        auto & sets = sets_by_identity[identity];
+        auto & sets = getOrAddSets(std::move(identity));
         for (const auto & subquery : unbuilt)
             if (sets.findSubquery(subquery->getHash()))
                 return false;
@@ -319,21 +319,50 @@ private:
     /// table that are views with different `SQL SECURITY DEFINER`. The contents of a set depend on the privileges and
     /// the row policies of the user that builds it, and reusing a set skips the access checks of planning its
     /// subquery, so a set is shared only by the readers with the same access and the same settings constraints.
-    using Identity = std::pair<ContextAccessParams, std::shared_ptr<const SettingsConstraintsAndProfileIDs>>;
+    /// The contents of a set also depend on the settings of the reader: `transform_null_in` decides whether the set
+    /// keeps `NULL`, `max_rows_in_set` with `set_overflow_mode = 'break'` truncates it, and so on, and the readers of
+    /// one query may have different settings, for example the children of a `Merge` table that are views with their
+    /// own `SETTINGS`. So the readers also have to have the same settings, except the ones that only limit the
+    /// parallelism of the reading, which a `Merge` table sets differently for each of its children.
+    struct Identity
+    {
+        ContextAccessParams access;
+        std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints;
+        Settings settings;
+
+        bool operator==(const Identity & other) const
+        {
+            return access == other.access && constraints == other.constraints && settings == other.settings;
+        }
+    };
 
     static Identity getIdentity(const ContextPtr & context)
     {
-        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles()};
+        Settings settings = context->getSettingsCopy();
+        for (const auto * name : {"max_threads", "max_streams_to_max_threads_ratio", "parallelize_output_from_storages"})
+            settings.setDefaultValue(name);
+        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles(), std::move(settings)};
     }
 
     const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)
     {
-        auto it = sets_by_identity.find(identity);
-        return it == sets_by_identity.end() ? nullptr : &it->second;
+        for (const auto & [sets_identity, sets] : sets_by_identity)
+            if (sets_identity == identity)
+                return &sets;
+        return nullptr;
+    }
+
+    PreparedSets & getOrAddSets(Identity identity) TSA_REQUIRES(mutex)
+    {
+        for (auto & [sets_identity, sets] : sets_by_identity)
+            if (sets_identity == identity)
+                return sets;
+        return sets_by_identity.emplace_back(std::move(identity), PreparedSets{}).second;
     }
 
     std::mutex mutex;
-    std::map<Identity, PreparedSets> sets_by_identity TSA_GUARDED_BY(mutex);
+    /// There are few distinct identities in one query, and `Settings` are only comparable for equality.
+    std::vector<std::pair<Identity, PreparedSets>> sets_by_identity TSA_GUARDED_BY(mutex);
 };
 
 DefaultExpressionsSetsPtr createDefaultExpressionsSets()
