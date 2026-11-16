@@ -2,10 +2,6 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
-#include <filesystem>
-#include <fmt/format.h>
-#include <unistd.h>
-
 using namespace DB;
 using Iceberg::IcebergPathResolver;
 
@@ -122,8 +118,8 @@ TEST(IcebergDeriveTableRoot, EmptyTailIsNotARoot)
 
 TEST(IcebergPathResolver, StorageIdentity)
 {
-    auto identity = [](const IcebergPathResolver & resolver, const String & path, const String & key_prefix = "/")
-    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path), key_prefix); };
+    auto identity = [](const IcebergPathResolver & resolver, const String & path)
+    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path)); };
 
     IcebergPathResolver s3("s3://bucket/tbl", "tbl", {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = true});
     EXPECT_EQ(identity(s3, "s3://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
@@ -137,19 +133,6 @@ TEST(IcebergPathResolver, StorageIdentity)
     IcebergPathResolver local("/w/t", "/w/t", {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
     for (const auto * path : {"/w/t/metadata/s.avro", "file:///w/t/metadata/s.avro", "/w/t/metadata//s.avro", "/w/t/./metadata/s.avro"})
         EXPECT_EQ(identity(local, path), "/w/t/metadata/s.avro") << path;
-    /// A server's local storage takes a relative path from `user_files_path`.
-    EXPECT_EQ(identity(local, "t/metadata/s.avro", "/w"), "/w/t/metadata/s.avro");
-
-    /// It opens `alias/..` lexically when following `alias` leaves `user_files_path`.
-    const auto root = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path())
-        / fmt::format("iceberg_storage_identity_{}", ::getpid());
-    std::filesystem::remove_all(root);
-    std::filesystem::create_directories(root / "u/t/metadata");
-    std::filesystem::create_directory_symlink(root / "u", root / "u/t/alias");
-    const String table = (root / "u/t").string();
-    IcebergPathResolver local_u(table, table, {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
-    EXPECT_EQ(identity(local_u, table + "/alias/../metadata/s.avro", (root / "u").string()), table + "/metadata/s.avro");
-    std::filesystem::remove_all(root);
 
     IcebergPathResolver hdfs("hdfs://h:9000/w/t", "/w/t", {.type_name = "hdfs", .namespace_name = "h:9000", .allow_foreign_namespaces = false});
     for (const auto * path : {"hdfs://h:9000/w/t/data/x.parquet", "hdfs://h:9000/w/t/data//x.parquet", "hdfs://h:9000/w/t/./data/x.parquet"})

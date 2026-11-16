@@ -1,10 +1,8 @@
 #include "config.h"
 #if USE_AVRO
 
-#include <filesystem>
 #include <limits>
 #include <set>
-#include <unordered_map>
 #include <unordered_set>
 
 #include <Core/ColumnsWithTypeAndName.h>
@@ -44,7 +42,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
-extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DataLakeStorageSetting
@@ -384,22 +381,12 @@ ExpiredFiles collectExpiredFiles(
     Int32 current_schema_id)
 {
     const auto & path_resolver = persistent_table_components.path_resolver;
-    const String key_prefix = object_storage->getCommonKeyPrefix();
-
-    std::unordered_map<Iceberg::IcebergPathFromMetadata, String> identities;
-    auto storage_identity = [&](const Iceberg::IcebergPathFromMetadata & path) -> const String &
-    {
-        if (auto it = identities.find(path); it != identities.end())
-            return it->second;
-        auto object = path_resolver.storageIdentity(path, key_prefix);
-        return identities.emplace(path, std::move(object)).first->second;
-    };
 
     /// Metadata may spell one storage object in several ways, so files are matched by the object they name.
     std::unordered_set<String> retained_objects;
     for (const auto * paths : {&retained.manifest_list_paths, &retained.manifest_paths, &retained.data_file_paths})
         for (const auto & path : *paths)
-            retained_objects.insert(storage_identity(path));
+            retained_objects.insert(path_resolver.storageIdentity(path));
 
     std::unordered_set<String> collected_objects;
     std::unordered_set<String> unresolved_paths;
@@ -410,17 +397,13 @@ ExpiredFiles collectExpiredFiles(
         String object;
         try
         {
-            object = storage_identity(path);
+            object = path_resolver.storageIdentity(path);
         }
         catch (const Exception & e)
         {
             /// The path names no storage object, so its delete fails the same way, removes nothing and is counted as failed.
-            if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::PATH_ACCESS_DENIED)
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
                 throw;
-            return unresolved_paths.insert(path.serialize()).second;
-        }
-        catch (const std::filesystem::filesystem_error &)
-        {
             return unresolved_paths.insert(path.serialize()).second;
         }
         return !retained_objects.contains(object) && collected_objects.insert(std::move(object)).second;
@@ -433,7 +416,7 @@ ExpiredFiles collectExpiredFiles(
         ManifestFileCacheKeys manifest_keys;
         try
         {
-            list_object = storage_identity(manifest_list_path);
+            list_object = path_resolver.storageIdentity(manifest_list_path);
             if (is_kept_or_collected(list_object))
                 continue;
             manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
@@ -449,7 +432,7 @@ ExpiredFiles collectExpiredFiles(
             String manifest_object;
             try
             {
-                manifest_object = storage_identity(manifest_entry.manifest_file_path);
+                manifest_object = path_resolver.storageIdentity(manifest_entry.manifest_file_path);
                 if (is_kept_or_collected(manifest_object))
                     continue;
 
