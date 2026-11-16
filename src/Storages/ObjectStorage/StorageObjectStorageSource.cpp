@@ -308,8 +308,9 @@ namespace
         }
     }
 
-    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`). Its
-    /// metadata, and so the ETag that keys the caches, is of the current version, so such a read must not use them.
+    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`). The
+    /// caches are keyed on the path and the ETag, and the metadata from a listing is of the current version, so such
+    /// a read must not use them.
     bool readsExplicitObjectVersion([[maybe_unused]] const IObjectStorage & object_storage)
     {
 #if USE_AWS_S3

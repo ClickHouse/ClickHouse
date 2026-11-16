@@ -430,6 +430,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
                 metadata.etag_is_strong = !header_value.starts_with("W/");
             }
         }
+        /// After a redirect, the `ETag` is of the resource that the redirect leads to, and the redirect can change
+        /// to another resource with the same `ETag` while the URL of the object stays the same. So it does not
+        /// identify the content of the object for the caches.
+        if (response_buf->wasRedirected())
+            metadata.etag_is_strong = false;
         return metadata;
     };
 

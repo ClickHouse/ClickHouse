@@ -335,6 +335,12 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// an `ETag` cannot be checked, so it fails as well.
     if (!expected_etag.empty() && !isRedirect(response.getStatus()))
     {
+        if (redirects > 0)
+            throw Exception(
+                ErrorCodes::FILE_CHANGED_DURING_READ,
+                "The resource {} was changed during the read (it is redirected to {}, expected ETag {}); retry the query",
+                maskedURI(initial_uri), maskedURI(current_uri), expected_etag);
+
         const String response_etag = response.get("ETag", "");
         if (response_etag != expected_etag)
             throw Exception(
