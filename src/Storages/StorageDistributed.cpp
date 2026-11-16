@@ -1768,6 +1768,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
+        /// A source with a bucket map keeps a row on another shard than this table expects.
+        if (src_distributed->bucket_map_watcher && settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
+            return {};
         src_distributed->checkLocalShardAccess(AccessType::SELECT, local_context);
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
@@ -3051,7 +3054,7 @@ buckets: 4
 
 Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version with a different number of buckets is rejected: the table keeps the map it has loaded and shows the error in `last_exception` of `system.distributed_bucket_maps`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
 
-`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. An `INSERT ... SELECT` into the table goes through the bucket map on the initiator with `parallel_distributed_insert_select = 2` too. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. An `INSERT ... SELECT` into the table or from the table goes through the initiator with `parallel_distributed_insert_select = 2` too. `DROP TABLE` does not remove the map from ZooKeeper. The `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions do not accept `bucket_map_zookeeper_path`.
 
 ## Reading data {#distributed-reading-data}
 
