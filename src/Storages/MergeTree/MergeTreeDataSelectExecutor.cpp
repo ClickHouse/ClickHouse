@@ -1539,14 +1539,15 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
                 continue;
             }
 
-            if (isSkipIndexConditionTrueOnWholePart(index_and_condition, part, log))
-            {
-                stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                continue;
-            }
-
+            /// An index evaluated on data read is bypassed there, in `MergeTreeSkipIndexReader::read`.
             if (!is_index_supported_on_data_read(index_and_condition.index))
             {
+                if (isSkipIndexConditionTrueOnWholePart(index_and_condition, part, log))
+                {
+                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    continue;
+                }
+
                 std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition_template->generateForPart(part),
