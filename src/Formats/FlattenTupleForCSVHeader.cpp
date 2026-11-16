@@ -1,12 +1,20 @@
 #include <Formats/FlattenTupleForCSVHeader.h>
 
 #include <Core/Block.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Common/Exception.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/isValidUTF8.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -78,6 +86,90 @@ bool csvHeaderNamesMayProduceRawBytes(const Block & sample, bool flatten, bool w
                 return true;
 
     return false;
+}
+
+void collapseCSVHeaderTupleNames(
+    const Block & header,
+    const CaseAwareBlockNameMap & column_indexes_by_names,
+    VectorWithMemoryTracking<String> & names,
+    VectorWithMemoryTracking<String> & type_names,
+    bool check_types)
+{
+    struct Candidate
+    {
+        const ColumnWithTypeAndName * column;
+        Names leaf_names;
+        Names leaf_types;
+    };
+
+    VectorWithMemoryTracking<Candidate> candidates;
+    for (const auto & column : header)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column.type.get());
+        if (!tuple_type || tuple_type->getElements().empty())
+            continue;
+        auto & candidate = candidates.emplace_back(Candidate{&column, {}, {}});
+        flattenField(column.name, column.type, candidate.leaf_names, candidate.leaf_types);
+    }
+    if (candidates.empty())
+        return;
+
+    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> candidates_by_first_leaf;
+    for (size_t i = 0; i < candidates.size(); ++i)
+        candidates_by_first_leaf[candidates[i].leaf_names.front()].push_back(i);
+
+    auto matches_at = [&](const Candidate & candidate, size_t pos)
+    {
+        const auto & leaves = candidate.leaf_names;
+        if (pos + leaves.size() > names.size())
+            return false;
+        for (size_t k = 0; k < leaves.size(); ++k)
+            if (names[pos + k] != leaves[k] || column_indexes_by_names.get(names[pos + k]) != CaseAwareBlockNameMap::NOT_FOUND)
+                return false;
+        return true;
+    };
+
+    const bool collapse_types = type_names.size() == names.size();
+    VectorWithMemoryTracking<String> collapsed_names;
+    VectorWithMemoryTracking<String> collapsed_type_names;
+    for (size_t pos = 0; pos < names.size();)
+    {
+        const Candidate * match = nullptr;
+        if (auto it = candidates_by_first_leaf.find(names[pos]); it != candidates_by_first_leaf.end())
+            for (size_t i : it->second)
+                if (matches_at(candidates[i], pos))
+                {
+                    match = &candidates[i];
+                    break;
+                }
+
+        if (!match)
+        {
+            collapsed_names.push_back(std::move(names[pos]));
+            if (collapse_types)
+                collapsed_type_names.push_back(std::move(type_names[pos]));
+            ++pos;
+            continue;
+        }
+
+        if (collapse_types)
+        {
+            if (check_types)
+                for (size_t k = 0; k < match->leaf_types.size(); ++k)
+                    if (type_names[pos + k] != match->leaf_types[k])
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Type of '{}' must be {}, not {}",
+                            match->leaf_names[k], match->leaf_types[k], type_names[pos + k]);
+            collapsed_type_names.push_back(match->column->type->getName());
+        }
+        collapsed_names.push_back(match->column->name);
+        pos += match->leaf_names.size();
+    }
+
+    names = std::move(collapsed_names);
+    if (collapse_types)
+        type_names = std::move(collapsed_type_names);
 }
 
 }

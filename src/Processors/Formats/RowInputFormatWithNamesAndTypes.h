@@ -93,6 +93,10 @@ public:
     /// single field while parsing.
     virtual void setDataTypes(const DataTypes &) {}
 
+    /// Whether a bare `Tuple` field is read from separate fields, one per element, so a header names it by its
+    /// flattened element names (see `getCSVHeaderNamesAndTypes`).
+    [[nodiscard]] virtual bool readsTupleFromSeparateFields() const { return false; }
+
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     /// `column_index` is the index of the column in the header, i.e. the index `setDataTypes` saw.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) = 0;
