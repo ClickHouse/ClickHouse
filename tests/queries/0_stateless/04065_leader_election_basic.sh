@@ -105,3 +105,25 @@ $CLICKHOUSE_CLIENT -q "
         leader_election = true
 " 2>&1 | grep -o -m1 -F "Set \`metadata_snapshot_enabled = false\` for this disk"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE test_leader_election_s3_snapshot"
+
+# The same applies to a disk that wraps such a disk: an encrypted disk does not publish the snapshot itself,
+# but the disk it wraps does.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE test_leader_election_s3_snapshot_encrypted (x UInt64)
+    ENGINE = MergeTree ORDER BY x
+    SETTINGS
+        disk = disk(
+            type = encrypted,
+            name = '04065_le_snap_enc_${CLICKHOUSE_DATABASE}',
+            path = 'encrypted/',
+            key = '1234567812345678',
+            disk = disk(
+                name = '04065_le_snap_enc_inner_${CLICKHOUSE_DATABASE}',
+                type = s3_plain_rewritable,
+                enable_hard_links = 0,
+                endpoint = 'http://localhost:11111/test/04065_le_snap_enc_${CLICKHOUSE_DATABASE}/',
+                access_key_id = clickhouse,
+                secret_access_key = clickhouse)),
+        leader_election = true
+" 2>&1 | grep -o -m1 -F "Set \`metadata_snapshot_enabled = false\` for this disk"
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE test_leader_election_s3_snapshot_encrypted"

@@ -205,6 +205,11 @@ bool MetadataStorageFromCacheObjectStorage::isWriteOnce() const
     return underlying->isWriteOnce();
 }
 
+bool MetadataStorageFromCacheObjectStorage::writesMetadataSnapshot() const
+{
+    return underlying->writesMetadataSnapshot();
+}
+
 bool MetadataStorageFromCacheObjectStorage::supportsHardLinks() const
 {
     return underlying->supportsHardLinks();

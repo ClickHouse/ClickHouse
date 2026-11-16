@@ -7,3 +7,5 @@ Set `enable_hard_links = false` for this disk
 0
 Set `metadata_snapshot_enabled = false` for this disk
 0
+Set `metadata_snapshot_enabled = false` for this disk
+0
