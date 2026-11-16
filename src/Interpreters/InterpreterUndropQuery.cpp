@@ -31,8 +31,6 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
-    getContext()->checkAccess(AccessType::UNDROP_TABLE);
-
     auto component_guard = Coordination::setCurrentComponent("InterpreterUndropQuery::execute");
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
@@ -57,6 +55,8 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         table_id.database_name = context->getCurrentDatabase();
         query.setDatabase(table_id.database_name);
     }
+
+    context->checkAccess(AccessType::UNDROP_TABLE, table_id);
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
