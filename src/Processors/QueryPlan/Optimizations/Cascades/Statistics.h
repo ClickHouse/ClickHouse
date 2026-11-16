@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/EquivalenceClasses.h>
 #include <Core/Block.h>
@@ -26,12 +25,6 @@ struct ExpressionStatistics
     /// Proven maximum number of rows. E.g. after a `LIMIT` step
     Float64 max_row_count = Float64(std::numeric_limits<UInt64>::max());
 
-    /// Estimated upper bound on the number of distinct rows. Tighter than `estimated_row_count`
-    /// when an operator keeps duplicates but limits the possible values: every `INTERSECT` output
-    /// value occurs in every input. A `Distinct` above clamps its estimate by this bound even
-    /// when the distinct columns have no NDV statistics.
-    Float64 estimated_distinct_bound = Float64(std::numeric_limits<UInt64>::max());
-
     /// Estimated average number of bytes per row in the output of this expression.
     /// Used to convert row-based costs into byte-based costs for network/memory/IO.
     Float64 estimated_bytes_per_row = 1.0;
@@ -43,7 +36,7 @@ struct ExpressionStatistics
     Float64 physical_read_bytes = 0;
 
     /// Statistics for output columns of the expression
-    UnorderedMapWithMemoryTracking<String, ColumnStats> column_statistics;
+    std::unordered_map<String, ColumnStats> column_statistics;
 
     /// Classes of output columns that hold equal values on every row.
     EquivalenceClasses<String> equivalences;
@@ -71,11 +64,11 @@ class ReadFromMergeTree;
 /// Average bytes per value of each column a read produces: real per-column storage sizes when the
 /// parts carry them (scaled up to the table-level uncompressed total when compact parts hide part
 /// of the data); otherwise type-based estimates scaled to match the measured row width.
-UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
+std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
 
 /// Column widths for a read whose table-level row width is hinted: type-based estimates scaled so
 /// their sum over the table's columns matches the hinted row width, ignoring the parts' sizes.
-UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
+std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
 
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
 
@@ -87,7 +80,7 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 
 /// Estimate average bytes per row of the header, preferring the columns' known average sizes
 /// over the type-based estimate.
-Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics);
+Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 

@@ -3,22 +3,3 @@
 -7914077003684076929	1
 1
 1
-vertical	1	1	101	201
-vertical	1	0	111	211
-vertical	2	0	102	202
-vertical	2	1	112	212
-vertical	4	-1	104	204
-vertical	4	0	114	214
-vertical	4	1	124	224
-vertical	5	-1	105	205
-vertical	5	0	115	215
-vertical_algo	Vertical
-horizontal	1	1	101	201
-horizontal	1	0	111	211
-horizontal	2	0	102	202
-horizontal	2	1	112	212
-horizontal	4	-1	104	204
-horizontal	4	0	114	214
-horizontal	4	1	124	224
-horizontal	5	-1	105	205
-horizontal	5	0	115	215

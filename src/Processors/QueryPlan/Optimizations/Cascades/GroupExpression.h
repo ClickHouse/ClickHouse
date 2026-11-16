@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
@@ -48,7 +46,6 @@ public:
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
         , enforced_property(other_.enforced_property)
-        , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
     String getName() const;
@@ -77,21 +74,14 @@ public:
         ExpressionProperties required_properties;
     };
 
-    VectorWithMemoryTracking<Input> inputs;
+    std::vector<Input> inputs;
 
     ExpressionProperties properties;
 
     /// Non-`None` for self-referential enforcer expressions (see `EnforcedProperty`).
     EnforcedProperty enforced_property = EnforcedProperty::None;
 
-    /// Set on the partial half of a two-stage aggregation split. Its promise of bucket order is kept
-    /// for the merge half of the same plan, which reads the gathered inputs one stream per node, so
-    /// the partial may run on several nodes. Every other non-final aggregation that promises bucket
-    /// order is the root of a shard plan whose consumer receives the shard output as one stream, and
-    /// only a single instance keeps that promise (see `AggregationImplementation`).
-    bool is_partial_of_two_stage_aggregation = false;
-
-    UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
+    std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
 

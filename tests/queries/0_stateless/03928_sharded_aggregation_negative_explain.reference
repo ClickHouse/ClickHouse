@@ -1,0 +1,24 @@
+Base case: sharded aggregation is used
+1
+Aggregation in order enabled, takes precedence over sharded aggregation
+1
+No GROUP BY keys
+1
+UInt8 key (too low cardinality for sharding)
+1
+Int8 key (too low cardinality for sharding)
+1
+LowCardinality key
+1
+GROUPING SETS
+1
+In-order aggregation (force_aggregation_in_order)
+1
+Single stream (max_threads = 1)
+1
+Single stream from upstream (max_streams_for_merge_tree_reading = 1)
+1
+Empty table (num_streams = 1)
+1
+max_rows_to_group_by
+1

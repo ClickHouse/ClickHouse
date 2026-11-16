@@ -97,8 +97,7 @@ public:
         String comparator = literal_id > func_id ? function->getFunctionName() : swap_relations.at(function->getFunctionName());
 
         const auto * func_node = function->getArguments().getNodes()[func_id]->as<FunctionNode>();
-        /// Explicit-time-zone overloads cannot be handled: the preimage API does not receive
-        /// constant function arguments.
+        /// Currently we only handle single-argument functions.
         if (!func_node || func_node->getArguments().getNodes().size() != 1)
             return;
 
@@ -122,9 +121,6 @@ public:
         args.emplace_back(column_id->getColumnType(), "tmp");
         auto converter_base = converter->build(args);
         if (!converter_base || !converter_base->hasInformationAboutPreimage())
-            return;
-
-        if (!canCalculatePreimageForConstant(*converter_base->getResultType(), *literal->getResultType()))
             return;
 
         auto preimage_range = converter_base->getPreimage(*(column_id->getColumnType()), literal->getValue());

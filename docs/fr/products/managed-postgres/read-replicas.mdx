@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -15,55 +16,25 @@ Les répliques de lecture vous permettent de créer une ou plusieurs copies de v
 
 Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Vue du warehouse avec l’icône de modification](/images/managed-postgres/warehouse-view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/warehouse-view.webp" alt="Vue du warehouse avec l’icône de modification" size="md" border />
 
 La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouvelles répliques de lecture :
 
-<div className="ch-image-md">
+<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Boîte de dialogue de gestion des répliques de lecture" size="md" border />
 
-<Frame>
-
-![Boîte de dialogue de gestion des répliques de lecture](/images/managed-postgres/read-replica-dialog.webp)
-
-</Frame>
-
+<div id="managing-read-replicas">
+  ## Gérer les répliques de lecture
 </div>
-
-## Gérer les répliques de lecture {#managing-read-replicas}
 
 La page **Répliques de lecture** propose deux vues, accessibles via les contrôles **Flux** et **Tableau** en haut à droite.
 
 La vue **Flux** affiche la topologie de réplication : votre instance primaire en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques](/images/managed-postgres/read-replicas-flow.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques" size="lg" border />
 
 La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Vue Tableau des répliques de lecture](/images/managed-postgres/read-replicas-table.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Vue Tableau des répliques de lecture" size="lg" border />
 
 Pour créer une nouvelle réplique, cliquez sur **Créer une réplique de lecture** en haut à droite, dans l’une ou l’autre vue.
 
@@ -89,7 +60,9 @@ En dirigeant les requêtes analytiques et de business intelligence vers des rép
 
 Les répliques de lecture peuvent jouer un rôle crucial dans la reprise après sinistre. Si votre base de données primaire tombe en panne, une réplique de lecture peut être promue en primaire, ce qui limite au maximum l’indisponibilité et la perte de données. Cela apporte un niveau de résilience supplémentaire, au-delà de vos instances de secours haute disponibilité.
 
-## Fonctionnement des répliques de lecture {#how-read-replicas-work}
+<div id="how-read-replicas-work">
+  ## Fonctionnement des répliques de lecture
+</div>
 
 Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
 
@@ -97,9 +70,9 @@ Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une arc
   ### WAL shipping depuis le stockage d’objets
 </div>
 
-Lorsque votre base de données primaire traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets. Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base primaire.
+Lorsque votre base de données principale traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets (S3). Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base principale.
 
-Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base primaire.
+Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base principale.
 
 <div id="why-we-chose-this-approach">
   ### Pourquoi nous avons choisi cette approche

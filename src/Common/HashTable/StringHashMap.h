@@ -172,17 +172,6 @@ public:
         }
     }
 
-    /// `forEachValue` with the hash of every key, `func(key, mapped, hash)`, taken from its cell (see
-    /// `forEachCellWithHash`). It is the hash `hash` computes, which must not be computed from the key handed
-    /// out here: a key packed into an integer is a view of that integer in its cell (see `iteratedKey`). Such
-    /// a key goes into another table with `emplaceIteratedKey`.
-    template <typename Func>
-    void ALWAYS_INLINE forEachValueWithHash(Func && func)
-    {
-        this->forEachCellWithHash([&](auto key_class, auto & cell, size_t hash)
-            { func(Base::template iteratedKey<decltype(key_class)::value>(cell), cell.getMapped(), hash); });
-    }
-
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {

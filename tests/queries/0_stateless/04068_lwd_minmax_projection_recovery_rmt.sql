@@ -6,10 +6,6 @@ SET lightweight_deletes_sync = 2, alter_sync = 2;
 
 DROP TABLE IF EXISTS t_lwd_proj;
 
--- `number_of_free_entries_in_pool_to_execute_mutation = 0` keeps the lightweight delete below
--- independent of the server-global merges/mutations pool: concurrent tests can occupy enough of
--- it that the default threshold refuses to assign the mutation, and the merge-selecting task then
--- retries only after `max_merge_selecting_sleep_ms`, so `lightweight_deletes_sync = 2` times out.
 CREATE TABLE t_lwd_proj
 (
     dt Date,
@@ -18,8 +14,7 @@ CREATE TABLE t_lwd_proj
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_cleanup/', '1')
 PARTITION BY toYYYYMM(dt)
-ORDER BY (id, dt)
-SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0;
+ORDER BY (id, dt);
 
 INSERT INTO t_lwd_proj VALUES ('2025-01-15', 1, 'First record');
 INSERT INTO t_lwd_proj VALUES ('2025-02-15', 2, 'Second record');
