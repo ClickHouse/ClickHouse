@@ -133,7 +133,7 @@ private:
         ASTPtr partition_by,
         bool delta_log_exists);
 
-    DeltaLake::TableChangesPtr getTableChanges(const DeltaLake::TableChangesVersionRange & version_range) const;
+    [[nodiscard]] DeltaLake::TableChangesPtr getTableChanges(const DeltaLake::TableChangesVersionRange & version_range) const;
 
     /// No version means latest version.
     DeltaLake::TableSnapshotPtr getTableSnapshot(

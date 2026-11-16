@@ -175,7 +175,7 @@ private:
         }
     }
 
-    DB::ObjectInfoPtr makeObject(
+    [[nodiscard]] DB::ObjectInfoPtr makeObject(
         const std::string & path,
         int64_t size,
         bool is_cdc,

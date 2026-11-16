@@ -384,7 +384,7 @@ public:
 
     /// The input columns of the read schema. Field transforms refer to them by name, and an expression of the transform
     /// can be a column with the same name (e.g. `_change_type`, which is dropped and inserted at another position).
-    bool isReadSchemaNode(const DB::ActionsDAG::Node * node, const std::string & name) const
+    [[nodiscard]] bool isReadSchemaNode(const DB::ActionsDAG::Node * node, const std::string & name) const
     {
         return node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == name && read_schema_nodes.contains(node);
     }

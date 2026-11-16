@@ -33,7 +33,7 @@ public:
 
     /// Iterates over the data files of the change data feed. `physical_names_map` is the column mapping of the table,
     /// as in the snapshot of the last version of the range. `filter_dag` is used to skip data files by their statistics.
-    DB::ObjectIterator iterate(
+    [[nodiscard]] DB::ObjectIterator iterate(
         const DB::ActionsDAG * filter_dag,
         const DB::NameToNameMap & physical_names_map,
         DB::IDataLakeMetadata::FileProgressCallback callback,
