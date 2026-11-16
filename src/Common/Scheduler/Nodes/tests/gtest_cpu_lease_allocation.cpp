@@ -261,6 +261,7 @@ TEST(SchedulerCPULeaseAllocation, ParkingDoesNotExtendSlotLease)
             burned_ns += settings.report_ns;
             master->renew();
         }
+        master_slot.reset(); // The last report reads the CPU clock of the thread that releases the lease
         return burned_ns;
     });
     bool finished = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
@@ -276,7 +277,6 @@ TEST(SchedulerCPULeaseAllocation, ParkingDoesNotExtendSlotLease)
     worker->unpark();
     EXPECT_EQ(queue->getQueueLengthAndCost().second, queued_cost) << "the cancelled request is counted as granted CPU time";
 
-    master_slot.reset();
     worker_slot.reset();
     other->free();
     allocation->free();
