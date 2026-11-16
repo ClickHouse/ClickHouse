@@ -2083,9 +2083,13 @@ void IcebergMetadata::addDeleteTransformers(
             auto read_settings = local_context->getReadSettings();
             read_settings.remote_fs_settings.random_access
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(delete_file.file_format, local_context);
+            /// Columns of the delete file are bound by field id, like the columns of data files.
+            ColumnMapperPtr delete_mapper = persistent_components.schema_processor->getColumnMapperById(delete_file.schema_id);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
+                if (delete_mapper)
+                    schema_reader->setColumnMapper(delete_mapper);
                 auto columns_with_names = schema_reader->readSchema();
                 ColumnsWithTypeAndName initial_header_data;
                 for (const auto & elem : columns_with_names)
@@ -2096,9 +2100,6 @@ void IcebergMetadata::addDeleteTransformers(
             }
             /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
             const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
-            /// Iceberg `time` keys are read as the stored microseconds, like the data columns.
-            ColumnMapperPtr delete_mapper = persistent_components.schema_processor->getColumnMapperById(delete_file.schema_id);
-            bool has_time_equality_column = false;
             Block block_for_set;
             std::vector<size_t> equality_indexes_delete_file;
             for (Int32 col_id : equality_ids)
@@ -2106,12 +2107,12 @@ void IcebergMetadata::addDeleteTransformers(
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
                 size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
+                /// Iceberg `time` keys are read as the stored microseconds, like the data columns.
                 if (delete_mapper && delete_mapper->isIcebergTimeFieldId(col_id))
                 {
                     auto & column = delete_file_header.getByPosition(position_in_delete_file);
                     DataTypePtr key_type = removeNullable(name_and_type.type);
                     column.type = column.type->isNullable() ? makeNullable(key_type) : key_type;
-                    has_time_equality_column = true;
                 }
                 /// Take the type from the delete file header rather than from the table schema:
                 /// the nullability of a column in the delete file may differ from its nullability
@@ -2131,9 +2132,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
                 parser_shared_resources,
-                has_time_equality_column
-                    ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr)
-                    : nullptr,
+                delete_mapper ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr) : nullptr,
                 true,
                 compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'

@@ -624,6 +624,7 @@ NamesAndTypesList NativeParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
     Parquet::SchemaConverter schemer(*file_footer, read_options, /*sample_block*/ nullptr);
+    schemer.column_mapper = column_mapper.get();
     return schemer.inferSchema();
 }
 
