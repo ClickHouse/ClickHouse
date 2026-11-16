@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <base/arithmeticOverflow.h>
 
@@ -13,6 +14,12 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char aggregator_merge_batch_throw[];
 }
 
 namespace
@@ -169,6 +176,11 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
 }
 
+void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
+}
+
 void IAggregateFunction::mergeStateFromDifferentVariant(
     AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
 {
@@ -235,7 +247,7 @@ void IAggregateFunction::mergeAndDestroyBatchOrDefer(
 
         for (; i < size; ++i)
         {
-            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+            chassert(!isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                      "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
             if (isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
             {
@@ -272,7 +284,7 @@ void IAggregateFunction::mergeBatchOrDefer(
         if (!places[i])
             continue;
 
-        chassert(places[i] + place_offset != rhs[i],
+        chassert(!isSelfMerge(places[i] + place_offset, rhs[i]),
                  "IAggregateFunction::mergeBatchOrDefer called with the same source and destination state");
         if (isLargeMergePair(places[i] + place_offset, rhs[i]))
         {
@@ -283,6 +295,14 @@ void IAggregateFunction::mergeBatchOrDefer(
 
         mergeImpl(places[i] + place_offset, rhs[i], arena);
     }
+}
+
+void IAggregateFunction::injectMergeBatchFault()
+{
+    fiu_do_on(FailPoints::aggregator_merge_batch_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in the batch merge of aggregate function states");
+    });
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const

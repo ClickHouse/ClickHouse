@@ -25,6 +25,7 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
+#include <boost/algorithm/string/predicate.hpp>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -36,7 +37,6 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Parquet
@@ -120,6 +120,8 @@ void SchemaConverter::prepareForReading()
             continue;
         if (!options.format.parquet.allow_missing_columns)
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
+        if (addMissingElementOfTupleInArray(i))
+            continue;
 
         OutputColumnInfo & missing_output = output_columns.emplace_back();
         missing_output.idx_in_output_block = i;
@@ -176,20 +178,11 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
-        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
-        /// id means the file does not belong to this table, or its schema was resolved to a wrong
-        /// one, which is reported rather than silently ignored.
-        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
-                "assigned that field id: the highest field id it ever assigned is {}",
-                element.name,
-                element.field_id,
-                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
-
+        /// A reader projects by field id, so a file column whose id is not in the read schema is
+        /// not selected (https://iceberg.apache.org/spec/#column-projection). This covers a column
+        /// dropped from the table, since `DROP COLUMN` is metadata-only and data files keep the
+        /// column, and a private column of the writer, e.g. `_CHANGE_TIMESTAMP` (2147483345) that
+        /// BigQuery writes into the files of its managed Iceberg tables but keeps out of the schema.
         out_not_in_schema = true;
         return element.name;
     }
@@ -309,6 +302,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
     node.element = &file_metadata.schema.at(schema_idx);
     schema_idx += 1;
+    const size_t leaves_start = leaves_in_arrays.size();
 
     std::optional<size_t> idx_in_output_block;
     size_t wrap_in_arrays = 0;
@@ -318,6 +312,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     {
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.not_in_datalake_schema |= not_in_schema;
 
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
@@ -463,11 +458,19 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         node.output_idx = array_idx;
     };
 
+    /// E.g. `Array(Tuple(missing_element Int64))`: no requested element has a leaf to take the sizes from.
+    auto add_levels_only_primitive_if_no_leaves = [&]
+    {
+        if (sample_block && output_columns[*node.output_idx].primitive_start == primitive_columns.size())
+            addLevelsOnlyPrimitive(leaves_start, leaves_in_arrays.size(), levels.back().rep, node.name);
+    };
+
     if (node.element->repetition_type == parq::FieldRepetitionType::REPEATED)
     {
         /// Array of some kind. Can be a child of List or Map, or a standalone repeated field.
         /// We dispatch all 3 cases to this one code path to minimize probability of bugs.
         chassert(levels.size() == prev_levels_size + 1);
+        add_levels_only_primitive_if_no_leaves();
         make_array(levels.back().rep);
     }
 
@@ -475,6 +478,8 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     {
         /// If the requested column is inside some arrays of tuples (requested using `arr.elem`
         /// syntax), add intermediate OutputColumnInfo-s to create those arrays.
+        if (wrap_in_arrays > 0)
+            add_levels_only_primitive_if_no_leaves();
         for (size_t i = 0; i < wrap_in_arrays; ++i)
             make_array(static_cast<UInt8>(levels[prev_levels_size - 1].rep - i));
 
@@ -505,6 +510,8 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         return false;
 
     primitive_column_idx += 1;
+    if (sample_block && levels.back().rep > 0)
+        leaves_in_arrays.push_back({.schema_idx = schema_idx - 1, .column_idx = primitive_column_idx - 1, .levels = levels});
     if (!node.requested)
         return true;
     if (!node.element->__isset.type)
@@ -994,6 +1001,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name2`
     ///     ...
 
+    /// Not a Map's key_value tuple: `map.keys` and `map.values` are the names of the subcolumns of a Map.
+    const bool is_tuple_in_array = sample_block && !node.requested && !node.not_in_datalake_schema && levels.back().rep > 0
+        && node.schema_context != SchemaContext::MapTuple;
+    const size_t tuple_schema_idx = schema_idx - 1;
+    const size_t leaves_start = leaves_in_arrays.size();
+
     /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
     /// type). Unwrap it, match elements against the inner Tuple, and restore the wrapper below.
     ///
@@ -1169,7 +1182,13 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     }
 
     if (!node.requested)
+    {
+        if (is_tuple_in_array)
+            tuples_in_arrays.push_back(
+                {.name = node.name, .schema_idx = tuple_schema_idx, .leaves_start = leaves_start,
+                 .leaves_end = leaves_in_arrays.size(), .levels = levels});
         return;
+    }
 
     /// Map tuple in parquet has elements: {"key" , "value" },
     /// but DataTypeMap requires:          {"keys", "values"}.
@@ -1230,6 +1249,201 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.output_type = output.input_type;
     output.nested_columns = elements;
     output.nullable_group = nullable_group;
+}
+
+/// Decodes the values as stored, ignoring the logical type, whose conversion can reject valid values.
+/// Returns false if the physical type is missing or unknown.
+static bool setPhysicalValuesDecoder(const parq::SchemaElement & element, PageDecoderInfo & decoder, DataTypePtr & type)
+{
+    if (!element.__isset.type)
+        return false;
+    decoder.physical_type = element.type;
+    size_t size = 0;
+    switch (element.type)
+    {
+        case parq::Type::BOOLEAN:
+        {
+            auto converter = std::make_shared<IntConverter>();
+            converter->input_size = 1;
+            converter->input_signed = false;
+            decoder.fixed_size_converter = std::move(converter);
+            type = std::make_shared<DataTypeUInt8>();
+            return true;
+        }
+        case parq::Type::BYTE_ARRAY:
+            decoder.string_converter = std::make_shared<TrivialStringConverter>();
+            type = std::make_shared<DataTypeString>();
+            return true;
+        case parq::Type::INT32: size = 4; break;
+        case parq::Type::INT64: size = 8; break;
+        case parq::Type::INT96: size = 12; break;
+        case parq::Type::FLOAT: size = 4; break;
+        case parq::Type::DOUBLE: size = 8; break;
+        case parq::Type::FIXED_LEN_BYTE_ARRAY:
+            if (element.type_length > 0)
+                size = size_t(element.type_length);
+            break;
+    }
+    if (size == 0)
+        return false;
+
+    auto converter = std::make_shared<FixedStringConverter>();
+    converter->input_size = size;
+    decoder.fixed_size_converter = std::move(converter);
+    type = std::make_shared<DataTypeFixedString>(size);
+    return true;
+}
+
+std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name)
+{
+    UnorderedSetWithMemoryTracking<size_t> read_column_idxs;
+    for (const auto & primitive : primitive_columns)
+        read_column_idxs.insert(primitive.column_idx);
+
+    /// The cheapest leaf that can be decoded: of fixed width, without arrays of its own, not read for another column.
+    std::optional<size_t> best;
+    UInt8 best_cost = 0;
+    PageDecoderInfo decoder;
+    DataTypePtr decoded_type;
+    for (size_t i = leaves_start; i < leaves_end; ++i)
+    {
+        const LeafInArray & leaf = leaves_in_arrays[i];
+        const parq::SchemaElement & element = file_metadata.schema[leaf.schema_idx];
+        const UInt8 cost = (element.type == parq::Type::BYTE_ARRAY ? 4 : 0) + (leaf.levels.back().rep > arrays ? 2 : 0)
+            + (read_column_idxs.contains(leaf.column_idx) ? 1 : 0);
+        PageDecoderInfo leaf_decoder;
+        DataTypePtr leaf_type;
+        if ((best && cost >= best_cost) || !setPhysicalValuesDecoder(element, leaf_decoder, leaf_type))
+            continue;
+        best = i;
+        best_cost = cost;
+        decoder = std::move(leaf_decoder);
+        decoded_type = std::move(leaf_type);
+    }
+
+    if (!best)
+    {
+        if (leaves_start == leaves_end || options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+            return std::nullopt;
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "No column under array {} has a known physical type to read the array sizes from, e.g. {}",
+            name, thriftToString(file_metadata.schema[leaves_in_arrays[leaves_start].schema_idx]));
+    }
+
+    const LeafInArray & leaf = leaves_in_arrays[*best];
+    size_t primitive_idx = primitive_columns.size();
+    PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
+    primitive.column_idx = leaf.column_idx;
+    primitive.schema_idx = leaf.schema_idx;
+    primitive.name = name;
+    primitive.output_nullable = !leaf.levels.back().is_array;
+    primitive.decoder = std::move(decoder);
+    primitive.decoded_type = decoded_type;
+    primitive.output_type = primitive.decoded_type;
+    if (primitive.output_nullable)
+        primitive.output_type = std::make_shared<DataTypeNullable>(primitive.output_type);
+    for (const auto & level : leaf.levels)
+        if (level.is_array)
+            primitive.max_array_def = level.def;
+    primitive.levels = leaf.levels;
+    primitive.levels_only_arrays = arrays;
+    return primitive_idx;
+}
+
+bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
+{
+    const ColumnWithTypeAndName & column = sample_block->getByPosition(pos);
+    const bool case_insensitive = options.format.parquet.case_insensitive_column_matching;
+    auto names_equal = [&](std::string_view a, std::string_view b) { return case_insensitive ? boost::iequals(a, b) : a == b; };
+    /// Whether `path` is `prefix.<something>`.
+    auto is_path_prefix = [&](std::string_view path, std::string_view prefix)
+    {
+        return path.size() > prefix.size() + 1 && path[prefix.size()] == '.' && names_equal(path.substr(0, prefix.size()), prefix);
+    };
+
+    const TupleInArray * tuple = nullptr;
+    bool ambiguous = false;
+    for (const auto & candidate : tuples_in_arrays)
+    {
+        if (!is_path_prefix(column.name, candidate.name))
+            continue;
+        if (tuple && candidate.name.size() == tuple->name.size())
+            ambiguous = true;
+        else if (!tuple || candidate.name.size() > tuple->name.size())
+        {
+            tuple = &candidate;
+            ambiguous = false;
+        }
+    }
+    if (!tuple)
+        return false;
+    if (ambiguous)
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", tuple->name);
+    const std::string_view rest = std::string_view(column.name).substr(tuple->name.size() + 1);
+
+    /// A path through an element the tuple has (e.g. `arr.primitive_element.x`) stays a missing column.
+    const parq::SchemaElement & group = file_metadata.schema.at(tuple->schema_idx);
+    bool through_existing_element = false;
+    size_t child_idx = tuple->schema_idx + 1;
+    for (Int32 i = 0; i < group.num_children && !through_existing_element; ++i)
+    {
+        bool not_in_schema = false;
+        const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), tuple->name, not_in_schema);
+        through_existing_element = !not_in_schema && (names_equal(rest, child_name) || is_path_prefix(rest, child_name));
+        const std::optional<size_t> end = subtreeEnd(file_metadata.schema, child_idx);
+        if (!end.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
+        child_idx = *end;
+    }
+    if (through_existing_element)
+        return false;
+
+    /// The requested type has an Array layer per array the tuple is in.
+    DataTypePtr element_type = column.type;
+    bool arrays_match = true;
+    for (size_t i = 1; i < tuple->levels.size() && arrays_match; ++i)
+    {
+        if (!tuple->levels[i].is_array)
+            continue;
+        const auto * array_type = typeid_cast<const DataTypeArray *>(element_type.get());
+        arrays_match = array_type != nullptr;
+        if (array_type)
+            element_type = array_type->getNestedType();
+    }
+    if (!arrays_match)
+        return false;
+
+    std::optional<size_t> levels_only_primitive
+        = addLevelsOnlyPrimitive(tuple->leaves_start, tuple->leaves_end, tuple->levels.back().rep, tuple->name);
+    if (!levels_only_primitive.has_value())
+        return false;
+    primitive_columns[*levels_only_primitive].idx_in_output_block = pos;
+
+    size_t output_idx = output_columns.size();
+    OutputColumnInfo & missing_output = output_columns.emplace_back();
+    missing_output.name = column.name;
+    missing_output.input_type = element_type;
+    missing_output.output_type = element_type;
+    missing_output.is_missing_column = true;
+
+    for (size_t i = tuple->levels.size() - 1; i > 0; --i)
+    {
+        if (!tuple->levels[i].is_array)
+            continue;
+        DataTypePtr array_type = std::make_shared<DataTypeArray>(output_columns[output_idx].output_type);
+        OutputColumnInfo & array = output_columns.emplace_back();
+        array.name = column.name;
+        array.primitive_start = *levels_only_primitive;
+        array.primitive_end = *levels_only_primitive + 1;
+        array.input_type = array_type;
+        array.output_type = array_type;
+        array.nested_columns = {output_idx};
+        array.rep = tuple->levels[i].rep;
+        output_idx = output_columns.size() - 1;
+    }
+    output_columns[output_idx].idx_in_output_block = pos;
+    output_columns[output_idx].report_as_missing = true;
+    return true;
 }
 
 namespace
@@ -2137,6 +2351,19 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
             auto converter = std::make_shared<Int96Converter>();
             converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            /// Decode at the requested precision; the rounding must match the cast to the requested type that follows.
+            const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr;
+            if (dt64_hint && dt64_hint->getScale() < 9)
+            {
+                converter->scale = dt64_hint->getScale();
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(converter->scale, "UTC");
+            }
+            else if (type_hint && WhichDataType(type_hint->getTypeId()).isDate32())
+            {
+                converter->scale = 0;
+                converter->round_down = true;
+                out_decoded_type = std::make_shared<DataTypeDateTime64>(0, "UTC");
+            }
             out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
