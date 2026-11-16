@@ -118,6 +118,50 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     node.query("DROP TABLE default.t_deferred_valid")
 
 
+def test_user_dropped_during_identity_restore_is_logged(start_cluster):
+    # The user is dropped after the flush has read it in `setUser`, before `setCurrentRoles` builds its access.
+    # The rows must not land, and the failed flush is logged like any other.
+    node.query("DROP USER IF EXISTS u_deferred_dropped")
+    node.query("DROP TABLE IF EXISTS default.t_deferred_dropped")
+    node.query("CREATE TABLE default.t_deferred_dropped (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query("CREATE USER u_deferred_dropped IDENTIFIED WITH sha256_password BY 'pw'")
+    node.query("GRANT INSERT ON default.t_deferred_dropped TO u_deferred_dropped")
+
+    query_id = f"deferred_dropped_{uuid.uuid4().hex}"
+    node.query(
+        "INSERT INTO default.t_deferred_dropped VALUES (1)",
+        user="u_deferred_dropped",
+        password="pw",
+        settings=async_insert_settings(),
+        query_id=query_id,
+    )
+
+    failpoint = "async_insert_flush_pause_after_set_user"
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    flush = node.get_query_request("SYSTEM FLUSH ASYNC INSERT QUEUE default.t_deferred_dropped")
+    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+    node.query("DROP USER u_deferred_dropped")
+    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    flush.get_answer()
+
+    assert node.query("SELECT count() FROM default.t_deferred_dropped").strip() == "0"
+    node.query("SYSTEM FLUSH LOGS query_log, asynchronous_insert_log")
+    assert (
+        node.query(
+            f"SELECT status, exception LIKE '%ACCESS_ENTITY_NOT_FOUND%' FROM system.asynchronous_insert_log WHERE query_id = '{query_id}'"
+        )
+        == "FlushError\t1\n"
+    )
+    assert (
+        node.query(
+            f"SELECT type, exception_code FROM system.query_log WHERE query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '{query_id}')"
+        )
+        == "ExceptionBeforeStart\t492\n"
+    )
+
+    node.query("DROP TABLE default.t_deferred_dropped")
+
+
 def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
     node.query("DROP USER IF EXISTS u_deferred_query_runner")
     node.query("DROP TABLE IF EXISTS default.runner_deferred_expiry")

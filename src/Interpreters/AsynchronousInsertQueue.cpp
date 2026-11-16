@@ -83,6 +83,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char async_insert_pause_before_schedule[];
+    extern const char async_insert_flush_pause_after_set_user[];
 }
 
 namespace Setting
@@ -1342,6 +1343,7 @@ try
             /// credential does not regain the full user's rights and a pushed-role session does not fail
             /// role revalidation.
             insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
+            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_after_set_user);
             /// `current_roles` are the session's *effective* current roles, which already include the
             /// external roles restored above. Re-apply them without the grant check: external roles are not
             /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
