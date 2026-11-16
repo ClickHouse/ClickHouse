@@ -42,7 +42,7 @@ void removeMisboundDefaultsFromStructureHint(
     ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
 
 /// Name of the column to use in the structure hint for the identifier with `identifier_parts` from the `SELECT` list.
-/// A single part is kept as it is, and `<table_function_alias>.<column>` becomes `<column>`. It is decided from the identifier
+/// A single part is kept as it is, and `alias.column` with the table function alias becomes `column`. It is decided from the identifier
 /// alone, because looking up the source structure would run the schema inference that the hint is there to avoid. Empty for
 /// any other compound identifier, like a subcolumn or a column of another table, which must not be hinted.
 String getStructureHintColumnName(const Strings & identifier_parts, const String & table_function_alias);
