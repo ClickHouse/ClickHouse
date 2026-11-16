@@ -244,7 +244,7 @@ private:
             {
                 using IntegerType = typename std::decay_t<decltype(integer_types)>::RightType;
                 auto converted = ColumnVector<IntegerType>::create(rows);
-                auto nulls = ColumnUInt8::create(rows, 0);
+                auto nulls = ColumnUInt8::create(rows, UInt8{0});
                 auto & converted_values = converted->getData();
                 auto & null_map = nulls->getData();
 
