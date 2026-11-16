@@ -292,16 +292,12 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-/// Completes `CRC32Hash` from its first 24 bytes; requires at least 1024 bytes.
-size_t crc32HashLong(const char * data, size_t size, UInt32 seed);
+/// Computes `CRC32Hash` for strings of at least 1024 bytes.
+size_t crc32HashLong(const char * data, size_t size);
 #endif
 
 struct CRC32Hash
 {
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
-    && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    ALWAYS_INLINE
-#endif
     size_t operator() (std::string_view x) const
     {
         const char * pos = x.data();
@@ -317,32 +313,14 @@ struct CRC32Hash
             return static_cast<unsigned>(hashLessThan8(x.data(), x.size()));
         }
 
-        const char * end = pos + size;
-        size_t res = static_cast<size_t>(-1U);
-
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && defined(__ARM_FEATURE_CRYPTO) \
     && defined(__ARM_NEON) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        res = __crc32cd(static_cast<UInt32>(res), unalignedLoadLittleEndian<UInt64>(pos));
-        pos += 8;
-        if (size > 16)
-        {
-            res = __crc32cd(static_cast<UInt32>(res), unalignedLoadLittleEndian<UInt64>(pos));
-            pos += 8;
-        }
-        if (size > 24)
-        {
-            res = __crc32cd(static_cast<UInt32>(res), unalignedLoadLittleEndian<UInt64>(pos));
-            pos += 8;
-        }
-        if (size <= 32)
-        {
-            res = __crc32cd(static_cast<UInt32>(res), unalignedLoadLittleEndian<UInt64>(end - 8));
-            return (res << 32) | res;
-        }
-        if (size >= 1024)
-            return crc32HashLong(x.data(), x.size(), static_cast<UInt32>(res));
+        if (size >= 1024) [[unlikely]]
+            return crc32HashLong(pos, size);
 #endif
 
+        const char * end = pos + size;
+        size_t res = static_cast<size_t>(-1U);
 
         do
         {

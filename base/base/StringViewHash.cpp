@@ -36,13 +36,15 @@ template <size_t Segment> inline UInt32 crc32HashFoldBlocks(UInt32 crc, const ch
 
 }
 
-NO_INLINE size_t crc32HashLong(const char * data, size_t length, UInt32 seed)
+NO_INLINE size_t crc32HashLong(const char * data, size_t length)
 {
     chassert(length >= 1024);
     const char * last = data + length - 8;
     size_t size = ((length - 1) / 8) * 8 - 24;
+    UInt32 crc = __crc32cd(-1U, unalignedLoadLittleEndian<UInt64>(data));
+    crc = __crc32cd(crc, unalignedLoadLittleEndian<UInt64>(data + 8));
+    crc = __crc32cd(crc, unalignedLoadLittleEndian<UInt64>(data + 16));
     data += 24;
-    UInt32 crc = seed;
     if (length >= 16384)
         crc = crc32HashFoldBlocks<256>(crc, data, size);
     while (size >= 64)
