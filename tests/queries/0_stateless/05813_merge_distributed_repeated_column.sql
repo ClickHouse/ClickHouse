@@ -1,0 +1,22 @@
+-- Tags: distributed
+-- A Merge read over a Distributed table must keep a column the query selects twice.
+
+SET allow_experimental_shuffle_query = 1;
+
+DROP TABLE IF EXISTS t_dist_two_shards;
+DROP TABLE IF EXISTS t_dist_one_shard;
+DROP TABLE IF EXISTS t_local;
+
+CREATE TABLE t_local (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_dist_two_shards AS t_local ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_local);
+CREATE TABLE t_dist_one_shard AS t_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_local);
+INSERT INTO t_local VALUES (1, 10);
+
+SELECT DISTINCT k, k FROM merge(currentDatabase(), '^t_dist_two_shards$') SHUFFLE;
+SELECT DISTINCT k, k FROM merge(currentDatabase(), '^t_dist_two_shards$') SHUFFLE SETTINGS prefer_localhost_replica = 0;
+SELECT DISTINCT k, k FROM t_dist_two_shards SHUFFLE;
+SELECT k, k FROM merge(currentDatabase(), '^t_dist_one_shard$') FORMAT TSVWithNames;
+
+DROP TABLE t_dist_two_shards;
+DROP TABLE t_dist_one_shard;
+DROP TABLE t_local;
