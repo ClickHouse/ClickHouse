@@ -811,12 +811,10 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                  arguments[0]->clone()});
             node = makeFunctionWithArguments("mapFromArrays", {keys, values});
         }},
-        {"map_entries", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {"map_entries", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             requireArguments(function, arguments, 1, 1, "(map)");
-            node = makeFunctionWithArguments(
-                "arrayZip",
-                {makeFunctionWithArguments("mapKeys", {arguments[0]}), makeFunctionWithArguments("mapValues", {arguments[0]->clone()})});
+            function.name = "mapEntries";
         }},
         {"map_concat", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {

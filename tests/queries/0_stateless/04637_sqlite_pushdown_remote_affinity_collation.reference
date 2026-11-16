@@ -1,0 +1,26 @@
+Int64 over TEXT declared type, x > 2 must keep the row storing text 10:
+10
+Int64 over INTEGER declared type of a non-STRICT table stays correct (filtered locally):
+10
+String over INTEGER declared type, num_s < \'2\' must keep the row storing 10:
+10
+String with NOCASE collation, s > \'B\' must keep \'a\' (byte-wise order):
+a
+String with RTRIM collation, r > \'a\' must keep \'a \' (trailing space is significant):
+a 	2
+String over plain TEXT of a non-STRICT table stays correct (filtered locally):
+a
+Int64 over INTEGER of a STRICT table stays pushed down and correct:
+10
+String over TEXT (BINARY collation) of a STRICT table stays pushed down and correct:
+a
+String with NOCASE collation of a STRICT table, s > \'B\' must keep \'a\':
+a
+View columns have no affinity, x > 2 must keep the row storing text 10:
+10
+Query: SELECT `n` FROM `st` WHERE `n` > 2
+Query: SELECT `plain` FROM `st` WHERE `plain` > 'B'
+Query: SELECT `s` FROM `st`
+Query: SELECT `n` FROM `t`
+Query: SELECT `plain` FROM `t`
+Query: SELECT `x` FROM `t`

@@ -123,9 +123,11 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
                 const FormatSettings & settings)
     {
         return std::make_shared<JSONObjectEachRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("JSONObjectEachRow");
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONObjectEachRow", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONObjectEachRow", Documentation{
         .description = R"DOCS_MD(

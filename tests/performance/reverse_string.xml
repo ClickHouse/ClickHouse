@@ -1,0 +1,17 @@
+<test run_all_queries="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS reverse_string_mixed</create_query>
+    <create_query>CREATE TABLE reverse_string_mixed (s String) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO reverse_string_mixed
+        SELECT if(number % 5 = 0, '', repeat('x', number % 1024))
+        FROM numbers(500000)
+    </fill_query>
+
+    <query>SELECT reverse(s) FROM reverse_string_mixed FORMAT Null</query>
+
+    <drop_query>DROP TABLE reverse_string_mixed</drop_query>
+</test>
