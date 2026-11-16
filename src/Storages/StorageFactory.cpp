@@ -4,6 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
+#include <Disks/DiskFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DDLTask.h>
@@ -28,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool log_queries;
 }
@@ -111,6 +113,22 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
     return ptr;
+}
+
+DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
+{
+    auto disk = getContext()->getDisk(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext());
+    return disk;
+}
+
+StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
+{
+    auto storage_policy = getContext()->getStoragePolicy(name);
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext());
+    return storage_policy;
 }
 
 
@@ -370,6 +388,22 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+void StorageFactory::checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const
+{
+    auto it = storages.find(storage_name);
+    if (it == storages.end())
+        return;
+
+    const auto & features = it->second.features;
+    if (!features.supports_temporary)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary tables cannot be created with the {} table engine", storage_name);
+
+    if (context->getSettingsRef()[Setting::cloud_mode] && features.stores_data_on_disk)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary tables cannot be created with the {} table engine, because it stores data on the local disk", storage_name);
 }
 
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const

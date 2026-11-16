@@ -31,6 +31,7 @@ L’utilisation du cache des en-têtes d’index de texte peut réduire considé
 Active l’évaluation des requêtes LIKE/ILIKE via le parcours du dictionnaire de l’index de texte inversé.
 
 Les motifs accélérés sont `%value%`, `value%` et `%value`, ainsi que les appels `startsWith` et `endsWith` que `optimize_rewrite_like_perfect_affix` réécrit en `value%` et `%value`.
+Un appel à `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` ou `multiSearchAnyCaseInsensitiveUTF8` comportant une seule sous-chaîne recherchée est traité comme `%value%`.
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

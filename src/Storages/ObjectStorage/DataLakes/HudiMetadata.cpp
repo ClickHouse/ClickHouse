@@ -632,6 +632,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             /// Nothing under `.hoodie/` is a data file of the table.
             if (key.starts_with(table_path) && std::string_view(key).substr(table_path.size()).starts_with(".hoodie/"))
                 return false;
+            /// Hudi names the partition metafile `.hoodie_partition_metadata` (`hoodie` is Hudi's original name and is
+            /// still part of its on-disk names). With `hoodie.partition.metafile.use.base.format=true` it gets the base
+            /// file extension, but it holds no table rows.
+            if (object.getFileName().starts_with(".hoodie_partition_metadata"))
+                return false;
             return key.ends_with(data_file_suffix) || parseLogFileName(object.getFileName());
         });
 

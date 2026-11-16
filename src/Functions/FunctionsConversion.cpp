@@ -1265,7 +1265,17 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                const auto & to_element_type = to_element_types[i];
+                if (to_element_type->isDefaultInsertTrivial())
+                {
+                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
+                }
+                else
+                {
+                    auto column = to_element_type->createColumn();
+                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
+                    converted_columns[i] = std::move(column);
+                }
             }
         }
 
@@ -2939,7 +2949,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
                 /// Validate that value exists in Enum (throws if not found)
-                result_type.getNameForValue(converted_value);
+                (void)result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }
@@ -3060,7 +3070,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
             else if (pos < value_to_index.size() && value_to_index[pos] != missing)
                 indexes_data[i] = value_to_index[pos];
             else
-                enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
+                (void)enum_type->getNameForValue(data[i]); /// Throws for a value missing in the enum.
         }
 
         /// A private source dictionary makes `insertRangeFrom` copy only the used names instead of adopting all of them.

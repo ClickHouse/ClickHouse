@@ -14,17 +14,13 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_analyze_depth">
-  ## max_analyze_depth
-</div>
+## max_analyze_depth {#max_analyze_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
 Número máximo de análises executadas pelo interpretador.
 
-<div id="max_autoincrement_series">
-  ## max_autoincrement_series
-</div>
+## max_autoincrement_series {#max_autoincrement_series}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -34,17 +30,13 @@ O limite para o número de séries criadas pela função `generateSerialID`.
 
 Como cada série representa um nó no Keeper, recomenda-se não ter mais do que alguns milhões delas.
 
-<div id="max_backup_bandwidth">
-  ## max_backup_bandwidth
-</div>
+## max_backup_bandwidth {#max_backup_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 A velocidade máxima de leitura, em bytes por segundo, de um backup específico no servidor. Zero significa sem limite.
 
-<div id="max_block_size">
-  ## max_block_size
-</div>
+## max_block_size {#max_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
 
@@ -54,9 +46,7 @@ A configuração `max_block_size` indica o número máximo recomendado de linhas
 
 O tamanho do bloco não deve ser muito pequeno, para evitar custos perceptíveis ao processar cada bloco. Ele também não deve ser muito grande, para garantir que consultas com uma cláusula LIMIT sejam executadas rapidamente após o processamento do primeiro bloco. Ao definir `max_block_size`, o objetivo deve ser evitar consumir memória demais ao extrair um grande número de colunas em múltiplas threads e preservar pelo menos alguma localidade de cache.
 
-<div id="max_columns_to_read">
-  ## max_columns_to_read
-</div>
+## max_columns_to_read {#max_columns_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -70,9 +60,7 @@ será lançada.
 
 O valor `0` significa sem limite.
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -84,9 +72,7 @@ O tamanho máximo dos blocos de dados não comprimidos antes de serem comprimido
 
 Não confunda blocos usados para compressão (um bloco de memória composto por bytes) com blocos usados no processamento de consultas (um conjunto de linhas de uma tabela).
 
-<div id="max_consume_snapshots">
-  ## max_consume_snapshots
-</div>
+## max_consume_snapshots {#max_consume_snapshots}
 
 <ExperimentalBadge />
 
@@ -96,9 +82,7 @@ Não confunda blocos usados para compressão (um bloco de memória composto por 
 
 Número máximo de snapshots do Paimon consumidos por leitura incremental. 0 significa sem limite.
 
-<div id="max_estimated_execution_time">
-  ## max_estimated_execution_time
-</div>
+## max_estimated_execution_time {#max_estimated_execution_time}
 
 <SettingsInfoBlock type="Segundos" default_value="0" />
 
@@ -108,25 +92,21 @@ Tempo máximo estimado de execução da consulta, em segundos. É verificado em 
 quando [`timeout_before_checking_execution_speed`](/pt-BR/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
 expira.
 
-<div id="max_expanded_ast_elements">
-  ## max_expanded_ast_elements
-</div>
+## max_expanded_ast_elements {#max_expanded_ast_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
 Tamanho máximo da árvore de sintaxe da consulta, em número de nós, após a expansão de aliases e do asterisco.
 
-<div id="max_fetch_partition_retries_count">
-  ## max_fetch_partition_retries_count
-</div>
+O mesmo limite também restringe o número de nós criados pela substituição de elementos `WITH` (expressões de tabela comuns e expressões com aliases) na consulta. Isso vale para todos os casos em que elementos `WITH` são substituídos, incluindo consultas `SELECT`, `CREATE VIEW` e `CREATE MATERIALIZED VIEW`, `ATTACH` com definição completa, `ALTER TABLE ... MODIFY QUERY`, expressões de mutação em `ALTER TABLE ... UPDATE/DELETE` e `UPDATE` leve, `INSERT ... SELECT` distribuído e a propagação de elementos `WITH` para todas as partes de uma `UNION`. Se o limite for excedido, a consulta falha com o erro `TOO_BIG_AST`.
+
+## max_fetch_partition_retries_count {#max_fetch_partition_retries_count}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
 Número de tentativas ao buscar uma partição de outro host.
 
-<div id="max_final_threads">
-  ## max_final_threads
-</div>
+## max_final_threads {#max_final_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -137,9 +117,7 @@ Valores possíveis:
 * Inteiro positivo.
 * 0 ou 1 — desativado. As consultas `SELECT` são executadas em uma única thread.
 
-<div id="max_http_get_redirects">
-  ## max_http_get_redirects
-</div>
+## max_http_get_redirects {#max_http_get_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -147,9 +125,7 @@ Número máximo de saltos de redirecionamento HTTP GET permitidos. Garante medid
 
 Valor padrão no Cloud: `10`.
 
-<div id="max_limit_for_vector_search_queries">
-  ## max_limit_for_vector_search_queries
-</div>
+## max_limit_for_vector_search_queries {#max_limit_for_vector_search_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -157,9 +133,7 @@ Valor padrão no Cloud: `10`.
 
 Consultas SELECT com LIMIT maior que esta configuração não podem usar índices de similaridade vetorial. Isso ajuda a evitar estouros de memória nesses índices.
 
-<div id="max_os_cpu_wait_time_ratio_to_throw">
-  ## max_os_cpu_wait_time_ratio_to_throw
-</div>
+## max_os_cpu_wait_time_ratio_to_throw {#max_os_cpu_wait_time_ratio_to_throw}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -167,9 +141,7 @@ Consultas SELECT com LIMIT maior que esta configuração não podem usar índice
 
 Razão máxima entre os tempos de espera da CPU do SO (métrica OSCPUWaitMicroseconds) e de atividade (métrica OSCPUVirtualTimeMicroseconds) para considerar a rejeição de consultas. A interpolação linear entre a razão mínima e a máxima é usada para calcular a probabilidade; nesse ponto, a probabilidade é 1.
 
-<div id="max_parallel_replicas">
-  ## max_parallel_replicas
-</div>
+## max_parallel_replicas {#max_parallel_replicas}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
@@ -185,9 +157,7 @@ Valores possíveis:
 
 Esta opção pode produzir resultados diferentes, dependendo das configurações usadas.
 
-<div id="parallel-processing-using-sample-key">
-  ### Processamento em paralelo usando a chave `SAMPLE`
-</div>
+### Processamento em paralelo usando a chave `SAMPLE` {#parallel-processing-using-sample-key}
 
 Uma consulta pode ser processada mais rapidamente se for executada em vários servidores em paralelo. Mas o desempenho da consulta pode piorar nos seguintes casos:
 
@@ -196,15 +166,11 @@ Uma consulta pode ser processada mais rapidamente se for executada em vários se
 * A chave de amostragem é uma expressão com cálculo custoso.
 * A distribuição de latência do cluster tem uma cauda longa, de modo que consultar mais servidores aumenta a latência geral da consulta.
 
-<div id="parallel-processing-using-parallel_replicas_custom_keyreferencesettingssession-settingsparallel-replicasparallel_replicas_custom_key">
-  ### Processamento em paralelo com [parallel_replicas_custom_key](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key)
-</div>
+### Processamento em paralelo com [parallel_replicas_custom_key](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) {#parallel-processing-using-parallel_replicas_custom_key}
 
 Essa configuração é útil para qualquer tabela replicada.
 
-<div id="max_parsing_threads">
-  ## max_parsing_threads
-</div>
+## max_parsing_threads {#max_parsing_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -212,9 +178,7 @@ Essa configuração é útil para qualquer tabela replicada.
 
 O número máximo de threads para fazer o parsing de dados em formatos de entrada com suporte a parsing em paralelo. Por padrão, ele é determinado automaticamente.
 
-<div id="max_partition_size_to_drop">
-  ## max_partition_size_to_drop
-</div>
+## max_partition_size_to_drop {#max_partition_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
@@ -226,9 +190,7 @@ Valor padrão no Cloud: 1 TB.
   Essa configuração de consulta substitui a configuração equivalente do servidor; consulte [max&#95;partition&#95;size&#95;to&#95;drop](/pt-BR/reference/settings/server-settings/settings/max#max_partition_size_to_drop)
 </Note>
 
-<div id="max_parts_to_move">
-  ## max_parts_to_move
-</div>
+## max_parts_to_move {#max_parts_to_move}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -236,9 +198,7 @@ Valor padrão no Cloud: 1 TB.
 
 Limita o número de partes que podem ser movidas em uma única consulta. Zero significa sem limite.
 
-<div id="max_projection_rows_to_use_projection_index">
-  ## max_projection_rows_to_use_projection_index
-</div>
+## max_projection_rows_to_use_projection_index {#max_projection_rows_to_use_projection_index}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -246,9 +206,7 @@ Limita o número de partes que podem ser movidas em uma única consulta. Zero si
 
 Se o número de linhas a serem lidas do índice de projeção for menor ou igual a esse limite, o ClickHouse tentará usar o índice de projeção durante a execução da consulta.
 
-<div id="max_query_size">
-  ## max_query_size
-</div>
+## max_query_size {#max_query_size}
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -259,9 +217,7 @@ Os dados na cláusula VALUES de consultas INSERT são processados por um parser 
   `max_query_size` não pode ser definido em uma consulta SQL (por exemplo, `SELECT now() SETTINGS max_query_size=10000`) porque o ClickHouse precisa alocar um buffer para analisar a consulta, e o tamanho desse buffer é determinado pela configuração `max_query_size`, que deve ser definida antes da execução da consulta.
 </Note>
 
-<div id="max_recursive_cte_evaluation_depth">
-  ## max_recursive_cte_evaluation_depth
-</div>
+## max_recursive_cte_evaluation_depth {#max_recursive_cte_evaluation_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -269,9 +225,7 @@ Os dados na cláusula VALUES de consultas INSERT são processados por um parser 
 
 Profundidade máxima de avaliação de CTEs recursivas
 
-<div id="max_replica_delay_for_distributed_queries">
-  ## max_replica_delay_for_distributed_queries
-</div>
+## max_replica_delay_for_distributed_queries {#max_replica_delay_for_distributed_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
@@ -288,9 +242,7 @@ Para impedir o uso de qualquer réplica com defasagem diferente de zero, defina 
 
 Usado ao executar `SELECT` em uma tabela distribuída que aponta para tabelas replicadas.
 
-<div id="max_reverse_dictionary_lookup_cache_size_bytes">
-  ## max_reverse_dictionary_lookup_cache_size_bytes
-</div>
+## max_reverse_dictionary_lookup_cache_size_bytes {#max_reverse_dictionary_lookup_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" />
 
@@ -298,9 +250,7 @@ Usado ao executar `SELECT` em uma tabela distribuída que aponta para tabelas re
 
 Tamanho máximo, em bytes, do cache por consulta para lookup reverso em Dicionário usado pela função `dictGetKeys`. O cache armazena tuplas de chave serializadas por valor de atributo para evitar percorrer novamente o dicionário na mesma consulta. Quando o limite é atingido, as entradas são removidas usando LRU. Defina como 0 para desativar o cache.
 
-<div id="max_sessions_for_user">
-  ## max_sessions_for_user
-</div>
+## max_sessions_for_user {#max_sessions_for_user}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -341,9 +291,7 @@ Valores possíveis:
 * Inteiro positivo
 * `0` - número infinito de sessões simultâneas (padrão)
 
-<div id="max_subquery_depth">
-  ## max_subquery_depth
-</div>
+## max_subquery_depth {#max_subquery_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -355,9 +303,7 @@ exceção será lançada.
   cluster escrevam consultas excessivamente complexas.
 </Tip>
 
-<div id="max_table_size_to_drop">
-  ## max_table_size_to_drop
-</div>
+## max_table_size_to_drop {#max_table_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
@@ -369,17 +315,13 @@ Valor padrão no Cloud: 1 TB.
   Esta configuração de consulta substitui a configuração equivalente do servidor; consulte [max&#95;table&#95;size&#95;to&#95;drop](/pt-BR/reference/settings/server-settings/settings/max-table#max_table_size_to_drop)
 </Note>
 
-<div id="max_untracked_memory">
-  ## max_untracked_memory
-</div>
+## max_untracked_memory {#max_untracked_memory}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
 Pequenas alocações e desalocações são agrupadas em uma variável local da thread e rastreadas ou perfiladas apenas quando a quantidade (em valor absoluto) se torna maior que o valor especificado. Se o valor for maior que &#39;memory&#95;profiler&#95;step&#39;, ele será efetivamente reduzido para &#39;memory&#95;profiler&#95;step&#39;.
 
-<div id="max_wkb_geometry_elements">
-  ## max_wkb_geometry_elements
-</div>
+## max_wkb_geometry_elements {#max_wkb_geometry_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
