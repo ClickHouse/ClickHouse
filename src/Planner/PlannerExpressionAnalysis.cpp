@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
@@ -532,6 +533,7 @@ ProjectionAnalysisResult analyzeProjection(
 SortAnalysisResult analyzeSort(
     const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
+    const Names & projection_column_names,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
@@ -552,8 +554,64 @@ SortAnalysisResult analyzeSort(
     for (const auto & sort_node : order_by_node_list.getNodes())
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
-        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_sort_actions->dag, sort_node_typed.getExpression());
-        correlated_subtrees.assertEmpty("in ORDER BY");
+        ActionsDAG::NodeRawConstPtrs expression_dag_nodes;
+
+        /// Positional arguments and projection aliases are resolved to clones of the projection
+        /// expression. Reuse the corresponding projection result: a clone of a correlated subquery
+        /// receives a different internal table alias and would otherwise be planned a second time.
+        const auto & sort_expression = sort_node_typed.getExpression();
+        const auto & projection_nodes = query_node.getProjection().getNodes();
+        chassert(projection_nodes.size() == projection_column_names.size());
+        std::optional<size_t> projection_index = sort_node_typed.getProjectionIndex();
+
+        if (!projection_index)
+        {
+            for (size_t i = 0; i < projection_nodes.size(); ++i)
+            {
+                if (projection_nodes[i] == sort_expression)
+                {
+                    projection_index = i;
+                    break;
+                }
+            }
+        }
+
+        if (!projection_index && !sort_node_typed.getColumnName().empty() && containsCorrelatedSubquery(sort_expression))
+        {
+            const auto & projection_columns = query_node.getProjectionColumns();
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                if (projection_columns[i].name != sort_node_typed.getColumnName())
+                    continue;
+
+                if (projection_index && !projection_nodes[*projection_index]->isEqual(*projection_nodes[i]))
+                {
+                    projection_index.reset();
+                    break;
+                }
+                if (!projection_index)
+                    projection_index = i;
+            }
+        }
+
+        if (projection_index)
+        {
+            const auto & projection_column_name = projection_column_names[*projection_index];
+            const auto & inputs = before_sort_actions->dag.getInputs();
+            auto projection_input = std::ranges::find_if(inputs, [&](const auto * input)
+            {
+                return input->result_name == projection_column_name;
+            });
+            if (projection_input != inputs.end())
+                expression_dag_nodes.push_back(*projection_input);
+        }
+
+        if (expression_dag_nodes.empty())
+        {
+            auto [visited_nodes, correlated_subtrees] = actions_visitor.visit(before_sort_actions->dag, sort_expression);
+            correlated_subtrees.assertEmpty("in ORDER BY");
+            expression_dag_nodes = std::move(visited_nodes);
+        }
         has_with_fill |= sort_node_typed.withFill();
 
         for (auto & action_dag_node : expression_dag_nodes)
@@ -825,6 +883,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         sort_analysis_result_optional = analyzeSort(
             query_node,
             current_output_columns,
+            projection_analysis_result.projection_column_names,
             planner_context,
             correlated_columns_set,
             actions_chain);
