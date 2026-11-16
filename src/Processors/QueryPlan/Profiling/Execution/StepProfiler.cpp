@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB

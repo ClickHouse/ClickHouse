@@ -403,6 +403,74 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->untracked_memory_size = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
             break;
         }
+        case Type::DROP_AMBER_NODE:
+        {
+            ASTPtr ast;
+            res->if_exists = ParserKeyword{Keyword::IF_EXISTS}.ignore(pos, expected);
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.node_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            ASTSystemQuery::AmberParams amber_params;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::CREATE_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::IN}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SHARDS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.shard_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::SEGMENTS}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.segment_count = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
+        case Type::DROP_AMBER_VOLUME:
+        {
+            ASTPtr ast;
+            ASTSystemQuery::AmberParams amber_params;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.volume_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+            if (!ParserKeyword{Keyword::FROM}.ignore(pos, expected) || !ParserKeyword{Keyword::CLUSTER}.ignore(pos, expected))
+                return false;
+            if (!ParserUnsignedInteger().parse(pos, ast, expected))
+                return false;
+            amber_params.cluster_id = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+            res->amber_params = std::make_shared<const ASTSystemQuery::AmberParams>(std::move(amber_params));
+            break;
+        }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
@@ -1164,6 +1232,7 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
@@ -1238,6 +1307,18 @@ Re-calculates all [asynchronous metrics](/reference/system-tables/asynchronous_m
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
+
+## SYSTEM RELOAD DELTA KERNEL TRACING {#reload-delta-kernel-tracing}
+
+Introduced in: v26.2.0
+
+Enables the log messages of the Delta Kernel library, which reads [`DeltaLake`](/reference/engines/table-engines/integrations/deltalake) tables, from the given level up: `ERROR`, `WARN`, `INFO`, `DEBUG` or `TRACE` (in upper case). The messages are written to the server log with the logger name `DeltaKernelTracing`. After a server start the library writes no messages until the statement is run. Run it again to change the level.
+
+```sql
+SYSTEM RELOAD DELTA KERNEL TRACING level
+```
+
+The statement does not require any privilege. In a build without Delta Kernel support it fails with `SUPPORT_IS_DISABLED`.
 
 ## SYSTEM CLEAR|DROP DNS CACHE {#drop-dns-cache}
 
@@ -1340,6 +1421,18 @@ Clears the metadata cache of the specified disk.
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
+## SYSTEM RESTART DISK {#restart-disk}
+
+Introduced in: v21.6.0
+
+Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also scans the table's data directory again and loads the data parts that appeared there since the last scan, so that the parts written to the same storage by another writer become visible without re-attaching the table. Parts removed from the storage are not detected. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
+
+```sql
+SYSTEM RESTART DISK [ON CLUSTER cluster_name] disk_name
+```
+
+Requires the `SYSTEM RESTART DISK` privilege.
+
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
 Clears the caches of a `TimeSeries` table which let inserts skip the rows already present in its target tables. There are two such caches: the deduplication cache of the metric families table and the deduplication cache of the tags table, see the `metric_families_deduplication_cache_expiration_seconds` and `tags_deduplication_cache_expiration_seconds` settings of the table. The caches are local to the server and they don't notice changes made to the target tables directly. Such a difference disappears by itself when the entries expire; use the statement to make the next insert write all its rows without waiting (for example, after truncating the metric families table). `TRUNCATE TABLE` of a `TimeSeries` table clears the caches of the executing server only, so if the target tables are replicated, run the statement `ON CLUSTER` afterwards to clear the caches of the other replicas.
@@ -1435,6 +1528,42 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 Clears the [query cache](/concepts/features/performance/caches/query-cache).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
+## SYSTEM CLEAR|DROP SCHEMA CACHE {#drop-schema-cache}
+
+Introduced in: v22.8.0
+
+Clears the [schema inference cache](/concepts/features/interfaces/schema-inference#schema-inference-cache), which holds the table structures inferred from the data read by the `file`, `s3`, `url`, `hdfs` and `azureBlobStorage` table functions and table engines. The cached structures are shown in [`system.schema_inference_cache`](/reference/system-tables/schema_inference_cache). Without `FOR`, the caches of all these storages are cleared; with `FOR`, only the cache of the given storage.
+
+```sql
+SYSTEM CLEAR|DROP SCHEMA CACHE [FOR File | S3 | URL | HDFS | Azure]
+```
+
+Requires the `SYSTEM DROP SCHEMA CACHE` privilege.
+
+**Example**
+
+```sql
+SELECT * FROM file('data.csv') FORMAT Null;
+SELECT storage, format, schema FROM system.schema_inference_cache;
+```
+
+```response
+   ┌─storage─┬─format─┬─schema────────────────────────────────┐
+1. │ File    │ CSV    │ a Nullable(Int64), b Nullable(String) │
+   └─────────┴────────┴───────────────────────────────────────┘
+```
+
+```sql
+SYSTEM CLEAR SCHEMA CACHE FOR File;
+SELECT count() FROM system.schema_inference_cache;
+```
+
+```response
+   ┌─count()─┐
+1. │       0 │
+   └─────────┘
+```
+
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
 Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path).
@@ -1463,6 +1592,43 @@ If you don't want to flush everything, you can flush one or more individual logs
 SYSTEM FLUSH LOGS query_log, system.query_views_log;
 ```
 
+## SYSTEM FLUSH ASYNC INSERT QUEUE {#flush-async-insert-queue}
+
+Introduced in: v23.7.0
+
+Writes the data of the pending [asynchronous inserts](/concepts/features/operations/insert/asyncinserts) to their tables now, without waiting for the buffer timeout. Without a list of tables, it returns after all the queued data is processed, including the batches that a background flush has already taken from the queue. With a list of tables, only the inserts into these tables are written, and the statement waits only for the batches it takes from the queue itself. An insert whose data cannot be written, for example because it does not parse, does not make the statement fail: its rows are not inserted and the error is recorded in [`system.asynchronous_insert_log`](/reference/system-tables/asynchronous_insert_log). The pending inserts are shown in [`system.asynchronous_inserts`](/reference/system-tables/asynchronous_inserts).
+
+```sql
+SYSTEM FLUSH ASYNC INSERT QUEUE [ON CLUSTER cluster_name] [[db.]table [, ...]]
+```
+
+Requires the `SYSTEM FLUSH ASYNC INSERT QUEUE` privilege.
+
+**Example**
+
+```sql
+CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t SETTINGS async_insert = 1, wait_for_async_insert = 0, async_insert_use_adaptive_busy_timeout = 0, async_insert_busy_timeout_max_ms = 600000 VALUES (1), (2);
+SELECT table, total_bytes FROM system.asynchronous_inserts;
+```
+
+```response
+   ┌─table─┬─total_bytes─┐
+1. │ t     │           8 │
+   └───────┴─────────────┘
+```
+
+```sql
+SYSTEM FLUSH ASYNC INSERT QUEUE t;
+SELECT count() FROM t;
+```
+
+```response
+   ┌─count()─┐
+1. │       2 │
+   └─────────┘
+```
+
 ## SYSTEM RELOAD CONFIG {#reload-config}
 
 Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
@@ -1479,6 +1645,30 @@ Reloads all access storages, including: users.xml, local disk access storage, re
 SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 ```
 
+## SYSTEM RECONNECT ZOOKEEPER {#reconnect-zookeeper}
+
+Introduced in: v25.10.0
+
+Closes the session of the server with its default ZooKeeper (ClickHouse Keeper), so that the server opens a new session. The sessions with auxiliary ZooKeepers are kept. The sessions are shown in [`system.zookeeper_connection`](/reference/system-tables/zookeeper_connection).
+
+```sql
+SYSTEM RECONNECT ZOOKEEPER [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM RECONNECT ZOOKEEPER` privilege.
+
+## SYSTEM RESET DDL WORKER {#reset-ddl-worker}
+
+Introduced in: v26.2.0
+
+Requests a reset of the worker that executes [distributed DDL](/reference/statements/distributed-ddl) (`ON CLUSTER`) queries on this server to its state at server startup: it forgets the queue entries it has processed or skipped and reads the DDL queue in ZooKeeper again. The statement returns at once; the worker resets in the background, before it processes the queue again. The entries already executed on this server are not executed again.
+
+```sql
+SYSTEM RESET DDL WORKER [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM RESET DDL WORKER` privilege.
+
 ## SYSTEM SHUTDOWN {#shutdown}
 
 <CloudNotSupportedBadge/>
@@ -1488,6 +1678,53 @@ Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$
 ## SYSTEM KILL {#kill}
 
 Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
+
+## SYSTEM JEMALLOC PURGE {#jemalloc-purge}
+
+Introduced in: v24.1.0
+
+Makes the `jemalloc` memory allocator return the unused memory it keeps to the operating system (it purges the unused dirty pages of all its arenas).
+
+```sql
+SYSTEM JEMALLOC PURGE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM JEMALLOC` privilege. In a build without `jemalloc` it fails with `SUPPORT_IS_DISABLED`.
+
+## SYSTEM JEMALLOC FLUSH PROFILE {#jemalloc-flush-profile}
+
+Introduced in: v24.1.0
+
+Writes the current `jemalloc` heap profile to a file in `/tmp` on the server and returns the path of the file in the column `filename`. With `ON CLUSTER`, each server writes its own file, and the statement returns the status of the query on each server, as set by [`distributed_ddl_output_mode`](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode), instead of the paths. The setting [`jemalloc_profile_text_output_format`](/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_output_format) selects collapsed stacks (`collapsed`, the default, file suffix `.collapsed`), a symbolized profile (`symbolized`, suffix `.symbolized`) or the raw profile (`raw`). The profile holds the allocations sampled while the heap profiler is enabled by the server setting [`jemalloc_enable_global_profiler`](/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_global_profiler) or, for a query, by the setting [`jemalloc_enable_profiler`](/reference/settings/session-settings/jemalloc#jemalloc_enable_profiler). See [Flushing heap profiles to disk](/concepts/features/performance/allocation-profiling#flushing-heap-profiles).
+
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM JEMALLOC` privilege. In a build without `jemalloc` it fails with `SUPPORT_IS_DISABLED`.
+
+**Example**
+
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE;
+```
+
+```response
+   ┌─filename──────────────────────────────────────────┐
+1. │ /tmp/jemalloc_clickhouse.3654128.0.heap.collapsed │
+   └───────────────────────────────────────────────────┘
+```
+
+## SYSTEM JEMALLOC ENABLE|DISABLE PROFILE {#jemalloc-enable-disable-profile}
+
+Introduced in: v24.1.0
+
+No longer supported: `SYSTEM JEMALLOC ENABLE PROFILE` and `SYSTEM JEMALLOC DISABLE PROFILE` fail with an error. Enable the heap profiler with the server setting [`jemalloc_enable_global_profiler`](/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_global_profiler) or, for a query, with the setting [`jemalloc_enable_profiler`](/reference/settings/session-settings/jemalloc#jemalloc_enable_profiler).
+
+```sql
+SYSTEM JEMALLOC ENABLE PROFILE
+SYSTEM JEMALLOC DISABLE PROFILE
+```
 
 ## SYSTEM INSTRUMENT {#instrument}
 
@@ -1670,6 +1907,55 @@ Provides possibility to start background merges for tables in the MergeTree fami
 SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
+### SYSTEM SCHEDULE MERGE {#schedule-merge}
+
+Introduced in: v26.5.0
+
+<ExperimentalBadge/>
+
+Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts. They stay with the name of the table: after the table or its database is renamed they are not performed, until the table gets its old name back.
+
+<Note>
+This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The regular background merges of such a table merge only the scheduled parts; TTL merges still run on their own, and `OPTIMIZE TABLE ... FINAL` still merges all parts.
+</Note>
+
+```sql
+SYSTEM SCHEDULE MERGE [ON CLUSTER cluster_name] [db.]table PARTS 'part_name' [, ...]
+```
+
+### SYSTEM SYNC MERGES {#sync-merges}
+
+Introduced in: v26.5.0
+
+<ExperimentalBadge/>
+
+Waits until all the merges scheduled with [`SYSTEM SCHEDULE MERGE`](#schedule-merge) for the table are done. If `max_execution_time` is set, it fails with `TIMEOUT_EXCEEDED` after that time. It has the same requirement as `SYSTEM SCHEDULE MERGE`.
+
+```sql
+SYSTEM SYNC MERGES [ON CLUSTER cluster_name] [db.]table
+```
+
+Both statements require the `SYSTEM MERGES` privilege on the table.
+
+**Example**
+
+```sql
+CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS merge_selector_algorithm = 'Manual';
+INSERT INTO t VALUES (1);
+INSERT INTO t VALUES (2);
+INSERT INTO t VALUES (3);
+SYSTEM SCHEDULE MERGE t PARTS 'all_1_1_0', 'all_2_2_0';
+SYSTEM SCHEDULE MERGE t PARTS 'all_1_2_1', 'all_3_3_0';
+SYSTEM SYNC MERGES t;
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
+```
+
+```response
+   ┌─name──────┐
+1. │ all_1_3_2 │
+   └───────────┘
+```
+
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
 <CloudNotSupportedBadge/>
@@ -1710,6 +1996,68 @@ Returns `Ok.` even if table does not exist. Returns error when database does not
 SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
+### SYSTEM STOP CLEANUP {#stop-cleanup}
+
+Introduced in: v23.9.0
+
+<CloudNotSupportedBadge/>
+
+Stops the background cleanup of tables in the MergeTree family, which removes outdated data parts, temporary directories and other obsolete data. While the cleanup is stopped, the background cleanup removes no outdated parts. A cleanup that is already running when the statement is executed is not interrupted.
+
+```sql
+SYSTEM STOP CLEANUP [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+As with [`SYSTEM STOP MERGES`](#stop-merges), without a table name the cleanup is stopped only for the tables that exist when the statement runs, and the stopped state is not kept after a server restart.
+
+### SYSTEM START CLEANUP {#start-cleanup}
+
+Introduced in: v23.9.0
+
+<CloudNotSupportedBadge/>
+
+Starts the background cleanup again after `SYSTEM STOP CLEANUP`.
+
+```sql
+SYSTEM START CLEANUP [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+Both statements require the `SYSTEM CLEANUP` privilege on the table.
+
+### SYSTEM STOP|START VIRTUAL PARTS UPDATE {#virtual-parts-update}
+
+Introduced in: v25.3.0
+
+<Note>
+Available only in ClickHouse Cloud, for [`SharedMergeTree`](/products/cloud/features/infrastructure/shared-merge-tree) tables. In other builds the statements succeed and have no effect.
+</Note>
+
+Stops or starts the background update of the virtual parts of `SharedMergeTree` tables.
+
+```sql
+SYSTEM STOP VIRTUAL PARTS UPDATE [ON CLUSTER cluster_name] [[db.]table]
+SYSTEM START VIRTUAL PARTS UPDATE [ON CLUSTER cluster_name] [[db.]table]
+```
+
+Requires the `SYSTEM VIRTUAL PARTS UPDATE` privilege on the table.
+
+### SYSTEM STOP|START REDUCE BLOCKING PARTS {#reduce-blocking-parts}
+
+Introduced in: v25.3.0
+
+<Note>
+Available only in ClickHouse Cloud, for [`SharedMergeTree`](/products/cloud/features/infrastructure/shared-merge-tree) tables. In other builds the statements succeed and have no effect.
+</Note>
+
+Stops or starts the background task of `SharedMergeTree` tables that reduces blocking parts, enabled by the MergeTree setting [`allow_reduce_blocking_parts_task`](/reference/settings/merge-tree-settings/allow#allow_reduce_blocking_parts_task).
+
+```sql
+SYSTEM STOP REDUCE BLOCKING PARTS [ON CLUSTER cluster_name] [[db.]table]
+SYSTEM START REDUCE BLOCKING PARTS [ON CLUSTER cluster_name] [[db.]table]
+```
+
+Requires the `SYSTEM REDUCE BLOCKING PARTS` privilege on the table.
+
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
 Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/reference/statements/alter/partition#unfreeze-partition)
@@ -1717,6 +2065,24 @@ Clears a frozen backup with the specified name from all the disks. See more abou
 ```sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
+
+### SYSTEM UNLOCK SNAPSHOT {#unlock-snapshot}
+
+Introduced in: v25.3.0
+
+<ExperimentalBadge/>
+
+<Note>
+Available only in ClickHouse Cloud. In other builds the statement fails with `Unknown type of SYSTEM query`.
+</Note>
+
+Removes from ClickHouse Keeper all the locks of the snapshot `snapshot_id`, a lightweight backup created with the experimental `BACKUP` setting `experimental_lightweight_snapshot`, so that the object storage data it references can be deleted again. `FROM` names the backup destination; it can be omitted when the destination was stored in Keeper when the snapshot was created. `ALTER TABLE ... UNLOCK SNAPSHOT` removes the lock of one table. See [Unlock a snapshot](/concepts/features/backup-restore/snapshot#unlock-snapshot).
+
+```sql
+SYSTEM UNLOCK SNAPSHOT 'snapshot_id' [FROM backup_destination]
+```
+
+Requires the `SYSTEM UNLOCK SNAPSHOT` privilege. As for `RESTORE`, a destination named in `FROM` also needs the [`SOURCES`](/reference/statements/grant#sources) grant `READ` on `S3` or `AZURE` and, when it is a named collection, the `NAMED COLLECTION` privilege on it.
 
 ### SYSTEM WAIT LOADING PARTS {#wait-loading-parts}
 
@@ -2165,6 +2531,46 @@ Without `FILE`, every file of the table is read again from the beginning. With `
 
 Rows that are read again are inserted into the materialized views again. The new position is saved immediately and kept after a server restart. The command waits for a read that is running in the background and fails if a `SELECT` query is reading from the table. It requires the `SYSTEM RESET FILELOG` privilege on the table.
 
+## SYSTEM WAIT QUERY RUNNER {#wait-query-runner}
+
+Introduced in: v26.7.0
+
+Waits until every query inserted so far into the [`QueryRunner`](/reference/engines/table-engines/special/query-runner) table has finished. It is useful in the asynchronous mode of the table, in which `INSERT` returns as soon as the queries are queued. For a table of another engine it fails with `BAD_ARGUMENTS`.
+
+```sql
+SYSTEM WAIT QUERY RUNNER [ON CLUSTER cluster_name] [db.]table
+```
+
+Requires the `SYSTEM WAIT QUERY RUNNER` privilege on the table.
+
+## SYSTEM SYNC TRANSACTION LOG {#sync-transaction-log}
+
+Introduced in: v22.6.0
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+Waits until this server has loaded from ZooKeeper all the commits that the transaction log held when the statement started, so that the transactions started afterwards on this server see every transaction committed before, also on other servers.
+
+<Note>
+This statement is part of an experimental feature set.
+Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+```sql
+SYSTEM SYNC TRANSACTION LOG [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM SYNC TRANSACTION LOG` privilege. Without transaction support the statement fails with `Transactions are not supported`.
+
 ## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
 
 Fail points are named places in the server code where a fault can be injected on demand - an error, a delay, or a pause of the executing thread - for testing. They are listed in the [`system.fail_points`](/reference/system-tables/fail_points) table together with their current state.
@@ -2187,21 +2593,30 @@ Fail points are node-local state, so none of these statements accept `ON CLUSTER
 )DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
+SYSTEM RELOAD DELTA KERNEL TRACING level
 SYSTEM RELOAD [EMBEDDED] DICTIONARIES | DICTIONARY [db.]name
 SYSTEM UNLOAD DICTIONARIES | DICTIONARY [db.]name
 SYSTEM [CLEAR|DROP] ... CACHE [ON CLUSTER cluster_name]
+SYSTEM [CLEAR|DROP] SCHEMA CACHE [FOR File | S3 | URL | HDFS | Azure]
 SYSTEM PREWARM MARK CACHE | PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 SYSTEM DROP REPLICA 'replica_name' [FROM TABLE|DATABASE|ZKPATH ...]
 SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] [FROM DATABASE|ZKPATH ...]
 SYSTEM FLUSH LOGS [table [, ...]]
+SYSTEM FLUSH ASYNC INSERT QUEUE [[db.]table [, ...]]
 SYSTEM FLUSH DISTRIBUTED [db.]name
 SYSTEM SHUTDOWN | KILL
+SYSTEM JEMALLOC PURGE | FLUSH PROFILE
+SYSTEM RESTART DISK disk_name
+SYSTEM RECONNECT ZOOKEEPER | RESET DDL WORKER
 SYSTEM INSTRUMENT ...
-SYSTEM START|STOP DISTRIBUTED SENDS | MERGES | TTL MERGES | MOVES | FETCHES | REPLICATED SENDS | REPLICATION QUEUES | PULLING REPLICATION LOG | LISTEN | VIEW | VIEWS
-SYSTEM SYNC REPLICA | DATABASE REPLICA | TRANSACTION LOG | FILE CACHE | FILESYSTEM CACHE
+SYSTEM START|STOP DISTRIBUTED SENDS | MERGES | TTL MERGES | MOVES | FETCHES | REPLICATED SENDS | REPLICATION QUEUES | PULLING REPLICATION LOG | LISTEN | VIEW | VIEWS | CLEANUP | VIRTUAL PARTS UPDATE | REDUCE BLOCKING PARTS
+SYSTEM SCHEDULE MERGE [db.]name PARTS 'part_name' [, ...]
+SYSTEM SYNC REPLICA | DATABASE REPLICA | TRANSACTION LOG | FILE CACHE | FILESYSTEM CACHE | MERGES
 SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
+SYSTEM WAIT QUERY RUNNER [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
+SYSTEM UNLOCK SNAPSHOT 'snapshot_id' [FROM backup_destination]
 SYSTEM FLUSH OBJECT STORAGE QUEUE
 SYSTEM RESET FILELOG [db.]name [FILE 'file_name' [OFFSET n | TO END]]
 SYSTEM ENABLE | DISABLE FAILPOINT name

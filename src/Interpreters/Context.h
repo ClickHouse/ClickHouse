@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -125,6 +126,8 @@ class ColumnsCache;
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 struct ColumnsCacheWriteBudget;
 using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
+class QueryMaxThreadsSnapshot;
+using QueryMaxThreadsSnapshotPtr = std::shared_ptr<QueryMaxThreadsSnapshot>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -327,7 +330,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class ContextTimeSeriesTagsCollector;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
@@ -378,7 +381,7 @@ struct SharedContextHolder
 
     SharedContextHolder & operator=(SharedContextHolder &&) noexcept;
 
-    ContextSharedPart * get() const { return shared.get(); }
+    [[nodiscard]] ContextSharedPart * get() const { return shared.get(); }
     void reset();
 
 private:
@@ -749,6 +752,8 @@ protected:
     /// makeQueryContext and shared across all of the query's read pools so the
     /// columns-cache write budgets apply per query rather than per pool.
     ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
+
+    QueryMaxThreadsSnapshotPtr query_max_threads_snapshot;
 
 public:
     /// Some counters for current query execution.
@@ -2122,7 +2127,7 @@ public:
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
-    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
@@ -2312,6 +2317,10 @@ public:
     /// Shared across all read pools of the query so the write budgets apply per query.
     ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
+    const QueryMaxThreadsSnapshotPtr & getQueryMaxThreadsSnapshot() const;
+    /// For a query context made for a part of the query of `from`.
+    void shareQueryMaxThreadsSnapshot(const Context & from);
+
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
@@ -2472,23 +2481,23 @@ struct HTTPContext : public IHTTPContext
         : context(Context::createCopy(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override;
+    [[nodiscard]] uint64_t getMaxHstsAge() const override;
 
-    uint64_t getMaxUriSize() const override;
+    [[nodiscard]] uint64_t getMaxUriSize() const override;
 
-    uint64_t getMaxFields() const override;
+    [[nodiscard]] uint64_t getMaxFields() const override;
 
-    uint64_t getMaxFieldNameSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override;
 
-    uint64_t getMaxFieldValueSize() const override;
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override;
 
-    uint64_t getMaxRequestHeaderSize() const override;
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override;
 
-    Poco::Timespan getHeadersReadTimeout() const override;
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override;
 
-    Poco::Timespan getReceiveTimeout() const override;
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override;
 
-    Poco::Timespan getSendTimeout() const override;
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override;
 
     ContextPtr context;
 };

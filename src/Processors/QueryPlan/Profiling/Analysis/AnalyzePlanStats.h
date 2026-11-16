@@ -1,6 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <utility>
 #include <set>
 #include <string>
@@ -35,13 +38,13 @@ class AnalyzeStepsStats
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
-    using ElapsedTimes = std::multiset<UInt64>;
-    using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
+    using ElapsedTimes = MultiSetWithMemoryTracking<UInt64>;
+    using ElapsedTimesPerStepGroup = UnorderedMapWithMemoryTracking<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<String, StepIOStats>;
-    using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStep = std::unordered_map<String, std::vector<IProcessor *>>;
-    using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
+    using StatsByStep = UnorderedMapWithMemoryTracking<String, StepIOStats>;
+    using StatsByStepAndGroup = UnorderedMapWithMemoryTracking<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
+    using ProcessorsByStep = UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<IProcessor *>>;
+    using ReportsByStep = UnorderedMapWithMemoryTracking<String, StepAnalysisReport>;
 
 public:
     /// `step_profiler` carries everything this needs from the plan -- the analyzers, the shape
@@ -56,7 +59,7 @@ public:
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
     /// Empty when the work intervals were not collected, that is without the `time` setting.
-    std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
+    [[nodiscard]] std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
     /// The analysis of one step, format-neutral: the ASCII rendering below and the JSON one in
     /// `FlatJSONPlanRenderer` are two readings of this. Must run while the pipeline is alive.
@@ -82,7 +85,7 @@ private:
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
-    std::unordered_map<String, UInt64> spilled_bytes_by_step;
+    UnorderedMapWithMemoryTracking<String, UInt64> spilled_bytes_by_step;
 
     const PlanAnalysisSnapshot & plan_snapshot;
 

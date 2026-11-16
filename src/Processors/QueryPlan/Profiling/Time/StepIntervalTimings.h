@@ -1,6 +1,8 @@
 #pragma once
 
 #include <unordered_map>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
@@ -26,24 +28,24 @@ public:
     const StepTimeAndConcurrency * findTiming(const String & step_id) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
-    ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
+    [[nodiscard]] ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
-    using TimeIntervalsByStep = std::unordered_map<String, TimeIntervals>;
+    using TimeIntervalsByStep = UnorderedMapWithMemoryTracking<String, TimeIntervals>;
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
-    TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
+    [[nodiscard]] TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
 
     /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
     void computeBranchTime(const PlanAnalysisSnapshot & plan_snapshot, TimeIntervalsByStep time_intervals_by_step);
 
-    std::vector<TimeIntervals> collectLowerBranchIntervals(
+    VectorWithMemoryTracking<TimeIntervals> collectLowerBranchIntervals(
         TimeIntervals && current_step_intervals,
         const std::vector<String> & children,
         TimeIntervalsByStep & branch_intervals_by_step) const;
 
-    std::unordered_map<String, StepTimeAndConcurrency> timing_by_step;
+    UnorderedMapWithMemoryTracking<String, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
 
     /// Length of the union of the intervals of every step of the plan: the branch time of the root step.

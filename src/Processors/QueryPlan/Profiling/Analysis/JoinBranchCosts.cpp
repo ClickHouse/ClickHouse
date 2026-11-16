@@ -1,8 +1,9 @@
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <optional>
-#include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -20,12 +21,12 @@ bool sameCluster(const StepAnalyzer & lhs, const StepAnalyzer & rhs)
 JoinBranchCosts::JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step)
 {
     /// The joins of each node's subtree, carried up as the post-order walk retires its children.
-    std::unordered_map<String, std::vector<const StepAnalyzer *>> joins_below;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<const StepAnalyzer *>> joins_below;
 
     for (const auto * node : plan_snapshot.stepsInPostOrder())
     {
         /// collect the joins from children
-        std::vector<const StepAnalyzer *> joins_below_the_current_node;
+        VectorWithMemoryTracking<const StepAnalyzer *> joins_below_the_current_node;
         for (const auto & child_id : node->children)
         {
             const auto it = joins_below.find(child_id);

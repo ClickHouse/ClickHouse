@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <memory>
 #include <vector>
 #include <Core/Joins.h>
@@ -30,7 +32,7 @@ struct JoinAnalysisInputs
     JoinEstimation estimation;
 
     /// The input columns of the two sides, already shaped into metric groups.
-    std::vector<MetricGroup> input_columns;
+    VectorWithMemoryTracking<MetricGroup> input_columns;
 };
 
 /// A report generator that knows some join specific information and builds the report

@@ -1604,6 +1604,15 @@ process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, KeeperStor
 /// CLOSE Request ///
 
 /// SETACL Request ///
+static std::pair<KeeperResponsesForSessions, Int64> processWatches(
+    const Coordination::ZooKeeperSetACLRequest & zk_request,
+    KeeperStorage::DeltaRange /*deltas*/,
+    KeeperStorage & storage,
+    int64_t /*session_id*/)
+{
+    return storage.processACLChangeWatchesImpl(zk_request.getPath());
+}
+
 template <typename Storage>
 static Coordination::Error preprocess(
     const Coordination::ZooKeeperSetACLRequest & zk_request,
@@ -2343,7 +2352,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
             else
                 *static_cast<Coordination::ZooKeeperResponsePtr *>(response) = std::move(r);
         }
-        const Coordination::Response * getResponse() const
+        [[nodiscard]] const Coordination::Response * getResponse() const
         {
             if (is_base_response_type)
                 return static_cast<Coordination::ResponsePtr *>(response)->get();

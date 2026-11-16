@@ -2,13 +2,14 @@
 
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <Common/Stopwatch.h>
 #include <base/types.h>
 
 #include <atomic>
-#include <map>
+#include <Common/MapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -21,7 +22,7 @@ namespace DB
 /// and by then the plan the steps belonged to may be long gone. The processors carry the same id,
 /// so they can find their clock without the step.
 using PlanStepGroup = std::pair<String, size_t>;
-using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
+using StepWallClocks = MapWithMemoryTracking<PlanStepGroup, std::unique_ptr<StepWallClock>>;
 
 /// Everything the statistics of a query are produced from: the clocks the processors stamp while
 /// it runs, and the analyzer each step handed out for shaping what they measured.
@@ -47,7 +48,7 @@ public:
     UInt64 getExecutionTimeNs() const { return execution_time_ns.load(std::memory_order_acquire); }
     UInt64 getExecutionStartNs() const { return execution_start_ns.load(std::memory_order_acquire); }
 
-    bool needCollectWorkIntervals() const;
+    [[nodiscard]] bool needCollectWorkIntervals() const;
     void addWorkIntervals(WorkIntervals intervals);
     WorkIntervalsPerThread extractWorkIntervals(UInt64 rebase_origin_ns);
 
