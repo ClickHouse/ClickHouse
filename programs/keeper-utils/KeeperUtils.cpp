@@ -465,6 +465,7 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"SessionID", static_cast<Int16>(Coordination::OpNum::SessionID)},
     {"FilteredList", static_cast<Int16>(Coordination::OpNum::FilteredList)},
     {"ListWithOptions", static_cast<Int16>(Coordination::OpNum::ListWithOptions)},
+    {"ListWithOptionsV2", static_cast<Int16>(Coordination::OpNum::ListWithOptionsV2)},
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},

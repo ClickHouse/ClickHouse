@@ -13,6 +13,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
 }
@@ -96,6 +97,9 @@ bool KeeperOverDispatcher::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) 
 
 void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
 {
+    if (auto ctx = keeper_dispatcher->getKeeperContext(); ctx && !ctx->isOperationSupported(request->getOpNum()))
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", request->getOpNum(), request->getPath());
+
     request->xid = next_xid++;
 
     {
@@ -228,12 +232,11 @@ void KeeperOverDispatcher::listWithOptions(
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
     if (!isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS))
         throw Coordination::Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions is not supported by this Keeper cluster");
+    if (options.paginates() && !isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+        throw Coordination::Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by this Keeper cluster");
 
-    const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-    request->path = path;
+    const auto request = makeZooKeeperListWithOptionsRequest(path, options);
     request->addRootPath({});
-    request->options_version = requiredListOptionsVersion(options);
-    request->options = options;
     pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
         callback(dynamic_cast<const ListWithOptionsResponse &>(*response));

@@ -84,6 +84,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"FilteredListWithStatsAndData", static_cast<Int16>(OpNum::FilteredListWithStatsAndData)},
             {"ListRecursive",               static_cast<Int16>(OpNum::ListRecursive)},
             {"ListWithOptions",             static_cast<Int16>(OpNum::ListWithOptions)},
+            {"ListWithOptionsV2",           static_cast<Int16>(OpNum::ListWithOptionsV2)},
         });
     return result;
 }

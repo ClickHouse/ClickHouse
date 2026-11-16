@@ -198,6 +198,40 @@ TEST(TestKeeperTest, FilteredListWithoutStatsAndData)
     }
 }
 
+TEST(TestKeeperTest, ListWithOptionsPaginatesFromPublicEmptyCursor)
+{
+    TestKeeper keeper = makeKeeper();
+
+    create(keeper, "/parent", "", /* is_ephemeral */ false);
+    create(keeper, "/parent/e", "payload-e", /* is_ephemeral */ false);
+    create(keeper, "/parent/a", "payload-a", /* is_ephemeral */ false);
+    create(keeper, "/parent/c", "payload-c", /* is_ephemeral */ false);
+
+    ListOptions options;
+    options.max_results = 1;
+    options.with_data = true;
+    options.start_after = "";
+    const auto page1 = listWithOptions(keeper, "/parent", options);
+    EXPECT_EQ(page1.error, Error::ZOK);
+    EXPECT_EQ(page1.names, std::vector<std::string>({"a"}));
+    EXPECT_EQ(page1.data, std::vector<std::string>({"payload-a"}));
+    EXPECT_TRUE(page1.truncated);
+
+    options.start_after = page1.names.back();
+    const auto page2 = listWithOptions(keeper, "/parent", options);
+    EXPECT_EQ(page2.error, Error::ZOK);
+    EXPECT_EQ(page2.names, std::vector<std::string>({"c"}));
+    EXPECT_EQ(page2.data, std::vector<std::string>({"payload-c"}));
+    EXPECT_TRUE(page2.truncated);
+
+    options.start_after = page2.names.back();
+    const auto page3 = listWithOptions(keeper, "/parent", options);
+    EXPECT_EQ(page3.error, Error::ZOK);
+    EXPECT_EQ(page3.names, std::vector<std::string>({"e"}));
+    EXPECT_EQ(page3.data, std::vector<std::string>({"payload-e"}));
+    EXPECT_FALSE(page3.truncated);
+}
+
 TEST(TestKeeperTest, ListWithOptionsShuffleLimitIsTruncated)
 {
     TestKeeper keeper = makeKeeper();

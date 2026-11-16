@@ -55,7 +55,8 @@ enum class OpNum : int32_t
     TryRemove = 505,
     FilteredListWithStatsAndData = 506,
     ListRecursive = 507,
-    ListWithOptions = 508,
+    ListWithOptions = 508, /// Unordered `max_results` prefix
+    ListWithOptionsV2 = 509, /// Lexicographic `start_after` pagination
 
     SessionID = 997, /// Special internal request
 };

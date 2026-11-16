@@ -2157,10 +2157,7 @@ Coordination::RequestPtr makeListWithOptionsRequest(
     if (options.recursive && watch)
         throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
 
-    auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
-    request->path = path;
-    request->options_version = Coordination::requiredListOptionsVersion(options);
-    request->options = options;
+    auto request = Coordination::makeZooKeeperListWithOptionsRequest(path, options);
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
     return request;

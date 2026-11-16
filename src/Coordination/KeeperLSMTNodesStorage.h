@@ -24,6 +24,18 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
 
     std::vector<std::string> listCommittedChildrenNames(std::string_view path) const override;
 
+    void listCommittedDirectChildrenPaginated(
+        std::string_view path,
+        std::string_view start_after,
+        uint32_t max_results,
+        std::vector<std::string> & out,
+        bool & truncated) const override;
+
+    void visitCommittedDirectChildrenAfter(
+        std::string_view path,
+        std::string_view start_after,
+        absl::FunctionRef<bool(std::string_view name)> on_name) const override;
+
     bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) override;
     void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) override;
     void removeCommittedNode(std::string_view path) override;

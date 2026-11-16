@@ -1913,6 +1913,28 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2));
+}
+
+TEST_P(CoordinationTest, ListWithOptionsV2IsRejectedWhenFeatureFlagDisabled)
+{
+    using namespace Coordination;
+
+    auto v1 = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    v1->path = "/";
+
+    auto v2 = std::make_shared<ZooKeeperListWithOptionsV2Request>();
+    v2->path = "/";
+    v2->options.start_after = "";
+
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(v1->getOpNum()));
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(v2->getOpNum()));
+
+    this->keeper_context->disableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(v1->getOpNum()));
+    EXPECT_FALSE(this->keeper_context->isOperationSupported(v2->getOpNum()));
+
+    this->keeper_context->enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
 }
 
 TEST(CoordinationFeatureFlags, ShortFeatureStringsDoNotReadPastTheEnd)
@@ -1925,6 +1947,7 @@ TEST(CoordinationFeatureFlags, ShortFeatureStringsDoNotReadPastTheEnd)
 
     DB::KeeperFeatureFlags two_byte_flags(std::string(2, 0));
     EXPECT_FALSE(two_byte_flags.isEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS));
+    EXPECT_FALSE(two_byte_flags.isEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS_V2));
 }
 
 TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
