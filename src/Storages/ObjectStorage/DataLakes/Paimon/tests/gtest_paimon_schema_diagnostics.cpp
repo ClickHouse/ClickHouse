@@ -108,9 +108,9 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixHoldsOnlyUnmatchedObject)
 
         const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
-        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + ","), String::npos) << message;
+        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + "/,"), String::npos) << message;
 
-        EXPECT_NE(message.find("1 entry: /other.txt (2001-09-09T01:46:40Z)"), String::npos) << message;
+        EXPECT_NE(message.find("1 entry: other.txt (2001-09-09T01:46:40Z)"), String::npos) << message;
     }
 
     /// The message must describe the listing that decided the throw, so no second one is issued.
@@ -138,7 +138,7 @@ TEST(PaimonSchemaDiagnostics, SchemaPrefixEmpty)
 
         const String & message = e.message();
         EXPECT_NE(message.find("The metadata file for Paimon table with path"), String::npos) << message;
-        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + ", which held 0 entries"), String::npos)
+        EXPECT_NE(message.find("No schema file was found under " + schema_prefix + "/, which held 0 entries"), String::npos)
             << message;
     }
 

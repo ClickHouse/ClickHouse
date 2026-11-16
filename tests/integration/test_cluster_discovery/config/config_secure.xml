@@ -1,0 +1,30 @@
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+
+    <tcp_port_secure>9440</tcp_port_secure>
+
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+        </server>
+        <client>
+            <cacheSessions>true</cacheSessions>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+
+    <remote_servers>
+        <test_auto_cluster_secure>
+            <discovery>
+                <path>/clickhouse/discovery/test_auto_cluster_secure</path>
+                <secure>1</secure>
+            </discovery>
+        </test_auto_cluster_secure>
+    </remote_servers>
+</clickhouse>

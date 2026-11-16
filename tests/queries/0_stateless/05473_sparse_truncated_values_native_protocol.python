@@ -2,15 +2,27 @@
 # -*- coding: utf-8 -*-
 
 # A crafted `SPARSE` column whose values payload is shorter than its offsets declare must be
-# rejected with INCORRECT_DATA (code 117), and the server must stay alive. Bulk readers of
-# primitive types short-read on EOF, so the Sparse values/offsets consistency check is what
-# rejects it. The client speaks the raw native protocol pinned to revision 54482, so the set
-# of exchanged, revision-gated fields is fixed and does not drift.
+# rejected with INCORRECT_DATA (code 117). Bulk readers of primitive types short-read on EOF,
+# so the Sparse values/offsets consistency check is what rejects it.
+#
+# Only a server may choose the `SPARSE` kind, so the column arrives the way a real one does: in
+# a result block, sent to clickhouse-client by a fake server. A block that a client sends to the
+# server accepts only the default kind, so there the same column is rejected by its kind, before
+# the values are read, and the server must stay alive.
+#
+# Both sides speak the raw native protocol pinned to revision 54482, so the set of exchanged,
+# revision-gated fields is fixed and does not drift.
 
 import os
 import socket
 import struct
+import sys
 import uuid
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from fake_native_server import runClientAgainstFakeServer
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
@@ -269,12 +281,16 @@ def expectIncorrectData(s, must_contain):
     assert must_contain in text, text
 
 
-def sendSparseBlockWithTruncatedValues(s):
+CLIENT_DATA = 2
+SERVER_DATA = 1
+
+
+def sparseBlockWithTruncatedValues(packet_type):
     END_OF_GRANULE_FLAG = 1 << 62
     limit = 4
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -292,29 +308,34 @@ def sendSparseBlockWithTruncatedValues(s):
 
     # SparseElements substream: the offsets declare 2 values, send only 1.
     ba.extend(struct.pack("<Q", 42))
-
-    s.sendall(ba)
-    # Signal EOF on the read side of the server's connection so the truncated read
-    # returns a short read instead of blocking for the missing bytes.
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def truncatedSparseValuesScenario():
+    output = runClientAgainstFakeServer(sparseBlockWithTruncatedValues(SERVER_DATA))
+    assert "Code: 117." in output, output
+    assert (
+        "Inconsistent sizes of values and offsets in SerializationSparse. "
+        "Offsets size: 2, values size: 2" in output
+    ), output
+    print("truncated sparse values: caught expected exception INCORRECT_DATA")
+
+
+def sparseOnInsertScenario():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         connectAndStartInsert(s)
-        sendSparseBlockWithTruncatedValues(s)
+        s.sendall(sparseBlockWithTruncatedValues(CLIENT_DATA))
         expectIncorrectData(
-            s,
-            "Inconsistent sizes of values and offsets in SerializationSparse. "
-            "Offsets size: 2, values size: 2",
+            s, "Unexpected serialization kind Sparse in the received data"
         )
-        print("truncated sparse values: caught expected exception INCORRECT_DATA")
+        print("sparse on insert: caught expected exception INCORRECT_DATA")
 
 
 def main():
     truncatedSparseValuesScenario()
+    sparseOnInsertScenario()
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from '/snippets/components/Image.jsx';
 import { TrackedLink } from '/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
 
 <Info>
@@ -106,11 +105,27 @@ Note the names you want. Groups that share a prefix, such as `/aws/lambda/`, can
 <Step title="Copy your connection details" id="copy-connection-details">
 Open your ClickHouse Observability service. Until data arrives it shows the **Start sending telemetry** page.
 
-<Image img="/images/clickstack/getting-started/observability-start-sending-telemetry.png" alt="Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the current service with no data yet and three options: Use an existing OpenTelemetry setup, Instrument with AI, and Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+
+</Frame>
+
+</div>
 
 Under **Use an existing OpenTelemetry setup**, select **View connection details**, then open the **Collector config** tab. It shows a ready-made exporter block for your service: the endpoint, and an `authorization` header that already carries your API key with its `Bearer` prefix. Select **Reveal key** to show the full key, then use the copy button.
 
-<Image img="/images/clickstack/getting-started/observability-collector-config.png" alt="Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Set up OpenTelemetry dialog with the Collector config tab selected, showing an otlphttp exporter with the masked endpoint and a Bearer authorization header](/images/clickstack/getting-started/observability-collector-config.png)
+
+</Frame>
+
+</div>
 
 The block has this shape. You paste it into the collector configuration in the next step exactly as copied:
 
@@ -202,7 +217,16 @@ This reads every log group whose name starts with the prefix, up to `limit`, inc
 </Tab>
 </Tabs>
 
-The exporter name `otlphttp` matches what the tab gives you. Recent collector releases call it `otlp_http` and keep `otlphttp` as an alias, so both work, and the collector logs `"otlphttp" alias is deprecated` once at startup. That warning is harmless. If you rename the exporter, rename it in the pipeline too. Keep the endpoint as the base URL: do not append `/v1/logs`, because the exporter adds the signal path itself. The file now holds your API key, so keep it out of version control and readable only by the user that runs Docker, for example with `chmod 600 otel-collector-config.yaml`.
+The exporter name `otlphttp` matches what the tab gives you. Recent collector releases call it `otlp_http` and keep `otlphttp` as an alias, so both work, and the collector logs `"otlphttp" alias is deprecated` once at startup. That warning is harmless. If you rename the exporter, rename it in the pipeline too. Keep the endpoint as the base URL: do not append `/v1/logs`, because the exporter adds the signal path itself.
+
+The file now holds your API key, so keep it out of version control. The collector container runs as UID/GID `10001:10001`. On Linux, give that group read access while keeping the file editable by its host owner:
+
+```shell
+sudo chgrp 10001 otel-collector-config.yaml
+chmod 640 otel-collector-config.yaml
+```
+
+This allows the container to read the bind-mounted configuration without making the API key world-readable.
 
 Settings to adjust:
 
@@ -278,7 +302,15 @@ A healthy start ends with `Everything is ready. Begin running and processing dat
 
 Return to the **Start sending telemetry** page in your service and select **Check for data**. Once telemetry has arrived, the service status changes to **Data received** and **Start exploring** becomes available.
 
-<Image img="/images/clickstack/getting-started/observability-data-received.png" alt="Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Start sending telemetry page showing the service status as Data received, a confirmation that you are ready to explore, and the Start exploring button enabled](/images/clickstack/getting-started/observability-data-received.png)
+
+</Frame>
+
+</div>
 
 Select **Start exploring** to open **Search**, select the **Logs** source, and set the time range to **Last 15 minutes**. Events appear within a couple of poll intervals. Each one carries its origin as resource attributes:
 
@@ -289,11 +321,27 @@ Select **Start exploring** to open **Search**, select the **Logs** source, and s
 
 To see them as columns, replace the `SELECT` with `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`:
 
-<Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" alt="Search showing CloudWatch events with the region, log group, and log stream resource attributes as columns" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search showing CloudWatch events with the region, log group, and log stream resource attributes as columns](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+
+</Frame>
+
+</div>
 
 Select an event and open **Column Values** to inspect its attributes:
 
-<Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" alt="Log detail view showing the aws.region, cloudwatch.log.group.name, and cloudwatch.log.stream resource attributes of a CloudWatch event" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Log detail view showing the aws.region, cloudwatch.log.group.name, and cloudwatch.log.stream resource attributes of a CloudWatch event](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+
+</Frame>
+
+</div>
 
 ## If nothing shows up {#if-nothing-shows-up}
 
