@@ -38,7 +38,7 @@ FROM numbers(500);
 SELECT 'setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = '05618_on';
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, log_comment = 'one_row_per_block_hnsw_on';
 
 SELECT 'brute force';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
@@ -48,7 +48,7 @@ SETTINGS use_skip_indexes = 0;
 SELECT 'setting off';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = '05618_off';
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, log_comment = 'one_row_per_block_hnsw_off';
 
 -- Columns that the part does not have are filled after the read, before the candidates are filtered. Without a default
 -- expression, or with one that names no column, they do not depend on the placeholder values of the other rows, so only
@@ -59,7 +59,7 @@ ALTER TABLE tab ADD COLUMN ts DateTime DEFAULT now();
 SELECT 'defaults without columns, setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, e, ts > 0 FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_no_column_defaults_on';
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = 'one_row_per_block_hnsw_no_column_defaults_on';
 
 -- A default expression with an identifier, which could name the vector column in many ways, e.g. `dummy.vec`, could use
 -- the placeholder values, so from the next query on, the vectors are read as usual. This holds for a default expression
@@ -69,7 +69,7 @@ ALTER TABLE tab ADD COLUMN d UInt64 DEFAULT intDiv(64, length(dummy.vec));
 SELECT 'default with an identifier, setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id, d FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_default_on';
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = 'one_row_per_block_hnsw_default_on';
 
 SELECT 'default with an identifier, setting off';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
@@ -79,7 +79,7 @@ SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_m
 SELECT 'default with an identifier, column not read, setting on';
 WITH (SELECT vec FROM tab WHERE id = 123) AS ref
 SELECT id FROM tab ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_default_not_read_on';
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = 'one_row_per_block_hnsw_default_not_read_on';
 
 -- With few prefetches allowed, a reader prefetched for one task is reused for the next tasks, and must read past the end
 -- of the range of the first task. The query must not fail; which rows the approximate index returns is not checked.
@@ -119,7 +119,7 @@ INSERT INTO tab_dotted SELECT id, vec, vec FROM tab;
 SELECT 'dotted column, setting on';
 WITH (SELECT vec FROM tab_dotted WHERE id = 123) AS ref
 SELECT id, `a.b`[1] FROM tab_dotted ORDER BY cosineDistance(vec, ref) LIMIT 10
-SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_dotted_on';
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = 'one_row_per_block_hnsw_dotted_on';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -128,7 +128,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05618_on', '05618_off', '05618_no_column_defaults_on', '05618_default_on', '05618_default_not_read_on', '05618_dotted_on')
+    AND log_comment IN ('one_row_per_block_hnsw_on', 'one_row_per_block_hnsw_off', 'one_row_per_block_hnsw_no_column_defaults_on', 'one_row_per_block_hnsw_default_on', 'one_row_per_block_hnsw_default_not_read_on', 'one_row_per_block_hnsw_dotted_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;

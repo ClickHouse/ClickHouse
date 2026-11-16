@@ -90,9 +90,9 @@ dotted column, setting on
 397	0.131
 383	-0.154
 35	0.002
-05618_default_not_read_on	0
-05618_default_on	0
-05618_dotted_on	1
-05618_no_column_defaults_on	1
-05618_off	0
-05618_on	1
+one_row_per_block_hnsw_default_not_read_on	0
+one_row_per_block_hnsw_default_on	0
+one_row_per_block_hnsw_dotted_on	1
+one_row_per_block_hnsw_no_column_defaults_on	1
+one_row_per_block_hnsw_off	0
+one_row_per_block_hnsw_on	1

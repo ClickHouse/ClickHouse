@@ -113,16 +113,16 @@ rows after rejected imports	0	0
 lightweight update	1	[5,6]
 lightweight update	2	[3,4]
 codes in few blocks	1
-05617_adaptive_on	1
-05617_materialized_on	0
-05617_merged_on	5
-05617_mutated_on	5
-05617_one_part_off	0
-05617_one_part_on	100
-05617_renamed_on	5
-05617_same_sizes_on	3
-05617_several_rows_per_block_on	0
-05617_two_parts_off	0
-05617_two_parts_on	49
-05617_vec_mutated_on	5
-05617_vertically_merged_on	5
+one_row_per_block_adaptive_on	1
+one_row_per_block_materialized_on	0
+one_row_per_block_merged_on	5
+one_row_per_block_mutated_on	5
+one_row_per_block_one_part_off	0
+one_row_per_block_one_part_on	100
+one_row_per_block_renamed_on	5
+one_row_per_block_same_sizes_on	3
+one_row_per_block_several_rows_per_block_on	0
+one_row_per_block_two_parts_off	0
+one_row_per_block_two_parts_on	49
+one_row_per_block_vec_mutated_on	5
+one_row_per_block_vertically_merged_on	5
