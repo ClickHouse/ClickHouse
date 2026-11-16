@@ -255,7 +255,7 @@ void IStorage::read(
     const auto & settings = context->getSettingsRef();
     const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
         ? settings[Setting::max_distributed_connections]
-        : getEffectiveMaxThreads(settings);
+        : getEffectiveMaxThreads(*context);
     const size_t resize_to = std::min(num_streams, max_threads_execute_query);
 
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0

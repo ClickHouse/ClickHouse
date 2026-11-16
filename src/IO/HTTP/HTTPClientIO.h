@@ -8,6 +8,7 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPResponseParser.h>
 
 #include <memory>
 
@@ -118,15 +119,22 @@ private:
 /// without a body, finalizing it only checks that nothing was written. This is the replacement
 /// of `Poco::Net::HTTPClientSession::sendRequest`, which returns an `std::ostream` that copies
 /// the data through an 8 KiB buffer and sends it in 8 KiB pieces.
+///
+/// The header of the response is checked against `response_header_limits`: the response parser
+/// of the session starts with them.
 std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     Poco::Net::HTTPClientSession & session,
     Poco::Net::HTTPRequest & request,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     UInt64 * connect_time = nullptr,
-    UInt64 * first_byte_time = nullptr);
+    UInt64 * first_byte_time = nullptr,
+    const Poco::Net::HTTPHeaderLimits & response_header_limits = {});
 
 /// Reads and parses the response line and the headers into `response`, and returns a buffer for
-/// its body. `1xx` informational responses are skipped, as `Poco` does.
+/// its body. An interim `100 Continue` is skipped, as `Poco` does.
+///
+/// The header is parsed by the response parser of the session and checked against the limits
+/// given to `sendHTTPRequest`; the limits set on `response` are not used.
 ///
 /// This is the replacement of `Poco::Net::HTTPClientSession::receiveResponse`. Throws the same
 /// exceptions `Poco` throws: `Poco::Net::NoMessageException` when the peer sent nothing at all

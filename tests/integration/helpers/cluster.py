@@ -2445,8 +2445,9 @@ class ClickHouseCluster:
         # lost or half-written by an exit-time dump interrupted by the kill.
         # Continuous mode releases the static counter section that per-module
         # coverage reads inside the server, so the two are mutually exclusive.
+        # Per-module coverage merges no profile, so it writes none.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
+            "/dev/null" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -6963,6 +6964,20 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        # The isolation of the filesystem of the server depends on whether the container allows namespaces, and,
+        # when it is in force, hides what the tests use outside the paths of the server, such as the ODBC drivers
+        # and the interpreters of the scripts, so it is left at its default, `disabled`. An older server version
+        # would not know the element anyway. The stateless tests cover the isolation.
+        main_config_path = p.join(instance_config_dir, self.main_config_name)
+        with open(main_config_path, "r") as f:
+            main_config = f.read()
+        main_config = re.sub(
+            r"\n[ \t]*<filesystem_isolation>[^<]*</filesystem_isolation>|\nfilesystem_isolation:[^\n]*",
+            "",
+            main_config,
+        )
+        with open(main_config_path, "w") as f:
+            f.write(main_config)
         if self.with_installed_binary:
             # The main config.xml comes from the current sources, and an older server version refuses
             # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
