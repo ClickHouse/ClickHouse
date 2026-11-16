@@ -291,3 +291,7 @@ EOF""",
     assert "INCORRECT_DATA" in node.query_and_get_error(
         f"CREATE TABLE t2 UUID '{uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
     )
+    assert "INCORRECT_DATA" in node.query_and_get_error(
+        f"CREATE MATERIALIZED VIEW mv TO INNER UUID '{uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = 'with_looped' AS SELECT toUInt8(dummy) AS x FROM system.one"
+    )

@@ -2886,16 +2886,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    /// A UUID given in the query may be a dropped table's, whose parts on a broken disk cannot be detected.
-    if (has_explicit_uuid && !create.attach && !internal && !getContext()->isDDLOrOnClusterInternal()
-        && create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
+    /// A UUID given in the query may be a dropped table's, whose data on a broken disk cannot be detected.
+    if (has_explicit_uuid && !create.attach && !internal && !getContext()->isDDLOrOnClusterInternal())
     {
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
             if (disk->isBroken())
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Cannot create table {}.{} with an explicit UUID while disk {} is broken: "
-                    "data parts that a dropped table with this UUID left on it could not be detected",
+                    "data that a dropped table with this UUID left on it could not be detected",
                     backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()), backQuote(disk_name));
         }
     }
