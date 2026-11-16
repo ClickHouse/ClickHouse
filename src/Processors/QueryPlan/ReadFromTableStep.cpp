@@ -1,8 +1,10 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -42,6 +44,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    const bool write_column_identifiers = ctx.step_version >= 1 && !column_identifiers.empty();
+    if (write_column_identifiers)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +57,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (write_column_identifiers)
+        serializeColumnIdentifiers(column_identifiers, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,19 +87,31 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    NameToNameVector column_identifiers;
+    if (flags & 16)
+        column_identifiers = deserializeColumnIdentifiers(ctx.in);
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    auto step = std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    step->setColumnIdentifiers(std::move(column_identifiers));
+    return step;
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    auto step = std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    step->setColumnIdentifiers(column_identifiers);
+    return step;
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);
+    /// Version 1 carries the column identifiers of the read.
+    registry.registerStep(
+        "ReadFromTable",
+        &ReadFromTableStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }

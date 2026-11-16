@@ -24,11 +24,15 @@ public:
     [[nodiscard]] bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
+    void setColumnIdentifiers(NameToNameVector column_identifiers_) { column_identifiers = std::move(column_identifiers_); }
+    [[nodiscard]] const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
+
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
     bool use_parallel_replicas = false;
+    NameToNameVector column_identifiers;
 };
 
 }

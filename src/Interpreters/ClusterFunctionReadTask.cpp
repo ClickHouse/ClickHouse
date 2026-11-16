@@ -94,9 +94,9 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     {
         SerializedSetsRegistry registry;
         if (data_lake_metadata.schema_transform)
-            data_lake_metadata.schema_transform->serialize(out, registry);
+            data_lake_metadata.schema_transform->serialize(out, registry, ActionsDAG::IndexHintActions::Refuse);
         else
-            ActionsDAG().serialize(out, registry);
+            ActionsDAG().serialize(out, registry, ActionsDAG::IndexHintActions::Refuse);
 
         if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
         {

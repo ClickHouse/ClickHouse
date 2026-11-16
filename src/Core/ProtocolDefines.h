@@ -147,6 +147,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// name it does not know, unless the setting is declared `IMPORTANT`. The binary encoding is no longer supported
 /// at all, so a peer below this version can neither send nor receive a plan (see the constant below).
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
+/// Version 21 also lets the steps carrying an `ActionsDAG` write the predicate of `indexHint` (new step versions).
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -255,6 +256,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First global query-plan version that writes the predicate of `indexHint`: version 1 of the steps that carry an
+/// `ActionsDAG`, and version 2 of `ReadFromMergeTree`. Also version 1 of `ReadFromTableStep`,
+/// `ReadFromTableFunctionStep` and `ReadFromSystemNumbersStep`, which carry the column identifiers of the read.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

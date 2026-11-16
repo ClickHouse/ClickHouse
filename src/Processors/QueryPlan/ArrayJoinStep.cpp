@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -245,7 +246,8 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
             writeIntBinary(element_filter->getOutputIdentity(element_filter_column_name, ctx.input_header), ctx.out);
         else
             writeStringBinary(element_filter_column_name, ctx.out);
-        element_filter->serialize(ctx.out, ctx.registry, ctx.input_header);
+        const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+        element_filter->serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
     }
 }
 
@@ -296,7 +298,10 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);
+    registry.registerStep(
+        "ArrayJoin",
+        ArrayJoinStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }

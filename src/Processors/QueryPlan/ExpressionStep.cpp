@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -131,7 +132,8 @@ void ExpressionStep::updateOutputHeader()
 
 void ExpressionStep::serialize(Serialization & ctx) const
 {
-    actions_dag.serialize(ctx.out, ctx.registry, ctx.input_header);
+    const auto index_hint_actions = ctx.step_version >= 1 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
+    actions_dag.serialize(ctx.out, ctx.registry, index_hint_actions, ctx.input_header);
 }
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
@@ -312,7 +314,10 @@ QueryPlanStepPtr ExpressionStep::clone() const
 void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Expression", ExpressionStep::deserialize);
+    registry.registerStep(
+        "Expression",
+        ExpressionStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }

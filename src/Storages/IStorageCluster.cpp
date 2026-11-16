@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <Functions/indexHint.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -85,6 +86,9 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const UnorderedMapW
         return false;
     if (!node.isDeterministic() || node.is_runtime_filter_id)
         return false;
+    /// The predicate of `indexHint` is a separate DAG that this check does not walk; on rows the hint is always true.
+    if (FunctionIndexHint::tryGet(node.function_base))
+        return false;
     if (node.type == ActionsDAG::ActionType::INPUT)
         return replica_columns.contains(node.result_name);
     if (node.type == ActionsDAG::ActionType::COLUMN)
@@ -121,7 +125,7 @@ String serializeFilterForReplicas(const ActionsDAG::Node & predicate, const Unor
 
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
-    filter->serialize(out, registry);
+    filter->serialize(out, registry, ActionsDAG::IndexHintActions::Refuse);
     QueryPlan::serializeReadySets(registry, out);
     return base64Encode(out.str());
 }

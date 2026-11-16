@@ -1,8 +1,10 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -45,6 +47,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
+    const bool write_column_identifiers = ctx.step_version >= 1 && !column_identifiers.empty();
+    if (write_column_identifiers)
+        flags |= 8;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +57,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
+
+    if (write_column_identifiers)
+        serializeColumnIdentifiers(column_identifiers, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
@@ -81,14 +89,24 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
+    NameToNameVector column_identifiers;
+    if (flags & 8)
+        column_identifiers = deserializeColumnIdentifiers(ctx.in);
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
+    auto step = std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
+    step->setColumnIdentifiers(std::move(column_identifiers));
+    return step;
 }
 
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTableFunction", &ReadFromTableFunctionStep::deserialize);
+    /// Version 1 carries the column identifiers of the read.
+    registry.registerStep(
+        "ReadFromTableFunction",
+        &ReadFromTableFunctionStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }

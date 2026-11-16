@@ -21,9 +21,13 @@ public:
     [[nodiscard]] const std::string & getSerializedAST() const { return serialized_ast; }
     [[nodiscard]] TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
+    void setColumnIdentifiers(NameToNameVector column_identifiers_) { column_identifiers = std::move(column_identifiers_); }
+    [[nodiscard]] const NameToNameVector & getColumnIdentifiers() const { return column_identifiers; }
+
 private:
     std::string serialized_ast;
     TableExpressionModifiers table_expression_modifiers;
+    NameToNameVector column_identifiers;
 };
 
 }

@@ -128,7 +128,7 @@ TEST(ActionsDAGDeserialization, ValidStreamMatchesSerialize)
 
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
-    dag.serialize(out, registry);
+    dag.serialize(out, registry, ActionsDAG::IndexHintActions::Refuse);
     const String valid = plusStream("a", false, {1});
     EXPECT_EQ(out.str(), valid);
 

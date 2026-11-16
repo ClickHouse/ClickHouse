@@ -1,12 +1,24 @@
+#include <Core/Defines.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 #include <Processors/QueryPlan/Serialization.h>
+
+#include <algorithm>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
 
 SelectQueryInfo::SelectQueryInfo()
     : prepared_sets(std::make_shared<PreparedSets>())
@@ -59,21 +71,39 @@ std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffs
 
 UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
+    if (!planner_context)
+        return deserialized_column_identifiers;
+
     UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-    if (planner_context)
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+    for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
     {
-        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-        for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
-        {
-            /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
-            /// so they should not be added to the input nodes.
-            if (table_expression_data.hasAliasColumn(column_name))
-                continue;
-            const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
-        }
+        /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
+        /// so they should not be added to the input nodes.
+        if (table_expression_data.hasAliasColumn(column_name))
+            continue;
+        const auto & column = table_expression_data.getColumnOrThrow(column_name);
+        node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
     }
     return node_name_to_input_node_column;
+}
+
+NameToNameVector SelectQueryInfo::getColumnIdentifiers() const
+{
+    NameToNameVector identifiers;
+    for (const auto & [identifier, column] : buildNodeNameToInputNodeColumn())
+        identifiers.emplace_back(identifier, column.name);
+    std::ranges::sort(identifiers);
+    return identifiers;
+}
+
+void SelectQueryInfo::setColumnIdentifiers(const NameToNameVector & identifiers, const StorageSnapshotPtr & storage_snapshot)
+{
+    deserialized_column_identifiers.clear();
+    const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    for (const auto & [identifier, name] : identifiers)
+        if (auto column = storage_snapshot->tryGetColumn(options, name))
+            deserialized_column_identifiers.emplace(identifier, ColumnWithTypeAndName(nullptr, column->type, name));
 }
 
 PrewhereInfo PrewhereInfo::clone() const
@@ -90,9 +120,9 @@ PrewhereInfo PrewhereInfo::clone() const
 }
 
 /// `query_condition_cache_attribution` is not serialized: a deserialized plan does not attribute.
-void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
+void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const
 {
-    prewhere_actions.serialize(ctx.out, ctx.registry);
+    prewhere_actions.serialize(ctx.out, ctx.registry, index_hint_actions);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
     writeBinary(need_filter, ctx.out);
@@ -110,9 +140,40 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     return prewhere_info;
 }
 
-void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx) const
+void serializeColumnIdentifiers(const NameToNameVector & identifiers, WriteBuffer & out)
 {
-    actions.serialize(ctx.out, ctx.registry);
+    writeVarUInt(identifiers.size(), out);
+    for (const auto & [identifier, name] : identifiers)
+    {
+        writeStringBinary(identifier, out);
+        writeStringBinary(name, out);
+    }
+}
+
+NameToNameVector deserializeColumnIdentifiers(ReadBuffer & in)
+{
+    UInt64 size = 0;
+    readVarUInt(size, in);
+    if (size > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many column identifiers ({}) in a serialized query plan (maximum: {})",
+            size, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
+
+    NameToNameVector identifiers(size);
+    NameSet seen;
+    for (auto & [identifier, name] : identifiers)
+    {
+        readStringBinary(identifier, in);
+        readStringBinary(name, in);
+        if (!seen.insert(identifier).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column identifier {} in a serialized query plan", identifier);
+    }
+    return identifiers;
+}
+
+void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const
+{
+    actions.serialize(ctx.out, ctx.registry, index_hint_actions);
     writeStringBinary(column_name, ctx.out);
     writeBinary(do_remove_column, ctx.out);
 }

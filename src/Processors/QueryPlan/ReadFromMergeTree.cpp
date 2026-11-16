@@ -7895,11 +7895,15 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     if (table_expression_modifiers && table_expression_modifiers->hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers->getSampleOffsetRatio(), ctx.out);
 
+    const auto index_hint_actions = ctx.step_version >= 2 ? ActionsDAG::IndexHintActions::Write : ActionsDAG::IndexHintActions::Refuse;
     if (query_info.row_level_filter)
-        query_info.row_level_filter->serialize(ctx);
+        query_info.row_level_filter->serialize(ctx, index_hint_actions);
 
     if (query_info.prewhere_info)
-        query_info.prewhere_info->serialize(ctx);
+        query_info.prewhere_info->serialize(ctx, index_hint_actions);
+
+    if (ctx.step_version >= 2)
+        serializeColumnIdentifiers(query_info.getColumnIdentifiers(), ctx.out);
 
     /// `join_runtime_filters_for_index_analysis` (the descriptors that drive left-side granule pruning
     /// for `enable_join_runtime_filters_index_analysis`) is not serialized, and does not need to be: the
@@ -8002,6 +8006,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
+    NameToNameVector column_identifiers;
+    if (ctx.step_version >= 2)
+        column_identifiers = deserializeColumnIdentifiers(ctx.in);
+
     /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
     /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
@@ -8062,6 +8070,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    query_info.setColumnIdentifiers(column_identifiers, storage_snapshot);
 
     auto step = executor.readFromParts(
         snapshot_data.parts,
@@ -8122,10 +8131,13 @@ void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `allow_query_condition_cache` flag bit (bit 64 of the flags byte).
+    /// Version 2 carries the predicate of `indexHint` and the column identifiers of the read.
     registry.registerStep(
         "ReadFromMergeTree",
         ReadFromMergeTree::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 }

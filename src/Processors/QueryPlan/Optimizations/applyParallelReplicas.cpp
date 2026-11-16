@@ -2,11 +2,14 @@
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/indexHint.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -20,8 +23,10 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -204,11 +209,33 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 }
 
 /// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
-/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, or a
-/// source step's row-level filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
-/// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, the
+/// boundaries of `LIMIT ... AFTER`/`UNTIL`, `INTERPOLATE`, or a source step's row-level filter and PREWHERE.
+/// Only those DAGs are visited, because only they reach a replica; a step which serializes a DAG not listed
+/// here would escape every check built on this walk. Child plans are walked
 /// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
 static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
+
+/// The DAGs `ActionsDAG::serialize` writes inside a node, which are not reachable through its children: a lambda body
+/// (held by the function, or by a constant the lambda was folded into) and the predicate of `indexHint`.
+static std::vector<const ActionsDAG *> getNestedActionsDAGs(const ActionsDAG::Node & node)
+{
+    std::vector<const ActionsDAG *> nested;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+        nested.push_back(&capture->getAcionsDAG());
+    if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base))
+        nested.push_back(&index_hint->getActions());
+    if (node.column && WhichDataType(node.result_type).isFunction())
+    {
+        const IColumn * column = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+            if (const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+                nested.push_back(&expression->getAcionsDAG());
+    }
+    return nested;
+}
 
 /// True if the DAG references an `IN`/`NOT IN` subquery set which cannot be shipped. This path always
 /// ships such a set as its subquery plan, never as data: `serializeSets` takes the `SubqueryPlan` branch
@@ -230,6 +257,10 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
+        for (const auto * nested : getNestedActionsDAGs(node))
+            if (dagReferencesUnshippableSubquerySet(*nested))
+                return true;
+
         if (!node.column || !WhichDataType(node.result_type).isSet())
             continue;
         const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());
@@ -253,6 +284,10 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
                 offending->step->getName());
             return true;
         }
+
+        /// The plan is shipped with the sets it references in turn.
+        if (checkQueryPlanActionDAGs(subquery_plan->getRootNode(), dagReferencesUnshippableSubquerySet))
+            return true;
 
         /// `dagContainsNonDeterministicFunction` asks for determinism *within* one query, which is the right
         /// question here: `now()` and friends are folded to their value on the initiator and the value is
@@ -309,6 +344,17 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
         /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
         if (const auto & element_filter = array_join->getElementFilter())
             if (predicate(*element_filter))
+                return true;
+    }
+    else if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step))
+    {
+        if (predicate(limit_range->getConditions()))
+            return true;
+    }
+    else if (const auto * filling = typeid_cast<const FillingStep *>(step))
+    {
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            if (predicate(interpolate->actions))
                 return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))

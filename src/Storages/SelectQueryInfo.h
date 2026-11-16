@@ -17,6 +17,9 @@ namespace DB
 struct QueryPlanStepSerialization;
 struct QueryPlanStepDeserialization;
 
+class ReadBuffer;
+class WriteBuffer;
+
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -68,7 +71,7 @@ struct PrewhereInfo
 
     [[nodiscard]] PrewhereInfo clone() const;
 
-    void serialize(QueryPlanStepSerialization & ctx) const;
+    void serialize(QueryPlanStepSerialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const;
     static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
@@ -81,7 +84,7 @@ struct FilterDAGInfo
 
     [[nodiscard]] std::string dump() const;
 
-    void serialize(QueryPlanStepSerialization & ctx) const;
+    void serialize(QueryPlanStepSerialization & ctx, ActionsDAG::IndexHintActions index_hint_actions) const;
     static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
 };
 
@@ -144,6 +147,9 @@ struct SelectQueryInfo
 
     /// Planner context
     PlannerContextPtr planner_context;
+
+    /// A read built from a deserialized query plan has no `planner_context`; the plan carries its column identifiers.
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> deserialized_column_identifiers;
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
@@ -250,5 +256,14 @@ struct SelectQueryInfo
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
     [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+
+    /// The (column identifier, column name) pairs of `buildNodeNameToInputNodeColumn`, sorted by identifier.
+    [[nodiscard]] NameToNameVector getColumnIdentifiers() const;
+    /// Keeps the pairs whose column exists in `storage_snapshot`, typed as stored there.
+    void setColumnIdentifiers(const NameToNameVector & identifiers, const StorageSnapshotPtr & storage_snapshot);
 };
+
+void serializeColumnIdentifiers(const NameToNameVector & identifiers, WriteBuffer & out);
+NameToNameVector deserializeColumnIdentifiers(ReadBuffer & in);
+
 }

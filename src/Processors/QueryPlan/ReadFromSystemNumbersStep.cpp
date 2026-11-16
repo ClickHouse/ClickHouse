@@ -496,6 +496,11 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (numbers_storage.limit.has_value())
         flags |= 4;
+    NameToNameVector column_identifiers;
+    if (ctx.step_version >= 1)
+        column_identifiers = getQueryInfo().getColumnIdentifiers();
+    if (!column_identifiers.empty())
+        flags |= 8;
     writeIntBinary(flags, ctx.out);
 
     /// An unbounded read (`system.numbers`, `numbers()`) has no range length; it is ended by the plan's own
@@ -504,6 +509,9 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         writeBinaryLittleEndian(*numbers_storage.limit, ctx.out);
     writeBinaryLittleEndian(numbers_storage.offset, ctx.out);
     writeBinaryLittleEndian(numbers_storage.step, ctx.out);
+
+    if (!column_identifiers.empty())
+        serializeColumnIdentifiers(column_identifiers, ctx.out);
 }
 
 
@@ -537,6 +545,10 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     if (step == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromSystemNumbers step: step must be positive");
 
+    NameToNameVector column_identifiers;
+    if (flags & 8)
+        column_identifiers = deserializeColumnIdentifiers(ctx.in);
+
     /// Only `numbers()`, `numbers_mt()` and `system.numbers` are unbounded, and they count up by 1;
     /// only `generate_series` counts down, and it always has a range length.
     if (!storage_limit && step != 1)
@@ -560,6 +572,7 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     auto storage_limits = std::make_shared<StorageLimitsList>();
     storage_limits->emplace_back(buildStorageLimits(*ctx.context, SelectQueryOptions(QueryProcessingStage::FetchColumns)));
     query_info.storage_limits = std::move(storage_limits);
+    query_info.setColumnIdentifiers(column_identifiers, storage_snapshot);
 
     auto step_ptr = std::make_unique<ReadFromSystemNumbersStep>(
         Names{column_name}, query_info, storage_snapshot, ctx.context, storage, max_block_size, /*num_streams_=*/1);
@@ -574,11 +587,12 @@ void registerReadFromSystemNumbersStep(QueryPlanStepRegistry & registry)
 {
     /// Declared with the version that introduced the step rather than the default "since version 0":
     /// an older peer does not know the name, so the registry must not write it into a stream below
-    /// that version.
+    /// that version. Version 1 carries the column identifiers of the read.
     registry.registerStep(
         "ReadFromSystemNumbers",
         &ReadFromSystemNumbersStep::deserialize,
-        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS}});
+        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_INDEX_HINT_ACTIONS}});
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()

@@ -206,6 +206,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (select_query_info.table_expression_modifiers)
         snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
 
+    select_query_info.setColumnIdentifiers(
+        reading_from_table ? reading_from_table->getColumnIdentifiers() : reading_from_table_function->getColumnIdentifiers(), snapshot);
+
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     /// The `SelectQueryInfo` built above has no query: the step carries only a table name and the

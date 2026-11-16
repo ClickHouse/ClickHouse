@@ -7,6 +7,7 @@
 # client that sends a few thousand nested captures used to exhaust the server stack and take the
 # whole process down with SIGSEGV. The fix caps the nesting depth and adds `checkStackSize`,
 # turning the attack into a `TOO_DEEP_RECURSION` exception while the server keeps serving.
+# The predicate of an `indexHint` function node is a nested `ActionsDAG` too, and counts towards the same limit.
 #
 # The packet is only reachable for a query sent with the `QueryPlan` processing stage while the
 # server has `process_query_plan_packet` enabled (see tests/config/config.d/process_query_plan_packet.xml).
@@ -37,6 +38,7 @@ WITH_STEP_VERSIONS = 19     # per-step version
 
 # ActionsDAG::ActionType (Interpreters/ActionsDAG.h)
 ACTION_COLUMN = 1
+ACTION_FUNCTION = 4
 
 # BinaryTypeIndex (DataTypes/DataTypesBinaryEncoding.h)
 TYPE_UINT8 = b"\x01"
@@ -45,6 +47,8 @@ TYPE_FUNCTION = b"\x24\x00" + TYPE_UINT8
 
 DEPTH = 5000
 SHALLOW_DEPTH = 10
+# Above the depth limit, but shallow enough that `checkStackSize` alone does not reject it in a debug build.
+INDEX_HINT_DEPTH = 1500
 
 
 def writeVarUInt(x, ba):
@@ -246,7 +250,29 @@ def buildActionsDAG(depth):
     return bytes(dag)
 
 
-def buildQueryPlanPacket(plan_version, depth):
+def buildIndexHintDAG(depth):
+    """An ActionsDAG with `depth` nested `indexHint` function nodes, each carrying the next level as its predicate."""
+    # Terminal: an empty DAG.
+    dag = varuint(0) + varuint(0) + varuint(0)  # nodes_size, inputs, outputs
+
+    for _ in range(depth):
+        unit = bytearray()
+        unit += varuint(1)      # nodes_size
+        unit += bytes([ACTION_FUNCTION])
+        unit += strbin("")      # result_name
+        unit += TYPE_UINT8      # result_type
+        unit += varuint(0)      # children
+        unit += bytes([8])      # column_flags: the predicate of indexHint follows the function name
+        unit += strbin("indexHint")
+        unit += dag             # recursive ActionsDAG::deserialize for the predicate
+        unit += varuint(0)      # inputs
+        unit += varuint(0)      # outputs
+        dag = unit
+
+    return bytes(dag)
+
+
+def buildQueryPlanPacket(plan_version, depth, build_dag=buildActionsDAG):
     body = bytearray()
     writeVarUInt(plan_version, body)
     if plan_version >= WITH_EXECUTION_LIMITS:
@@ -261,7 +287,7 @@ def buildQueryPlanPacket(plan_version, depth):
     writeVarUInt(0, body)          # output header: 0 columns
     writeVarUInt(0, body)          # settings: 0 changed
     # ExpressionStep::deserialize -> ActionsDAG::deserialize
-    body += buildActionsDAG(depth)
+    body += build_dag(depth)
 
     packet = bytearray()
     writeVarUInt(13, packet)       # Client::QueryPlan
@@ -278,8 +304,8 @@ def readException(s):
     return code, text
 
 
-def sendPlan(depth):
-    """Sends a `QueryPlan` packet with `depth` nested lambda captures and returns the exception code and text, or None if the query is not rejected."""
+def sendPlan(depth, build_dag=buildActionsDAG):
+    """Sends a `QueryPlan` packet with `depth` nesting levels built by `build_dag` and returns the exception code and text, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -288,7 +314,7 @@ def sendPlan(depth):
         sendAddendum(s)
         # Stage 7 == QueryProcessingStage::QueryPlan: the server then expects a QueryPlan packet.
         sendQuery(s, "SELECT 1", 7)
-        s.sendall(buildQueryPlanPacket(plan_version, depth))
+        s.sendall(buildQueryPlanPacket(plan_version, depth, build_dag))
 
         # Only the first packet matters: either the exception or the start of the query result.
         packet_type = readVarUInt(s)
@@ -311,6 +337,12 @@ def main():
         print("TOO_DEEP_RECURSION")
     else:
         print("UNEXPECTED EXCEPTION {}: {}".format(code, text))
+
+    code, text = sendPlan(INDEX_HINT_DEPTH, buildIndexHintDAG)
+    if code == 306:
+        print("indexHint: TOO_DEEP_RECURSION")
+    else:
+        print("indexHint: UNEXPECTED EXCEPTION {}: {}".format(code, text))
 
 
 main()
