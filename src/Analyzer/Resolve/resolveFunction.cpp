@@ -3084,7 +3084,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
                         continue;
                     auto lambda_ast = function_arguments[i]->toAST();
-                    if (!lambda_ast->hasSecretParts())
+                    if (canDisplaySecrets(scope.context) || !lambda_ast->hasSecretParts())
                     {
                         arguments_projection_names[i] = lambda_ast->getColumnName();
                         continue;
