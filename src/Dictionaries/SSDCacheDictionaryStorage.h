@@ -13,6 +13,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/filesystemHelpers.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -227,6 +228,25 @@ public:
         return true;
     }
 
+    /// Serialized columns of the record at offset_in_block. Their size is the size_t stored
+    /// immediately before the payload (see the block layout above); the record must fit the block.
+    std::string_view getRecordView(size_t offset_in_block) const
+    {
+        if (offset_in_block < block_header_size + sizeof(size_t) || offset_in_block > block_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Cache data corrupted. Record offset {} is outside a block of size {}",
+                offset_in_block, block_size);
+
+        size_t size = unalignedLoad<size_t>(block_data + offset_in_block - sizeof(size_t));
+
+        if (size > block_size - offset_in_block)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Cache data corrupted. Record of size {} at offset {} does not fit a block of size {}",
+                size, offset_in_block, block_size);
+
+        return {block_data + offset_in_block, size};
+    }
+
     size_t getKeysSize() const { return keys_size; }
 
     /// Write keys size into block header
@@ -265,9 +285,6 @@ public:
 
     size_t getBlockSize() const { return block_size; }
 
-    /// Returns block data
-    char * getBlockData() const { return block_data; }
-
     /// Read keys that were serialized in block
     /// It is client responsibility to ensure that simple or complex keys were written in block
     void readSimpleKeys(PaddedPODArray<UInt64> & simple_keys) const
@@ -277,7 +294,9 @@ public:
 
         static constexpr size_t key_prefix_size = sizeof(UInt64) + sizeof(size_t);
 
-        while (block_start + key_prefix_size < block_end)
+        /// Compared as a distance: block_start can reach block_end exactly, and forming
+        /// block_start + key_prefix_size there would be an out of range pointer
+        while (static_cast<size_t>(block_end - block_start) > key_prefix_size)
         {
             UInt64 key = unalignedLoad<UInt64>(block_start);
             block_start += sizeof(UInt64);
@@ -288,6 +307,14 @@ public:
             /// If we read empty allocated size that means it is end of block
             if (allocated_size == 0)
                 break;
+
+            /// A record cannot extend past its block. The bytes after the last record are zeros, so these bytes
+            /// are corrupted. Returning the keys read so far is not enough: the caller evicts from the index
+            /// exactly the returned keys before it overwrites the block.
+            if (allocated_size > static_cast<size_t>(block_end - block_start))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
+                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             simple_keys.emplace_back(key);
             block_start += allocated_size;
@@ -301,10 +328,19 @@ public:
 
         static constexpr size_t key_prefix_size = sizeof(size_t) + sizeof(size_t);
 
-        while (block_start + key_prefix_size < block_end)
+        /// Compared as a distance: block_start can reach block_end exactly, and forming
+        /// block_start + key_prefix_size there would be an out of range pointer
+        while (static_cast<size_t>(block_end - block_start) > key_prefix_size)
         {
             size_t key_size = unalignedLoad<size_t>(block_start);
             block_start += sizeof(key_size);
+
+            /// The key and the data size that follows it must both still be inside the block (see above).
+            const size_t remaining = static_cast<size_t>(block_end - block_start);
+            if (remaining < sizeof(size_t) || key_size > remaining - sizeof(size_t))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Key of size {} does not fit the rest of the block ({} bytes)",
+                    key_size, remaining);
 
             std::string_view complex_key (block_start, key_size);
 
@@ -316,6 +352,11 @@ public:
             /// If we read empty allocated size that means it is end of block
             if (allocated_size == 0)
                 break;
+
+            if (allocated_size > static_cast<size_t>(block_end - block_start))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
+                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             complex_keys.emplace_back(complex_key);
             block_start += allocated_size;
@@ -409,9 +450,11 @@ public:
         current_write_block.writeCheckSum();
     }
 
-    char * getPlace(SSDCacheIndex index) const
+    std::string_view getRecordView(SSDCacheIndex index) const
     {
-        return buffer.m_data + index.block_index * block_size + index.offset_in_block;
+        SSDCacheBlock block(block_size);
+        block.reset(buffer.m_data + index.block_index * block_size);
+        return block.getRecordView(index.offset_in_block);
     }
 
     size_t getCurrentBlockIndex() const { return current_block_index; }
@@ -481,24 +524,53 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        /// Another storage with the same path may still be reading the old file, so it is replaced, not truncated.
+        /// rename(2) overwrites a symlink, not the file it points to, so the link is resolved first.
+        std::filesystem::path target_path = file_path;
+        for (size_t hops = 0; target_path.has_filename() && FS::isSymlinkNoThrow(target_path); ++hops)
+        {
+            if (hops == 40)
+                ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, file_path, ELOOP, "Cannot open file {}", file_path);
+            target_path = target_path.parent_path() / FS::readSymlink(target_path);
+        }
+        const std::string target_file_path = target_path.string();
+
+        /// rename(2) ignores the replaced file's permissions: a file the server cannot read and write must not be replaced.
+        if (::access(target_file_path.c_str(), R_OK | W_OK) != 0 && errno != ENOENT)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot open file {}", target_file_path);
+
+        const std::string new_file_path = (target_path.parent_path() / fmt::format("ssd_cache_{}.tmp", randomSeed())).string();
+
         #if defined(OS_DARWIN)
         /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666);
         #else
-        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_DIRECT, 0666);
         #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
+            ErrnoException::throwFromPath(error_code, file_path, "Cannot create file {} to replace {}", new_file_path, target_file_path);
         }
 
-        #if defined(OS_DARWIN)
-        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
-        #endif
+        try
+        {
+            #if defined(OS_DARWIN)
+            if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+            #endif
 
-        allocateSizeForNextPartition();
+            allocateSizeForNextPartition();
+
+            if (::rename(new_file_path.c_str(), target_file_path.c_str()) != 0)
+                ErrnoException::throwFromPath(
+                    ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot rename {} to {}", new_file_path, target_file_path);
+        }
+        catch (...)
+        {
+            ::unlink(new_file_path.c_str());
+            throw;
+        }
     }
 
     void allocateSizeForNextPartition()
@@ -750,7 +822,7 @@ public:
                         calculated_check_sum, expected_check_sum, file_path);
                 }
 
-                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
+                func(blocks_to_fetch[block_to_fetch_index], block);
 
                 processed[block_to_fetch_index] = true;
             }
@@ -1108,10 +1180,7 @@ private:
                     ++fetched_columns_index_without_default;
 
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
-                    char * serialized_columns_place = partition.getPlace(cell.index);
-                    /// This is larger size than necessary but we don't know the exact size of serialized columns
-                    size_t size = partition.block_size;
-                    ReadBufferFromString in({serialized_columns_place, size});
+                    ReadBufferFromString in(partition.getRecordView(cell.index));
                     deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
                     break;
                 }
@@ -1152,16 +1221,13 @@ private:
         ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
         file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request,
-            [&](size_t block_index, char * block_data)
+            [&](size_t block_index, const SSDCacheBlock & block)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
             for (auto & key_in_block : keys_in_block)
             {
-                char * key_data = block_data + key_in_block.offset_in_block;
-                /// The serialized columns are within the block, but we don't know their exact size.
-                size_t size = configuration.block_size - key_in_block.offset_in_block;
-                ReadBufferFromString in({key_data, size});
+                ReadBufferFromString in(block.getRecordView(key_in_block.offset_in_block));
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
                 result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(

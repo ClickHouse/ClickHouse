@@ -7,9 +7,6 @@ keywords: ['prometheus', 'grafana', 'monitoramento', 'métricas', 'exportador']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O recurso oferece suporte à integração com o [Prometheus](https://prometheus.io/) para monitorar serviços do ClickHouse Cloud. O acesso às métricas do Prometheus é disponibilizado por meio do endpoint da [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview), que permite conectar-se com segurança e exportar métricas para seu collector de métricas do Prometheus. Essas métricas podem ser integradas a dashboards, como Grafana e Datadog, para visualização.
 
 As métricas dos [ClickPipes](/pt-BR/integrations/clickpipes) associados a um serviço são incluídas junto às métricas do ClickHouse desse serviço.
@@ -22,9 +19,7 @@ Se você estiver procurando o endpoint equivalente para serviços de [ClickHouse
   ## API do endpoint Prometheus para obter métricas do ClickHouse Cloud
 </div>
 
-<div id="api-reference">
-  ### Referência da API
-</div>
+### Referência da API {#api-reference}
 
 | Método | Caminho                                                                                                                         | Descrição                                                                                                                                                                        |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -174,9 +169,7 @@ Para o ClickPipes, há uma métrica `gauge` semelhante, `ClickPipes_Info`, que, 
 | ------------------- | ---------------------- |
 | clickpipe&#95;state | O estado atual do pipe |
 
-<div id="configuring-prometheus">
-  ### Configurando o Prometheus
-</div>
+### Configurando o Prometheus {#configuring-prometheus}
 
 O servidor Prometheus coleta métricas dos alvos configurados nos intervalos definidos. Abaixo está um exemplo de configuração para o servidor Prometheus usar o endpoint Prometheus do ClickHouse Cloud:
 
@@ -194,22 +187,18 @@ scrape_configs:
     scheme: https
     params:
       filtered_metrics: ["true"]
-    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    metrics_path: "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus"
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
     honor_labels: true
 ```
 
-Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente. Além disso, no exemplo acima, `filtered_metrics` está definido como `true`, mas isso deve ser configurado de acordo com a preferência do usuário.
+Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente. Além disso, no exemplo acima, `filtered_metrics` está definido como `true`, mas isso deve ser configurado de acordo com a preferência do usuário. Para fazer scrape de todos os serviços de uma organização, use a [descoberta automática de serviços](#automatic-service-discovery).
 
-<div id="automatic-service-discovery">
-  ### Descoberta automática de serviços
-</div>
+### Descoberta automática de serviços {#automatic-service-discovery}
 
-<BetaBadge />
-
-O endpoint de descoberta retorna um alvo de coleta para cada serviço da sua organização, no formato de [descoberta de serviços HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) do Prometheus. O Prometheus atualiza a lista de alvos a cada consulta de descoberta e coleta métricas de cada alvo descoberto. Assim, os serviços recém-criados são incluídos automaticamente, e os serviços excluídos são removidos da lista de alvos. São incluídos apenas os serviços que sua chave de API tem permissão para visualizar; serviços que estão sendo excluídos ou já foram excluídos são omitidos.
+O endpoint de descoberta retorna um alvo de scrape para cada serviço da sua organização, no formato de [descoberta de serviços HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) do Prometheus. O Prometheus atualiza a lista de alvos a cada consulta de descoberta e faz scrape de métricas de cada alvo descoberto. Assim, os serviços recém-criados são incluídos automaticamente, e os serviços excluídos são removidos da lista de alvos. São incluídos apenas os serviços que sua chave de API tem permissão para visualizar; serviços que estão sendo excluídos ou já foram excluídos são omitidos.
 
 Para usá-lo, configure um job [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) para apontar para o endpoint de descoberta:
 
@@ -231,7 +220,7 @@ scrape_configs:
     honor_labels: true
 ```
 
-Defina `basic_auth` nos dois locais: o bloco em `http_sd_configs` autentica as consultas de descoberta, e o bloco no job de scrape autentica a coleta de métricas de cada serviço. Assim como na configuração estática, defina `honor_labels: true` para que o rótulo de instância seja preenchido corretamente.
+Defina `basic_auth` nos dois locais: o bloco em `http_sd_configs` autentica as consultas de descoberta, e o bloco no job de scrape autentica o scrape de métricas de cada serviço. Assim como na configuração estática, defina `honor_labels: true` para que o rótulo de instância seja preenchido corretamente.
 
 Um exemplo de resposta de descoberta:
 
@@ -245,13 +234,28 @@ Um exemplo de resposta de descoberta:
       "__param_filtered_metrics": "true",
       "clickhouse_org_id": "<ORG_ID>",
       "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
+      "clickhouse_discovery_service_name": "my service",
+      "__meta_clickhouse_region": "us-east-1",
+      "__meta_clickhouse_provider": "aws",
+      "__meta_clickhouse_tag_env": "production",
+      "__meta_clickhouse_tagpresent_env": "true"
     }
   }
 ]
 ```
 
-Os alvos descobertos são coletados com `filtered_metrics=true`. Para descobrir alvos que coletam o conjunto completo de métricas, adicione `?filtered_metrics=false` à URL de discovery. A especificação completa do endpoint está disponível na [referência da Cloud API](/pt-BR/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
+Cada alvo também inclui a região, o provedor de nuvem e os rótulos do serviço como labels `__meta_clickhouse_region`, `__meta_clickhouse_provider` e `__meta_clickhouse_tag_<key>`. `__meta_clickhouse_tagpresent_<key>` é `true` para todos os rótulos, inclusive os que não têm valor. Caracteres que não sejam letras, dígitos ou sublinhados nas chaves dos rótulos são convertidos em `_`. O Prometheus descarta os labels `__meta_` após o relabeling, portanto use `relabel_configs` para filtrar alvos ou manter esses labels:
+
+```yaml
+    relabel_configs:
+      - source_labels: [__meta_clickhouse_tag_env]
+        regex: production
+        action: keep
+      - source_labels: [__meta_clickhouse_region]
+        target_label: region
+```
+
+Os alvos descobertos são submetidos a scrape com `filtered_metrics=true`. Para descobrir alvos que fazem scrape do conjunto completo de métricas, adicione `?filtered_metrics=false` à URL de discovery. A especificação completa do endpoint está disponível na [referência da Cloud API](/pt-BR/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
   ## Integrando-se ao Grafana
@@ -264,34 +268,64 @@ Os usuários têm duas maneiras principais de se integrar ao Grafana:
 
 Fornecemos abaixo instruções para usar essas opções, com foco nos detalhes específicos do endpoint Prometheus do ClickHouse Cloud.
 
-<div id="grafana-cloud-with-metrics-endpoint">
-  ### Grafana Cloud com endpoint de métricas
-</div>
+<a id="grafana-cloud-with-metrics-endpoint" />
+### Grafana Cloud com endpoint de métricas
 
 * Faça login na sua conta do Grafana Cloud
 * Adicione uma nova conexão selecionando o **Endpoint de Métricas**
 * Configure a URL de scrape para apontar para o endpoint Prometheus e use autenticação básica para configurar a conexão com a chave da API/o segredo
 * Teste a conexão para garantir que ela funcione
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configurar o Endpoint de Métricas do Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Configurar o Endpoint de Métricas do Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Depois de concluir a configuração, as métricas deverão aparecer no menu suspenso para que você possa selecioná-las e configurar dashboards:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Menu suspenso do Explorador de Métricas do Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Menu suspenso do Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-dropdown.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Gráfico do Explorador de Métricas do Grafana" border />
+<div className="ch-image-md">
 
-<div id="grafana-cloud-with-alloy">
-  ### Grafana Cloud com Alloy
+<Frame>
+
+![Gráfico do Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-chart.webp)
+
+</Frame>
+
 </div>
+
+<a id="grafana-cloud-with-alloy" />
+### Grafana Cloud com Alloy
 
 Se você estiver usando o Grafana Cloud, o Alloy pode ser instalado acessando o menu Alloy no Grafana e seguindo as instruções na tela:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -306,7 +340,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/services/<clickhouse_service_id>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -338,9 +372,8 @@ prometheus.scrape "clickhouse_cloud" {
 
 Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente.
 
-<div id="grafana-self-managed-with-alloy">
-  ### Grafana autogerenciado com Alloy
-</div>
+<a id="grafana-self-managed-with-alloy" />
+### Grafana autogerenciado com Alloy
 
 Usuários do Grafana autogerenciado podem encontrar as instruções para instalar o agente Alloy [aqui](https://grafana.com/docs/alloy/latest/get-started/install/). Presumimos que os usuários já tenham configurado o Alloy para enviar métricas do Prometheus ao destino desejado. O componente `prometheus.scrape` abaixo faz o Alloy coletar métricas do endpoint do ClickHouse Cloud. Presumimos que `prometheus.remote_write` receba as métricas coletadas. Ajuste a `forward_to key` para o destino de envio desejado, caso ela não exista.
 
@@ -353,7 +386,7 @@ Usuários do Grafana autogerenciado podem encontrar as instruções para instala
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+  metrics_path = "/v1/organizations/<organizationId>/services/<serviceId>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -372,15 +405,22 @@ Usuários do Grafana autogerenciado podem encontrar as instruções para instala
 
 Depois de configurar, você deverá ver as métricas relacionadas ao ClickHouse no explorador de métricas:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Explorador de Métricas do Grafana" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Observe que o parâmetro de configuração `honor_labels` precisa ser definido como `true` para que o rótulo da instância seja preenchido corretamente.
 
-<div id="integrating-with-datadog">
-  ## Integração com o Datadog
-</div>
+<a id="integrating-with-datadog" />
+## Integração com o Datadog
 
 Você pode usar o [Agent](https://docs.datadoghq.com/agent/?tab=Linux) e a [integração OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) do Datadog para coletar métricas do endpoint do ClickHouse Cloud. Abaixo está um exemplo simples de configuração desse agente e dessa integração. Observe, porém, que talvez você queira selecionar apenas as métricas mais importantes para você. O exemplo genérico abaixo exportará muitos milhares de combinações de métrica-instância, que o Datadog tratará como métricas personalizadas.
 
@@ -388,7 +428,7 @@ Você pode usar o [Agent](https://docs.datadoghq.com/agent/?tab=Linux) e a [inte
 init_config:
 
 instances:
-   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/services/12f4a114-9746-4a75-9ce5-161ec3a73c4c/prometheus?filtered_metrics=true'
      namespace: 'clickhouse'
      metrics:
          - '^ClickHouse.*'
@@ -398,11 +438,18 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Integração do Prometheus com o Datadog" />
+<div className="ch-image-md">
 
-<div id="related">
-  ## Páginas relacionadas
+<Frame>
+
+![Integração do Prometheus com o Datadog](/images/integrations/prometheus-datadog.webp)
+
+</Frame>
+
 </div>
+
+<a id="related" />
+## Páginas relacionadas
 
 * [Visão geral do monitoramento](/pt-BR/products/cloud/features/monitoring/overview) — Compare todas as abordagens de monitoramento do ClickHouse Cloud
 * [Monitoramento no Cloud Console](/pt-BR/products/cloud/features/monitoring/cloud-console) — Dashboards integrados que não exigem ferramentas externas

@@ -35,6 +35,13 @@
 #include <Core/Types.h>
 
 
+#if USE_GPU
+extern "C" void LLVMInitializeNVPTXTargetInfo();
+extern "C" void LLVMInitializeNVPTXTarget();
+extern "C" void LLVMInitializeNVPTXTargetMC();
+extern "C" void LLVMInitializeNVPTXAsmPrinter();
+#endif
+
 namespace DB
 {
 
@@ -649,20 +656,31 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.run(module, mam);
 }
 
-std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
+void initializeLLVMTargets()
 {
-    static std::once_flag llvm_target_initialized;
-    std::call_once(llvm_target_initialized, []()
+    static std::once_flag llvm_targets_initialized;
+    std::call_once(llvm_targets_initialized, []()
     {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+#if USE_GPU
+        LLVMInitializeNVPTXTargetInfo();
+        LLVMInitializeNVPTXTarget();
+        LLVMInitializeNVPTXTargetMC();
+        LLVMInitializeNVPTXAsmPrinter();
+#endif
     });
+}
+
+std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
+{
+    initializeLLVMTargets();
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::Triple(llvm::sys::getProcessTriple());
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 

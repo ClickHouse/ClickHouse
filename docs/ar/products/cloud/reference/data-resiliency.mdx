@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'مرونة البيانات', 'التعافي من الكوارث']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تغطي هذه الصفحة توصيات التعافي من الكوارث في ClickHouse Cloud، وإرشادات للعملاء حول كيفية التعافي من انقطاع الخدمة.
 لا يدعم ClickHouse Cloud حاليًا التبديل التلقائي عند التعطل، ولا المزامنة التلقائية عبر مناطق جغرافية متعددة.
 
@@ -104,7 +102,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. انقر على النقاط الثلاث ضمن “Actions” للنسخة الاحتياطية التي تريد الاستعادة منها.
 3. امنح الخدمة الجديدة اسمًا محددًا، ثم ابدأ الاستعادة من هذه النسخة الاحتياطية
 
-<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="الاستعادة من نسخة احتياطية" />
+<div className="ch-image-md">
+
+<Frame>
+
+![الاستعادة من نسخة احتياطية](/images/cloud/guides/restore_backup.webp)
+
+</Frame>
+
+</div>
 
 <div id="primary-region-downtime">
   ### تعطل المنطقة الأساسية

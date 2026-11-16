@@ -1,18 +1,25 @@
 ---
 title: 'JOIN algorithms'
-sidebar_label: 'Algorithms'
+sidebarTitle: 'Algorithms'
 description: 'How ClickHouse JOIN algorithms work, which JOIN types they support, and how to select one.'
 keywords: ['JOIN algorithms', 'join_algorithm', 'hash join', 'parallel hash join', 'grace hash join', 'full sorting merge join', 'partial merge join', 'direct join', 'IEJoin']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 This page describes each value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) that executes a JOIN, and the block nested loop fallback. The diagrams use `max_threads = 2` to keep the illustrations readable.
 
 ## `direct` {#direct}
 
-<Image img="/images/guides/join-algorithms/direct-join.png" size="lg" alt="Direct JOIN pipeline: two parallel streams read the left table, and two join stages look up each row in a dictionary that backs the right table, with no build phase"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Direct JOIN pipeline: two parallel streams read the left table, and two join stages look up each row in a dictionary that backs the right table, with no build phase](/images/guides/join-algorithms/direct-join.png)
+
+</Frame>
+
+</div>
 
 The `direct` algorithm performs a lookup in the right-hand side for each row of the left-hand side. The right-hand side must be a storage that supports low-latency key-value lookups. ClickHouse streams the left-hand side in parallel and joins each block by looking up its keys in that storage. There is no build phase, because the data of the right-hand side is already stored in a key-value structure.
 
@@ -38,7 +45,15 @@ If any condition is not met, ClickHouse tries the next algorithm in `join_algori
 
 ## `hash` {#hash}
 
-<Image img="/images/guides/join-algorithms/hash-join.png" size="lg" alt="Hash JOIN pipeline: two streams read the right table into a single in-memory hash table, then two parallel streams read the left table and join each row by a lookup in that hash table"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Hash JOIN pipeline: two streams read the right table into a single in-memory hash table, then two parallel streams read the left table and join each row by a lookup in that hash table](/images/guides/join-algorithms/hash-join.png)
+
+</Frame>
+
+</div>
 
 The `hash` algorithm reads the complete right-hand side into memory and builds an in-memory hash table from it. It then streams the left-hand side in parallel and joins each row by looking up its key in the hash table. ClickHouse chooses the hash table implementation from the types of the JOIN key columns and the JOIN strictness.
 
@@ -52,7 +67,15 @@ For `INNER`, `LEFT`, `RIGHT`, and `FULL` JOINs, [`parallel_hash_join_threshold`]
 
 ## `parallel_hash` {#parallel-hash}
 
-<Image img="/images/guides/join-algorithms/parallel-hash-join.png" size="lg" alt="Parallel hash JOIN pipeline: rows of the right table are split into two buckets by a hash of the JOIN key, and two hash tables are filled concurrently; rows of the left table are routed to the matching hash table by the same hash function"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Parallel hash JOIN pipeline: rows of the right table are split into two buckets by a hash of the JOIN key, and two hash tables are filled concurrently; rows of the left table are routed to the matching hash table by the same hash function](/images/guides/join-algorithms/parallel-hash-join.png)
+
+</Frame>
+
+</div>
 
 `parallel_hash` is an obsolete alias of `hash`, kept for compatibility. Listing it in `join_algorithm` does not change how the hash table is built: [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) decides that for both values. To split the hash table whenever the JOIN type allows it, set the threshold to `0`. To always keep one hash table, set `hash_join_layout` to `serial`.
 
@@ -60,7 +83,15 @@ The diagram shows how `hash` builds a split hash table. ClickHouse assigns the r
 
 ## `grace_hash` {#grace-hash}
 
-<Image img="/images/guides/join-algorithms/grace-hash-join.png" size="lg" alt="Grace hash JOIN first phase with grace_hash_join_initial_buckets = 3: rows of both tables are split into buckets by a hash of the JOIN key; the first bucket is joined in memory, and the other buckets of both tables are delayed to temporary storage"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Grace hash JOIN first phase with grace_hash_join_initial_buckets = 3: rows of both tables are split into buckets by a hash of the JOIN key; the first bucket is joined in memory, and the other buckets of both tables are delayed to temporary storage](/images/guides/join-algorithms/grace-hash-join.png)
+
+</Frame>
+
+</div>
 
 The `grace_hash` algorithm is a hash JOIN that does not require the right-hand side to fit into memory. It runs in two phases:
 
@@ -77,7 +108,15 @@ The initial number of buckets is [`grace_hash_join_initial_buckets`](/reference/
 
 ## `full_sorting_merge` {#full-sorting-merge}
 
-<Image img="/images/guides/join-algorithms/full-sorting-merge-join.png" size="lg" alt="Full sorting merge JOIN pipeline: blocks of both tables are sorted by the JOIN key in parallel and can be spilled to temporary storage; one merge sort stream per table feeds a single merge join stage"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Full sorting merge JOIN pipeline: blocks of both tables are sorted by the JOIN key in parallel and can be spilled to temporary storage; one merge sort stream per table feeds a single merge join stage](/images/guides/join-algorithms/full-sorting-merge-join.png)
+
+</Frame>
+
+</div>
 
 The `full_sorting_merge` algorithm is a sort-merge JOIN. ClickHouse sorts both inputs by the JOIN key and identifies matches by an interleaved scan of the two sorted streams. Sorting runs in memory or, for large inputs, as an external sort on disk. If an input is read in the order of the JOIN key, for example because the key is a prefix of the sorting key of a `MergeTree` table, ClickHouse skips the sort for that input.
 
@@ -96,7 +135,15 @@ The [`max_rows_in_set_to_optimize_join`](/reference/settings/session-settings/ma
 
 ## `partial_merge` {#partial-merge}
 
-<Image img="/images/guides/join-algorithms/partial-merge-join.png" size="lg" alt="Partial merge JOIN pipeline: blocks of the right table are sorted and written to temporary storage together with a min-max index per block; blocks of the left table are sorted in memory and joined against the stored right-hand blocks"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Partial merge JOIN pipeline: blocks of the right table are sorted and written to temporary storage together with a min-max index per block; blocks of the left table are sorted in memory and joined against the stored right-hand blocks](/images/guides/join-algorithms/partial-merge-join.png)
+
+</Frame>
+
+</div>
 
 The `partial_merge` algorithm is a variant of the sort-merge JOIN in which only the right-hand side is fully sorted. ClickHouse splits the right-hand side into blocks of up to [`partial_merge_join_rows_in_right_blocks`](/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) rows, sorts each block by the JOIN key, and creates a min-max index for each block. It then sorts each block of the left-hand side in memory and merges it with the right-hand blocks. The min-max index skips right-hand blocks that cannot contain matches.
 
@@ -177,7 +224,15 @@ A JOIN that compares such values can therefore return different rows depending o
 
 ## Choosing a JOIN algorithm {#choosing-a-join-algorithm}
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="Relative memory usage and execution time of the direct, parallel hash, hash, grace hash, full sorting merge, and partial merge JOIN algorithms"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Relative memory usage and execution time of the direct, parallel hash, hash, grace hash, full sorting merge, and partial merge JOIN algorithms](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 The chart above shows the relative memory use and execution time of six JOIN algorithms. Its parallel hash JOIN is `hash` with a split hash table. The positions are qualitative, and the actual values depend on the data size, the key types, and the distribution of key values. The chart does not include `ie_join`, `parallel_full_sorting_merge`, or the block nested loop fallback.
 
@@ -212,4 +267,6 @@ In `EXPLAIN` output, the second case appears as `Algorithm: JoinSwitcher`.
 - [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [JOIN settings](/concepts/features/operations/select/join-settings)
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
 
