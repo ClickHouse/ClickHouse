@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Core/Joins.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -20,16 +23,45 @@ namespace ErrorCodes
 
 class AggregatingStep;
 class DistinctStep;
+class JoinStepLogical;
 class WindowStep;
+
+/// Whether the join may run as a hash join, the only kind of join Cascades distributes.
+bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms);
+
+/// A side is preserved when the join never emits rows with that side null/default-extended:
+/// its key columns are real values in every output row. Only a preserved side's key columns can
+/// be advertised as the output distribution of a shuffle join.
+bool joinPreservesLeftSide(JoinKind kind);
+bool joinPreservesRightSide(JoinKind kind);
+
+/// An equality of a column of each side that a shuffle can hash both sides by. `hash_type` is the common type both
+/// columns are cast to before hashing, null when their types are equal.
+struct RoutingEquiKey
+{
+    JoinActionRef left;
+    JoinActionRef right;
+    DataTypePtr hash_type;
+};
+
+/// The equalities of the join condition that a shuffle can hash both sides by, with the left column first. Other
+/// conjuncts, and equalities of two columns without a common type, are skipped.
+std::vector<RoutingEquiKey> extractRoutingEquiKeys(const JoinStepLogical & join_step);
+
+/// Whether Cascades may run the join on several nodes: as a hash join, broadcast to a preserved left side or shuffled
+/// by an equality of the two sides. A `RIGHT` join that `JoinCommutativity` could turn around is not counted.
+bool isJoinDistributable(const JoinStepLogical & join_step);
 
 /// The partition keys of a window as distribution columns, or empty when the window runs on one node only. The join
 /// order search asks the same, see `query_plan_join_order_distribution`.
 DistributionColumns windowPartitionKeyColumns(const WindowStep & window_step);
 
-/// Whether a final `DISTINCT` may run on several nodes, each with the rows of its own values.
-bool isDistinctDistributable(const DistinctStep & step);
+/// Whether a final `DISTINCT` may run on several nodes, each with the rows of its own values. A preliminary one always
+/// may, see `isDistributionPassthroughStep`.
+bool isFinalDistinctDistributable(const DistinctStep & step);
 
-/// Whether a final aggregation may run on several nodes, each with the groups of its own keys.
+/// Whether a final aggregation may run on several nodes, each with the groups of its own keys. A partial aggregation
+/// always may, with a merge of the partial results after it.
 bool isAggregationShuffleApplicable(const AggregatingStep & step);
 
 /// A Full sort with a limit is a top-N: it reduces rows, so it stays in the memo as an operator

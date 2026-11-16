@@ -1,4 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -99,28 +98,6 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
         expression->strategy == nullptr;
 }
 
-/// Whether `join_algorithm` allows an algorithm from the hash family, so the local join can
-/// actually run as the hash join the strategies of this rule cost.
-static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms)
-{
-    return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
-        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
-}
-
-/// A side is preserved when the join never emits rows with that side null/default-extended:
-/// its key columns are real values in every output row. Only a preserved side's key columns can
-/// be advertised as the output distribution of a shuffle join.
-static bool joinPreservesLeftSide(JoinKind kind)
-{
-    return kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Cross || kind == JoinKind::Comma;
-}
-
-static bool joinPreservesRightSide(JoinKind kind)
-{
-    return kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
-}
-
 HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
     const HashJoinImplementation & rule_,
     GroupExpressionPtr expression_,
@@ -145,34 +122,15 @@ HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
 
 void HashJoinImplementation::StrategyEnumerator::extractEquiJoinKeys()
 {
-    /// Keys with no common supertype are skipped.
-    if (join_step.getJoinOperator().expression.empty())
-        return;
-
-    for (const auto & predicate : join_step.getJoinOperator().expression)
+    for (const auto & key : extractRoutingEquiKeys(join_step))
     {
-        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
-            continue;
-
-        if (left_node.fromRight() && right_node.fromLeft())
-            std::swap(left_node, right_node);
-        else if (!left_node.fromLeft() || !right_node.fromRight())
-            continue;
-
         String hash_type_name;
-        DataTypePtr left_type = left_node.getType();
-        DataTypePtr right_type = right_node.getType();
-        if (!left_type->equals(*right_type))
+        if (key.hash_type)
         {
-            DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});
-            if (!common_type)
-                continue;
-            hash_type_name = common_type->getName();
+            hash_type_name = key.hash_type->getName();
             needs_hash_cast = true;
         }
-
-        equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName(), std::move(hash_type_name), left_type->getName()});
+        equi_keys.push_back({key.left.getColumnName(), key.right.getColumnName(), std::move(hash_type_name), key.left.getType()->getName()});
     }
 }
 

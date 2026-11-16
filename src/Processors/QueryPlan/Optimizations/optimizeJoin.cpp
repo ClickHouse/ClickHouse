@@ -1246,8 +1246,9 @@ static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input
     const auto * aggregating = typeid_cast<const AggregatingStep *>(step);
     const auto * distinct = typeid_cast<const DistinctStep *>(step);
     const auto * window = typeid_cast<const WindowStep *>(step);
-    if (typeid_cast<const JoinStepLogical *>(step) || (aggregating && isAggregationShuffleApplicable(*aggregating))
-        || (distinct && isDistinctDistributable(*distinct)) || (window && !windowPartitionKeyColumns(*window).empty()))
+    const auto * join = typeid_cast<const JoinStepLogical *>(step);
+    if ((join && isJoinDistributable(*join)) || (aggregating && isAggregationShuffleApplicable(*aggregating))
+        || (distinct && isFinalDistinctDistributable(*distinct)) || (window && !windowPartitionKeyColumns(*window).empty()))
         result.placement = QueryGraph::InputPlacement::Partitioned;
     return result;
 }

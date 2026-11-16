@@ -55,7 +55,7 @@ protected:
 
         add_alternative(strategySingleton<LocalDistinctStrategy>(), DistributionDescription{}, "Local");
 
-        if (!isDistinctDistributable(step))
+        if (!isFinalDistinctDistributable(step))
             return result;
         const auto & columns = step.getColumnNames();
 
