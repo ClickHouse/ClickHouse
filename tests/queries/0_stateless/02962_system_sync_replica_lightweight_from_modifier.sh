@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-msan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

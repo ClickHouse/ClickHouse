@@ -1,0 +1,29 @@
+into ReplicatedMergeTree
+3
+into Distributed
+3
+refreshable view reloaded from metadata, feeding a materialized view
+3	1
+3	1
+refreshable view in a Replicated database
+3
+EXPLAIN SYNTAX inlines the view
+1
+the formatted query keeps the two parts of the name
+SELECT * FROM db.pv(p = 1)
+SELECT * FROM `my-db`.pv(p = 1)
+SELECT * FROM `db.pv`(p = 1)
+a keyword part stays quoted and parses back
+SELECT * FROM `null`.pv(p = 1)	1
+SELECT 1 IN `null`.pv(1)	1
+SELECT * FROM `not`.pv(p = 1)	1
+SELECT 1 IN `not`.pv(1)	1
+SELECT 1 IN `partition`.pv(1)	1
+the analyzer writes the stored spelling as two parts
+1
+a view whose own name has a dot
+1
+a view whose own name has a dot, when the split names a table that is not a parameterized view
+1
+an unquoted v.x(...) is the view x of database v, not the view v.x
+0

@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações definem o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="text_index_header_cache_max_entries">
-  ## text_index_header_cache_max_entries
-</div>
+## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Tamanho do cache do cabeçalho do índice de texto, em número de entradas. Zero significa desativado.
 
-<div id="text_index_header_cache_policy">
-  ## text_index_header_cache_policy
-</div>
+## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de cache do cabeçalho do índice de texto.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção de cache do cabeçalho do índice de texto. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="text_index_header_cache_size">
-  ## text_index_header_cache_size
-</div>
+## text_index_header_cache_size {#text_index_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Tamanho do cache dos cabeçalhos do índice de texto. Zero significa desativado.
 
@@ -34,27 +28,19 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
   Essa configuração pode ser modificada em tempo de execução e terá efeito imediato.
 </Note>
 
-<div id="text_index_header_cache_size_ratio">
-  ## text_index_header_cache_size_ratio
-</div>
+## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache do cabeçalho do índice de texto, em relação ao tamanho total do cache.
 
-<div id="text_index_postings_cache_max_entries">
-  ## text_index_postings_cache_max_entries
-</div>
+## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Tamanho do cache da lista de postings do índice de texto, em entradas. Zero significa que está desabilitado.
 
-<div id="text_index_postings_cache_policy">
-  ## text_index_postings_cache_policy
-</div>
+## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de cache da lista de postings do índice de texto.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache da lista de postings do índice de texto. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="text_index_postings_cache_size">
-  ## text_index_postings_cache_size
-</div>
+## text_index_postings_cache_size {#text_index_postings_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />Tamanho do cache das listas de postings do índice de texto. Zero significa que está desabilitado.
 
@@ -62,27 +48,19 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
   Esta configuração pode ser modificada em tempo de execução e entrará em vigor imediatamente.
 </Note>
 
-<div id="text_index_postings_cache_size_ratio">
-  ## text_index_postings_cache_size_ratio
-</div>
+## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache de listas de postings do índice de texto em relação ao tamanho total do cache.
 
-<div id="text_index_tokens_cache_max_entries">
-  ## text_index_tokens_cache_max_entries
-</div>
+## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Tamanho do cache de tokens do índice de texto, em entradas. Zero significa desabilitado.
 
-<div id="text_index_tokens_cache_policy">
-  ## text_index_tokens_cache_policy
-</div>
+## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de cache dos tokens do índice de texto.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache dos tokens do índice de texto. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="text_index_tokens_cache_size">
-  ## text_index_tokens_cache_size
-</div>
+## text_index_tokens_cache_size {#text_index_tokens_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Tamanho do cache de tokens do índice de texto. Zero significa que está desabilitado.
 
@@ -90,9 +68,7 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
   Esta configuração pode ser modificada em tempo de execução e entrará em vigor imediatamente.
 </Note>
 
-<div id="text_index_tokens_cache_size_ratio">
-  ## text_index_tokens_cache_size_ratio
-</div>
+## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache de tokens do índice de texto, em relação ao tamanho total desse cache.
 

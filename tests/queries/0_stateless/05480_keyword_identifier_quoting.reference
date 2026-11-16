@@ -1,0 +1,11 @@
+SELECT `not`, b FROM t
+SELECT `not` + 1 AS x FROM t WHERE `not` = 1 ORDER BY `not` ASC
+SELECT x[`not`], f(`not`, 1), `not`.y
+SELECT `not`(1, 2)	1
+SELECT `not`(1) OVER ()	1
+SELECT `columns`(a, b)	1
+SELECT CAST(`as`, \'Int32\')	1
+SELECT `interval` AS DAY	1
+SELECT * EXCEPT `strict`	1
+6
+5
