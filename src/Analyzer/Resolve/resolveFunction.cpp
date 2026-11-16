@@ -1177,10 +1177,14 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 /// `(t, 1) IN (SELECT toFloat64(1767225600), 1)` returns 0 for
 /// `t = fromUnixTimestamp64Nano(1767225600000000001, 'UTC')` because `Float64` cannot hold the nanosecond,
 /// while `equals` compares in a common supertype and matches. The conversion also parses text as a number,
-/// where `equals` finds no common type. The set holds NULL as a value of a `Variant` key and NULL fields
-/// as values of a tuple key, while `equals` returns NULL for them. So the rewrite keeps the semantics only
-/// when every key has the type of its column and is neither a tuple nor a `Variant`. A `Nullable` element
-/// of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
+/// where `equals` finds no common type. A key of a `Bool` column is converted even when it has the column's
+/// type, which turns every byte other than 0 into `true`, while `equals` compares the bytes. The set holds
+/// NULL as a value of a `Variant` key and NULL fields as values of a tuple key, while `equals` returns NULL
+/// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
+/// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
+/// the numbers. So the rewrite keeps the semantics only when every key has the type of its column, is
+/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable`
+/// element of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
 /// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
 static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
 {
@@ -1194,8 +1198,9 @@ static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const N
     for (size_t i = 0; i < key_types.size(); ++i)
     {
         const auto key_type_without_nullable = removeNullable(key_types[i]);
-        if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable)
-            || !key_types[i]->equals(*subquery_columns[i].type))
+        const DataTypePtr & column_type = subquery_columns[i].type;
+        if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
+            || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
             return false;
     }
     return true;
