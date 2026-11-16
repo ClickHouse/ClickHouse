@@ -12,6 +12,10 @@
 -- `QueryPlan::ensureSerialized`. The cache is populated by the plan the initiator executes itself, so
 -- the query result cache must still work for the subquery.
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 SYSTEM DROP QUERY CACHE;
 
 DROP TABLE IF EXISTS t_qrc_pr;

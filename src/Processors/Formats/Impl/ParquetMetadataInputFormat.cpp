@@ -358,7 +358,7 @@ void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parqu
                         const auto & thrift_encodings = thrift_metadata->row_groups[row_group_i].columns[column_i].meta_data.encodings;
                         if (encoding_i < thrift_encodings.size())
                         {
-                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(thrift_encodings[encoding_i]);
+                            auto it = Parquet::parq::_Encoding_VALUES_TO_NAMES.find(Parquet::thriftEnumToInt(thrift_encodings[encoding_i]));
                             if (it != Parquet::parq::_Encoding_VALUES_TO_NAMES.end())
                                 codec_name = it->second;
                         }
@@ -663,7 +663,8 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            bool /* is_remote_fs */,
            FormatParserSharedResourcesPtr,
            FormatFilterInfoPtr) -> InputFormatPtr
-        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
+        /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 
     factory.setDocumentation("ParquetMetadata", Documentation{
