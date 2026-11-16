@@ -14,18 +14,18 @@ public:
     /// max_threads is used to limit the number of threads for result pipeline.
     IntersectOrExceptStep(SharedHeaders input_headers_, Operator operator_, size_t max_threads_ = 0);
 
-    String getName() const override { return "IntersectOrExcept"; }
+    [[nodiscard]] String getName() const override { return "IntersectOrExcept"; }
 
-    Operator getOperator() const { return current_operator; }
-    size_t getMaxThreads() const { return max_threads; }
+    [[nodiscard]] Operator getOperator() const { return current_operator; }
+    [[nodiscard]] size_t getMaxThreads() const { return max_threads; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

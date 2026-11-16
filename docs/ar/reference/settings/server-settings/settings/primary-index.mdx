@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُهيِّئ هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="primary_index_cache_policy">
-  ## primary_index_cache_policy
-</div>
+## primary_index_cache_policy {#primary_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة التخزين المؤقت للفهرس الأساسي.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت للفهرس الأساسي. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="primary_index_cache_prewarm_ratio">
-  ## primary_index_cache_prewarm_ratio
-</div>
+## primary_index_cache_prewarm_ratio {#primary_index_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />النسبة من الحجم الإجمالي لـ mark cache المطلوب ملؤها أثناء الـ prewarm.
 
-<div id="primary_index_cache_size">
-  ## primary_index_cache_size
-</div>
+## primary_index_cache_size {#primary_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="نعم" />الحد الأقصى لحجم ذاكرة التخزين المؤقت للفهرس الأساسي (مؤشر جداول عائلة MergeTree).
 
-<div id="primary_index_cache_size_ratio">
-  ## primary_index_cache_size_ratio
-</div>
+## primary_index_cache_size_ratio {#primary_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حال استخدام سياسة SLRU) في ذاكرة التخزين المؤقت للفهرس الأساسي، مقارنةً بالحجم الإجمالي لذاكرة التخزين المؤقت.
 

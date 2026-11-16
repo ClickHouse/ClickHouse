@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The value-set reservation in `hashDictionaryValues` must be a genuine upper bound on what the
 # pruning path really allocates. Its materialized-payload term must be derived from the exact total

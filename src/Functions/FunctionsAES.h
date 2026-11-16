@@ -74,7 +74,7 @@ inline UInt8 constantTimeEQ(UInt8 a, UInt8 b)
 /// cipher setup and key schedule expansion that dominate the per-row cost in OpenSSL 3.x.
 struct CachedKeyState
 {
-    bool matches(std::string_view key_value) const
+    [[nodiscard]] bool matches(std::string_view key_value) const
     {
         return initialized && key_value.size() == key_size
             && memcmp(key_value.data(), key.data(), key_size) == 0;
@@ -92,7 +92,7 @@ struct CachedKeyState
     /// that, a key change only needs the new key (with a null cipher), which replaces
     /// the key schedule but keeps the provider context and its parameters; re-passing
     /// the cipher would repeat the full context setup.
-    bool hasContext() const { return initialized; }
+    [[nodiscard]] bool hasContext() const { return initialized; }
 
     void reset() { initialized = false; }
 
@@ -159,7 +159,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    std::string_view setKey(size_t cipher_key_size, std::string_view key) const
+    [[nodiscard]] std::string_view setKey(size_t cipher_key_size, std::string_view key) const
     {
         if (key.size() != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size(), cipher_key_size);
@@ -179,7 +179,7 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
         // But we have to do the same to be compatitable with MySQL.
-        // see https://github.com/mysql/mysql-server/blob/8.0/router/src/harness/src/my_aes_openssl.cc#L71
+        // see https://github.com/mysql/mysql-server/blob/mysql-8.0.20/router/src/harness/src/my_aes_openssl.cc#L71
         // (my_aes_create_key function)
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }
@@ -245,46 +245,29 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors
-            {
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors
-            {
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
-            },
-            optional_args
-        );
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> String";
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -771,47 +754,30 @@ public:
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
+        const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
-            },
-            optional_args
-        );
-
-        if constexpr (use_null_when_decrypt_fail)
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> " + ret;
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> " + ret;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 

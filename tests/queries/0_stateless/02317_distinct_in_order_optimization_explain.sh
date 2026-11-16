@@ -66,15 +66,16 @@ $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order
 $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
 
 echo "-- Check reading in order for distinct"
+# The `algorithm: Thread` checks need several streams, so do not lower `max_threads=0` (auto) to the fair share of CPU slots.
 echo "-- disabled, distinct columns match sorting key"
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 --use_concurrency_control_for_max_threads=0 -q "$DISABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns match sorting key"
 # read_in_order_two_level_merge_threshold is set here to avoid repeating MergeTreeInOrder in output
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns DON't form prefix of sorting key"
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
+$CLICKHOUSE_CLIENT --max_threads=0 --use_concurrency_control_for_max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b from distinct_in_order_explain" | eval $FIND_READING_DEFAULT
 echo "-- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key"
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key"
@@ -83,27 +84,25 @@ echo "-- enabled, only part of distinct columns form prefix of sorting key"
 
 $CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
-echo "=== enable analyzer ==="
-ENABLE_ANALYZER="set enable_analyzer=1"
 # Reading in order must be on for the ORDER BY + DISTINCT checks below, otherwise CI's setting
 # randomization decides `optimize_read_in_order` for them.
 ENABLE_READ_IN_ORDER="set optimize_read_in_order=1"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0 settings optimize_move_to_prewhere=1" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0 settings optimize_move_to_prewhere=1" | eval $FIND_SORTING_PROPERTIES
 
 echo "-- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$DISABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$DISABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
 echo "-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
 echo "-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization, but direction used from ORDER BY clause"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a DESC" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a DESC" | eval $FIND_SORTING_PROPERTIES
 echo "-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct a from distinct_in_order_explain order by a, b" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct a from distinct_in_order_explain order by a, b" | eval $FIND_SORTING_PROPERTIES
 echo "-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a DESC, b DESC" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a DESC, b DESC" | eval $FIND_SORTING_PROPERTIES
 
 echo "-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization"
-$CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;set optimize_read_in_order=0;set optimize_aggregation_in_order=0;set optimize_read_in_window_order=0;explain plan sorting=1 select distinct a,b from distinct_in_order_explain" | eval $FIND_SORTING_PROPERTIES
+$CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;set optimize_read_in_order=0;set optimize_aggregation_in_order=0;set optimize_read_in_window_order=0;explain plan sorting=1 select distinct a,b from distinct_in_order_explain" | eval $FIND_SORTING_PROPERTIES
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"

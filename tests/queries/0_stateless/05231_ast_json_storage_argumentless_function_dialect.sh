@@ -91,10 +91,9 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE tkd"
 send "$(payload "ALTER TABLE tk (DELETE WHERE a IN (1))" "$ARGS_A_1")"
 
 # A table function is the other node the parser always gives an `arguments` list, even with no arguments
-# at all, and the four slots holding one pass it to a table function that reads that list. Query analysis
-# rebuilds the list from the query tree, so the two slots inside a `SELECT` need a route that runs the
-# table function before it: `EXPLAIN AST optimize = 1` builds the pre-analyzer interpreter for each
-# `SELECT` it walks, and `EXPLAIN TABLE OVERRIDE` executes its own table function directly.
+# at all, and the four slots holding one pass it to a table function that reads that list. The two slots
+# inside a `SELECT` are reached through `EXPLAIN AST optimize = 1`, which analyzes each `SELECT` it
+# walks, and `EXPLAIN TABLE OVERRIDE` executes its own table function directly.
 EMPTY_ARGS=',"arguments":{"type":"ExpressionList"}'
 send "$(payload "INSERT INTO FUNCTION numbers() SELECT 1" "$EMPTY_ARGS")"
 send "$(payload "CREATE TABLE tkn AS numbers()" "$EMPTY_ARGS")"
