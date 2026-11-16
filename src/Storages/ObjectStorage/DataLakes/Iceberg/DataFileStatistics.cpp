@@ -21,21 +21,29 @@ namespace ErrorCodes
 #if USE_AVRO
 
 DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
+    : required_field_ids(getRequiredFieldIds(schema_))
 {
     field_ids.resize(schema_->size());
     for (UInt32 i = 0; i < schema_->size(); ++i)
-    {
-        auto field = schema_->getObject(i);
-        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
-        field_ids[i] =  field_id;
-        if (field->getValue<bool>(Iceberg::f_required))
-            required_field_ids.insert(field_id);
-    }
+        field_ids[i] = schema_->getObject(i)->getValue<Int64>(Iceberg::f_id);
 }
 
-DataFileStatistics::DataFileStatistics(std::vector<Int64> written_field_ids)
+DataFileStatistics::DataFileStatistics(std::vector<Int64> written_field_ids, std::unordered_set<Int64> required_field_ids_)
     : field_ids(std::move(written_field_ids))
+    , required_field_ids(std::move(required_field_ids_))
 {
+}
+
+std::unordered_set<Int64> DataFileStatistics::getRequiredFieldIds(const Poco::JSON::Array::Ptr & schema)
+{
+    std::unordered_set<Int64> res;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        const auto field = schema->getObject(i);
+        if (field->getValue<bool>(Iceberg::f_required))
+            res.insert(field->getValue<Int64>(Iceberg::f_id));
+    }
+    return res;
 }
 
 static const ColumnVariant * getVariantColumn(const IColumn & column)

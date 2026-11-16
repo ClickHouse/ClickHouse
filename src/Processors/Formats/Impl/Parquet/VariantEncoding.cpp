@@ -44,6 +44,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/re2.h>
 #include <base/arithmeticOverflow.h>
+#include <base/scope_guard.h>
 #include <base/unaligned.h>
 
 #include <algorithm>
@@ -1082,6 +1083,7 @@ public:
 
     void reset()
     {
+        depth = 0;
         key_ids.clear();
         keys.clear();
     }
@@ -1109,6 +1111,7 @@ public:
     void encode(const IColumn & column, const IDataType & type, size_t row, String & out)
     {
         checkStackSize();
+        checkNestingDepth(depth);
 
         switch (type.getTypeId())
         {
@@ -1219,7 +1222,11 @@ public:
                 const UInt32 scale = assert_cast<const DataTypeTime64 &>(type).getScale();
                 if (scale > 6)
                     throwUnsupported(type);
-                encodeTime(assert_cast<const ColumnTime64 &>(column).getData()[row].value * DecimalUtils::scaleMultiplier<Int64>(6 - scale), type, out);
+                const Int64 value = assert_cast<const ColumnTime64 &>(column).getData()[row].value;
+                Int64 micros = 0;
+                if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<Int64>(6 - scale), micros))
+                    throwNotTimeOfDay(type, fmt::format("{} with the scale {}", value, scale));
+                encodeTime(micros, type, out);
                 return;
             }
             case TypeIndex::String:
@@ -1246,7 +1253,7 @@ public:
                 const size_t begin = array.getOffsets()[row - 1];
                 ArrayLayout::serialize(
                     array.getOffsets()[row] - begin,
-                    [&](size_t i, String & values) { encode(array.getData(), nested_type, begin + i, values); },
+                    [&](size_t i, String & values) { encodeNested(array.getData(), nested_type, begin + i, 1, values); },
                     out);
                 return;
             }
@@ -1255,7 +1262,7 @@ public:
                 const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
                 const auto & tuple = assert_cast<const ColumnTuple &>(column);
                 const auto & element_types = tuple_type.getElements();
-                auto write_element = [&](size_t i, String & values) { encode(tuple.getColumn(i), *element_types[i], row, values); };
+                auto write_element = [&](size_t i, String & values) { encodeNested(tuple.getColumn(i), *element_types[i], row, 1, values); };
                 if (tuple_type.hasExplicitNames())
                 {
                     const auto & names = tuple_type.getElementNames();
@@ -1282,7 +1289,7 @@ public:
                 for (size_t i = 0; i < row_keys.size(); ++i)
                     row_keys[i] = map_keys.getDataAt(begin + i);
                 encodeObject(
-                    row_keys, [&](size_t i, String & values) { encode(map_values, *map_type.getValueType(), begin + i, values); }, out);
+                    row_keys, [&](size_t i, String & values) { encodeNested(map_values, *map_type.getValueType(), begin + i, 1, values); }, out);
                 return;
             }
             case TypeIndex::Variant:
@@ -1345,12 +1352,36 @@ private:
     void encodeTime(Int64 micros, const IDataType & type, String & out) const
     {
         if (micros < 0 || micros >= 86'400'000'000LL)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot write a value of type {} into the Parquet variant column '{}': a variant time is a time of day, "
-                "but the value is {} microseconds",
-                type.getName(), column_name, micros);
+            throwNotTimeOfDay(type, fmt::format("{} microseconds", micros));
         TimePrimitive::encode(out, micros);
+    }
+
+    [[noreturn]] void throwNotTimeOfDay(const IDataType & type, const String & value) const
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot write a value of type {} into the Parquet variant column '{}': a variant time is a time of day, "
+            "but the value is {}",
+            type.getName(), column_name, value);
+    }
+
+    /// Like the decoder, counts the containers around a value: an element of an array or an object, and every
+    /// component of a `JSON` path, is one level deeper.
+    void checkNestingDepth(size_t value_depth) const
+    {
+        if (settings.max_depth != 0 && value_depth > settings.max_depth)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Cannot write a value into the Parquet variant column '{}': it is nested deeper than the limit ({}). It can be "
+                "raised with the setting 'max_parser_depth'",
+                column_name, settings.max_depth);
+    }
+
+    void encodeNested(const IColumn & column, const IDataType & type, size_t row, size_t levels, String & out)
+    {
+        depth += levels;
+        SCOPE_EXIT({ depth -= levels; });
+        encode(column, type, row, out);
     }
 
     static void encodeString(std::string_view value, String & out)
@@ -1399,12 +1430,8 @@ private:
             if (path_info.column->isNullAt(path_info.row))
                 continue;
 
-            if (settings.max_depth != 0
-                && static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= settings.max_depth)
-                throw Exception(
-                    ErrorCodes::TOO_DEEP_RECURSION,
-                    "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is nested deeper than {} levels",
-                    column_name, path_info.path, settings.max_depth);
+            const size_t levels = std::count(path_info.path.begin(), path_info.path.end(), '.') + 1;
+            checkNestingDepth(depth + levels);
 
             size_t node = 0;
             size_t begin = 0;
@@ -1429,6 +1456,8 @@ private:
                 throwJSONPathConflict(path_info.path);
 
             auto & value = nodes[node].value.emplace();
+            depth += levels;
+            SCOPE_EXIT({ depth -= levels; });
             if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
                 encode(*path_info.column, *type.getTypedPaths().at(String(path_info.path)), path_info.row, value);
             else
@@ -1490,6 +1519,7 @@ private:
 
     const String & column_name;
     const VariantSettings & settings;
+    size_t depth = 0;
     UnorderedMapWithMemoryTracking<String, UInt32> & key_ids;
     VectorWithMemoryTracking<std::string_view> & keys;
 };

@@ -34,7 +34,10 @@ public:
 
     /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
     /// block column `i` rather than of schema field `i`.
-    explicit DataFileStatistics(std::vector<Int64> written_field_ids);
+    DataFileStatistics(std::vector<Int64> written_field_ids, std::unordered_set<Int64> required_field_ids_);
+
+    /// The ids of the top-level fields of `schema` that are `required`.
+    static std::unordered_set<Int64> getRequiredFieldIds(const Poco::JSON::Array::Ptr & schema);
 
     void update(const Chunk & chunk);
     void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);

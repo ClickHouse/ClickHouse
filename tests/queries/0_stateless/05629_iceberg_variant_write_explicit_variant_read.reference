@@ -19,6 +19,11 @@ so they cannot be told apart
 so they cannot be told apart
 cannot be read back
 cannot be read back
+--- Time64 out of the range of a time of day
+a variant time is a time of day
+--- Nesting depth counts the enclosing containers
+Array(JSON)
+TOO_DEEP_RECURSION
 --- Variant sort sources
 the Iceberg type `variant` cannot be a sort source
 0

@@ -44,6 +44,19 @@ write_fails 'v Variant(Array(Int64), Array(String))' '[]::Array(Int64)' 'so they
 write_fails 'v Variant(Map(String, Int64), String)' "map('k', 1)::Map(String, Int64)" 'cannot be read back'
 write_fails 'v Variant(Tuple(a UInt8, b String), Int64)' "tuple(1, 'x')::Tuple(a UInt8, b String)" 'cannot be read back'
 
+echo "--- Time64 out of the range of a time of day"
+write_fails 'v Dynamic' "v FROM format(RowBinary, 'v Time64(0)', unhex('0000000000000080'))" 'a variant time is a time of day'
+
+echo "--- Nesting depth counts the enclosing containers"
+for dots in 62 63; do
+    ${CLICKHOUSE_CLIENT} --max_parser_depth=64 --query "
+        INSERT INTO FUNCTION file('${PARQUET_FILE}', Parquet, 'v Dynamic')
+        SELECT [concat('{\"', repeat('a.', ${dots}), 'b\": 1}')::JSON]::Dynamic
+        SETTINGS engine_file_truncate_on_insert = 1;
+        SELECT dynamicType(v) FROM file('${PARQUET_FILE}', Parquet);
+    " 2>&1 | grep -o -m1 -E "^Array\(JSON\)$|TOO_DEEP_RECURSION"
+done
+
 echo "--- Variant sort sources"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     CREATE TABLE t_explicit_variant_read_sorted (id Int32, d Dynamic)
