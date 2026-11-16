@@ -211,7 +211,7 @@ void PartitionedRecordBuffer::releasePartitions(size_t first_partition, size_t c
         };
 
         PartitionedRecordBuffer & buffer;
-        std::array<BlockChunks, release_batch_blocks> blocks;
+        std::array<BlockChunks, release_batch_blocks> blocks{};
         size_t size = 0;
 
         void addChunkOf(Block * block)
@@ -237,7 +237,7 @@ void PartitionedRecordBuffer::releasePartitions(size_t first_partition, size_t c
             size = 0;
         }
     };
-    ReleaseBatch batch{.buffer = *this, .blocks = {}};
+    ReleaseBatch batch{.buffer = *this};
 
     /// The appending thread wrote the headers of the chunks long ago, so the walk prefetches the first chunk of the
     /// partitions ahead.
