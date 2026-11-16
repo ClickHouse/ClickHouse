@@ -194,9 +194,7 @@ void MergeTreeCommitOrderSource::surfaceFinalCursor()
     if (!cursor)
         return;
 
-    auto local = mergeTreeCursorToCursorTree(read_state.getPartitionCursors());
-    std::lock_guard lock(cursor->mutex);
-    mergeCursors(cursor->tree, local);
+    cursor->merge(mergeTreeCursorToCursorTree(read_state.getPartitionCursors()));
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)
