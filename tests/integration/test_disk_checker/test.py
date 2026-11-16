@@ -279,7 +279,15 @@ EOF""",
     node.query(f"ALTER TABLE t2 ATTACH PART '{part}'")
     assert node.query("SELECT count() FROM t2") == "1\n"
 
+    frozen = node.query("SELECT name FROM system.parts WHERE table = 't2' AND active").strip()
     node.query("ALTER TABLE t2 FREEZE WITH NAME 'looped_backup'")
-    node.query("ALTER TABLE t2 UNFREEZE WITH NAME 'looped_backup'")
-    node.query("SYSTEM UNFREEZE WITH NAME 'looped_backup'")
+    node.query("ALTER TABLE t2 FREEZE WITH NAME 'looped_backup_2'")
+    assert frozen in node.query(
+        "ALTER TABLE t2 UNFREEZE WITH NAME 'looped_backup'", settings={"alter_partition_verbose_result": 1}
+    )
+    assert frozen in node.query("SYSTEM UNFREEZE WITH NAME 'looped_backup_2'")
+    uuid = node.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 't2'").strip()
     node.query("DROP TABLE t2 SYNC", settings={"max_execution_time": 30})
+    assert "INCORRECT_DATA" in node.query_and_get_error(
+        f"CREATE TABLE t2 UUID '{uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
+    )
