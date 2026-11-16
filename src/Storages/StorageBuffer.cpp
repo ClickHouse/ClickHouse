@@ -931,7 +931,7 @@ public:
                 /// limits of the buffer's context, while the pipeline was built. Rows that are only
                 /// buffered are not subject to them.
                 runHiddenPreWriteChecks();
-                storage.writeBlockToDestination(block, destination, insert_start_gates);
+                storage.writeBlockToDestination(block, destination, insert_start_gates, getContext().get());
             }
             return;
         }
@@ -1404,7 +1404,8 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates)
+void StorageBuffer::writeBlockToDestination(
+    const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates, const Context * query_context)
 {
     if (!destination_id || block.empty())
         return;
@@ -1451,6 +1452,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
+    if (query_context)
+        insert_context->shareQueryMaxThreadsSnapshot(*query_context);
 
     InterpreterInsertQuery interpreter(
         insert,

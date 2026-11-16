@@ -221,7 +221,9 @@ private:
     /// the group registry of the queries whose buffered rows a flush writes out, so the nested INSERT
     /// shares the `Too many parts` gates of the queries the written rows belong to; when there is no
     /// query to share with, none is passed and the nested INSERT creates its own.
-    void writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates = nullptr);
+    /// `query_context` is the context of the `INSERT` that writes the block directly, or `nullptr` for a flush.
+    void writeBlockToDestination(
+        const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates = nullptr, const Context * query_context = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
