@@ -2084,7 +2084,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_format_settings,
                 parser_shared_resources,
                 filter_info,
-                true /* is_remote_fs */,
+                object_storage->isRemote(),
                 compression_method,
                 need_only_count,
                 std::nullopt /*min_block_size_bytes*/,
@@ -2102,7 +2102,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_format_settings,
             parser_shared_resources,
             filter_info,
-            true /* is_remote_fs */,
+            object_storage->isRemote(),
             compression_method,
             need_only_count);
         }
