@@ -104,6 +104,7 @@ class ResourceSampler:
         self.pid = node.get_process_pid("clickhouse")
         assert self.pid is not None, "cannot find the server process"
         self.asan = node.is_built_with_sanitizer("address")
+        self.msan = node.is_built_with_sanitizer("memory")
         self.tsan = node.is_built_with_sanitizer("thread")
         self.samples: List[Sample] = []
 
@@ -198,8 +199,9 @@ done | sort | uniq -c | sort -rn | head -20
         )
         # Resident memory also covers allocations that `MemoryTracking` does not see, such as those of the Rust Delta kernel. Only anonymous memory is compared: file-backed pages are those of the binary and of the files it reads, which the server faults in on first use (for example the debug info when it symbolizes a stack trace) and the kernel can evict, so they are not held by the server.
         # The resident memory of a ThreadSanitizer build includes its shadow memory, which it discards all at once when its thread slots run out of epochs and then refills, at points unrelated to the iterations.
-        if self.tsan:
-            logging.info("anonymous resident memory: not compared on a ThreadSanitizer build")
+        # On a MemorySanitizer build, a freed small allocation keeps its shadow and origin memory resident, twice its own size, even after the allocator returns its pages to the system, so a transient peak of allocations, such as a merge of a system log table with many columns, raises the resident memory long after it ends.
+        if self.tsan or self.msan:
+            logging.info("anonymous resident memory: not compared on a %s build", "ThreadSanitizer" if self.tsan else "MemorySanitizer")
         else:
             assert_not_growing(
                 "anonymous resident memory without caches",

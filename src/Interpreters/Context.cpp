@@ -86,6 +86,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
@@ -1732,6 +1733,7 @@ ContextData::ContextData(const ContextData &o) :
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     columns_cache_write_budget(o.columns_cache_write_budget),
+    query_max_threads_snapshot(o.query_max_threads_snapshot),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -2960,7 +2962,7 @@ namespace
     public:
         bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
-        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
     };
 }
 
@@ -4665,6 +4667,7 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
     /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
@@ -6369,6 +6372,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -7089,7 +7096,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
@@ -10576,6 +10583,17 @@ RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
 {
     return columns_cache_write_budget;
+}
+
+const QueryMaxThreadsSnapshotPtr & Context::getQueryMaxThreadsSnapshot() const
+{
+    return query_max_threads_snapshot;
+}
+
+void Context::shareQueryMaxThreadsSnapshot(const Context & from)
+{
+    if (from.query_max_threads_snapshot)
+        query_max_threads_snapshot = from.query_max_threads_snapshot;
 }
 
 UInt64 Context::getClientProtocolVersion() const
