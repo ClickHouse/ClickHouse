@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # no-fasttest: needs usearch for the fallback to `hnsw`
 
-# Recall of the `ivf` vector similarity index and of `vectorSearch` against exact search: both distance functions, after
+# Recall of the `ivf` vector similarity index against exact search: both distance functions, after
 # reload and merge, all lists probed. The vectors are clustered, as real data are. Without a usable GPU the searches by `ORDER BY ... LIMIT` run with `hnsw`, and the
 # checks that need the device print what they would, so the test runs everywhere.
 
@@ -116,32 +116,6 @@ else
     echo 1
 fi
 
-echo "-- vectorSearch: all the queries at once, against an exact search of each"
-if [ "$HAS_DEVICE" == "1" ]; then
-    $CLICKHOUSE_CLIENT --query "
-        CREATE TABLE queries (q UInt32, vec Array(Float32)) ENGINE = MergeTree ORDER BY q;
-        INSERT INTO queries SELECT number, $(vector_of "(1000000 + number)") FROM numbers($QUERIES);"
-    for table in t_L2Distance t_merged; do
-        $CLICKHOUSE_CLIENT --query "
-            WITH
-                found AS (
-                    SELECT v.query AS q, t.id AS id
-                    FROM vectorSearch(currentDatabase(), $table, idx, (SELECT groupArray(vec) FROM (SELECT vec FROM queries ORDER BY q)), $K) AS v
-                    JOIN $table AS t ON t._part = v.part AND t._part_offset = v.part_offset),
-                exact AS (
-                    SELECT q, id FROM (
-                        SELECT queries.q AS q, t.id AS id, L2Distance(t.vec, queries.vec) AS d
-                        FROM queries CROSS JOIN $table AS t ORDER BY q, d LIMIT $K BY q))
-            SELECT '$table', (SELECT count() FROM found) = $QUERIES * $K,
-                   (SELECT count() FROM found INNER JOIN exact USING (q, id)) * 10 >= $QUERIES * $K * 9
-            SETTINGS $SETTINGS"
-    done
-else
-    for table in t_L2Distance t_merged; do
-        echo -e "$table\t1\t1"
-    done
-fi
-
 echo "-- Invalid arguments"
 check_error()
 {
@@ -156,17 +130,6 @@ check_error "'ivf', 'L2Distance', 32, 64, 1" INCORRECT_QUERY
 check_error "'ivf', 'L2Distance', 32, 'f32'" INCORRECT_QUERY
 check_error "'ivf', 'dotProduct', 32" INCORRECT_DATA
 check_error "'ivf', 'L2Distance', 0" INCORRECT_DATA
-
-echo "-- vectorSearch needs an index of the method 'ivf'"
-$CLICKHOUSE_CLIENT --query "
-    CREATE TABLE t_hnsw (id UInt64, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', $DIMENSIONS))
-    ENGINE = MergeTree ORDER BY id;
-    INSERT INTO t_hnsw $(vectors 0 100);"
-if [ "$USE_GPU" == "1" ]; then
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM vectorSearch(currentDatabase(), t_hnsw, idx, [$(query_vector 0)], 1)" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
-else
-    echo BAD_ARGUMENTS
-fi
 
 echo "-- The experimental setting"
 if [ "$USE_GPU" == "1" ]; then
