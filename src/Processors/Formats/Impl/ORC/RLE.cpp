@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <array>
+#include <bit>
 
 
 namespace DB
@@ -77,16 +77,6 @@ inline UInt32 findClosestNumBits(Int64 value)
     UInt32 count = 64 - static_cast<UInt32>(std::countl_zero(static_cast<UInt64>(value)));
     return getClosestFixedBits(count);
 }
-
-/// The bits of a byte, most significant first, as eight bytes 0 or 1.
-constexpr auto bits_to_bytes = []
-{
-    std::array<std::array<char, 8>, 256> table{};
-    for (size_t byte = 0; byte < 256; ++byte)
-        for (size_t bit = 0; bit < 8; ++bit)
-            table[byte][bit] = static_cast<char>((byte >> (7 - bit)) & 1);
-    return table;
-}();
 
 size_t countNotNull(const char * not_null, size_t num_values)
 {
@@ -213,7 +203,16 @@ void BooleanRleDecoder::next(char * data, size_t num_values, const char * not_nu
         size_t num_bytes = std::min((num_values - i) / 8, BUFFER_SIZE);
         byte_decoder.next(bytes, num_bytes, nullptr);
         for (size_t j = 0; j < num_bytes; ++j, i += 8)
-            memcpy(data + i, bits_to_bytes[static_cast<UInt8>(bytes[j])].data(), 8);
+        {
+            /// Spread the bits to eight bytes 0 or 1, the most significant bit first.
+            UInt64 x = static_cast<UInt8>(bytes[j]);
+            x = (x | (x << 28)) & 0x0000000f0000000full;
+            x = (x | (x << 14)) & 0x0003000300030003ull;
+            x = (x | (x << 7)) & 0x0101010101010101ull;
+            if constexpr (std::endian::native == std::endian::little)
+                x = std::byteswap(x);
+            memcpy(data + i, &x, 8);
+        }
     }
 
     if (i < num_values)
