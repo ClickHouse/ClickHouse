@@ -6,6 +6,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -641,10 +644,20 @@ void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, 
         }
     };
 
+    /// A key compared through `Dynamic` or `Variant` (a key of another type is cast to it to compare) holds a NULL as a
+    /// value, which matches another NULL, so the comparison does not reject NULL.
+    auto may_match_null = [](const JoinActionRef & operand)
+    {
+        const auto type = removeNullable(recursiveRemoveLowCardinality(operand.getType()));
+        return hasDynamicType(type) || isVariant(type);
+    };
+
     for (const auto & expression : join_operator.expression)
     {
         auto [op, lhs, rhs] = expression.asBinaryPredicate();
         if (!is_null_rejecting_operator(op))
+            continue;
+        if ((lhs && may_match_null(lhs)) || (rhs && may_match_null(rhs)))
             continue;
 
         for (const auto & operand : {lhs, rhs})

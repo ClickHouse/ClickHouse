@@ -53,3 +53,12 @@ SELECT groupArray(x) FROM (SELECT ln.x AS x FROM ln LEFT JOIN rn ON ln.k <=> rn.
 SELECT '-- Dynamic holds NULL without being Nullable, so it is not converted';
 SELECT trimBoth(explain) FROM (EXPLAIN actions = 1 SELECT l.k FROM l LEFT JOIN rd ON l.k = rd.k WHERE rd.d IS NULL) WHERE explain ILIKE '%Strictness:%';
 SELECT groupArray(k) FROM (SELECT l.k AS k FROM l LEFT JOIN rd ON l.k = rd.k WHERE rd.d IS NULL ORDER BY k);
+
+SELECT '-- A key compared through Dynamic matches NULL to NULL, so it is not converted';
+SET allow_dynamic_type_in_join_keys = 1;
+SELECT arraySort(groupArray(l.id)) FROM values('k Dynamic, id UInt64', (NULL, 0), (2, 2)) AS l
+LEFT ALL JOIN values('k Nullable(Int64)', NULL, 1) AS r ON l.k = r.k WHERE r.k IS NULL;
+SELECT arraySort(groupArray(r.id)) FROM values('k Nullable(Int64)', NULL, 1) AS l
+RIGHT ALL JOIN values('k Dynamic, id UInt64', (NULL, 0), (2, 2)) AS r ON l.k = r.k WHERE l.k IS NULL;
+SELECT arraySort(groupArray(l.id)) FROM values('k Dynamic, id UInt64', (NULL, 0), (2, 2)) AS l
+LEFT ANY JOIN values('k Nullable(Int64)', NULL, 1) AS r ON l.k = r.k WHERE r.k IS NULL;
