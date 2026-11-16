@@ -3069,6 +3069,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
+            lambda_scope.inlined_call_projection_name = result_projection_names.front();
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
@@ -3128,7 +3129,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
             /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
             /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            /// Without an alias, the outermost call of the contiguous chain of inlined calls is used instead.
             String untuple_alias = node->getAlias();
+            String inlined_call_projection_name;
+            bool through_inlined_calls = true;
             const auto * current_scope = &scope;
             const auto * current_node = node.get();
             while (current_scope->parent_scope)
@@ -3148,9 +3152,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 if (call_node->hasAlias())
                     untuple_alias = call_node->getAlias();
+                through_inlined_calls = through_inlined_calls && !current_scope->inlined_call_projection_name.empty();
+                if (through_inlined_calls)
+                    inlined_call_projection_name = current_scope->inlined_call_projection_name;
                 current_node = call_node.get();
                 current_scope = current_scope->parent_scope;
             }
+
+            /// Without an alias the inlined call names the columns, so calls with different arguments get different names.
+            if (untuple_alias.empty())
+                untuple_alias = inlined_call_projection_name;
 
             for (const auto & element_name : element_names)
             {

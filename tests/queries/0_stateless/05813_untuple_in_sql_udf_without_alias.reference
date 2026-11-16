@@ -1,0 +1,28 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/131545
+untuple_value(11).1	untuple_value(22).1
+11	22
+-- the inner query alone
+untuple_value(11).1	untuple_value(22).1
+11	22
+-- column arguments
+untuple_value(number).1	untuple_value(plus(number, 1)).1
+0	1
+1	2
+-- nested function
+untuple_value_nested(11).1	untuple_value_nested(22).1
+11	22
+-- WITH lambda
+l(11).1	l(22).1
+11	22
+-- an alias still names the columns
+a.1	b.1
+11	22
+-- view
+tupleElement((11), \'1\')	tupleElement((22), \'1\')
+11	22
+-- remote()
+untuple_value(plus(dummy, 11)).1	untuple_value(plus(dummy, 22)).1
+11	22
+-- names inside the body keep the parameter name
+1
+{"number":0}
