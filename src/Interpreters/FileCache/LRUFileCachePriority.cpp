@@ -297,9 +297,11 @@ namespace
 {
 
 /// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty.
-/// The key lock is held only to find the file segment and to make sure it is still in the cache.
+/// The key lock is held only to find the file segment, to make sure it is still in the cache,
+/// and, for a `Moving` or `Evicting` entry, to check that it is still the current queue entry of the segment.
 /// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
-std::optional<FileSegmentSummaryInfo> tryGetSummaryInfo(const IFileCachePriority::Entry & entry, QueueEntryType queue_entry_type)
+std::optional<FileSegmentSummaryInfo>
+tryGetSummaryInfo(const IFileCachePriority::Entry & entry, IFileCachePriority::Entry::State state, QueueEntryType queue_entry_type)
 {
     auto key_metadata = entry.key_metadata.lock();
     if (!key_metadata)
@@ -315,9 +317,22 @@ std::optional<FileSegmentSummaryInfo> tryGetSummaryInfo(const IFileCachePriority
         if (!file_segment_metadata)
             return std::nullopt;
         file_segment = file_segment_metadata->file_segment;
+
+        /// The old entry of an SLRU move after `setIterator` made the new one current, but before `invalidate`:
+        /// the segment is counted through the new entry, which the walk has met or will meet as `Active`.
+        if (state == IFileCachePriority::Entry::State::Moving || state == IFileCachePriority::Entry::State::Evicting)
+        {
+            /// Lock order: key > file segment (`getQueueIterator`) > `SLRUIterator::entry_mutex` (`getEntry`).
+            /// We could see an Active entry in the protected queue and still old Moving entry
+            auto queue_iterator = file_segment->getQueueIterator();
+            if (!queue_iterator || queue_iterator->getEntry().get() != &entry)
+                return std::nullopt;
+        }
     }
 
-    const size_t size = entry.size.load();
+    /// A `PreActive` entry has size 0 until its SLRU move is committed: the size is still on the old entry.
+    /// The queue entry is always charged with the disk-accounted size of its segment.
+    const size_t size = state == IFileCachePriority::Entry::State::PreActive ? file_segment->getDiskAccountedSize() : entry.size.load();
     if (size == 0)
         return std::nullopt;
 
@@ -369,26 +384,35 @@ void LRUFileCachePriority::iterate(
     /// Returns false to stop the walk on a limit
     auto add_entry = [&](const EntryPtr & entry)
     {
-        /// We need isObservable check because otherwise we could see two entries for the same segment
-        /// in SLRU queue
-        if (!isObservable(entry->getState()))
+        const auto entry_state = entry->getState();
+        if (!isObservable(entry_state))
             return true;
+
+        /// Check if the other entry was already counted during upgrade/downgrade
+        FileCacheKeyAndOffset id{entry->key, entry->offset};
+        if (result.moving_segments.contains(id))
+            return true;
+
+        /// For `RANDOM`, the segment must be materialized before the random draw, and a segment that cannot be
+        /// materialized (the key was removed, the key lock is busy, the segment is gone or empty) must be
+        /// skipped entirely, without counting it in `result.seen`.
+        /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
+        /// without checking it, and a draw inside would drop it, which biases the sample towards the
+        /// segments seen earlier.
+        auto info = tryGetSummaryInfo(*entry, entry_state, queue_entry_type);
+        if (!info)
+            return true;
+
+        /// Record the segment only once it is counted, whatever happens to it next (sampled out, over the limit),
+        /// so that `RANDOM` gives a moving segment one chance, not two.
+        if (entry_state != Entry::State::Active)
+            result.moving_segments.insert(std::move(id));
 
         /// For random sampling we walk through the whole queue
         if (query_order == IterationOrder::RANDOM)
         {
             /// Algorithm R: the first `query_max_elements` segments fill the reservoir, then the n-th segment
             /// replaces a random one with the probability `query_max_elements / n`.
-            ///
-            /// The segment must be materialized before the random draw, and a segment that cannot be
-            /// materialized : the key was removed, the key lock is busy,
-            /// the segment is gone or empty) must be skipped entirely, without counting it in `result.seen`.
-            /// Otherwise whether it counts depends on the draw: a draw outside the reservoir would count it
-            /// without checking it, and a draw inside would drop it, which biases the sample towards the
-            /// segments seen earlier.
-            auto info = tryGetSummaryInfo(*entry, queue_entry_type);
-            if (!info)
-                return true;
 
             /// This is the n-th segment that can be returned, with n = `result.seen`.
             info->priority_rank = ++result.seen;
@@ -413,10 +437,6 @@ void LRUFileCachePriority::iterate(
         }
 
         /// coldest/hottest, no need for sampling
-        auto info = tryGetSummaryInfo(*entry, queue_entry_type);
-        if (!info)
-            return true;
-
         /// don't add an entry which would push over the limit
         if (info->size > query_max_total_size - result.total_size)
             return false;

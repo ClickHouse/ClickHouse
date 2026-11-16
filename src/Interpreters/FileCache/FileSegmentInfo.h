@@ -1,9 +1,10 @@
 #pragma once
 #include <cctype>
+#include <unordered_set>
 #include <vector>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/QueueEntryType.h>
 #include <base/types.h>
 
@@ -108,10 +109,16 @@ namespace DB
         UInt64 total_size = 0;
         /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.
         /// The next sub-queue (SLRU's second one, Split's system one) is then not walked at all.
-        bool limit_reached = false;
+        bool limit_reached{false};
         /// `RANDOM` only: the number of segments seen so far that can be returned (segments for which
         /// `tryGetSummaryInfo` fails are not counted), which all sub-queues sample from as one reservoir.
-        /// The next segment gets the rank `seen + 1`.
         UInt64 seen = 0;
+        /// Cache for keeping SLRU entries which are observable but not in the active state
+        /// Tries to prevent the following combinations of states:
+        ///     Moving-PreActive (upgrade)
+        ///     Moving-Active(upgrade)
+        ///     Evicting-PreActive(downgrade)
+        ///     Evicting-Active(downgrade)
+        std::unordered_set<FileCacheKeyAndOffset, FileCacheKeyAndOffsetHash> moving_segments;
     };
 }

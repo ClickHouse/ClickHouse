@@ -503,12 +503,13 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    /// Whether `observeFilesystemCache` returns the file segment of a queue entry with this state.
-    /// A `PreActive` entry is the copy added to the other SLRU queue during a move:
-    /// the original entry (in `Moving` state) is returned instead.
+    /// Whether `observeFilesystemCache` may return the file segment of a queue entry with this state
+    /// Uses caching of states when the encountered entry state is evicting,moving or preactive to eliminate
+    /// duplicated entries during upgrades/downgrades in the SLRU queue.
     static bool isObservable(Entry::State state)
     {
-        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
+        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving
+            || state == Entry::State::PreActive;
     }
 
     /// Guard protecting this priority queue's structure (add/remove/move of entries), so
