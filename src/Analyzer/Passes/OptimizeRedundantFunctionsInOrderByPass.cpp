@@ -6,6 +6,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Core/Settings.h>
@@ -46,8 +47,7 @@ public:
             return;
 
         /// A function of a key can be another key, which has a default value in subtotals.
-        if (query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets())
-            return;
+        bool keep_functions = query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets();
 
         auto & order_by = query->getOrderBy();
         for (auto & elem : order_by.getNodes())
@@ -68,15 +68,18 @@ public:
             {
                 case QueryTreeNodeType::FUNCTION:
                 {
-                    if (isRedundantExpression(order_by_expr))
+                    if (!isRedundantExpression(order_by_expr))
+                        break;
+                    if (!keep_functions)
                         continue;
+                    order_by_expr = cloneWithoutAliases(order_by_expr);
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
                     /// Different values can be equal with a collation, and functions of them can differ.
-                    if (!sort_node.getCollator())
-                        existing_keys.insert(order_by_expr);
+                    keep_functions |= sort_node.getCollator() != nullptr;
+                    existing_keys.insert(order_by_expr);
                     break;
                 }
                 default:

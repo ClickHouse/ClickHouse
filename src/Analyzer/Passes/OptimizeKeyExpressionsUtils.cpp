@@ -199,6 +199,24 @@ QueryTreeNodes getGroupByKeys(const QueryNode & query_node)
     return keys;
 }
 
+QueryTreeNodePtr cloneWithoutAliases(const QueryTreeNodePtr & node)
+{
+    auto result = node->clone();
+    QueryTreeNodes nodes_to_visit{result};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = std::move(nodes_to_visit.back());
+        nodes_to_visit.pop_back();
+
+        if (!current || current->getNodeType() == QueryTreeNodeType::LAMBDA || dynamic_cast<const ITableExpressionNode *>(current.get()))
+            continue;
+
+        current->removeAlias();
+        nodes_to_visit.insert(nodes_to_visit.end(), current->getChildren().begin(), current->getChildren().end());
+    }
+    return result;
+}
+
 bool isGroupByKeyAfterAggregation(const QueryTreeNodePtr & node, const QueryTreeNodes & group_by_keys)
 {
     if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isConvertedToNullable())
