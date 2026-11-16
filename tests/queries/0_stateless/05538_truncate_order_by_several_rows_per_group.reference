@@ -66,3 +66,17 @@ distributed_group_by_no_merge
 0
 1
 1
+positional arguments with aliases
+[1,15]
+[-2,-2]
+[4,6]
+self join
+0	0	2
+-0	1	0
+time zones
+-0	18	3
+0	0	9
+lambda functions, correlated subqueries
+-0
+1	2
+2	4

@@ -124,21 +124,27 @@ public:
         }
 
         /// Remove only the elements that are functions of the keys, and those that cannot be calculated: a part of it is already replaced
-        /// by another pass, or it is a window function, which is not supported over the results of an aggregation on shards.
+        /// by another pass, it has a correlated subquery, or it is a window function over the results of an aggregation on shards.
         const bool has_unsupported_window_functions = getSettings()[Setting::distributed_group_by_no_merge] == 2;
         const auto is_removed = [&](const QueryTreeNodePtr & sort_elem)
         {
             const auto & expression = sort_elem->as<SortNode &>().getExpression();
             return isFunctionOfKeys(expression, columns_of_merged_keys) || !canBeCalculatedFromKeys(expression, group_by_nodes)
-                || (has_unsupported_window_functions && hasWindowFunctionNodes(expression));
+                || containsCorrelatedSubquery(expression) || (has_unsupported_window_functions && hasWindowFunctionNodes(expression));
         };
         order_by_nodes.erase(
             std::remove_if(order_by_nodes.begin() + truncate_after, order_by_nodes.end(), is_removed), order_by_nodes.end());
+
+        for (size_t i = truncate_after; i < order_by_nodes.size(); ++i)
+        {
+            auto & expression = order_by_nodes[i]->as<SortNode &>().getExpression();
+            expression = cloneWithoutAliases(expression);
+        }
     }
 
 private:
     /// `arrayJoin` in the projection and in ORDER BY is checked above.
-    bool canHaveSeveralRowsPerGroup(const QueryNode & query) const
+    [[nodiscard]] bool canHaveSeveralRowsPerGroup(const QueryNode & query) const
     {
         /// The groups of different shards are not merged.
         if (getSettings()[Setting::distributed_group_by_no_merge])
