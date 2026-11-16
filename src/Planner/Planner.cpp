@@ -52,6 +52,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedOutput.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -104,6 +105,7 @@
 #include <Planner/PlannerQueryProcessingInfo.h>
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerSteps.h>
+#include <Planner/PlannerStreaming.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/QueryAnalysisResult.h>
 #include <Planner/Utils.h>
@@ -161,6 +163,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STREAM;
 }
 
 namespace
@@ -674,6 +677,10 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
+    bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedOutput(*plan); });
+    if (has_unbounded_arm && union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "INTERSECT and EXCEPT are not supported over an unbounded STREAM");
+
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
@@ -684,7 +691,7 @@ void Planner::buildPlanForUnionNode()
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
-        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ !has_unbounded_arm);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -714,7 +721,7 @@ void Planner::buildPlanForUnionNode()
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
         /// already narrow their output to one stream, so a preliminary step there is pure overhead.
-        const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
+        const bool add_pre_distinct = !has_unbounded_arm && union_mode == SelectUnionMode::UNION_DISTINCT && preliminaryDistinctIsUseful(max_threads);
 
         if (add_pre_distinct)
         {
@@ -736,6 +743,8 @@ void Planner::buildPlanForUnionNode()
             false /*pre distinct*/);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
+        if (has_unbounded_arm)
+            distinct_step->disableExternalDistinct();
         query_plan.addStep(std::move(distinct_step));
     }
 
@@ -754,7 +763,7 @@ void Planner::buildPlanForUnionNode()
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
     }
 
-    if (should_cache)
+    if (should_cache && !has_unbounded_arm)
         addStreamInQueryResultCacheStepIfNeeded(
             query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
             /* skip_context_check = */ !can_use_query_result_cache);
@@ -1026,6 +1035,23 @@ void Planner::buildPlanForQueryNode()
         planner_context,
         query_processing_info,
         join_tree_query_plan.source_constants);
+
+    if (hasUnboundedOutput(query_plan))
+    {
+        buildStreamingPlan(
+            query_plan,
+            planner_context,
+            expression_analysis_result,
+            useful_sets,
+            query_tree,
+            select_query_options,
+            query_processing_info,
+            query_analysis_result,
+            materialized_ctes);
+
+        query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
+        return;
+    }
 
     if (query_processing_info.isIntermediateStage())
     {
