@@ -20,7 +20,7 @@ namespace
             return res;
         }
 
-        std::string_view convert(AccessType type) const
+        [[nodiscard]] std::string_view convert(AccessType type) const
         {
             return access_type_to_string_mapping[static_cast<size_t>(type)];
         }

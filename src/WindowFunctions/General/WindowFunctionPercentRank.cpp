@@ -19,7 +19,7 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.peers_start = true, .partition_end = true};
     }

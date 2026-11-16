@@ -348,6 +348,8 @@ TemplateFormatReader::TemplateFormatReader(
                 format.throwInvalidFormat("XML deserialization is not supported", i);
         }
     }
+    if (!has_data)
+        format.throwInvalidFormat("${data} must occur in the format string for result set", format.columnsCount());
 
     /// Validate format string for rows
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
