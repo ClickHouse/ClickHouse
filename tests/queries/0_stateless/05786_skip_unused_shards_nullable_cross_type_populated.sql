@@ -174,7 +174,67 @@ SELECT id FROM dist_05786_null_flt WHERE f = 0.0 ORDER BY id
 SETTINGS optimize_skip_unused_shards = 0;
 SELECT id FROM dist_05786_null_flt WHERE f = 0.0 ORDER BY id
 SETTINGS optimize_skip_unused_shards = 1;
+SELECT id, reinterpretAsUInt64(assumeNotNull(f)) FROM dist_05786_null_flt WHERE f = toNullable(0.0) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 0;
+SELECT id, reinterpretAsUInt64(assumeNotNull(f)) FROM dist_05786_null_flt WHERE f = toNullable(0.0) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 1;
+SELECT id, reinterpretAsUInt64(assumeNotNull(f)) FROM dist_05786_null_flt WHERE f = toNullable(-0.0) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 0;
+SELECT id, reinterpretAsUInt64(assumeNotNull(f)) FROM dist_05786_null_flt WHERE f = toNullable(-0.0) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 1;
 
 DROP TABLE dist_05786_null_flt;
 DROP TABLE shard_0.t_05786_null_flt;
 DROP TABLE shard_1.t_05786_null_flt;
+
+DROP TABLE IF EXISTS dist_05786_flt;
+DROP TABLE IF EXISTS shard_0.t_05786_flt;
+DROP TABLE IF EXISTS shard_1.t_05786_flt;
+
+CREATE TABLE shard_0.t_05786_flt (id UInt32, f Float64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE shard_1.t_05786_flt (id UInt32, f Float64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE dist_05786_flt AS shard_0.t_05786_flt
+ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t_05786_flt, cityHash64(f));
+
+INSERT INTO dist_05786_flt SETTINGS distributed_foreground_insert = 1
+VALUES (1, 0.0), (2, -0.0), (3, 1.5);
+
+SELECT '--- non-nullable float64 same-type and cross-type signed zero';
+SELECT count() > 0 FROM shard_0.t_05786_flt;
+SELECT count() > 0 FROM shard_1.t_05786_flt;
+SELECT id, reinterpretAsUInt64(f) FROM dist_05786_flt WHERE f = 0.0 ORDER BY id
+SETTINGS optimize_skip_unused_shards = 0;
+SELECT id, reinterpretAsUInt64(f) FROM dist_05786_flt WHERE f = 0.0 ORDER BY id
+SETTINGS optimize_skip_unused_shards = 1;
+SELECT id FROM dist_05786_flt WHERE f = 0 ORDER BY id
+SETTINGS optimize_skip_unused_shards = 0;
+SELECT id FROM dist_05786_flt WHERE f = 0 ORDER BY id
+SETTINGS optimize_skip_unused_shards = 1;
+
+DROP TABLE dist_05786_flt;
+DROP TABLE shard_0.t_05786_flt;
+DROP TABLE shard_1.t_05786_flt;
+
+DROP TABLE IF EXISTS dist_05786_tuple_flt;
+DROP TABLE IF EXISTS shard_0.t_05786_tuple_flt;
+DROP TABLE IF EXISTS shard_1.t_05786_tuple_flt;
+
+CREATE TABLE shard_0.t_05786_tuple_flt (id UInt32, t Tuple(Float64, UInt32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE shard_1.t_05786_tuple_flt (id UInt32, t Tuple(Float64, UInt32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE dist_05786_tuple_flt AS shard_0.t_05786_tuple_flt
+ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t_05786_tuple_flt, cityHash64(t.1));
+
+INSERT INTO dist_05786_tuple_flt SETTINGS distributed_foreground_insert = 1
+VALUES (1, (0.0, 7)), (2, (-0.0, 7)), (3, (1.5, 7));
+
+SELECT '--- tuple containing float64 same-type signed zero';
+SELECT count() > 0 FROM shard_0.t_05786_tuple_flt;
+SELECT count() > 0 FROM shard_1.t_05786_tuple_flt;
+SELECT id FROM dist_05786_tuple_flt WHERE t = (0.0, toUInt32(7)) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 0;
+SELECT id FROM dist_05786_tuple_flt WHERE t = (0.0, toUInt32(7)) ORDER BY id
+SETTINGS optimize_skip_unused_shards = 1;
+
+DROP TABLE dist_05786_tuple_flt;
+DROP TABLE shard_0.t_05786_tuple_flt;
+DROP TABLE shard_1.t_05786_tuple_flt;
