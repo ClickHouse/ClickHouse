@@ -1,0 +1,22 @@
+-- Tags: no-fasttest, need-query-parameters
+-- Tag no-fasttest: Iceberg needs Avro.
+
+-- Iceberg metadata snappy is always the Hadoop block format. The wire format is not encoded in the
+-- `.snappy.metadata.json` suffix, so metadata written with snappy compression must read back whatever
+-- the session value of `snappy_mode` is. Both format versions, `snappy_mode` basic and framed.
+
+SET allow_insert_into_iceberg = 1;
+
+{% for fv in [1, 2] -%}
+{% for snappy_mode in ['basic', 'framed'] -%}
+{% set t = 't_v' ~ fv ~ '_' ~ snappy_mode -%}
+DROP TABLE IF EXISTS {{ t }};
+CREATE TABLE {{ t }} (x String, y Int64) ENGINE = IcebergLocal({CLICKHOUSE_DATABASE:String} || '/{{ t }}/', 'Parquet')
+SETTINGS iceberg_use_version_hint = true, iceberg_format_version = {{ fv }}, iceberg_metadata_compression_method = 'snappy';
+SELECT * FROM {{ t }} ORDER BY ALL;
+INSERT INTO {{ t }} SETTINGS iceberg_metadata_compression_method = 'snappy', snappy_mode = '{{ snappy_mode }}' VALUES ('123', 1);
+SELECT * FROM {{ t }} ORDER BY ALL;
+DROP TABLE {{ t }};
+
+{% endfor -%}
+{% endfor -%}

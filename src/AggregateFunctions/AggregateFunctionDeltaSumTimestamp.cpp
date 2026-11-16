@@ -62,9 +62,9 @@ public:
     {
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    String getName() const override { return "deltaSumTimestamp"; }
+    [[nodiscard]] String getName() const override { return "deltaSumTimestamp"; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }
 
@@ -286,8 +286,11 @@ FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS valu
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties
-        = {.returns_default_when_only_null = true, .is_order_dependent = true, .requires_ordered_rows_per_state = true};
+    AggregateFunctionProperties properties = {
+        .returns_default_when_only_null = true,
+        .is_order_dependent = true,
+        .requires_ordered_rows_per_state = true,
+        .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, documentation, properties });
 }

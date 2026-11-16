@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import re
@@ -714,3 +715,328 @@ def test_replaced_file_groups(started_cluster, table_version):
             for obj in minio_client.list_objects(root_bucket, recursive=True):
                 minio_client.remove_object(root_bucket, obj.object_name)
             minio_client.remove_bucket(root_bucket)
+
+
+LOG_FILE_PATTERN = r"\.([^._]+)_([^.]*)\.log\.\d+(_\d+-\d+-\d+)?"
+
+
+def log_files(path):
+    return {
+        os.path.relpath(os.path.join(root, name), path)
+        for root, _, files in os.walk(path)
+        if not os.path.relpath(root, path).startswith(".hoodie")
+        for name in files
+        if re.fullmatch(LOG_FILE_PATTERN, name)
+    }
+
+
+def history_snapshot(history):
+    """The version and the files of the latest snapshot of a timeline history."""
+    with open(os.path.join(history, "_version_")) as f:
+        version = int(f.read())
+    with open(os.path.join(history, f"manifest_{version}")) as f:
+        return version, {entry["fileName"] for entry in json.load(f)["files"]}
+
+
+@pytest.mark.parametrize("table_version", [6, 9])
+def test_merge_on_read_log_files(started_cluster, table_version):
+    """Log files of a Merge-on-Read table are not read, so a table whose latest
+    file slices have log files must be refused instead of returning stale rows."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    name = f"test_merge_on_read_log_files_{table_version}_{uuid.uuid4().hex[:8]}"
+    tmp_dir = tempfile.mkdtemp()
+    mor = {
+        "hoodie.datasource.write.table.type": "MERGE_ON_READ",
+        "hoodie.compact.inline": "false",
+        "hoodie.clean.automatic": "false",
+    }
+
+    def assert_refused(source):
+        error = instance.query_and_get_error(f"SELECT id, v FROM {source}")
+        assert "NOT_IMPLEMENTED" in error and ".log." in error
+
+    try:
+        path = os.path.join(tmp_dir, name)
+        prefix = f"{name}/"
+        source = f"hudi(s3, filename='{prefix}')"
+        expected = {i: i * 7 for i in range(30)}
+
+        def write(ids, ts, operation="upsert", extra_options={}):
+            rows = [(i, "a" if i % 2 == 0 else "b", expected[i], ts) for i in ids]
+            write_hudi_table(
+                spark,
+                path,
+                rows,
+                operation,
+                table_version,
+                True,
+                {**mor, **extra_options},
+            )
+
+        def check():
+            assert_rows(instance, source, "id, v", sorted(expected.items()))
+
+        # A: inserts go to base files.
+        write(range(30), 1, "insert")
+        assert not log_files(path)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        check()
+
+        # B: updates go to log files.
+        for i in range(5):
+            expected[i] = 999000 + i
+        write(range(5), 2)
+        logs = log_files(path)
+        assert logs
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_refused(source)
+
+        # C: after a compaction the log files left on storage are not in the latest file slices.
+        expected[5] = 999005
+        write(
+            [5],
+            3,
+            extra_options={
+                "hoodie.compact.inline": "true",
+                "hoodie.compact.inline.max.delta.commits": "1",
+            },
+        )
+        timeline = ".hoodie" if table_version == 6 else ".hoodie/timeline"
+        commit_pattern = (
+            r"(\d+)\.commit" if table_version == 6 else r"(\d+)_\d+\.commit"
+        )
+        timeline_files = os.listdir(os.path.join(path, timeline))
+        compactions = [
+            int(m.group(1))
+            for m in (re.fullmatch(commit_pattern, n) for n in timeline_files)
+            if m
+        ]
+        assert compactions
+        assert logs <= log_files(path)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        check()
+
+        if table_version == 9:
+            # C1: a log belongs to the file slice by the completion time of its delta commit.
+            requested = {
+                re.fullmatch(LOG_FILE_PATTERN, os.path.basename(log)).group(2)
+                for log in logs
+            }
+            assert len(requested) == 1
+            requested = requested.pop()
+            delta_commit = next(
+                n
+                for n in timeline_files
+                if re.fullmatch(rf"{requested}_\d+\.deltacommit", n)
+            )
+            delta_commit_file = os.path.join(path, timeline, delta_commit)
+            delta_commit_key = f"{prefix}{timeline}/{delta_commit}"
+            late_key = f"{prefix}{timeline}/{delta_commit.split('_')[0]}_{max(compactions) + 1}.deltacommit"
+            minio_client.fput_object(bucket, late_key, delta_commit_file)
+            minio_client.remove_object(bucket, delta_commit_key)
+            assert_refused(source)
+            minio_client.remove_object(bucket, late_key)
+            minio_client.fput_object(bucket, delta_commit_key, delta_commit_file)
+            check()
+
+            # C3: the completion time of a delta commit that is not on the active timeline is unknown.
+            minio_client.remove_object(bucket, delta_commit_key)
+            assert_refused(source)
+            minio_client.fput_object(bucket, delta_commit_key, delta_commit_file)
+            check()
+
+        # C4: the meaning of the instant in a log file name depends on the timeline layout.
+        assert not os.path.exists(
+            os.path.join(path, ".hoodie", "hoodie.properties.backup")
+        )
+        minio_client.remove_object(bucket, f"{prefix}.hoodie/hoodie.properties")
+        assert_refused(source)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        check()
+
+        # C2: a file group without a base file.
+        file_ids = {
+            re.fullmatch(LOG_FILE_PATTERN, os.path.basename(log)).group(1)
+            for log in logs
+            if log.startswith("a/")
+        }
+        assert file_ids
+        for file in parquet_files(path):
+            if file.startswith("a/") and file[2:].split("_")[0] in file_ids:
+                minio_client.remove_object(bucket, prefix + file)
+        assert_refused(source)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        check()
+
+        if table_version == 9:
+            # G: the completion time of an archived delta commit is read from the timeline history.
+            archive = {
+                "hoodie.compact.inline": "true",
+                "hoodie.compact.inline.max.delta.commits": "1",
+                "hoodie.keep.min.commits": "2",
+                "hoodie.keep.max.commits": "3",
+                "hoodie.cleaner.commits.retained": "1",
+                "hoodie.timeline.compaction.batch.size": "2",
+            }
+            history = os.path.join(path, timeline, "history")
+
+            def history_compacted():
+                return os.path.exists(os.path.join(history, "_version_")) and any(
+                    not n.endswith("_0.parquet") for n in history_snapshot(history)[1]
+                )
+
+            for i in range(8, 18):
+                if (
+                    not os.path.exists(os.path.join(path, timeline, delta_commit))
+                    and history_compacted()
+                ):
+                    break
+                expected[i] = 999000 + i
+                write([i], 6 + i, extra_options=archive)
+            assert not os.path.exists(os.path.join(path, timeline, delta_commit))
+            assert history_compacted()
+            version, snapshot = history_snapshot(history)
+            superseded = {
+                n
+                for n in os.listdir(history)
+                if re.fullmatch(r"\d+_\d+_\d+\.parquet", n) and n not in snapshot
+            }
+            assert superseded
+            assert logs <= log_files(path)
+            remove_directory(minio_client, bucket, f"{name}/{timeline}")
+            upload_hudi_table(minio_client, bucket, path, prefix)
+            check()
+
+            # G1: only the files of the snapshot named by `_version_` are read.
+            history_key = f"{prefix}{timeline}/history"
+            uncommitted = f"{requested}_{requested}_0.parquet"
+            assert uncommitted not in snapshot
+            uncommitted_manifest = {"files": [{"fileName": uncommitted, "fileLen": 3}]}
+            put_object(minio_client, bucket, f"{history_key}/{uncommitted}", b"bad")
+            put_object(
+                minio_client,
+                bucket,
+                f"{history_key}/manifest_{version + 1}",
+                json.dumps(uncommitted_manifest).encode(),
+            )
+            check()
+            minio_client.remove_object(bucket, f"{history_key}/{uncommitted}")
+            minio_client.remove_object(bucket, f"{history_key}/manifest_{version + 1}")
+            # G2: without `_version_` the newest manifest is the snapshot.
+            minio_client.remove_object(bucket, f"{history_key}/_version_")
+            check()
+            upload_hudi_table(minio_client, bucket, path, prefix)
+
+            # G3: `_version_` removed after the listing, as while Hudi rewrites it.
+            failpoint = "hudi_pause_after_listing_timeline"
+            result = []
+            errors = []
+
+            def select():
+                try:
+                    result.append(
+                        instance.query(f"SELECT id, v FROM {source} ORDER BY id")
+                    )
+                except BaseException as e:  # noqa: BLE001
+                    errors.append(e)
+
+            instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            thread = threading.Thread(target=select)
+            thread.start()
+            try:
+                instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+                minio_client.remove_object(bucket, f"{history_key}/_version_")
+                instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            finally:
+                instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                thread.join()
+            if errors:
+                raise errors[0]
+            assert result == [
+                "".join(f"{i}\t{v}\n" for i, v in sorted(expected.items()))
+            ]
+            upload_hudi_table(minio_client, bucket, path, prefix)
+            remove_directory(minio_client, bucket, f"{name}/{timeline}/history")
+            assert_refused(source)
+
+            # G4: the history is in the directory named by `hoodie.timeline.history.path`.
+            for file in os.listdir(history):
+                minio_client.fput_object(
+                    bucket,
+                    f"{prefix}{timeline}/archived/{file}",
+                    os.path.join(history, file),
+                )
+            put_hudi_properties(
+                minio_client,
+                bucket,
+                path,
+                prefix,
+                "hoodie.timeline.history.path=history",
+                "hoodie.timeline.history.path=archived",
+            )
+            check()
+            remove_directory(minio_client, bucket, f"{name}/{timeline}/archived")
+            upload_hudi_table(minio_client, bucket, path, prefix)
+            check()
+
+        # D: a new update after the compaction.
+        expected[6] = 999006
+        write([6], 4)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_refused(source)
+
+        # F: the log files of file groups replaced by clustering are not read.
+        expected[7] = 999007
+        write(
+            [7],
+            5,
+            extra_options={
+                "hoodie.clustering.inline": "true",
+                "hoodie.clustering.inline.max.commits": "1",
+            },
+        )
+        assert completed_replace_commits(path, table_version)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        check()
+
+        # E: change data capture logs of a Copy-on-Write table are not part of the snapshot.
+        cdc_path = os.path.join(tmp_dir, f"{name}_cdc")
+        cdc_prefix = f"{name}_cdc/"
+        cdc = {"hoodie.table.cdc.enabled": "true"}
+        write_hudi_table(
+            spark,
+            cdc_path,
+            [(i, i * 7, 1) for i in range(10)],
+            "insert",
+            table_version,
+            False,
+            cdc,
+        )
+        write_hudi_table(
+            spark,
+            cdc_path,
+            [(i, i * 100, 2) for i in range(3)],
+            "upsert",
+            table_version,
+            False,
+            cdc,
+        )
+        assert any(
+            re.fullmatch(LOG_FILE_PATTERN + r"\.cdc", file_name)
+            for _, _, files in os.walk(cdc_path)
+            for file_name in files
+        )
+        upload_hudi_table(minio_client, bucket, cdc_path, cdc_prefix)
+        assert_rows(
+            instance,
+            f"hudi(s3, filename='{cdc_prefix}')",
+            "id, v",
+            [(i, i * 100) for i in range(3)] + [(i, i * 7) for i in range(3, 10)],
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        remove_directory(minio_client, bucket, name)
+        remove_directory(minio_client, bucket, f"{name}_cdc")

@@ -179,9 +179,9 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromPostgreSQL"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromPostgreSQL"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromPostgreSQL>(
             requiredSourceColumns(),
@@ -540,7 +540,7 @@ private:
 
         void insert(const Row & row) override
         {
-            stream.write_values(row);
+            stream.write_row(row);
         }
     };
 

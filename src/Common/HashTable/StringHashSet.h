@@ -12,7 +12,7 @@ struct StringHashSetCell : public HashTableCell<Key, StringHashTableHash, HashTa
 
     VoidMapped void_map;
     VoidMapped & getMapped() { return void_map; }
-    const VoidMapped & getMapped() const { return void_map; }
+    [[nodiscard]] const VoidMapped & getMapped() const { return void_map; }
 
     static constexpr bool need_zero_value_storage = false;
 };
@@ -25,11 +25,11 @@ struct StringHashSetCell<StringKey16> : public HashTableCell<StringKey16, String
 
     VoidMapped void_map;
     VoidMapped & getMapped() { return void_map; }
-    const VoidMapped & getMapped() const { return void_map; }
+    [[nodiscard]] const VoidMapped & getMapped() const { return void_map; }
 
     static constexpr bool need_zero_value_storage = false;
 
-    bool isZero(const HashTableNoState & state) const { return isZero(this->key, state); }
+    [[nodiscard]] bool isZero(const HashTableNoState & state) const { return isZero(this->key, state); }
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).
     static bool isZero(const StringKey16 & key_, const HashTableNoState &)
@@ -45,11 +45,11 @@ struct StringHashSetCell<StringKey24> : public HashTableCell<StringKey24, String
 
     VoidMapped void_map;
     VoidMapped & getMapped() { return void_map; }
-    const VoidMapped & getMapped() const { return void_map; }
+    [[nodiscard]] const VoidMapped & getMapped() const { return void_map; }
 
     static constexpr bool need_zero_value_storage = false;
 
-    bool isZero(const HashTableNoState & state) const { return isZero(this->key, state); }
+    [[nodiscard]] bool isZero(const HashTableNoState & state) const { return isZero(this->key, state); }
     // Zero means unoccupied cells in hash table. Use key with last word = 0 as
     // zero keys, because such keys are unrepresentable (no way to encode length).
     static bool isZero(const StringKey24 & key_, const HashTableNoState &)
@@ -65,7 +65,7 @@ struct StringHashSetCell<std::string_view> : public HashSetCellWithSavedHash<std
 
     VoidMapped void_map;
     VoidMapped & getMapped() { return void_map; }
-    const VoidMapped & getMapped() const { return void_map; }
+    [[nodiscard]] const VoidMapped & getMapped() const { return void_map; }
 
     static constexpr bool need_zero_value_storage = false;
 };

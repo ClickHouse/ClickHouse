@@ -34,11 +34,21 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
 
 0보다 커야 합니다.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "경로로 읽는 Iceberg 테이블의 최신 메타데이터 파일을 찾을 때 `metadata\/v` 키 접두사만 목록 조회하는 새로운 설정입니다."}]}]} />
+
+S3 또는 Azure에서 경로로 읽는 Iceberg 테이블(Iceberg table)의 최신 메타데이터 파일을 찾을 때 키 접두사 `metadata/v`만 목록 조회하므로, 같은 `metadata` 디렉터리에 저장된 매니페스트는 목록 조회 대상에서 제외됩니다. 해당 접두사 아래에 `.metadata.json` 파일이 있으면 그 파일들만 후보가 되고, 없으면 디렉터리 전체를 목록 조회합니다. `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` 또는 `iceberg_recent_metadata_file_by_last_updated_ms_field`와 함께 사용할 때는 적용되지 않으며, 데이터 레이크 카탈로그 데이터베이스의 테이블에도 적용되지 않습니다.
+
+모든 메타데이터 파일 이름이 `v<N>...` 형식인 테이블(ClickHouse 및 Hadoop 카탈로그(catalogs)가 사용하는 명명 방식)에서만 활성화하십시오. `<N>-<uuid>.metadata.json` 파일이 함께 있는 디렉터리에서는 이 파일들이 후보에서 제외되므로, 해당 파일을 작성한 writer의 커밋이 반영되지 않습니다.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
 <VersionHistory
   rows={[
@@ -49,7 +59,7 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
     { label: "4" },
     {
       label:
-        "delete 매니페스트와 데이터 매니페스트 모두에 대해 동시에 디코딩되는 Iceberg 매니페스트 파일 수를 제한하는 새로운 설정입니다. `iceberg_delete_manifest_decode_concurrency`를 대체하며, 기존 이름은 alias로 유지됩니다. `2`는 26.9 이전의 data path 동작과 거의 같습니다. 당시에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했습니다. 따라서 `compatibility`가 26.8 이하이면 delete 디코딩도 릴리스 기본값인 4가 아니라 2로 실행되며, delete 디코딩의 중첩을 일부 포기하는 대신 이전 data path의 메모리 엔벌로프를 그대로 유지합니다."
+        "delete 매니페스트와 데이터 매니페스트 모두에 대해 동시에 디코딩되는 Iceberg 매니페스트 파일 수를 제한하는 새로운 설정입니다. `iceberg_delete_manifest_decode_concurrency`를 대체하며, 기존 이름은 별칭으로 유지됩니다. `2`는 26.9 이전의 data path 동작과 거의 같습니다. 당시에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했습니다. 따라서 `compatibility`가 26.8 이하이면 delete 디코딩도 릴리스 기본값인 4가 아니라 2로 실행되며, delete 디코딩의 중첩을 일부 포기하는 대신 이전 data path의 메모리 엔벌로프를 그대로 유지합니다."
     }
   ]
 },
@@ -63,6 +73,14 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
         "첫 번째 행을 읽기 전에 동시에 디코딩되는 Iceberg delete 매니페스트 파일 수를 제한하는 새로운 설정입니다. 26.8 이전에는 다음 매니페스트의 fetch가 in-flight 상태인 채로 한 번에 하나의 매니페스트만 디코딩했으므로, `2`가 이전 동작과 가장 가깝습니다. 이전 동작에서는 각 매니페스트의 객체 스토리지 round-trip 시간의 합이 첫 번째 행을 읽기 전의 임계 경로(critical path)에 놓였습니다. 당시 이 설정의 이름은 `iceberg_delete_manifest_decode_concurrency`였으며, 현재는 이 설정의 별칭입니다."
     }
   ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.11" },
+    { label: "16" },
+    { label: "매니페스트가 많은 테이블에서 더 많은 객체 스토리지 round-trip을 겹쳐 처리할 수 있도록, 동시에 디코딩되는 Iceberg 매니페스트 파일 수의 기본값을 4에서 16으로 높였습니다." }
+  ]
 }
 ]}
 />
@@ -71,7 +89,7 @@ Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용�
 
 delete 매니페스트는 데이터 파일을 읽기 전에 모두 디코딩됩니다. 데이터 매니페스트는 쿼리 대상 데이터 파일 목록이 생성되는 동안 디코딩되며, 쿼리가 이미 디코딩된 entry를 소비하는 만큼만 새로운 매니페스트가 디코딩됩니다. 여러 매니페스트를 동시에 디코딩하면 객체 스토리지 round-trip과 entry 단위 프루닝 작업이 서로 겹쳐 처리됩니다.
 
-Iceberg metadata 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 값을 높이면 최대 메모리 사용량이 증가합니다. in-flight 상태인 각 매니페스트가 저마다 디코딩된 내용을 보유하기 때문입니다.
+Iceberg 메타데이터 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 값을 높이면 최대 메모리 사용량이 증가합니다. in-flight 상태인 각 매니페스트가 저마다 디코딩된 내용을 보유하기 때문입니다.
 
 0보다 커야 하며, `1`로 설정하면 매니페스트를 한 번에 하나씩 디코딩합니다.
 
@@ -97,6 +115,16 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ 를 참조하십시오.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1000"},{"label": "새로운 설정"}]}]} />
 
 Iceberg의 compaction 데이터 파일 수에 대한 임계값입니다.
+
+## iceberg_orphan_files_min_retention_seconds {#iceberg_orphan_files_min_retention_seconds}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "86400"},{"label": "새 설정입니다. `remove_orphan_files`는 현재 시점으로부터 이 초 수 이내의 `older_than` 값을 거부하므로, 이 시간 이내에 시작되어 아직 커밋되지 않은 쓰기 작업의 파일은 삭제되지 않고 유지됩니다. `compatibility`를 26.10 이전 버전으로 설정하면 이전 동작(최솟값 없음)으로 복원됩니다."}]}]} />
+
+`ALTER TABLE ... EXECUTE remove_orphan_files`가 Iceberg 테이블(Iceberg table)에서 삭제할 수 있는 파일의 최소 경과 시간(초)입니다. `older_than` 값(명시적으로 지정했거나 `iceberg_orphan_files_older_than_seconds`에서 도출된 값)이 현재 시점으로부터 이 값보다 가까우면 거부됩니다. 아직 커밋되지 않은 쓰기 작업의 파일은 테이블 메타데이터에서 참조되지 않으므로 삭제 대상이 될 수 있으며, 이 경우 해당 쓰기 작업이 커밋될 때 테이블이 손상됩니다. 이 값은 테이블 쓰기 작업이 커밋되기까지 걸릴 수 있는 최대 시간보다 크게 설정하십시오. 0으로 설정하면 이 검사가 비활성화됩니다.
 
 ## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 

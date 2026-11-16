@@ -23,11 +23,11 @@ class StampPartitionCursorsStep : public ITransformingStep
 public:
     StampPartitionCursorsStep(SharedHeader input_header_, String partition_id_, bool unordered_);
 
-    String getName() const override { return "StampPartitionCursors"; }
+    [[nodiscard]] String getName() const override { return "StampPartitionCursors"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     const String partition_id;

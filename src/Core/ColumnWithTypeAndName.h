@@ -30,12 +30,12 @@ struct ColumnWithTypeAndName
     /// Uses type->createColumn() to create column
     ColumnWithTypeAndName(const DataTypePtr & type_, const String & name_);
 
-    ColumnWithTypeAndName cloneEmpty() const;
+    [[nodiscard]] ColumnWithTypeAndName cloneEmpty() const;
     bool operator==(const ColumnWithTypeAndName & other) const;
 
     void dumpNameAndType(WriteBuffer & out) const;
     void dumpStructure(WriteBuffer & out) const;
-    String dumpStructure() const;
+    [[nodiscard]] String dumpStructure() const;
 };
 
 }

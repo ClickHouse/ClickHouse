@@ -31,6 +31,7 @@ Usar la caché de encabezados del índice de texto puede reducir significativame
 Permite evaluar consultas LIKE/ILIKE escaneando el diccionario del índice de texto invertido.
 
 Los patrones acelerados son `%value%`, `value%` y `%value`, así como las llamadas a `startsWith` y `endsWith` que `optimize_rewrite_like_perfect_affix` reescribe como `value%` y `%value`.
+Una llamada a `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` o `multiSearchAnyCaseInsensitiveUTF8` con un único needle se busca como `%value%`.
 
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 

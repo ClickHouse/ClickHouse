@@ -34,12 +34,13 @@ execute_process(
     COMMAND sed -f "${MUSL_SOURCE_DIR}/tools/mkalltypes.sed"
             "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/alltypes.h.in"
             "${MUSL_SOURCE_DIR}/include/alltypes.h.in"
-    OUTPUT_FILE "${MUSL_GENERATED_DIR}/bits/alltypes.h"
+    OUTPUT_VARIABLE MUSL_ALLTYPES
     RESULT_VARIABLE MUSL_ALLTYPES_RESULT
 )
 if (NOT MUSL_ALLTYPES_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate bits/alltypes.h for ${MUSL_ARCH}")
 endif()
+write_file_if_changed("${MUSL_GENERATED_DIR}/bits/alltypes.h" "${MUSL_ALLTYPES}")
 
 # bits/syscall.h: the syscall numbers, followed by the SYS_* aliases derived from them.
 file(READ "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in" MUSL_SYSCALL_NUMBERS)
@@ -51,7 +52,7 @@ execute_process(
 if (NOT MUSL_SYSCALL_RESULT EQUAL 0)
     message(FATAL_ERROR "Failed to generate bits/syscall.h for ${MUSL_ARCH}")
 endif()
-file(WRITE "${MUSL_GENERATED_DIR}/bits/syscall.h" "${MUSL_SYSCALL_NUMBERS}${MUSL_SYSCALL_ALIASES}")
+write_file_if_changed("${MUSL_GENERATED_DIR}/bits/syscall.h" "${MUSL_SYSCALL_NUMBERS}${MUSL_SYSCALL_ALIASES}")
 
 # Generate version.h
 execute_process(
@@ -62,7 +63,7 @@ execute_process(
 )
 
 set(MUSL_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/version.h")
-file(WRITE "${MUSL_VERSION_HEADER}" "#define VERSION \"${MUSL_VERSION}\"\n")
+write_file_if_changed("${MUSL_VERSION_HEADER}" "#define VERSION \"${MUSL_VERSION}\"\n")
 
 add_custom_target(musl-headers
     DEPENDS
