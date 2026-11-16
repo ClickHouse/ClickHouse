@@ -121,7 +121,10 @@ bool isSameSetting(const String & left, const String & right)
 }
 
 /// Removes the settings with the given names from the `SETTINGS` clause of a table definition.
-void resetSettings(SettingsChanges & settings_from_storage, const std::set<String> & settings_resets)
+/// With `settings_defaults` (a `MergeTree` engine), a reset immutable setting stays stated with its default,
+/// as every `MergeTree` definition states it.
+void resetSettings(
+    SettingsChanges & settings_from_storage, const std::set<String> & settings_resets, const MergeTreeSettings * settings_defaults)
 {
     for (const auto & setting_name : settings_resets)
     {
@@ -138,6 +141,9 @@ void resetSettings(SettingsChanges & settings_from_storage, const std::set<Strin
             LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
         }
     }
+
+    if (settings_defaults)
+        settings_defaults->addImmutableSettingsIfAbsent(settings_from_storage);
 }
 
 /// Splits a parsed `SETTINGS` clause into changes and resets.
@@ -1330,7 +1336,7 @@ void AlterCommand::apply(
         }
 
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        resetSettings(settings_from_storage, settings_resets);
+        resetSettings(settings_from_storage, settings_resets, settings_defaults);
 
         for (const auto & change : settings_changes)
         {
@@ -1359,7 +1365,7 @@ void AlterCommand::apply(
         if (!metadata.settings_changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets, settings_defaults);
         refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RENAME_COLUMN)

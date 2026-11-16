@@ -31,9 +31,17 @@ SELECT 'total', count(), sum(a) FROM t_alter_granularity;
 -- index_granularity_bytes can change to another non-zero value (table stays adaptive).
 ALTER TABLE t_alter_granularity MODIFY SETTING index_granularity_bytes = 1000000;
 
--- RESET reverts to the (non-zero) defaults and is allowed too.
+-- RESET reverts to the (non-zero) defaults and is allowed too. index_granularity stays stated in the
+-- definition with its default, so resetting every setting still leaves a valid SETTINGS clause.
 ALTER TABLE t_alter_granularity RESET SETTING index_granularity;
 ALTER TABLE t_alter_granularity RESET SETTING index_granularity_bytes;
+SELECT 'granularity_stated_after_reset', position(create_table_query, 'index_granularity = ') > 0
+FROM system.tables WHERE database = currentDatabase() AND name = 't_alter_granularity';
+
+-- The stored definition loads back.
+DETACH TABLE t_alter_granularity;
+ATTACH TABLE t_alter_granularity;
+SELECT 'total_after_attach', count(), sum(a) FROM t_alter_granularity;
 
 -- Switching the table to fixed (non-adaptive) granularity is rejected: it would change the on-disk
 -- mark format of new parts.
@@ -51,11 +59,12 @@ ALTER TABLE t_alter_granularity_fixed MODIFY SETTING index_granularity = 4096; -
 DROP TABLE t_alter_granularity_fixed;
 
 -- On ReplicatedMergeTree both settings stay readonly: they are immutable table-identity fields stored
--- in Keeper that every replica must match.
+-- in Keeper that every replica must match. A non-default index_granularity makes RESET an actual change.
 DROP TABLE IF EXISTS t_alter_granularity_repl;
 CREATE TABLE t_alter_granularity_repl (a UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_alter_granularity_repl', 'r1') ORDER BY a;
-ALTER TABLE t_alter_granularity_repl MODIFY SETTING index_granularity = 4096; -- { serverError READONLY_SETTING }
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_alter_granularity_repl', 'r1') ORDER BY a
+SETTINGS index_granularity = 4096;
+ALTER TABLE t_alter_granularity_repl MODIFY SETTING index_granularity = 2048; -- { serverError READONLY_SETTING }
 ALTER TABLE t_alter_granularity_repl MODIFY SETTING index_granularity_bytes = 1000000; -- { serverError READONLY_SETTING }
 ALTER TABLE t_alter_granularity_repl RESET SETTING index_granularity; -- { serverError READONLY_SETTING }
 DROP TABLE t_alter_granularity_repl;
