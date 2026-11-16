@@ -374,7 +374,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         key_columns.emplace(global_ctx->storage_columns.front().name);
 
     /// Recalculate the min-max index for partition columns if the merge might reduce rows.
-    if (global_ctx->merge_may_reduce_rows)
+    if (global_ctx->rows_reduction != RowsReduction::None)
         key_columns.insert_range(global_ctx->minmax_idx_columns.getNames());
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
@@ -885,73 +885,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
-    /// Determine whether projections and minmax indexes need to be updated during merge,
-    /// which typically happens when the number of rows may be reduced.
-    ///
-    /// This is necessary in cases such as TTL expiration, cleanup merges, deduplication,
-    /// or special merge modes like Collapsing/Replacing.
-    global_ctx->merge_may_reduce_rows =
-        ctx->need_remove_expired_values ||
-        !patch_parts.empty() ||
-        global_ctx->cleanup ||
-        global_ctx->deduplicate ||
-        hasLightweightDelete(global_ctx->future_part) ||
-        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-
-    /// A merge only drops source rows if every mechanism that may reduce rows deletes them verbatim:
-    /// values of the surviving rows and their relative order within one part are preserved.
-    /// Excluded: modes that synthesize rows (Summing, Aggregating, etc.), patch parts (rewrite values),
-    /// GROUP BY TTL (aggregates rows), column TTL (rewrites expired values, also when TTL merges are stopped)
-    /// and columns missing from all source parts (the TTL step recomputes the `MATERIALIZED` columns that read them).
-    /// Also excluded: a `_part_offset` or `_part_index` column in the table or a source part shadows the virtual column the mapping reads,
-    /// and a pending mutation of any column but `_row_exists` changes the values the merge reads (a re-added column reads its default).
-    /// Also excluded while a `DROP INDEX` or `DROP PROJECTION` is pending: a re-added name may still have the old definition's files.
-    const auto merging_mode = global_ctx->merging_params.mode;
-    bool merging_mode_only_drops_rows =
-        merging_mode == MergeTreeData::MergingParams::Ordinary ||
-        merging_mode == MergeTreeData::MergingParams::Replacing ||
-        merging_mode == MergeTreeData::MergingParams::Collapsing ||
-        merging_mode == MergeTreeData::MergingParams::VersionedCollapsing;
-
-    auto has_shadowing_column = [](const ColumnsDescription & columns)
-    {
-        return columns.has("_part_offset") || columns.has("_part_index");
-    };
-
-    auto has_pending_value_change = [](const AlterConversionsPtr & conversions)
-    {
-        auto columns = conversions->getColumnsInvalidatingIndexes();
-        columns.erase(RowExistsColumn::name);
-        return !columns.empty();
-    };
-
-    auto has_pending_definition_drop = [&]
-    {
-        /// Only text indexes and projections with `_part_offset` are reused.
-        const auto & projections = global_ctx->metadata_snapshot->getProjections();
-        if (!AlterCommands::hasTextIndex(*global_ctx->metadata_snapshot)
-            && std::ranges::none_of(projections, [](const auto & projection) { return projection.with_parent_part_offset; }))
-            return false;
-
-        for (const auto & [_, commands] : global_ctx->data->getUnfinishedMutationCommands())
-            for (const auto & command : commands)
-                if (command.type == MutationCommand::DROP_INDEX || command.type == MutationCommand::DROP_PROJECTION)
-                    return true;
-        return false;
-    };
-
-    global_ctx->merge_only_drops_rows =
-        global_ctx->merge_may_reduce_rows
-        && (*global_ctx->data_settings)[MergeTreeSetting::merge_text_indexes_and_projections_on_delete_only_merges]
-        && merging_mode_only_drops_rows
-        && patch_parts.empty()
-        && (!has_due_ttl
-            || (!global_ctx->metadata_snapshot->hasAnyGroupByTTL() && !global_ctx->metadata_snapshot->hasAnyColumnTTL()))
-        && global_ctx->new_data_part->expired_columns.empty()
-        && !has_shadowing_column(global_ctx->metadata_snapshot->getColumns())
-        && std::ranges::none_of(global_ctx->future_part->parts, [&](const auto & part) { return has_shadowing_column(part->getColumnsDescription()); })
-        && std::ranges::none_of(global_ctx->alter_conversions, has_pending_value_change)
-        && !has_pending_definition_drop();
+    global_ctx->rows_reduction = getRowsReduction(*global_ctx, *ctx, has_due_ttl);
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
@@ -1050,7 +984,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
     }
 
-    if (global_ctx->merge_may_reduce_rows)
+    if (global_ctx->rows_reduction != RowsReduction::None)
     {
         /// If merge may reduce rows, we need to build statistics for the new part
         /// at the end of the merge pipeline. See usage of addBuildStatisticsStep.
@@ -1562,6 +1496,77 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
     return hasLightweightDelete(global_ctx.future_part);
 }
 
+/// Such a column shadows the virtual column that the mapping of `MergedPartOffsets` reads.
+static bool hasPartOffsetOrIndexColumn(const ColumnsDescription & columns)
+{
+    return columns.has("_part_offset") || columns.has("_part_index");
+}
+
+/// `has_due_ttl` is set even if TTL merges are stopped, because column TTL rewrites the expired values anyway.
+MergeTask::RowsReduction MergeTask::getRowsReduction(
+    const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx, bool has_due_ttl)
+{
+    const auto & metadata = *global_ctx.metadata_snapshot;
+    const auto mode = global_ctx.merging_params.mode;
+
+    /// Rows are reduced in cases such as TTL expiration, cleanup merges, deduplication,
+    /// or special merge modes like Collapsing/Replacing. Then projections and minmax indexes need to be updated.
+    if (!ctx.need_remove_expired_values
+        && global_ctx.future_part->patch_parts.empty()
+        && !global_ctx.cleanup
+        && !global_ctx.deduplicate
+        && !hasLightweightDelete(global_ctx.future_part)
+        && mode == MergeTreeData::MergingParams::Ordinary)
+        return RowsReduction::None;
+
+    if (!(*global_ctx.data_settings)[MergeTreeSetting::merge_text_indexes_and_projections_on_delete_only_merges])
+        return RowsReduction::Any;
+
+    /// Other modes synthesize rows, patch parts and column TTL rewrite values, GROUP BY TTL aggregates rows,
+    /// and the TTL step recomputes `MATERIALIZED` columns that read the columns missing from all source parts.
+    bool is_supported_mode = mode == MergeTreeData::MergingParams::Ordinary
+        || mode == MergeTreeData::MergingParams::Replacing
+        || mode == MergeTreeData::MergingParams::Collapsing
+        || mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
+    if (!is_supported_mode
+        || !global_ctx.future_part->patch_parts.empty()
+        || (has_due_ttl && (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL()))
+        || !global_ctx.new_data_part->expired_columns.empty()
+        || hasPartOffsetOrIndexColumn(metadata.getColumns()))
+        return RowsReduction::Any;
+
+    for (const auto & part : global_ctx.future_part->parts)
+    {
+        if (hasPartOffsetOrIndexColumn(part->getColumnsDescription()))
+            return RowsReduction::Any;
+    }
+
+    /// A pending mutation of any column but `_row_exists` changes the values the merge reads.
+    for (const auto & conversions : global_ctx.alter_conversions)
+    {
+        auto columns = conversions->getColumnsInvalidatingIndexes();
+        columns.erase(RowExistsColumn::name);
+
+        if (!columns.empty())
+            return RowsReduction::Any;
+    }
+
+    /// A name re-added while `DROP INDEX` or `DROP PROJECTION` is pending may still have the old definition's files.
+    /// Only text indexes and projections with `_parent_part_offset` are reused.
+    if (!AlterCommands::hasTextIndex(metadata) && std::ranges::none_of(metadata.getProjections(), &ProjectionDescription::with_parent_part_offset))
+        return RowsReduction::OnlyDrops;
+
+    for (const auto & [_, commands] : global_ctx.data->getUnfinishedMutationCommands())
+    {
+        for (const auto & command : commands)
+            if (command.type == MutationCommand::DROP_INDEX || command.type == MutationCommand::DROP_PROJECTION)
+                return RowsReduction::Any;
+    }
+
+    return RowsReduction::OnlyDrops;
+}
+
 static bool readsAliasColumn(const IAST & ast, const ColumnsDescription & columns)
 {
     if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && columns.hasAlias(identifier->name()))
@@ -1577,10 +1582,10 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
     if (columns.has("_part_index"))
         return true;
 
-    if (!global_ctx.merge_may_reduce_rows)
+    if (global_ctx.rows_reduction == RowsReduction::None)
         return false;
 
-    if (!global_ctx.merge_only_drops_rows)
+    if (global_ctx.rows_reduction == RowsReduction::Any)
         return true;
 
     for (const auto & index : global_ctx.text_indexes_to_merge)
@@ -1597,16 +1602,17 @@ bool MergeTask::needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx)
             if (part->rows_count == 0)
                 continue;
 
-            auto format = index_ptr->getDeserializedFormat(*part, index_ptr->getFileName());
-            auto has_substream = [&](const MergeTreeIndexSubstream & required)
-            {
-                return std::ranges::any_of(format.substreams, [&](const auto & present) { return present.type == required.type; });
-            };
-
             /// A part without the index would build it from all of its rows, dropped ones included.
-            /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
-            if (!format || !std::ranges::all_of(required_substreams, has_substream))
+            auto format = index_ptr->getDeserializedFormat(*part, index_ptr->getFileName());
+            if (!format)
                 return true;
+
+            /// Merging opens every substream of the current definition, which an index written by an older definition may lack (`.pos`).
+            for (const auto & required : required_substreams)
+            {
+                if (!std::ranges::contains(format.substreams, required.type, &MergeTreeIndexSubstream::type))
+                    return true;
+            }
         }
     }
 
@@ -1760,7 +1766,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// rows of projection parts whose parent rows were dropped are filtered out at read time
         /// using the mapping in `MergedPartOffsets` (see MergeTreeSequentialSource).
         const bool can_merge_with_drops =
-            global_ctx->merge_only_drops_rows
+            global_ctx->rows_reduction == RowsReduction::OnlyDrops
             && projection.with_parent_part_offset
             && !projection.with_block_number
             && !projection.with_block_offset
@@ -1773,7 +1779,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
         /// since offset correctness cannot be ignored even in IGNORE mode.
         const bool is_special_projection = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
-        if (global_ctx->merge_may_reduce_rows && !can_merge_with_drops && (mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
+        if (global_ctx->rows_reduction != RowsReduction::None && !can_merge_with_drops && (mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
@@ -2203,7 +2209,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
-        if (global_ctx->merge_may_reduce_rows)
+        if (global_ctx->rows_reduction != RowsReduction::None)
         {
             /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
             /// incrementally-built minmax index in the parts arena.
@@ -2453,7 +2459,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         if (!build_text_indexes_of_result)
             addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
 
-        if (!global_ctx->merge_may_reduce_rows)
+        if (global_ctx->rows_reduction == RowsReduction::None)
         {
             if (auto transform = addBuildStatisticsStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx))
                 column_build_statistics_transforms.emplace(global_ctx->future_part->parts[part_num]->name, std::move(transform));
@@ -2512,7 +2518,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         addBuildTextIndexesStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx);
 
     /// If merge may reduce rows, rebuild statistics for the resulting part.
-    if (global_ctx->merge_may_reduce_rows)
+    if (global_ctx->rows_reduction != RowsReduction::None)
     {
         if (auto transform = addBuildStatisticsStep(merge_column_query_plan, *global_ctx->new_data_part, global_ctx))
             column_build_statistics_transforms.emplace(global_ctx->new_data_part->name, std::move(transform));
@@ -2728,7 +2734,7 @@ void MergeTask::VerticalMergeStage::saveCheckpoint() const
     for (auto it = global_ctx->gathering_columns.cbegin(); it != ctx->it_name_and_type; ++it)
         save_statistics(it->name);
     /// Otherwise the resumed merge computes the index again from the source parts.
-    if (const auto & minmax_index = *global_ctx->new_data_part->getMinMaxIndex(); global_ctx->merge_may_reduce_rows && minmax_index.initialized)
+    if (const auto & minmax_index = *global_ctx->new_data_part->getMinMaxIndex(); global_ctx->rows_reduction != RowsReduction::None && minmax_index.initialized)
         state.minmax_index = minmax_index.hyperrectangle;
     global_ctx->checkpoint->save(global_ctx->new_data_part->getDataPartStorage(), state);
     ctx->since_checkpoint.restart();
@@ -3874,9 +3880,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// which additionally requires reading the original `_part_offset` of every surviving row.
     auto make_enabled_part_offsets = [&]
     {
-        if (global_ctx->merge_may_reduce_rows)
+        if (global_ctx->rows_reduction != RowsReduction::None)
         {
-            chassert(global_ctx->merge_only_drops_rows);
+            chassert(global_ctx->rows_reduction == RowsReduction::OnlyDrops);
             std::vector<UInt64> part_rows;
             part_rows.reserve(global_ctx->future_part->parts.size());
             for (const auto & part : global_ctx->future_part->parts)
@@ -3904,7 +3910,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             {
                 /// Projections with `_parent_part_offset` are merged without a sorting key
                 /// only if the merge cannot drop rows, see prepareProjectionsToMergeAndRebuild.
-                chassert(!global_ctx->merge_may_reduce_rows);
+                chassert(global_ctx->rows_reduction == RowsReduction::None);
                 global_ctx->merged_part_offsets
                     = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
             }
@@ -3966,7 +3972,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (!global_ctx->rebuild_text_indexes)
             addBuildTextIndexesStep(*plan_for_part, *part, global_ctx);
 
-        if (!global_ctx->merge_may_reduce_rows)
+        if (global_ctx->rows_reduction == RowsReduction::None)
         {
             if (auto transform = addBuildStatisticsStep(*plan_for_part, *part, global_ctx))
                 ctx->build_statistics_transforms.emplace(part->name, std::move(transform));
@@ -4067,7 +4073,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         const auto sorting_queue_strategy
-            = !global_ctx->merge_may_reduce_rows
+            = global_ctx->rows_reduction == RowsReduction::None
                 && !global_ctx->projection
                 && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
             ? SortingQueueStrategy::Batch
@@ -4164,7 +4170,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     /// If merge may reduce rows, rebuild statistics for the resulting part.
-    if (global_ctx->merge_may_reduce_rows)
+    if (global_ctx->rows_reduction != RowsReduction::None)
     {
         if (auto transform = addBuildStatisticsStep(merge_parts_query_plan, *global_ctx->new_data_part, global_ctx))
             ctx->build_statistics_transforms.emplace(global_ctx->new_data_part->name, std::move(transform));
