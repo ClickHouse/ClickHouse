@@ -73,9 +73,6 @@ class MockControl:
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
-    def setup_at_complete_multi_part_upload(self, **kwargs):
-        self.setup_action("at_complete_multi_part_upload", **kwargs)
-
     def setup_fake_puts(self, part_length):
         self._apply(
             f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}"
@@ -235,6 +232,9 @@ class _ServerRuntime:
     class NoSuchUploadAction:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
+        def __init__(self, early=None):
+            self.early = early == "1"
+
         def inject_error(self, request_handler):
             data = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
@@ -245,7 +245,19 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            request_handler.write_error(404, data)
+            if self.early:
+                request_handler.send_response(404)
+                request_handler.send_header("Content-Type", "text/xml")
+                request_handler.send_header("Content-Length", str(len(data)))
+                request_handler.send_header("Connection", "close")
+                request_handler.end_headers()
+                request_handler.wfile.write(bytes(data, "UTF-8"))
+                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
+                request_handler.connection.shutdown(socket.SHUT_WR)
+                time.sleep(0.5)
+                request_handler.connection.close()
+            else:
+                request_handler.write_error(404, data)
 
     class SlowDownAction:
         def inject_error(self, request_handler):
@@ -415,7 +427,9 @@ class _ServerRuntime:
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
             elif self.action == "no_such_upload":
-                self.error_handler = _ServerRuntime.NoSuchUploadAction()
+                self.error_handler = _ServerRuntime.NoSuchUploadAction(
+                    *self.action_args
+                )
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
@@ -454,7 +468,6 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
-        self.at_complete_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -476,7 +489,6 @@ class _ServerRuntime:
             self.slow_get = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
-            self.at_complete_multi_part_upload = None
             self.at_listing = None
 
 
@@ -665,17 +677,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
-        if path[1] == "at_complete_multi_part_upload":
-            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
-            _runtime.at_complete_multi_part_upload = (
-                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
-            )
-            self.log_message(
-                "set at_complete_multi_part_upload %s",
-                _runtime.at_complete_multi_part_upload,
-            )
-            return self._ok()
-
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
@@ -782,11 +783,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 return self._fake_uploads(parts.path, upload_id)
 
         upload_id = params.get("uploadId", [None])[0]
-        if upload_id is not None:
-            if _runtime.at_complete_multi_part_upload is not None:
-                if _runtime.at_complete_multi_part_upload.has_effect():
-                    return _runtime.at_complete_multi_part_upload.inject_error(self)
-
         if _runtime.is_fake_upload(upload_id, parts.path):
             return self._fake_post_ok(parts.path)
 

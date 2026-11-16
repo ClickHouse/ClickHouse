@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- A 100k self-join of one-second states where every row matches exactly itself,
 -- exercising the boundary of the word-level scan over the match bit array.
 -- With an additional equality on `k` the join has a hash key and is not executed

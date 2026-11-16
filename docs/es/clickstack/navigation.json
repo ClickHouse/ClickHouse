@@ -37,10 +37,10 @@
       ]
     },
     {
-      "group": "Funcionalidades",
+      "group": "Características",
       "pages": [
         {
-          "group": "Despliegue",
+          "group": "Implementación",
           "pages": [
             "es/clickstack/deployment/overview",
             {
@@ -63,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (en desuso)",
+                      "group": "v1.x (obsoleto)",
                       "pages": [
                         "es/clickstack/deployment/helm-v1",
                         "es/clickstack/deployment/helm-configuration-v1",
@@ -89,8 +89,7 @@
             "es/clickstack/features/dashboards/overview",
             "es/clickstack/features/dashboards/dashboard-templates",
             "es/clickstack/features/dashboards/sql-visualizations",
-            "es/clickstack/features/dashboards/row-click-drilldowns",
-            "es/clickstack/features/dashboards/release-markers"
+            "es/clickstack/features/dashboards/row-click-drilldowns"
           ]
         },
         "es/clickstack/notebooks",
@@ -103,64 +102,28 @@
         "es/clickstack/mcp",
         "es/clickstack/url-parameters",
         {
-          "group": "Jornadas de demostración",
+          "group": "Demo days",
           "pages": [
             "es/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
-                {
-                  "group": "Septiembre",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-09-10",
-                    "es/clickstack/demo-days/2026/2026-09-04"
-                  ]
-                },
-                {
-                  "group": "Agosto",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-08-28",
-                    "es/clickstack/demo-days/2026/2026-08-21",
-                    "es/clickstack/demo-days/2026/2026-08-15",
-                    "es/clickstack/demo-days/2026/2026-08-07"
-                  ]
-                },
-                {
-                  "group": "Julio",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-07-31",
-                    "es/clickstack/demo-days/2026/2026-07-24",
-                    "es/clickstack/demo-days/2026/2026-07-17",
-                    "es/clickstack/demo-days/2026/2026-07-10",
-                    "es/clickstack/demo-days/2026/2026-07-02"
-                  ]
-                },
-                {
-                  "group": "Junio",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-06-26",
-                    "es/clickstack/demo-days/2026/2026-06-18",
-                    "es/clickstack/demo-days/2026/2026-06-12",
-                    "es/clickstack/demo-days/2026/2026-06-05"
-                  ]
-                },
-                {
-                  "group": "Mayo",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-05-29",
-                    "es/clickstack/demo-days/2026/2026-05-22",
-                    "es/clickstack/demo-days/2026/2026-05-15",
-                    "es/clickstack/demo-days/2026/2026-05-08"
-                  ]
-                },
-                {
-                  "group": "Abril",
-                  "pages": [
-                    "es/clickstack/demo-days/2026/2026-04-17",
-                    "es/clickstack/demo-days/2026/2026-04-10",
-                    "es/clickstack/demo-days/2026/2026-04-03"
-                  ]
-                }
+                "es/clickstack/demo-days/2026/2026-07-31",
+                "es/clickstack/demo-days/2026/2026-07-24",
+                "es/clickstack/demo-days/2026/2026-07-17",
+                "es/clickstack/demo-days/2026/2026-07-10",
+                "es/clickstack/demo-days/2026/2026-07-02",
+                "es/clickstack/demo-days/2026/2026-06-26",
+                "es/clickstack/demo-days/2026/2026-06-18",
+                "es/clickstack/demo-days/2026/2026-06-12",
+                "es/clickstack/demo-days/2026/2026-06-05",
+                "es/clickstack/demo-days/2026/2026-05-29",
+                "es/clickstack/demo-days/2026/2026-05-22",
+                "es/clickstack/demo-days/2026/2026-05-15",
+                "es/clickstack/demo-days/2026/2026-05-08",
+                "es/clickstack/demo-days/2026/2026-04-17",
+                "es/clickstack/demo-days/2026/2026-04-10",
+                "es/clickstack/demo-days/2026/2026-04-03"
               ]
             }
           ]
@@ -169,13 +132,12 @@
     },
     {
       "expanded": true,
-      "group": "Gestionar ClickStack",
+      "group": "Administración de ClickStack",
       "pages": [
         "es/clickstack/managing/overview",
         "es/clickstack/managing/admin",
         "es/clickstack/managing/config",
         "es/clickstack/managing/estimating-resources",
-        "es/clickstack/managing/isolating-read-write",
         "es/clickstack/managing/materialized-views",
         "es/clickstack/managing/performance-tuning",
         "es/clickstack/managing/production",
@@ -187,9 +149,9 @@
       "group": "Guías",
       "pages": [
         {
-          "expanded": true,
           "group": "Ingesta de datos",
           "pages": [
+            "es/clickstack/ingesting-data/index",
             "es/clickstack/ingesting-data/overview",
             "es/clickstack/ingesting-data/opentelemetry",
             "es/clickstack/ingesting-data/vector",
@@ -229,7 +191,7 @@
               ]
             },
             {
-              "group": "SDK para lenguajes",
+              "group": "SDK de lenguajes",
               "pages": [
                 "es/clickstack/ingesting-data/sdks/index",
                 "es/clickstack/ingesting-data/sdks/browser",
@@ -278,8 +240,7 @@
         "es/clickstack/integration-partners/index",
         "es/clickstack/integration-partners/bindplane",
         "es/clickstack/integration-partners/bitdrift",
-        "es/clickstack/integration-partners/odigos",
-        "es/clickstack/integration-partners/telflo"
+        "es/clickstack/integration-partners/odigos"
       ]
     },
     {

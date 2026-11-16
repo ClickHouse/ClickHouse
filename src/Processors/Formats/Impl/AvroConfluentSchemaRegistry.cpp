@@ -9,7 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/maskURIPassword.h>
 
 #include <base/sleep.h>
 
@@ -176,10 +175,7 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
             try
             {
                 Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                std::string masked_url = url.toString();
-                maskURIUserinfo(masked_url);
-                maskPresignedURLParameters(masked_url);
-                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, masked_url);
+                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, url.toString());
 
                 auto connection_timeouts = buildTimeouts(timeouts);
 
@@ -268,7 +264,10 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
                 /// Build the request path directly to preserve percent-encoding.
                 /// Poco::URI normalizes paths by decoding %2F -> /, which breaks
                 /// subjects containing slashes.
-                std::string request_path = base_url.getPath() + "/subjects/" + encoded_subject + "/versions";
+                /// `getPath` returns the decoded path, so encode it again like `getPathAndQuery` does for the schema fetch.
+                std::string request_path;
+                Poco::URI::encode(base_url.getPath(), "?#", request_path);
+                request_path += "/subjects/" + encoded_subject + "/versions";
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Registering schema under subject '{}' at path {}", subject, request_path);
 
                 auto connection_timeouts = buildTimeouts(timeouts);

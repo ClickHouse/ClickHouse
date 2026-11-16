@@ -43,9 +43,6 @@ struct OptimizeShardingKeyRewriteInMatcher
 
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
 
-/// Rewrites only the `IN` over columns of the table expression with the alias `sharded_table_alias` -
-/// the distributed table, replaced by the remote table in the query for the shard.
-void optimizeShardingKeyRewriteIn(
-    QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, const String & sharded_table_alias, ContextPtr context);
+void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context);
 
 }

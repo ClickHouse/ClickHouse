@@ -123,7 +123,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 }
 
 template <bool with_defaults>
-bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/, size_t /*column_index*/)
+bool BinaryFormatReader<with_defaults>::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
     return readFieldImpl(column, serialization);
 }
@@ -1444,8 +1444,6 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 <Note>
 More complex functions like `uniq`, `quantile`, or `groupArray` use implementation-specific formats. If you need to read or write these states, consult the ClickHouse source code for the specific function.
 </Note>
-
-With the setting `aggregate_function_input_format` set to `value` or `array`, an `AggregateFunction(func, T)` column is read as a value of type `T` (or a `Tuple` of the argument types if there are several of them), or as an `Array` of such values, encoded exactly as that type is encoded in RowBinary. The state is built from the values on the server side. For example, with `aggregate_function_input_format = 'array'`, a cell of `AggregateFunction(avg, UInt32)` is an `Array(UInt32)`: a LEB128 length followed by the elements.
 
 ### QBit {#qbit}
 

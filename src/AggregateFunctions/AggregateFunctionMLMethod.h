@@ -335,9 +335,6 @@ class AggregateFunctionMLMethod final : public IAggregateFunctionDataHelper<Data
 public:
     String getName() const override { return Name::name; }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     explicit AggregateFunctionMLMethod(
         UInt32 param_num_,
         std::unique_ptr<IGradientComputer> gradient_computer_,

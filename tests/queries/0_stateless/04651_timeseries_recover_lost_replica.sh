@@ -17,7 +17,7 @@
 # Recovery drops a table that does not store data on disk (DatabaseReplicated.cpp, the
 # `drop_broken_tables || !table->storesDataOnDisk()` branch). StorageTimeSeries has no
 # storesDataOnDisk override, so a diverged TimeSeries table takes that branch. The inner-table
-# special case right below it used to name only MaterializedView, and it is the
+# special case right below it used to name only MaterializedView and WindowView, and it is the
 # only place in recovery that hands a ZooKeeperMetadataTransaction to the inner DROP. Without it
 # the inner DROP was deferred to the background dropTableFinally task, which has no transaction,
 # so the DROP was re-routed into the replicated DDL log and rejected with
@@ -149,9 +149,9 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
                   max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))
               ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name
               ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1"
-${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCardinality(String),
+${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family_name String, type LowCardinality(String),
                                              unit LowCardinality(String), help String)
-              ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family"
+              ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name"
 ${CLIENT} --allow_experimental_time_series_table=1 \
     -q "CREATE TABLE ${DB}.ts_ext ENGINE = TimeSeries
         DATA ${DB}.ext_data TAGS ${DB}.ext_tags METRICS ${DB}.ext_metrics"

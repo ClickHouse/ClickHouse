@@ -13,14 +13,8 @@ std::optional<UInt64> getCurrentQueryHardLimit();
 /// Return current query tracked memory usage
 Int64 getCurrentQueryMemoryUsage();
 
-/// The current query deliberately leaves memory to something that outlives it (e.g. the data of an in-memory table).
-void setCurrentQueryMemoryDriftExpected();
-
-/// The tracker of the user the current thread's memory is charged to, or `nullptr`.
-MemoryTracker * getCurrentUserMemoryTracker();
-
 /// Create a memory tracker under the current query memory tracker.
-std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableContext level = VariableContext::Thread);
+std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery();
 
 /// Limit number of threads based on free memory.
 /// If free memory (server limit minus tracked) is less than threads * min_free_per_thread,

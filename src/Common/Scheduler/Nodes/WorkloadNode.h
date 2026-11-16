@@ -442,6 +442,7 @@ protected:
     struct QueueOrChildrenBranch
     {
         NodePtr queue; /// FifoQueue or AllocationQueue node is used if there are no children
+        bool queue_dropped = false; /// `queue` has been purged by `purgeDroppedQueue`
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
         CostUnit unit = CostUnit::IOByte;
@@ -493,6 +494,17 @@ protected:
             settings = new_settings;
             if (queue)
                 Traits::updateQueue(queue, settings, unit);
+        }
+
+        /// Fails the requests and allocations of a dropped workload, the same way `removeQueue` does
+        /// when the workload gets its first child. The queue itself stays alive while older hierarchy
+        /// versions reference it.
+        void purgeDroppedQueue()
+        {
+            if (!queue || std::exchange(queue_dropped, true))
+                return;
+            detach(queue);
+            Traits::purgeQueue(queue);
         }
 
     private:
@@ -639,6 +651,18 @@ public:
         : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
 
+    ~WorkloadNodeCommon() override
+    {
+        /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        /// The queue clears its own pointer in `purgeQueue` under its mutex, because query threads read it there.
+        purgeQueue(); // No-op if the workload was dropped through `purgeQueue` already
+        forEachSchedulerNode([this](ISchedulerNode * node)
+        {
+            if (node != impl.branch.queue.get())
+                node->workload = nullptr;
+        });
+    }
+
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
         SCHED_DBG("{} -- attachWorkloadChild(child={})", this->getPath(), child->getWorkload());
@@ -716,6 +740,11 @@ public:
         }
     }
 
+    void purgeQueue() final
+    {
+        impl.branch.purgeDroppedQueue();
+    }
+
     bool hasWorkloadChildren() const final
     {
         return impl.branch.queue == nullptr;
@@ -779,7 +808,6 @@ private:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
-            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -806,10 +834,8 @@ private:
         if (request)
         {
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
-            incrementDequeued(request->cost, child_active);
+            incrementDequeued(request->cost);
         }
-        else if (!child_active)
-            flushThroughputOnDeactivation();
 
         return {request, child_active};
     }

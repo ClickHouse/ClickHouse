@@ -18,7 +18,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }

@@ -4,7 +4,6 @@
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
-#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -156,10 +155,6 @@ public:
         distributed_cache_server = DistributedCache::Registry::instance()
                                        .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
                                        .chooseServer(hash.get128());
-
-        /// Both write() and read() require a non-null server for the holder's whole lifetime.
-        if (!distributed_cache_server)
-            DistributedCache::Client::throwNoServerAvailable(DistributedCache::Protocol::RequestType::Write);
     }
 
     ~TemporaryFileInDistributedCache() override
@@ -505,15 +500,6 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 
     ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
     ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
-
-    /// Report once the first bytes have reached the file, and not when the file is created: a temporary
-    /// file is often pre-created and never written to, e.g. the bucket buffers of `GraceHashJoin`.
-    if (compressed_delta > 0 && !reported_spilled_to_disk)
-    {
-        QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
-        reported_spilled_to_disk = true;
-    }
-
     parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;

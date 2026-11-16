@@ -28,7 +28,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <limits>
 #include <ranges>
 #include <unordered_set>
 
@@ -147,8 +146,8 @@ bool optimizeVectorSearchWithQuantizedCodes(
         return false;
 
     /// The shortlist uses internal functions (`__quantizeDistance`/`__productQuantizationDistance`) that are not registered in
-    /// FunctionFactory, so a remote node could not deserialize the plan: do not rewrite the plan the initiator serializes.
-    /// Each plan fragment is re-optimized with this setting off, so the shortlist is still built inside a fragment.
+    /// FunctionFactory, so a remote node could not deserialize the plan. Leave the query exact when the plan is
+    /// distributed (the vector-search-index path is skipped for the same reason above).
     if (settings.make_distributed_plan)
         return false;
 
@@ -228,27 +227,19 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (search_column.empty() || reference_vector.empty())
         return false;
 
-    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve the
-    /// name to the exact storage column first. It is either already a storage column - including a genuinely dotted one,
-    /// such as a `Nested` component `n.vec` or even `n.values.id` - or it carries the table qualifier which the analyzer
-    /// prepends (`__table1.vec`). Peel the leading component only when it is a proven qualifier, i.e. when the full name
-    /// is not a column of this table while the remainder is. Peeling based on the codec lookup alone would turn
-    /// `n.values.id` into `values.id` and, if that column happens to carry the codec, rank the shortlist by a different
-    /// vector column instead of leaving the query exact. Same rule as in `useVectorSearch.cpp`.
-    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
-    auto is_storage_column = [&storage_columns](const String & column_name)
-    {
-        return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
-    };
-
-    if (!is_storage_column(search_column) && search_column.contains('.'))
+    /// The search column must carry a `Quantize(...)` codec; its parameters describe the codes subcolumn. Resolve it to
+    /// the exact storage column: try the full input name first, so a genuine dotted storage column (e.g. a `Nested`
+    /// component `n.vec`) is matched as-is rather than conflated with a different top-level column. Only if that fails do
+    /// we strip a single leading qualifier (the analyzer qualifies table columns as `table.column`) and retry. Truncating
+    /// unconditionally would turn `n.vec` into `vec` and rank the shortlist by the wrong column.
+    auto params = findQuantizeCodecParams(*read_step, search_column);
+    if (!params && search_column.contains('.'))
     {
         const String unqualified = search_column.substr(search_column.find('.') + 1);
-        if (is_storage_column(unqualified))
+        params = findQuantizeCodecParams(*read_step, unqualified);
+        if (params)
             search_column = unqualified;
     }
-
-    auto params = findQuantizeCodecParams(*read_step, search_column);
     if (!params)
         return false;
 
@@ -274,6 +265,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// column by name below would bind that physical column instead of the companion subcolumn and rank the shortlist on
     /// unrelated bytes (silently, when the widths happen to match). Leave the query exact in that case: the same
     /// fall-back-to-exact this rewrite already takes wherever it cannot apply cleanly.
+    const auto & storage_columns = read_step->getStorageMetadata()->getColumns();
     if (storage_columns.has(codes_column) || (is_pq && storage_columns.has(codebook_column)))
         return false;
 
@@ -298,15 +290,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
             "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_FETCH_MULTIPLIER);
     size_t k_prime = n;
     if (fetch_multiplier > 1.0f)
-    {
-        /// Compare the product with the range of size_t while it is still a double: for a LIMIT close to the maximum of
-        /// UInt64 the product exceeds that range, and the conversion of such a value is undefined behavior (the same fix
-        /// as in the vector-similarity-index path).
-        const double scaled_limit = static_cast<double>(n) * static_cast<double>(fetch_multiplier);
-        k_prime = (scaled_limit >= static_cast<double>(std::numeric_limits<size_t>::max()))
-            ? std::numeric_limits<size_t>::max()
-            : static_cast<size_t>(scaled_limit);
-    }
+        k_prime = static_cast<size_t>(static_cast<double>(n) * static_cast<double>(fetch_multiplier));
     if (max_limit_for_lazy_materialization != 0)
         k_prime = std::min(k_prime, max_limit_for_lazy_materialization);
     k_prime = std::max(k_prime, n);
@@ -438,36 +422,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     inner_limit_node.step->setStepDescription("quantized shortlist limit");
     inner_limit_node.children = {&inner_sorting_node};
 
-    /// 5. Discard the approximate-distance column at the top of the shortlist. Nothing above consumes it, and an
-    /// unconsumed input is carried through to the block, which would widen the rescore expression's output by one
-    /// trailing column while every step above the splice keeps the width it was created with. Listing every shortlist
-    /// column as an input is what makes them consumed, so only the columns kept as outputs survive.
-    ActionsDAG discard_approx_dag;
-    SharedHeader shortlist_header = inner_limit_node.step->getOutputHeader();
-    std::vector<const ActionsDAG::Node *> shortlist_inputs;
-    shortlist_inputs.reserve(shortlist_header->columns());
-    for (const auto & shortlist_column : *shortlist_header)
-        shortlist_inputs.push_back(&discard_approx_dag.addInput(shortlist_column.name, shortlist_column.type));
-    for (size_t pos = 0; pos < shortlist_header->columns(); ++pos)
-        if (shortlist_header->getByPosition(pos).name != approx_column_name)
-            discard_approx_dag.getOutputs().push_back(shortlist_inputs[pos]);
-
-    auto discard_approx_step = std::make_unique<ExpressionStep>(shortlist_header, std::move(discard_approx_dag));
-    discard_approx_step->setStepDescription("quantized shortlist discard approximate distance");
-    /// Keep the discarded inputs, or a later pass strips them and re-exposes the column.
-    discard_approx_step->setPreventInputRemoval();
-
-    auto & discard_approx_node = nodes.emplace_back();
-    discard_approx_node.step = std::move(discard_approx_step);
-    discard_approx_node.children = {&inner_limit_node};
-
-    /// 6. Splice the shortlist above the whole filter/rename chain (between the rescore expression and the chain top).
-    /// The rescore expression keeps its output header because the extra codes columns are consumed by it and the
-    /// approximate distance was discarded above. The general lazy-materialization pass will later defer the heavy
-    /// vector column on the inner LimitStep (descending through the chain's Expression/Filter steps), so `vec` is
-    /// read only for the k' shortlisted rows.
-    expression_node->children = {&discard_approx_node};
-    expression_node->step->updateInputHeader(discard_approx_node.step->getOutputHeader());
+    /// 5. Splice the shortlist above the whole filter/rename chain (between the rescore expression and the chain top).
+    /// The rescore expression keeps its output header because it ignores the extra codes/_approx columns. The general
+    /// lazy-materialization pass will later defer the heavy vector column on the inner LimitStep (descending through the
+    /// chain's Expression/Filter steps), so `vec` is read only for the k' shortlisted rows.
+    expression_node->children = {&inner_limit_node};
+    expression_node->step->updateInputHeader(inner_limit_node.step->getOutputHeader());
 
     return true;
 }

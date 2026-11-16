@@ -135,17 +135,7 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : ThreadStatus(getThreadId())
-{
-}
-
-ThreadStatus::ThreadStatus(NoOSThreadTag)
-    : ThreadStatus(NO_OS_THREAD)
-{
-}
-
-ThreadStatus::ThreadStatus(UInt64 thread_id_)
-    : thread_id(thread_id_)
+    : thread_id(getThreadId())
 {
     chassert(!current_thread);
 
@@ -155,7 +145,10 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
     /// to a group still honors total_memory_tracker_sample_probability.
     resolveMemorySampleConfig();
-    log = getLogger("ThreadStatus");
+    /// A `ThreadStatus` is created for every job of a thread pool, and `getLogger` locks the global mutex of the
+    /// registry of loggers, so all threads of the pools would contend on it.
+    static const LoggerPtr thread_status_log = getLogger("ThreadStatus");
+    log = thread_status_log;
 
     current_thread = this;
 
@@ -272,12 +265,6 @@ void ThreadStatus::flushUntrackedMemory()
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
-}
-
-void ThreadStatus::publishUntrackedMemory()
-{
-    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
-        flushUntrackedMemory();
 }
 
 bool ThreadStatus::isQueryCanceled() const

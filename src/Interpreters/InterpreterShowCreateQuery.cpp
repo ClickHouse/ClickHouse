@@ -56,13 +56,10 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
-    ASTQueryWithTableAndOutput * show_query = query_ptr->as<ASTShowCreateTableQuery>();
-    if (!show_query)
-        show_query = query_ptr->as<ASTShowCreateViewQuery>();
-    if (!show_query)
-        show_query = query_ptr->as<ASTShowCreateDictionaryQuery>();
-
-    if (show_query)
+    ASTQueryWithTableAndOutput * show_query = nullptr;
+    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         /// Only `SHOW CREATE TABLE` should resolve temporary tables for an unqualified name —
         /// `VIEW` and `DICTIONARY` cannot refer to a temporary table, so resolving to one would
@@ -172,7 +169,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         {
             auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
             if (const auto * alias = table ? table->as<StorageAlias>() : nullptr;
-                alias && !alias->isDeclaredTargetGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
                 throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
         }
 
@@ -189,7 +186,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                     backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
     }
-    else if (show_query = query_ptr->as<ASTShowCreateDatabaseQuery>(); show_query)
+    else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");

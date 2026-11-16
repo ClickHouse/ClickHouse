@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -47,7 +46,8 @@ public:
                     getName(),
                     getNumericVariantSupertypeHint(type.getPtr()));
         };
-        forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
+        check_not_dynamic_or_variant(*this->result_type);
+        this->result_type->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -133,22 +133,6 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, *serialization);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
-    {
-        return singleValueSerializedSizeBound<Data>();
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        if constexpr (HasSerializedSizeBound<Data>)
-        {
-            this->data(place).write(dst, *serialization);
-            return dst;
-        }
-        else
-            return IAggregateFunction::serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -316,13 +300,9 @@ SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY departme
         "Note about non-aggregate maximum",
         R"(
 -- If you need non-aggregate function to choose a maximum of two values, see greatest():
-SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
+SELECT greatest(a, b) FROM table;
         )",
         R"(
-┌─greatest(a, b)─┐
-│              2 │
-│              5 │
-└────────────────┘
         )"
     }
     };

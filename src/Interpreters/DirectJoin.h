@@ -33,12 +33,7 @@ public:
         const Block & right_sample_block_with_storage_column_names_);
 
     std::string getName() const override { return "DirectKeyValueJoin"; }
-
-    std::string getAlgorithm() const override { return toString(JoinAlgorithm::DIRECT); }
     const TableJoin & getTableJoin() const override { return *table_join; }
-
-    /// Each left row's key is looked up once and the row is emitted in input order.
-    bool preservesLeftBlockOrder() const override { return true; }
 
     bool addBlockToJoin(const Block &, bool) override;
     void checkTypesOfKeys(const Block &) const override;

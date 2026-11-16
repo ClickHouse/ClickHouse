@@ -7,49 +7,7 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "es/get-started/index",
-        {
-          "expandable": true,
-          "expanded": false,
-          "group": "Guías de inicio rápido",
-          "pages": [
-            "es/get-started/quickstarts/home",
-            {
-              "expanded": false,
-              "group": "Todos los casos de uso",
-              "pages": [
-                "es/get-started/setup/cloud",
-                "es/get-started/quickstarts/obtain-your-cloud-connection-details",
-                "es/get-started/quickstarts/insert-data-using-clickhouse-client",
-                "es/get-started/quickstarts/creating-tables",
-                "es/get-started/quickstarts/writing-queries",
-                "es/get-started/quickstarts/create-your-first-mergetree-table"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Análisis en tiempo real",
-              "pages": [
-                "es/get-started/quickstarts/create-your-first-materialized-view",
-                "es/get-started/quickstarts/create-your-first-projection"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Almacenamiento de datos",
-              "pages": [
-                "es/get-started/quickstarts/connect-your-iceberg-catalog",
-                "es/get-started/quickstarts/mutations"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Observabilidad",
-              "pages": [
-                "es/get-started/quickstarts/working-with-the-map-type"
-              ]
-            }
-          ]
-        },
+        "es/get-started/quickstarts/home",
         {
           "expandable": true,
           "expanded": true,
@@ -65,7 +23,6 @@
           "group": "Casos de uso",
           "pages": [
             "es/get-started/use-cases/overview",
-            "es/get-started/use-cases/choosing-a-service",
             "es/get-started/use-cases/real-time-analytics",
             "es/get-started/use-cases/observability",
             "es/get-started/use-cases/data-warehousing",
@@ -117,7 +74,7 @@
         "es/get-started/sample-datasets/index",
         "es/get-started/sample-datasets/playground",
         {
-          "group": "Pruebas de rendimiento",
+          "group": "Benchmarks",
           "pages": [
             "es/get-started/sample-datasets/amplab-benchmark",
             "es/get-started/sample-datasets/brown-benchmark",
@@ -150,7 +107,7 @@
           ]
         },
         {
-          "group": "Datos geoespaciales y ubicación",
+          "group": "Geo y ubicación",
           "pages": [
             "es/get-started/sample-datasets/cell-towers",
             "es/get-started/sample-datasets/foursquare-os-places",
@@ -180,7 +137,7 @@
     },
     {
       "expanded": true,
-      "group": "Migración",
+      "group": "Migrar",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "es/get-started/migrate/overview",

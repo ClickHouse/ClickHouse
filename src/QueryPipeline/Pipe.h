@@ -11,7 +11,6 @@ namespace DB
 
 class Chain;
 class EnabledQuota;
-class Field;
 struct StreamLocalLimits;
 
 class Pipe;
@@ -99,7 +98,7 @@ public:
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
     /// Watermark-aware pair to resize. Adds CalibrateWatermarksProcessor.
-    void calibrateWatermarks(size_t num_streams, const Field & initial_watermark);
+    void calibrateWatermarks(size_t num_streams);
 
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 

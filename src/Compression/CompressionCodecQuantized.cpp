@@ -9,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
 
 #include <cstring>
 
@@ -24,17 +25,13 @@ namespace ErrorCodes
 CompressionCodecQuantized::CompressionCodecQuantized(const QuantizedCodecParams & params_)
     : params(params_)
 {
-}
-
-ASTPtr CompressionCodecQuantized::getCodecDescription() const
-{
     ASTs args;
     args.emplace_back(make_intrusive<ASTLiteral>(params.method));
     args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.dimensions)));
     args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.bits)));
     if (params.method == "product")
         args.emplace_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(params.m)));
-    return makeCodecDescription("Quantized", args);
+    setCodecDescription("Quantized", args);
 }
 
 uint8_t CompressionCodecQuantized::getMethodByte() const
@@ -44,7 +41,7 @@ uint8_t CompressionCodecQuantized::getMethodByte() const
 
 void CompressionCodecQuantized::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecQuantized::doCompressData(const char * source, UInt32 source_size, char * dest) const

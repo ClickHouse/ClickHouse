@@ -80,6 +80,8 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+
+    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 

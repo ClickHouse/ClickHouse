@@ -234,6 +234,7 @@ def test_backup_table_AzureBlobStorage():
 
 def test_create_table():
     password = new_password()
+    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_sas_conn_string = f"{azure_conn_string};SharedAccessSignature={password}"
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -263,6 +264,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         "S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
+        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
         "S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         "S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -372,6 +374,7 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')"),
             generate_create_table_numbered("(x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')"),
+            generate_create_table_numbered("(`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'"),
             # due to sensitive data substitution the query will be normalized, so not "settings" but "SETTINGS"
@@ -722,13 +725,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     # DeltaLake table functions are not available under Memory Sanitizer (Rust code is not instrumented)
@@ -739,9 +742,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:
@@ -761,13 +764,13 @@ def test_table_functions_object_storage_cluster():
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"azureBlobStorageCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"azureBlobStorageCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
         f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+        f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
     ]
 
     if has_delta_lake:
@@ -777,9 +780,9 @@ def test_table_functions_object_storage_cluster():
             f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container = 'test', blob_path = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
+            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container = 'test', blob_path = 'test')",
         ]
 
     if has_paimon:

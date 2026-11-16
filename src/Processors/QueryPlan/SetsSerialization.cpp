@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace Setting
@@ -42,6 +43,10 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
+
+/// The maximum nesting depth of plans for sets from subqueries in a deserialized query plan.
+/// The serialized plan may come from a client, and the deserialization is recursive.
+static constexpr size_t MAX_SUBQUERY_PLAN_NESTING_DEPTH = 1000;
 
 enum class SetSerializationKind : UInt8
 {
@@ -242,7 +247,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in, context, flags, max_type_complexity);
+            auto nested_flags = flags;
+            ++nested_flags.subquery_nesting_depth;
+            if (nested_flags.subquery_nesting_depth > MAX_SUBQUERY_PLAN_NESTING_DEPTH)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Too deep nesting of subqueries for sets in deserialized query plan (more than {} levels)",
+                    MAX_SUBQUERY_PLAN_NESTING_DEPTH);
+
+            auto plan_for_set = QueryPlan::deserialize(in, context, nested_flags, max_type_complexity);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
@@ -266,12 +279,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        /// The initiator ran this check against its own policies; the replica's may differ.
-        storage_set->checkNoRowPolicy(context);
-
-        /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
-        auto future_set = std::make_shared<FutureSetFromStorage>(
-            set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
+        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, nullptr, storage_set->getSet(), table_node->getStorageID());
         for (auto * column : set.columns)
             column->setData(future_set);
     }
