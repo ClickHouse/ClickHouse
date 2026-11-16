@@ -3076,7 +3076,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// Stored view definitions keep `WITH` lambdas, and their columns depend on these names. SQL UDF calls are
             /// substituted at `CREATE`, so their names may change.
             if (inlines_sql_udf)
+            {
+                /// A lambda argument is resolved only inside the body. Its text names it unless the text holds a secret.
+                for (size_t i = 0; i < function_arguments_size; ++i)
+                {
+                    if (arguments_projection_names[i] != PROJECTION_NAME_PLACEHOLDER)
+                        continue;
+                    auto lambda_ast = function_arguments[i]->toAST();
+                    if (!lambda_ast->hasSecretParts())
+                        arguments_projection_names[i] = lambda_ast->getColumnName();
+                }
+
+                result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
                 lambda_scope.inlined_call_projection_name = result_projection_names.front();
+            }
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();

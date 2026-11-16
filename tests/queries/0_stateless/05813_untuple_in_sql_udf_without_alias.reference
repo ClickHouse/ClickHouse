@@ -11,6 +11,12 @@ untuple_value(number).1	untuple_value(plus(number, 1)).1
 -- nested function
 untuple_value_nested(11).1	untuple_value_nested(22).1
 11	22
+-- lambda arguments
+untuple_map(lambda(tuple(x), plus(x, 1)), [1]).1	untuple_map(lambda(tuple(x), plus(x, 2)), [1]).1
+[2]	[3]
+map(lambda(tuple(x), plus(x, number)), [1])	map(lambda(tuple(x), multiply(x, number)), [1])
+[1]	[0]
+[2]	[1]
 -- a WITH lambda keeps its name: stored view definitions keep WITH lambdas
 tupleElement((x), \'1\')
 11
