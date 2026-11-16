@@ -63,7 +63,7 @@ namespace
             return mv_from_dependency;
         }
 
-        bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
+        [[nodiscard]] bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
 
         void visit(const ASTPtr & ast)
         {
@@ -414,7 +414,7 @@ namespace
         }
 
         /// Gets an argument as a string, evaluates constants if necessary.
-        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
+        [[nodiscard]] std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
         {
             if (!function.arguments)
                 return {};
@@ -459,7 +459,7 @@ namespace
         /// Gets an argument as a qualified table name.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
         /// The function doesn't replace an empty database name with the current_database (the caller must do that).
-        std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
+        [[nodiscard]] std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
             const ASTFunction & function, size_t arg_idx, bool evaluate = true, bool apply_current_database = true) const
         {
             if (!function.arguments)
@@ -523,7 +523,7 @@ namespace
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.
-        std::optional<QualifiedTableName> tryGetDatabaseAndTableNameFromArguments(
+        [[nodiscard]] std::optional<QualifiedTableName> tryGetDatabaseAndTableNameFromArguments(
             const ASTFunction & function, size_t database_arg_idx, size_t table_arg_idx, bool apply_current_database = true) const
         {
             auto database = tryGetStringFromArgument(function, database_arg_idx);
@@ -551,7 +551,7 @@ namespace
                 dependencies.emplace(std::move(qualified_name).value());
         }
 
-        std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const
+        [[nodiscard]] std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const
         {
             if (!function.arguments)
                 return {};

@@ -9,17 +9,6 @@ from typing import List, Optional
 from ._environment import _Environment
 from .info import Info
 
-try:
-    import requests
-except ImportError as ex:
-    if not Info().is_local_run:
-        raise ex
-    else:
-        print(
-            "WARNING: 'requests' module is not installed: "
-            f"{ex}. CIDB will not work - ok for local runs only."
-        )
-
 from .result import Result
 from .settings import Settings
 from .usage import ComputeUsage, PipelineUtilization, StorageUsage
@@ -347,6 +336,9 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # Imported here so that local runs, which never post to CI DB, work without `requests`.
+        import requests
+
         # At `max_concurrent_queries` the server waits this long for a free slot
         # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
         params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}

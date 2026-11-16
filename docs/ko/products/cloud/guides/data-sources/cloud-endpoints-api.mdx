@@ -7,8 +7,6 @@ doc_type: '참고'
 keywords: ['ClickHouse Cloud', '고정 IP 주소', 'Cloud 엔드포인트', 'API', '보안', '이그레스 IP', '인그레스 IP', '방화벽']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="static-ips-api">
   ## 정적 IP API
 </div>
@@ -52,8 +50,24 @@ MySQL 또는 PostgreSQL Engine과 같은 통합을 사용하는 경우, ClickHou
 
 예를 들어, `us-east-2`에서 실행 중인 AWS RDS 인스턴스가 ClickHouse Cloud 서비스에 연결해야 하는 경우, 인바운드 Security Group 규칙은 다음과 같이 구성해야 합니다:
 
-<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="AWS Security group rules" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS Security group rules](/images/_snippets/aws-rds-mysql.webp)
+
+</Frame>
+
+</div>
 
 동일한 ClickHouse Cloud 서비스가 `us-east-2`에서 실행 중이고, 이번에는 GCP의 MySQL에 연결되는 경우 `Authorized networks`는 다음과 같아야 합니다:
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP Authorized networks" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)
+
+</Frame>
+
+</div>

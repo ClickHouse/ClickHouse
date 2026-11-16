@@ -64,13 +64,13 @@ private:
         return res;
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Authoritative: accepts 1..3 integer (or `IPv4`, in the first two positions) arguments and
     /// returns an array whose element type is their least common supertype. The result-type
@@ -79,7 +79,7 @@ private:
     /// an `onlyNull` argument collapses the whole result to a scalar `Nullable(Nothing)`, and an
     /// `IPv4` counts as `UInt32`. The `Nothing` alternative accepts a bare `NULL` literal in any
     /// position so `range(NULL)` keeps reaching `rangeResult`.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// One arm per arity: the `rangeResult` type function cannot reference an absent optional
         /// capture, so the three lengths are spelled out explicitly instead of using `[optional]`.
@@ -414,7 +414,7 @@ private:
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
         if (null_presence.has_null_constant)
