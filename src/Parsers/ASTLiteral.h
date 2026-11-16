@@ -92,6 +92,9 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    /// the column name of a literal with this value
+    static void appendColumnNameOfValue(const Field & value, WriteBuffer & ostr);
+
 protected:
     void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
