@@ -1,4 +1,6 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
+
+#include <optional>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
@@ -800,7 +802,8 @@ void registerHiddenPreWriteChecks(
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views = true,
-    const Names * insert_columns = nullptr);
+    const Names * insert_columns = nullptr,
+    std::optional<bool> nested_insert_ignores_view_errors = std::nullopt);
 
 /// The columns a forwarding storage lists in the nested INSERT into the table behind it. A `Buffer` writes the blocks
 /// of its own structure (see `StorageBuffer::writeBlockToDestination`), and a `Distributed` table sends its own columns
@@ -853,20 +856,23 @@ void deferHiddenPreWriteCheckFailure(const HiddenCheckOrigin & origin, std::vect
 /// Registers the deferred pre-write checks of the materialized views depending on `storage`, which the
 /// nested INSERT into `storage` (running with `context`) expands only during the execution. A view
 /// runs with its own `SQL SECURITY` context, as in `InsertDependenciesBuilder::createSelectInsertContext`.
+/// `ignore_errors` is `materialized_views_ignore_errors` of the nested INSERT that expands the views: its
+/// `InsertDependenciesBuilder` samples the setting once, from the context of that INSERT, and applies it to
+/// every view of the cascade, whatever the `SQL SECURITY` contexts of the views on the way say.
 void registerHiddenDependentViewsPreWriteChecks(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
     const HiddenCheckOrigin & origin,
     size_t depth,
-    std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
+    bool ignore_errors)
 {
     /// The errors of the views (`Too many parts` included) are ignored by the nested INSERT, so their
     /// checks must not reject the write either. Still, a rejected view must not write: the check of the
     /// direct target of the view is registered as an isolated one, keyed by the view, and the sink the nested
     /// INSERT creates for the view observes its outcome, see `InsertStartGate::Check::enforced_by`. The writes
     /// further behind such a view (through another forwarding hop) are left to their own sinks.
-    const bool ignore_errors = context->getSettingsRef()[Setting::materialized_views_ignore_errors];
 
     const auto storage_id = storage->getStorageID();
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage_id))
@@ -888,7 +894,10 @@ void registerHiddenDependentViewsPreWriteChecks(
 
             if (!ignore_errors)
             {
-                registerHiddenPreWriteChecks(target, view_context, gates, origin, depth + 1, result);
+                /// The cascade of views continues in the same nested INSERT, with the same error policy.
+                registerHiddenPreWriteChecks(
+                    target, view_context, gates, origin, depth + 1, result,
+                    /* follow_dependent_views= */ true, /* insert_columns= */ nullptr, ignore_errors);
                 continue;
             }
 
@@ -930,10 +939,17 @@ void registerHiddenPreWriteChecksImpl(
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views,
-    const Names * insert_columns)
+    const Names * insert_columns,
+    std::optional<bool> nested_insert_ignores_view_errors)
 {
     if (!storage || depth > max_insert_forwarding_depth)
         return;
+
+    /// `materialized_views_ignore_errors` of the nested INSERT this write belongs to. It is passed along the
+    /// writes the same INSERT performs (into a dependent view, a `MaterializedView`, the nested storage of a
+    /// proxy), and sampled from `context` where a forwarding storage starts a new nested INSERT with it.
+    const bool ignore_view_errors = nested_insert_ignores_view_errors.value_or(
+        context->getSettingsRef()[Setting::materialized_views_ignore_errors]);
 
     /// The checks run before the nested INSERTs check the access rights, and their failure tells the number
     /// and the sizes of the parts of the table. So every insertion boundary on the way is authorized with the
@@ -949,7 +965,7 @@ void registerHiddenPreWriteChecksImpl(
     /// them only when it consumes the rows, in a separate write, so the nested INSERT does not reach them,
     /// see `InsertDependenciesBuilder::createChainWithDependencies`.
     if (follow_dependent_views && !storage->noPushingToViewsOnInserts())
-        registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result);
+        registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result, ignore_view_errors);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
@@ -989,7 +1005,7 @@ void registerHiddenPreWriteChecksImpl(
         auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
         registerHiddenPreWriteChecks(
             materialized_view->tryGetTargetTable(), view_context, gates, origin, depth + 1, result,
-            /* follow_dependent_views= */ true, insert_columns);
+            /* follow_dependent_views= */ true, insert_columns, ignore_view_errors);
         return;
     }
     if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
@@ -1005,7 +1021,8 @@ void registerHiddenPreWriteChecksImpl(
     {
         /// The write into a proxy is the write into its nested storage, with the same columns.
         registerHiddenPreWriteChecks(
-            proxy->getNested(), context, gates, origin, depth + 1, result, /* follow_dependent_views= */ false, insert_columns);
+            proxy->getNested(), context, gates, origin, depth + 1, result, /* follow_dependent_views= */ false, insert_columns,
+            ignore_view_errors);
         return;
     }
 
@@ -1028,11 +1045,13 @@ void registerHiddenPreWriteChecks(
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views,
-    const Names * insert_columns)
+    const Names * insert_columns,
+    std::optional<bool> nested_insert_ignores_view_errors)
 {
     try
     {
-        registerHiddenPreWriteChecksImpl(storage, context, gates, origin, depth, result, follow_dependent_views, insert_columns);
+        registerHiddenPreWriteChecksImpl(
+            storage, context, gates, origin, depth, result, follow_dependent_views, insert_columns, nested_insert_ignores_view_errors);
     }
     catch (...) // Ok: the error is deferred to the write, see `deferHiddenPreWriteCheckFailure`.
     {
