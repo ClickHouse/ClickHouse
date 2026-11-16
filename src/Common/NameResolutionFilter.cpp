@@ -4,6 +4,8 @@
 #include <Common/LoggingHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <base/defines.h>
@@ -14,7 +16,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <atomic>
-#include <shared_mutex>
 #include <unordered_set>
 
 #if defined(OS_LINUX)
@@ -47,7 +48,7 @@ struct State
     /// threads may resolve names during shutdown.
     RemoteHostFilter allowed_hosts;
 
-    std::shared_mutex internal_hosts_mutex;
+    SharedMutex internal_hosts_mutex;
     std::unordered_set<std::string> internal_hosts TSA_GUARDED_BY(internal_hosts_mutex);
 };
 
@@ -92,7 +93,7 @@ bool isAllowedImpl(std::string_view host)
     const std::string normalized = normalizeHost(host);
 
     {
-        std::shared_lock lock(s.internal_hosts_mutex);
+        SharedLockGuard lock(s.internal_hosts_mutex);
         if (s.internal_hosts.contains(normalized))
             return true;
     }
@@ -132,7 +133,7 @@ void NameResolutionFilter::addInternalHost(std::string_view host)
     auto & s = state();
 
     {
-        std::shared_lock lock(s.internal_hosts_mutex);
+        SharedLockGuard lock(s.internal_hosts_mutex);
         if (s.internal_hosts.contains(normalized))
             return;
     }
