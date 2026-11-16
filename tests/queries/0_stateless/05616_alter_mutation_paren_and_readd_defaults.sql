@@ -48,3 +48,21 @@ SELECT a, x FROM t_memory_default_type;
 ALTER TABLE t_memory_default_type MODIFY COLUMN a UInt64;
 SELECT a, x FROM t_memory_default_type;
 DROP TABLE t_memory_default_type;
+
+-- A column that became an `ALIAS` is expanded. The old physical value must not be stored in the replacement.
+DROP TABLE IF EXISTS t_memory_default_alias;
+CREATE TABLE t_memory_default_alias (id UInt64, a UInt64, x UInt64) ENGINE = Memory;
+INSERT INTO t_memory_default_alias VALUES (1, 7, 0);
+ALTER TABLE t_memory_default_alias MODIFY COLUMN a UInt64 ALIAS id + 100;
+SELECT id, a FROM t_memory_default_alias;
+ALTER TABLE t_memory_default_alias DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT a + 1;
+SELECT id, a, x FROM t_memory_default_alias;
+DROP TABLE t_memory_default_alias;
+
+-- A named tuple subcolumn is a valid input of a replacement default.
+DROP TABLE IF EXISTS t_memory_default_subcolumn;
+CREATE TABLE t_memory_default_subcolumn (a Tuple(v UInt64), x UInt64) ENGINE = Memory;
+INSERT INTO t_memory_default_subcolumn VALUES ((257), 7);
+ALTER TABLE t_memory_default_subcolumn DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT a.v + 1;
+SELECT a.v, x FROM t_memory_default_subcolumn;
+DROP TABLE t_memory_default_subcolumn;
