@@ -1846,6 +1846,24 @@ Name of the table in SQLite input from which to read data. If empty, the first t
 Name of the table in SQLite output
 )", 0, \
         {"26.10", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."}) \
+    DECLARE(String, output_format_puffin_blob_type, "deletion-vector-v1", R"(
+Type of the blobs written by the `Puffin` output format. Possible values:
+- `deletion-vector-v1` - the input has two columns: the referenced data file and deleted row positions; one deletion vector blob is written per referenced data file.
+- `apache-datasketches-theta-v1` - every input column becomes one Apache DataSketches Theta sketch blob over its non-null values, with the `ndv` property set to the estimated number of distinct values, as Iceberg writes column statistics.
+)", 0, \
+        {"26.11", "deletion-vector-v1", "deletion-vector-v1", "New setting for the `Puffin` output format: the type of the written blobs."}) \
+    DECLARE(String, output_format_puffin_field_ids, "", R"(
+Comma-separated Iceberg field ids of the input columns, written to the `fields` of `apache-datasketches-theta-v1` blobs by the `Puffin` output format. Empty means the columns get field ids 1, 2, ... in their order.
+)", 0, \
+        {"26.11", "", "", "New setting for the `Puffin` output format: Iceberg field ids of the columns for Theta sketch blobs."}) \
+    DECLARE(Int64, output_format_puffin_snapshot_id, -1, R"(
+Iceberg snapshot id written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the snapshot the statistics were computed from.
+)", 0, \
+        {"26.11", -1, -1, "New setting for the `Puffin` output format: the snapshot id of Theta sketch blobs."}) \
+    DECLARE(Int64, output_format_puffin_sequence_number, -1, R"(
+Iceberg sequence number written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the sequence number of the snapshot the statistics were computed from.
+)", 0, \
+        {"26.11", -1, -1, "New setting for the `Puffin` output format: the sequence number of Theta sketch blobs."}) \
     \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'

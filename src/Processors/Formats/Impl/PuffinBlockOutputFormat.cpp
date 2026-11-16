@@ -7,6 +7,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
+
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -14,12 +21,85 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
-PuffinBlockOutputFormat::PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_)
+PuffinBlockOutputFormat::PuffinBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
+    , format_settings(format_settings_)
 {
     const Block & header = getPort(PortKind::Main).getHeader();
+    const String & blob_type = format_settings.puffin.output_blob_type;
+    if (blob_type == PUFFIN_DELETION_VECTOR_BLOB_TYPE)
+    {
+        initDeletionVectors(header);
+    }
+    else if (blob_type == PUFFIN_DATASKETCHES_THETA_BLOB_TYPE)
+    {
+        write_theta_sketches = true;
+        initThetaSketches(header);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown Puffin blob type '{}' in setting `output_format_puffin_blob_type`, supported types: '{}', '{}'",
+            blob_type,
+            PUFFIN_DELETION_VECTOR_BLOB_TYPE,
+            PUFFIN_DATASKETCHES_THETA_BLOB_TYPE);
+    }
+}
+
+void PuffinBlockOutputFormat::initThetaSketches(const Block & header)
+{
+#if USE_DATASKETCHES
+    if (header.columns() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin output format requires at least one column to write Theta sketches");
+
+    const String & field_ids_setting = format_settings.puffin.output_field_ids;
+    if (field_ids_setting.empty())
+    {
+        for (size_t i = 0; i < header.columns(); ++i)
+            theta_field_ids.push_back(static_cast<Int32>(i + 1));
+    }
+    else
+    {
+        std::vector<String> parts;
+        boost::split(parts, field_ids_setting, boost::is_any_of(","));
+        std::unordered_set<Int32> seen;
+        for (auto & part : parts)
+        {
+            boost::trim(part);
+            Int32 field_id = 0;
+            if (!tryParse(field_id, part) || field_id <= 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `output_format_puffin_field_ids` must be a comma-separated list of positive integers, got '{}'",
+                    field_ids_setting);
+            if (!seen.insert(field_id).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `output_format_puffin_field_ids` contains field id {} twice", field_id);
+            theta_field_ids.push_back(field_id);
+        }
+        if (theta_field_ids.size() != header.columns())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `output_format_puffin_field_ids` has {} field ids, but {} columns are written: {}",
+                theta_field_ids.size(),
+                header.columns(),
+                header.dumpNames());
+    }
+
+    theta_sketches.reserve(header.columns());
+    for (const auto & column : header)
+        theta_sketches.emplace_back(column.name, column.type);
+#else
+    UNUSED(header);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing Theta sketches to Puffin files is disabled, ClickHouse was built without DataSketches");
+#endif
+}
+
+void PuffinBlockOutputFormat::initDeletionVectors(const Block & header)
+{
     if (header.columns() != 2)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -73,6 +153,20 @@ void PuffinBlockOutputFormat::addPositions(roaring::Roaring64Map & bitmap, const
 
 void PuffinBlockOutputFormat::consume(Chunk chunk)
 {
+    if (write_theta_sketches)
+    {
+#if USE_DATASKETCHES
+        const auto & columns = chunk.getColumns();
+        for (size_t i = 0; i < columns.size(); ++i)
+            theta_sketches[i].add(*columns[i]);
+#endif
+        return;
+    }
+    consumeDeletionVectors(chunk);
+}
+
+void PuffinBlockOutputFormat::consumeDeletionVectors(const Chunk & chunk)
+{
     const auto & columns = chunk.getColumns();
     const auto files = columns[0]->convertToFullColumnIfLowCardinality();
     const IColumn & positions = *columns[1];
@@ -102,6 +196,11 @@ void PuffinBlockOutputFormat::consume(Chunk chunk)
 void PuffinBlockOutputFormat::finalizeImpl()
 {
     PuffinWriter writer(out);
+#if USE_DATASKETCHES
+    for (size_t i = 0; i < theta_sketches.size(); ++i)
+        theta_sketches[i].write(
+            writer, theta_field_ids[i], format_settings.puffin.output_snapshot_id, format_settings.puffin.output_sequence_number);
+#endif
     for (auto & [referenced_data_file, positions] : deletion_vectors)
         writeDeletionVectorBlob(writer, referenced_data_file, positions);
     writer.finalize();
@@ -110,14 +209,18 @@ void PuffinBlockOutputFormat::finalizeImpl()
 void PuffinBlockOutputFormat::resetFormatterImpl()
 {
     deletion_vectors.clear();
+#if USE_DATASKETCHES
+    for (auto & sketch : theta_sketches)
+        sketch.reset();
+#endif
 }
 
 void registerOutputFormatPuffin(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Puffin",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings &, FormatFilterInfoPtr)
-        { return std::make_shared<PuffinBlockOutputFormat>(buf, std::make_shared<const Block>(sample)); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr)
+        { return std::make_shared<PuffinBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings); });
     factory.markFormatHasNoAppendSupport("Puffin");
     factory.markOutputFormatNotTTYFriendly("Puffin");
     factory.setContentType("Puffin", "application/octet-stream");

@@ -271,6 +271,20 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
             blob_index);
 }
 
+void requireDatasketchesThetaV1Properties(const PuffinBlob & blob, size_t blob_index)
+{
+    auto it = blob.properties.find("ndv");
+    UInt64 ndv = 0;
+    if (it == blob.properties.end() || it->second.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: apache-datasketches-theta-v1 missing required property 'ndv'", blob_index);
+    if (!tryParse(ndv, it->second))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: apache-datasketches-theta-v1 property 'ndv' must be an unsigned integer",
+            blob_index);
+}
+
 void parseStringValuedProperties(
     const Poco::JSON::Object::Ptr & props_obj,
     MapWithMemoryTracking<String, String> * out,
@@ -381,14 +395,23 @@ VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json,
             parseBlobProperties(blob_obj, blob, i, /*required=*/true);
             requireDeletionVectorV1Properties(blob, i);
         }
+        else if (blob.type == PUFFIN_DATASKETCHES_THETA_BLOB_TYPE)
+        {
+            if (blob_obj->has("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
+
+            parseBlobProperties(blob_obj, blob, i, /*required=*/true);
+            requireDatasketchesThetaV1Properties(blob, i);
+        }
         else
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
+                "Puffin blob {}: unsupported blob type '{}', only '{}' and '{}' are supported",
                 i,
                 blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+                PUFFIN_DELETION_VECTOR_BLOB_TYPE,
+                PUFFIN_DATASKETCHES_THETA_BLOB_TYPE);
         }
 
         requireBlobMetadataField(blob_obj, "fields", i);
@@ -918,12 +941,7 @@ Chunk PuffinInputFormat::read()
         const auto & blob = footer.blobs[blob_index++];
 
         if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
-                current_blob_index,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            continue;
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
@@ -1016,7 +1034,7 @@ void registerInputFormatPuffin(FormatFactory & factory)
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
 It outputs one row per blob entry from the footer `BlobMetadata` list.
 
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+Supported blob types are `deletion-vector-v1` and `apache-datasketches-theta-v1`: a file containing any other blob type is rejected. `apache-datasketches-theta-v1` blobs must have the `ndv` property with an unsigned integer.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
@@ -1059,7 +1077,7 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
 
 Format for reading and writing [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
 
-The format exposes deleted row positions from `deletion-vector-v1` blobs. It is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+The format exposes deleted row positions from `deletion-vector-v1` blobs. `apache-datasketches-theta-v1` blobs are skipped, so files with both blob types can be read; use `PuffinMetadata` to see them. A file containing any other blob type is rejected.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
 Fixed output columns:
@@ -1067,6 +1085,8 @@ Fixed output columns:
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
 When used as an output format, the input must have the same two columns that the format produces when reading: the referenced data file (`String` or `LowCardinality(String)`) and the deleted row positions (an integer, one position per row, or an array of integers). The file contains one `deletion-vector-v1` blob per distinct referenced data file, ordered by the data file location, so a Puffin file with several deletion vectors can be copied as is. Positions of all rows with the same referenced data file are merged into one deletion vector, deduplicated and sorted; negative positions, positions above the Iceberg deletion vector limit and empty data file locations are rejected. Blob metadata is written the way Apache Iceberg writes deletion vectors: `fields` is `[2147483645]` (the `_pos` metadata column id), `snapshot-id` and `sequence-number` are `-1`, and the `referenced-data-file` and `cardinality` properties are set. The footer is uncompressed, so the resulting file can be registered in an Iceberg v3 table as a deletion vector delete file and read by other engines such as Apache Spark. Use `PuffinMetadata` on the written file to obtain `offset` and `length` of each blob for the `content_offset` and `content_size_in_bytes` manifest fields.
+
+With the setting `output_format_puffin_blob_type` set to `apache-datasketches-theta-v1`, the format writes column statistics the way Apache Iceberg does instead: every input column becomes one `apache-datasketches-theta-v1` blob with a compact Apache DataSketches Theta sketch (default seed and size) over the non-null values of the column, and the `ndv` property is set to the estimated number of distinct values. Values are fed to the sketch in the Iceberg single-value binary serialization of the column type, so the sketches can be merged with ones written by Apache Spark: `Bool` as `boolean`, `Int8`, `UInt8`, `Int16`, `UInt16` and `Int32` as `int`, `UInt32`, `Int64` and `UInt64` as `long` (values of `UInt64` above the `Int64` range keep their bits), `Float32` as `float`, `Float64` as `double`, `Date` and `Date32` as `date`, `DateTime` and `DateTime64` with up to 6 digits of precision as `timestamp` (in microseconds), `String` as `string`, `FixedString` as `fixed`, `UUID` as `uuid` and `Decimal` as `decimal`; `Nullable` and `LowCardinality` of these types are supported too. Empty strings are ignored, like Iceberg does. The `fields` of the blobs are taken from the setting `output_format_puffin_field_ids` (by default 1, 2, ... in the column order), `snapshot-id` and `sequence-number` from the settings `output_format_puffin_snapshot_id` and `output_format_puffin_sequence_number`. The result can be registered as an Iceberg statistics file.
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
 
@@ -1103,6 +1123,16 @@ INSERT INTO FUNCTION file('deletes.puffin', Puffin)
 SELECT * FROM values('referenced_data_file String, deleted_rows Array(UInt64)',
     ('s3://bucket/warehouse/db/table/data/00000-0-data.parquet', [2, 5, 7]),
     ('s3://bucket/warehouse/db/table/data/00001-0-data.parquet', [100, 65536]));
+```
+
+Write Theta sketches of two columns as an Iceberg statistics file:
+
+```sql
+INSERT INTO FUNCTION file('stats.puffin', Puffin)
+SETTINGS output_format_puffin_blob_type = 'apache-datasketches-theta-v1', output_format_puffin_field_ids = '1,2'
+SELECT number AS id, toString(number % 10) AS name FROM numbers(1000);
+
+SELECT fields, properties['ndv'] FROM file('stats.puffin', PuffinMetadata);
 ```
 )DOCS_MD",
         .related = {"PuffinMetadata"},
