@@ -259,6 +259,18 @@ StorageMergeTree::StorageMergeTree(
             "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
             getStorageID().getNameForLogs());
 
+    if (mode < LoadingStrictnessLevel::ATTACH && !getStorageID().hasUUID() && !isTableReadonly())
+    {
+        for (const auto & disk : getDisks())
+        {
+            if (disk->isBroken())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot create table {} while disk {} of its storage policy is broken: "
+                    "data parts that a dropped table with the same name left on it could not be detected",
+                    getStorageID().getNameForLogs(), backQuote(disk->getName()));
+        }
+    }
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);

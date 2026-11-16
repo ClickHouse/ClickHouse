@@ -263,6 +263,9 @@ EOF""",
     )
     node.query("CREATE TABLE ordinary_db.t (x UInt8) ENGINE = MergeTree ORDER BY x")
     node.query("DROP TABLE ordinary_db.t")
+    assert "INCORRECT_DATA" in node.query_and_get_error(
+        "CREATE TABLE ordinary_db.t2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
+    )
     node.query("DROP DATABASE ordinary_db")
 
     node.query(
