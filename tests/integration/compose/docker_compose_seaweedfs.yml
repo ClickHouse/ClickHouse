@@ -18,7 +18,8 @@ services:
           ]
         }
         EOF
-        exec weed -logtostderr=true server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024 -volume.preStopSeconds=1 -s3 -s3.port=${MINIO_PORT:-9001} -s3.config=/etc/seaweedfs/s3.json
+        # The default 10 s election timeout delays serving S3 after a restart by 13-22 s, this one by 3-7 s
+        exec weed -logtostderr=true server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024 -master.electionTimeout=1s -volume.preStopSeconds=1 -s3 -s3.port=${MINIO_PORT:-9001} -s3.config=/etc/seaweedfs/s3.json
     volumes:
       - seaweedfs-data:/data
     expose:
