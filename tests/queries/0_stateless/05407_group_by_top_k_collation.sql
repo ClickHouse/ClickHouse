@@ -393,6 +393,34 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
     group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
     group_by_top_k_optimization_observation_rows = 0, log_comment = '05407_forced_repeats';
 
+-- 1000 keys in cycles, plain and LowCardinality: the rows the heap skips repeat a few keys, so it freezes. Unique keys:
+-- the skipped keys keep coming, so it does not.
+SELECT 'repeated skipped keys';
+SELECT s, count() FROM (SELECT concat('n', toString(number % 1000)) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat('n', toString(number % 1000)) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats';
+SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number % 1000))) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number % 1000))) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_repeats_lc';
+SELECT s, count() FROM (SELECT concat('n', toString(number)) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT concat('n', toString(number)) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique';
+SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number))) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT toLowCardinality(concat('n', toString(number))) AS s FROM numbers(100000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_skip_unique_lc';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the heap trimmed in the
@@ -420,6 +448,12 @@ INNER JOIN
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment
 ORDER BY i.log_comment;
+
+SELECT 'frozen';
+SELECT log_comment, ProfileEvents['AggregationTopKHeapsFrozen'] FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('05407_skip_repeats', '05407_skip_repeats_lc', '05407_skip_unique', '05407_skip_unique_lc')
+ORDER BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;

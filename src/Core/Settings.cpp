@@ -2440,6 +2440,8 @@ For `enable_group_by_top_k_optimization`: the number of rows each aggregation st
 
 The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
 
+A heap with a `COLLATE` key also freezes after the window when the rows it skipped repeat a few keys, because each skipped row costs a comparison under the collation and a repeated key would cost only a hash table lookup without the heap. `0` disables this freeze too.
+
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \
         {"26.8", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."}) \

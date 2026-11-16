@@ -198,6 +198,16 @@ protected:
     UInt64 window_start_skipped_rows = 0;
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
 
+    /// A 1/64 hash sample of the distinct keys a collated heap skipped (open addressing, 0 = empty slot), the number of
+    /// sampled keys, and whether the sample reached its cap; see `shouldFreeze`. Filled by the `const` skip check.
+    mutable std::vector<UInt64> collated_skip_sample;
+    mutable size_t collated_skip_sample_keys = 0;
+    mutable bool collated_skip_sample_full = false;
+    mutable bool collated_skip_sample_now = false;  /// sampling, i.e. a collated heap that ranks all keys and has not filled the sample
+    mutable UInt64 collated_skip_sample_rows = 0;   /// skipped rows seen while sampling
+    bool collated_skip_sample_by_bytes = false; /// every ranked column hashes by `getDataAt`, which is cheaper than `SipHash`
+    bool collated_skip_sample_string = false;   /// the only ranked column is a plain `ColumnString`
+
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
     std::vector<size_t> evicted_rows;       /// `heap_column` rows dropped by the last `trimToK`
@@ -403,6 +413,7 @@ private:
     void publishBoundary();
 
     [[nodiscard]] bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    void sampleCollatedSkip(const ColumnRawPtrs & source_columns, size_t source_row) const;
 
     template <bool with_collation>
     [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
