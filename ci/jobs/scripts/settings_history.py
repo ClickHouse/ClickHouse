@@ -20,9 +20,10 @@ D. A record added under a version newer than the current version is never allowe
    is the newest, so this never triggers; on a release branch a backport that cherry-picks a master record (e.g.
    a "26.12" record onto the "26.10" branch) must record the change under the branch's own version instead. A
    newer-version record would make `compatibility` roll the change back on the branch itself: the walk reverts
-   every record whose version exceeds the pin and there is no check against the running server version. The minor
-   version is what is compared, so a patch-level record under the current minor (e.g. "26.10.5" on "26.10") is
-   allowed - that is the sanctioned way to record a change made within the release line.
+   every record whose version exceeds the pin and there is no check against the running server version.
+
+History versions are major.minor (e.g. "26.10"); there is no patch-level granularity, so a change is recorded
+under the current version as a whole.
 
 A default that moves through a constant defined elsewhere is caught at runtime by 03999_stateless_settings_history,
 which requires the newest recorded new_value of every setting to equal its default.
