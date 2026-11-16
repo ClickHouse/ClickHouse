@@ -1221,6 +1221,20 @@ static QueryGraph::DistributionInput distributionInputOf(QueryPlan::Node & input
     /// of the whole input cannot use, such as a `HAVING` over an aggregation, leaves it without one.
     if (const auto below = QueryPlanOptimizations::estimateReadRowsCount(*node); below.estimated_rows)
         result.scanned_rows = static_cast<double>(*below.estimated_rows);
+    /// A `UNION ALL` has the rows of all its inputs.
+    if (typeid_cast<const UnionStep *>(step) && result.scanned_rows == 0)
+    {
+        for (auto * child : node->children)
+        {
+            const auto child_rows = QueryPlanOptimizations::estimateReadRowsCount(*child).estimated_rows;
+            if (!child_rows)
+            {
+                result.scanned_rows = 0;
+                break;
+            }
+            result.scanned_rows += static_cast<double>(*child_rows);
+        }
+    }
     /// Cascades distributes these steps. It runs any other step on one node, see `DefaultImplementation`.
     const auto * aggregating = typeid_cast<const AggregatingStep *>(step);
     if (typeid_cast<const JoinStepLogical *>(step) || typeid_cast<const DistinctStep *>(step) || typeid_cast<const WindowStep *>(step)

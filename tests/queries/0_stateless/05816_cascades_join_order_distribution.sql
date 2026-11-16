@@ -125,8 +125,52 @@ SELECT (SELECT groupArray(explain) FROM (EXPLAIN
             AND s_nationkey = n1.n_nationkey AND c_nationkey = n2.n_nationkey AND l_shipdate BETWEEN '1995-01-01' AND '1996-12-31'
         SETTINGS query_plan_join_order_distribution = 0, join_algorithm = 'full_sorting_merge'));
 
+-- A `UNION ALL` input has no row estimate of its own: the search costs it with the rows of its inputs. With one row
+-- instead, joining the whole `u_customer` to it on one node would look cheaper than broadcasting the small join result.
+DROP TABLE IF EXISTS u_sales1;
+DROP TABLE IF EXISTS u_sales2;
+DROP TABLE IF EXISTS u_customer;
+DROP TABLE IF EXISTS u_date;
+DROP TABLE IF EXISTS u_item;
+CREATE TABLE u_sales1 (s_customer Int32, s_date Int32, s_item Int32) ENGINE = MergeTree ORDER BY s_item SETTINGS auto_statistics_types = '';
+CREATE TABLE u_sales2 (s_customer Int32, s_date Int32, s_item Int32) ENGINE = MergeTree ORDER BY s_item SETTINGS auto_statistics_types = '';
+CREATE TABLE u_customer (c_customer Int32, c_address Int32) ENGINE = MergeTree ORDER BY c_customer SETTINGS auto_statistics_types = '';
+CREATE TABLE u_date (d_date Int32, d_month Int32) ENGINE = MergeTree ORDER BY d_date SETTINGS auto_statistics_types = '';
+CREATE TABLE u_item (i_item Int32, i_category String) ENGINE = MergeTree ORDER BY i_item SETTINGS auto_statistics_types = '';
+INSERT INTO u_sales1 VALUES (1, 1, 1);
+INSERT INTO u_sales2 VALUES (1, 1, 1);
+INSERT INTO u_customer VALUES (1, 1);
+INSERT INTO u_date VALUES (1, 12);
+INSERT INTO u_item VALUES (1, 'Women');
+
+SET param__internal_cascades_cluster_node_count = 8;
+SET param__internal_join_table_stat_hints = '{
+    "u_sales1":   { "cardinality": 1441548, "avg_row_bytes": 12, "distinct_keys": { "s_customer": 100000, "s_date": 1800, "s_item": 18000 } },
+    "u_sales2":   { "cardinality": 719384,  "avg_row_bytes": 12, "distinct_keys": { "s_customer": 100000, "s_date": 1800, "s_item": 18000 } },
+    "u_customer": { "cardinality": 100000,  "avg_row_bytes": 8,  "distinct_keys": { "c_customer": 100000, "c_address": 50000 } },
+    "u_date":     { "cardinality": 30,      "avg_row_bytes": 8,  "distinct_keys": { "d_date": 30 } },
+    "u_item":     { "cardinality": 16,      "avg_row_bytes": 12, "distinct_keys": { "i_item": 16 } }
+}';
+
+SELECT '-- UNION ALL input';
+EXPLAIN
+SELECT DISTINCT c_customer, c_address
+FROM (SELECT s_customer, s_date, s_item FROM u_sales1 UNION ALL SELECT s_customer, s_date, s_item FROM u_sales2) AS sales, u_customer, u_date, u_item
+WHERE s_customer = c_customer AND s_date = d_date AND s_item = i_item AND d_month = 12 AND i_category = 'Women'
+SETTINGS query_plan_join_order_distribution = 1;
+
+SELECT DISTINCT c_customer, c_address
+FROM (SELECT s_customer, s_date, s_item FROM u_sales1 UNION ALL SELECT s_customer, s_date, s_item FROM u_sales2) AS sales, u_customer, u_date, u_item
+WHERE s_customer = c_customer AND s_date = d_date AND s_item = i_item AND d_month = 12 AND i_category = 'Women'
+SETTINGS query_plan_join_order_distribution = 1;
+
 DROP TABLE nation;
 DROP TABLE supplier;
 DROP TABLE customer;
 DROP TABLE orders;
 DROP TABLE lineitem;
+DROP TABLE u_sales1;
+DROP TABLE u_sales2;
+DROP TABLE u_customer;
+DROP TABLE u_date;
+DROP TABLE u_item;

@@ -67,3 +67,25 @@ Expression (Project names)
 1	2
 -- No effect with an explicit join_algorithm
 1
+-- UNION ALL input
+Expression (Project names)
+  Distinct (Local DISTINCT)
+    GatherExchange
+      Distinct (Preliminary DISTINCT)
+        Expression ((Projection + ))
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.u_customer)
+            BroadcastExchange
+              JoinLogical (Local HashJoin  swapped)
+                JoinLogical (Local HashJoin )
+                  Union
+                    Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                      ReadFromMergeTree (default.u_sales1)
+                    Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                      ReadFromMergeTree (default.u_sales2)
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.u_item)
+                Expression ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.u_date)
+1	1
