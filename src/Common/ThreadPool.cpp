@@ -1016,6 +1016,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
         setThreadName(DB::ThreadName::DEFAULT_THREAD_POOL);
+        DB::OpenTelemetry::SetJobThreadNameInCurrentContext(DB::ThreadName::UNKNOWN);
 
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
@@ -1180,12 +1181,12 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {
-                /// Use the thread name as operation name so that the tracing log will be more clear.
-                /// The thread name is usually set in jobs, we can only get the name after the job finishes
-                auto thread_name = DB::getThreadName();
-                if (thread_name != DB::ThreadName::UNKNOWN && thread_name != DB::ThreadName::DEFAULT_THREAD_POOL)
+                /// Use the thread name set by the job as operation name so that the tracing log will be more clear.
+                /// It is known only after the job finishes.
+                auto job_thread_name = DB::OpenTelemetry::CurrentContext().job_thread_name;
+                if (job_thread_name != DB::ThreadName::UNKNOWN)
                 {
-                    thread_trace_context.root_span.operation_name = DB::toString(thread_name);
+                    thread_trace_context.root_span.operation_name = DB::toString(job_thread_name);
                 }
                 else
                 {

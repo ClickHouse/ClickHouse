@@ -7,11 +7,14 @@
 #endif
 
 #include <base/scope_guard.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
@@ -21,6 +24,13 @@ namespace ProfileEvents
 {
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -142,10 +152,8 @@ TEST(ThreadGroupSwitcher, SwitchesNameIndependentlyOfGroup)
     t.join();
 }
 
-/// After a successful attach from a detached thread (a pool worker running a job) the name stays:
-/// ThreadPoolImpl::worker reads it after the job to name the tracing span, and renames the thread
-/// back itself. Restoring it here would make tracing fall back to demangled lambda names.
-TEST(ThreadGroupSwitcher, KeepsNameAfterAttachFromDetachedThread)
+/// A pool worker running a job: the name is restored together with the group.
+TEST(ThreadGroupSwitcher, RestoresNameAfterAttachFromDetachedThread)
 {
     std::thread t([&]
     {
@@ -159,9 +167,35 @@ TEST(ThreadGroupSwitcher, KeepsNameAfterAttachFromDetachedThread)
             EXPECT_EQ(getCurrentThreadGroup(), G1);
         }
         EXPECT_EQ(getCurrentThreadGroup(), nullptr);
-        EXPECT_EQ(getThreadName(), ThreadName::MERGE_MUTATE);
+        EXPECT_EQ(getThreadName(), ThreadName::DEFAULT_THREAD_POOL);
     });
     t.join();
+}
+
+/// The span of a pool job is named after the last name the job set, through the switcher or directly:
+/// the restore at the end of a scope does not count as one, and the next job on the worker starts clean
+/// even when the previous one was not traced (its tracing context was not reset then).
+TEST(ThreadGroupSwitcher, JobThreadNameInTracingContext)
+{
+    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+    pool.scheduleOrThrowOnError([]
+    {
+        EXPECT_EQ(OpenTelemetry::CurrentContext().job_thread_name, ThreadName::UNKNOWN);
+        setThreadName(ThreadName::DATABASE_ON_DISK);
+        EXPECT_EQ(OpenTelemetry::CurrentContext().job_thread_name, ThreadName::DATABASE_ON_DISK);
+        {
+            ThreadGroupSwitcher switcher(nullptr, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(OpenTelemetry::CurrentContext().job_thread_name, ThreadName::S3_COPY_POOL);
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::DATABASE_ON_DISK);
+        EXPECT_EQ(OpenTelemetry::CurrentContext().job_thread_name, ThreadName::S3_COPY_POOL);
+    });
+    pool.wait();
+    pool.scheduleOrThrowOnError([]
+    {
+        EXPECT_EQ(OpenTelemetry::CurrentContext().job_thread_name, ThreadName::UNKNOWN);
+    });
+    pool.wait();
 }
 
 #if defined(OS_LINUX)

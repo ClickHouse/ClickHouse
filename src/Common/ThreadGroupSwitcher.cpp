@@ -80,11 +80,6 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
             });
-
-            /// A pool worker attaching for a job keeps the new name past the scope (see the header).
-            /// This is required for a ThreadPool which needs thread name that was in the job for opentelemetry spans.
-            if (!prev_thread_group)
-                prev_thread_name.reset();
         }
     }
     catch (...)

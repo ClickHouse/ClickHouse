@@ -18,6 +18,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <base/scope_guard.h>
 
 #include <atomic>
@@ -176,6 +177,8 @@ void setThreadName(ThreadName name)
     }
 #endif
 
+    OpenTelemetry::SetJobThreadNameInCurrentContext(name);
+
     // Skip rename on no-op.
     if (thread_name == name)
         return;
@@ -226,8 +229,9 @@ std::optional<ThreadNamePair> saveThreadName()
 
 void restoreThreadName(const ThreadNamePair & snapshot)
 {
+    /// Not setThreadName(), to avoid OpenTelemetry::SetJobThreadNameInCurrentContext()
     if (snapshot.comm.empty())
-        setThreadName(snapshot.cached);
+        setThreadNameImpl(snapshot.cached, std::string(toString(snapshot.cached)));
     else
         setThreadNameImpl(snapshot.cached, snapshot.comm);
 }
