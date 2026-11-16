@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
+    extern const SettingsBool query_plan_use_shuffle_for_order_by_rand;
     extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
@@ -143,6 +144,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
+    extern const SettingsFloat automatic_parallel_replicas_statistics_drift_ratio;
     extern const SettingsBool automatic_parallel_replicas_remember_boundary;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
@@ -254,6 +256,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
 
     remove_redundant_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_sorting];
+    use_shuffle_for_order_by_rand = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_use_shuffle_for_order_by_rand];
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
@@ -269,7 +272,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
         && from[Setting::use_primary_key];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
-    lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    lower_array_join_function = from[Setting::query_plan_lower_array_join_function];
     legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
     enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
@@ -487,6 +490,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_mode = Context::getAutomaticParallelReplicasMode(from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
+    automatic_parallel_replicas_statistics_drift_ratio = from[Setting::automatic_parallel_replicas_statistics_drift_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Generator of the static Parquet / Iceberg corpus used by the stateless tests
-`tests/queries/0_stateless/*_parquet_corpus_*.sh` and `*_iceberg_corpus*.sh`.
+"""Generator of the static Parquet / Iceberg / Delta Lake corpus used by the stateless tests
+`tests/queries/0_stateless/*_parquet_corpus_*.sh`, `*_iceberg_corpus*.sh`, and `*_delta_lake_corpus*.sh`.
 
 Every file in `tests/queries/0_stateless/data_lake_corpus/` is produced here by a
 third-party writer pinned in `WRITERS` (or copied from a public corpus listed in
@@ -16,12 +16,14 @@ Usage (from the repository root):
     tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py parquet [--only pyarrow-26.0.0,...]
     tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py external
     tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py iceberg
+    tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py delta [--only spark-4.1.1-delta-4.4.1,...]
     tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py checks
     tmp/dlc-venv/bin/python utils/data-lake-corpus/generate.py roundtrip --clickhouse <binary>
 
 Writers run with `uv run --with <pinned package>` (the Rust writers arrow-rs and polars-parquet
 come with the `deltalake` and `polars` packages), Spark with JDK 17 (`JAVA17_HOME`) and the
-pinned Maven coordinates of the Iceberg runtime, the Go writers from the modules pinned in
+pinned Maven coordinates of the Iceberg runtime (Delta Lake: the pinned `delta-spark` package, whose jars are
+resolved from Maven by `configure_spark_with_delta_pip`), the Go writers from the modules pinned in
 `writers/go/go.mod`. Generated files are not byte-reproducible (writers embed timestamps,
 UUIDs, and `created_by`), but their content and options are. After regenerating, run
 `checks` and record the references of the tests with `tests/clickhouse-test --record`.
@@ -41,6 +43,7 @@ import pyarrow as pa
 
 sys.path.insert(0, str(Path(__file__).parent))
 import corpus_lib as cl  # noqa: E402
+import delta_gen  # noqa: E402
 import iceberg_gen  # noqa: E402
 from writer_jobs import (  # noqa: E402
     arrow_go_jobs, deltalake_jobs, duckdb_jobs, enc_for, fastparquet_jobs, parquet_go_jobs, polars_jobs, spark_jobs,
@@ -531,7 +534,8 @@ def cmd_parquet(args):
 
 
 def gc_expected(manifest):
-    used = {e["expected"] for e in manifest if e.get("expected")} | {s["expected"] for e in manifest for s in e.get("snapshots", [])}
+    used = {e["expected"] for e in manifest if e.get("expected")} | {s["expected"] for e in manifest for s in e.get("snapshots", [])} \
+        | {e["cdf_expected"] for e in manifest if e.get("cdf_expected")}
     for p in (CORPUS / "expected").glob("*.jsonl.zst"):
         if f"expected/{p.name}" not in used:
             p.unlink()
@@ -562,10 +566,6 @@ def _q(s):
 # workaround `settings`, and one extra check runs without them, so the reference records
 # the current (wrong) behavior until the bug is fixed.
 KNOWN_ISSUES = {
-    # Arrow C++ writes an empty data page v2 (0 values, 0 rows) in nested columns when `data_page_size` is
-    # tiny. With the offset index ClickHouse rejects the duplicate `first_row_index` of the empty page
-    # (`INCORRECT_DATA`), without it decoding fails with `ATTEMPT_TO_READ_AFTER_EOF`; pyarrow reads it.
-    "parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet": {"issue": "empty data page v2 in a nested column", "expect_error": True},
     # DuckDB (`PARQUET_VERSION V2`) and arrow-go compute the DELTA_BINARY_PACKED deltas of INT32 columns in
     # 64 bits, so a column with a wide range of values has miniblocks of bit width 33. Both read their files
     # back; ClickHouse rejects them (`INCORRECT_DATA`), like Arrow C++. Before the check was added, ClickHouse
@@ -666,10 +666,17 @@ def cmd_checks(args):
     entries = [e for e in manifest if e["kind"] == "iceberg"]
     (CORPUS / "checks_iceberg.sql").write_text(iceberg_gen.checks_sql(sys.modules[__name__], entries))
     print(f"iceberg: {len(entries)} tables")
+    entries = [e for e in manifest if e["kind"] == "delta"]
+    (CORPUS / "checks_delta.sql").write_text(delta_gen.checks_sql(sys.modules[__name__], entries))
+    print(f"delta: {len(entries)} tables")
 
 
 def cmd_iceberg(args):
     iceberg_gen.run(sys.modules[__name__], args)
+
+
+def cmd_delta(args):
+    delta_gen.run(sys.modules[__name__], args)
 
 
 def cmd_external(args):
@@ -750,6 +757,8 @@ def main():
     sub.add_parser("external")
     p = sub.add_parser("iceberg")
     p.add_argument("--only", default="")
+    p = sub.add_parser("delta")
+    p.add_argument("--only", default="")
     p = sub.add_parser("roundtrip")
     p.add_argument("--clickhouse", required=True, help="path to the clickhouse binary")
     args = ap.parse_args()
@@ -757,7 +766,7 @@ def main():
         import roundtrip
         roundtrip.run(sys.modules[__name__], args)
         return
-    {"parquet": cmd_parquet, "checks": cmd_checks, "external": cmd_external, "iceberg": cmd_iceberg}[args.cmd](args)
+    {"parquet": cmd_parquet, "checks": cmd_checks, "external": cmd_external, "iceberg": cmd_iceberg, "delta": cmd_delta}[args.cmd](args)
 
 
 if __name__ == "__main__":
