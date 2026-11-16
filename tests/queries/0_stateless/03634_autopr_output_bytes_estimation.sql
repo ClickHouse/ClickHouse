@@ -49,6 +49,13 @@ SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=5000
 -- whose estimate (~6.6M) is 2.5x the single-level one the expected values are calibrated for.
 SET enable_adaptive_aggregator=0;
 
+-- And pin the merge of the single-level tables to the serial one. Since the merge by hash partitions packs the
+-- partitions that a worker claims into one table (#129565), `query_10`'s `uniqExact` states were sampled from
+-- tables whose shape follows how the workers raced for the partitions, and the estimate randomly fell to
+-- 91509..136213, 2.7x..4x below the expected value, in every failing run with the randomized
+-- `enable_parallel_single_level_merge = 1`. See https://github.com/ClickHouse/ClickHouse/issues/131357.
+SET enable_parallel_single_level_merge=0;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`

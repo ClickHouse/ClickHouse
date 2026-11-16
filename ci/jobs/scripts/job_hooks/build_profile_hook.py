@@ -257,6 +257,11 @@ def check():
     if not _should_profile(build_type, is_pr=is_pr):
         print(f"Build profile telemetry not collected for [{build_type}]")
         return
+    # Post hooks also run after a failed build, which leaves no complete profile.
+    job_result = Result.from_fs(Info().job_name)
+    if not job_result.is_success():
+        print(f"Build [{build_type}] did not succeed, build profile not collected")
+        return
     print("Prepare build profile data")
     profiles_dir = Path("./ci/tmp") / "profiles_source"
     profiles_dir.mkdir(parents=True, exist_ok=True)
@@ -285,9 +290,7 @@ def check():
                         profile_fd.write(ps_fd.read())
         _verify_trace_extraction(build_dir, profile_data_file)
         _verify_final_binary_coverage(build_dir, build_size_file, binary_symbol_file)
-        check_start_time = Utils.timestamp_to_str(
-            Result.from_fs(Info().job_name).start_time
-        )
+        check_start_time = Utils.timestamp_to_str(job_result.start_time)
         queries = LogClusterBuildProfileQueries(user=BUILD_PROFILE_USER)
 
         def insert_profile_data(build_name, start_time, file):

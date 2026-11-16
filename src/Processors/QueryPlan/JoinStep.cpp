@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
@@ -49,9 +50,9 @@ std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
     return join.getAlgorithm();
 }
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
+VectorWithMemoryTracking<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
-    std::vector<std::pair<String, String>> description;
+    VectorWithMemoryTracking<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
 
     auto to_lower = [](String & s)
@@ -267,16 +268,16 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 namespace
 {
 
-std::unordered_set<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
+UnorderedSetWithMemoryTracking<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
 {
-    std::unordered_set<const IJoin *> joins;
+    UnorderedSetWithMemoryTracking<const IJoin *> joins;
     for (const auto * processor : step_processors)
         if (const auto * joining = typeid_cast<const JoiningTransform *>(processor))
             joins.insert(joining->getJoin().get());
     return joins;
 }
 
-StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJoin *> & shard_joins)
+StepAnalysisReport buildShardedHashJoinReport(const UnorderedSetWithMemoryTracking<const IJoin *> & shard_joins)
 {
     JoinAnalysisCounters counters;
     MatchedRowsAccumulator matched_left;
@@ -397,7 +398,7 @@ void JoinStep::keepLeftPipelineLayout()
         left_pipeline_order = LeftPipelineOrder::KeepLayout;
 }
 
-std::vector<size_t> JoinStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> JoinStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(JoinStage::Default),

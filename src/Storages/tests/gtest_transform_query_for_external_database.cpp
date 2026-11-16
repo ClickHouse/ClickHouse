@@ -58,12 +58,12 @@ struct State
         return state;
     }
 
-    const NamesAndTypesList & getColumns(size_t idx = 0) const
+    [[nodiscard]] const NamesAndTypesList & getColumns(size_t idx = 0) const
     {
         return tables[idx].columns;
     }
 
-    std::vector<TableWithColumnNamesAndTypes> getTables(size_t num = 0) const
+    [[nodiscard]] std::vector<TableWithColumnNamesAndTypes> getTables(size_t num = 0) const
     {
         std::vector<TableWithColumnNamesAndTypes> res;
         for (size_t i = 0; i < std::min(num, tables.size()); ++i)
@@ -732,6 +732,15 @@ TEST(TransformQueryForExternalDatabase, Limit)
     /// (e.g. DISTINCT is just a flag): limiting remotely could return wrong results.
     check(state, 1, {"column"},
         "SELECT DISTINCT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// SHUFFLE must sample before applying LIMIT.
+    checkNewAnalyzer(state, {"column"},
+        "SELECT column FROM table SHUFFLE LIMIT 10 SETTINGS allow_experimental_shuffle_query = 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    checkNewAnalyzer(state, {"column"},
+        "SELECT column FROM table SHUFFLE LIMIT 10 OFFSET 5 SETTINGS allow_experimental_shuffle_query = 1",
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column"},

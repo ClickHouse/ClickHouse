@@ -41,14 +41,14 @@ public:
         return std::make_shared<FunctionULIDStringToDateTime>();
     }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `FixedString(26)` encodes the exact ULID byte length, so a wrong-width FixedString is
         /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.
@@ -58,7 +58,7 @@ public:
             " OR (String | FixedString(26)) -> DateTime64(3)";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Validate arity and argument types through the declarative signature first (it also
         /// enforces the FixedString(26) width now), so e.g. `ULIDStringToDateTime(1, 2)` is rejected
@@ -75,9 +75,9 @@ public:
         return result_type;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnDateTime64::create(input_rows_count, DATETIME_SCALE);
         auto & vec_res = col_res->getData();
