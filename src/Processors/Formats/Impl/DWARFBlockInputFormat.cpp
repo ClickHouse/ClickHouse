@@ -140,11 +140,13 @@ static size_t getColumnIdx(const std::string & name)
 /// `tryExtractDIEsIfNeeded` makes LLVM parse the unit DIE. LLVM advances the offset by the length of a block or
 /// a fixed-size form without checking it against the section (see `checkAttributeEnd`), so a malformed length
 /// made it read past the end of the section on the next attribute. Walk the unit DIE the same way with checks first.
+/// `data` is truncated at the end of the unit, so this walk itself does not read the next unit, and LLVM parses
+/// the unit DIE only if all its attributes are within the unit.
 static void checkUnitDie(
     const llvm::DWARFUnit & unit, const llvm::DWARFAbbreviationDeclarationSet & abbrevs, const llvm::DWARFDataExtractor & data,
     uint64_t end_offset)
 {
-    const uint64_t end = std::min<uint64_t>(end_offset, data.size());
+    const uint64_t end = data.size();
     uint64_t offset = unit.getOffset() + unit.getHeaderSize();
     /// Leave other errors to LLVM, which reports them.
     if (offset >= end)
@@ -165,6 +167,11 @@ static void checkUnitDie(
             offset += *size;
         else if (!llvm::DWARFFormValue::skipValue(attr.Form, data, &offset, unit.getFormParams()))
             return;
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} of the unit entry is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), end_offset);
         /// A huge length makes the offset wrap around.
         if (offset < attr_offset || offset > end)
             throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
@@ -173,8 +180,10 @@ static void checkUnitDie(
     }
 }
 
-DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & data)
+DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data)
     : dwarf_unit(u), end_offset(dwarf_unit->getNextUnitOffset())
+    /// Offsets stay relative to the start of the section.
+    , data(section_data, std::min<uint64_t>(end_offset, section_data.size()))
     , offset(dwarf_unit->getOffset() + dwarf_unit->getHeaderSize())
 {
     /// This call is not thread safe, so we do it during initialization.
@@ -394,12 +403,13 @@ static inline void throwIfError(llvm::Error & e, const char * what)
 
 /// LLVM advances the offset by the length of a block or a fixed-size form without checking it against the
 /// section (LEB128 decoding checks the offset only with an assertion), so every following read would start
-/// past the end of the section. Check the offset after each attribute. The offset is advanced with plain unsigned
-/// addition, so a huge length makes it wrap around to before the start of the attribute.
+/// past the end of the section. Attributes are read from `UnitState::data`, which ends at the end of the unit,
+/// so the bytes of the next unit are never read, and the offset is checked after each attribute.
+/// The offset is advanced with plain unsigned addition, so a huge length makes it wrap around to before the start of the attribute.
 void DWARFBlockInputFormat::checkAttributeEnd(
     const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t attr_offset, uint64_t offset, const UnitState & unit) const
 {
-    if (offset < attr_offset || offset > unit.end_offset || offset > extractor->size())
+    if (offset < attr_offset || offset > unit.data.size())
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Attribute {} of form {} goes past the end of the unit: offset {}, end of unit {}",
             llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, offset, unit.end_offset);
@@ -412,7 +422,7 @@ llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     const uint64_t attr_offset = *offset;
     auto val = llvm::DWARFFormValue::createFromSValue(
         attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
-    if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
+    if (!val.extractValue(unit.data, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
                 llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
@@ -435,10 +445,15 @@ void DWARFBlockInputFormat::skipAttribute(
     {
         const uint64_t attr_offset = *offset;
         if (!llvm::DWARFFormValue::skipValue(
-            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
+            attr.Form, unit.data, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
                     llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+        /// `skipValue` does not advance the offset if the string is not terminated within the unit.
+        if (attr.Form == llvm::dwarf::DW_FORM_string && *offset == attr_offset)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                "String attribute {} at offset {} is not terminated before the end of the unit {}",
+                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr_offset, unit.end_offset);
         checkAttributeEnd(attr, attr_offset, *offset, unit);
     }
 }
@@ -508,7 +523,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
         }
 
-        uint64_t abbrev_code = extractor->getULEB128(&unit.offset, &err);
+        uint64_t abbrev_code = unit.data.getULEB128(&unit.offset, &err);
         throwIfError(err, "DIE header");
 
         if (abbrev_code == 0)

@@ -49,6 +49,8 @@ private:
         const llvm::DWARFUnit * dwarf_unit;
         const llvm::DWARFAbbreviationDeclarationSet * abbrevs;
         uint64_t end_offset;
+        /// `.debug_info` truncated at the end of this unit, so that parsing its entries never reads the next unit.
+        llvm::DWARFDataExtractor data;
 
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
@@ -64,7 +66,7 @@ private:
 
         [[nodiscard]] bool eof() const { return offset == end_offset; }
 
-        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & data);
+        UnitState(llvm::DWARFUnit * u, const llvm::DWARFDataExtractor & section_data);
     };
 
     const FormatSettings format_settings;

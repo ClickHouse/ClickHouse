@@ -18,20 +18,27 @@ python3 - "$prefix" <<'PYEOF'
 import struct
 import sys
 
-def make_elf(exprloc, nested):
+ABBREV = bytes([
     # Abbreviation 1: DW_TAG_compile_unit without children, with DW_AT_producer and DW_AT_name, both of form DW_FORM_exprloc.
+    0x01, 0x11, 0x00, 0x25, 0x18, 0x03, 0x18, 0x00, 0x00,
     # Abbreviation 2: DW_TAG_compile_unit with children and without attributes.
+    0x02, 0x11, 0x01, 0x00, 0x00,
     # Abbreviation 3: DW_TAG_variable without children, with DW_AT_location and DW_AT_name, both of form DW_FORM_exprloc.
-    abbrev = bytes([0x01, 0x11, 0x00, 0x25, 0x18, 0x03, 0x18, 0x00, 0x00,
-                    0x02, 0x11, 0x01, 0x00, 0x00,
-                    0x03, 0x34, 0x00, 0x02, 0x18, 0x03, 0x18, 0x00, 0x00,
-                    0x00])
+    0x03, 0x34, 0x00, 0x02, 0x18, 0x03, 0x18, 0x00, 0x00,
+    # Abbreviation 4: DW_TAG_compile_unit without children, with DW_AT_name of form DW_FORM_string.
+    0x04, 0x11, 0x00, 0x03, 0x08, 0x00, 0x00,
+    # Abbreviation 5: DW_TAG_compile_unit without children, with DW_AT_language of form DW_FORM_data4.
+    0x05, 0x11, 0x00, 0x13, 0x06, 0x00, 0x00,
+    # Abbreviation 6: DW_TAG_variable without children, with DW_AT_name of form DW_FORM_string.
+    0x06, 0x34, 0x00, 0x03, 0x08, 0x00, 0x00,
+    0x00])
+
+def make_unit(entries):
     header = bytes([0x05, 0x00, 0x01, 0x08, 0, 0, 0, 0])  # version 5, DW_UT_compile, address size 8, abbrev offset 0
-    if nested:
-        body = header + bytes([0x02, 0x03]) + exprloc + bytes([0x01, 0x30, 0x00])
-    else:
-        body = header + bytes([0x01]) + exprloc + bytes([0x01, 0x30])
-    info = struct.pack('<I', len(body)) + body
+    return struct.pack('<I', len(header) + len(entries)) + header + entries
+
+def make_elf_from_info(info):
+    abbrev = ABBREV
     shstr = b'\x00.debug_abbrev\x00.debug_info\x00.shstrtab\x00'
     eh_size, ph_size, sh_size = 64, 56, 64
     abbrev_off = eh_size + ph_size
@@ -54,6 +61,13 @@ def make_elf(exprloc, nested):
     b[sh_off + 3 * sh_size:sh_off + 4 * sh_size] = section(27, 3, shstr_off, len(shstr))
     return bytes(b)
 
+def make_elf(exprloc, nested):
+    if nested:
+        entries = bytes([0x02, 0x03]) + exprloc + bytes([0x01, 0x30, 0x00])
+    else:
+        entries = bytes([0x01]) + exprloc + bytes([0x01, 0x30])
+    return make_elf_from_info(make_unit(entries))
+
 valid = bytes([0x01, 0x30])  # length 1: DW_OP_lit0
 invalid = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x30])
 wraparound = bytes([0xFF] * 9 + [0x01, 0x30])
@@ -62,6 +76,14 @@ for nested in [False, True]:
     open(sys.argv[1] + suffix + '_valid.elf', 'wb').write(make_elf(valid, nested))
     open(sys.argv[1] + suffix + '_invalid.elf', 'wb').write(make_elf(invalid, nested))
     open(sys.argv[1] + suffix + '_wraparound.elf', 'wb').write(make_elf(wraparound, nested))
+
+# Two adjacent units, where the first unit ends in the middle of an attribute, either in the unit entry or in its child.
+# The bytes of the second unit must not be read as a part of the attribute.
+second_unit = make_unit(bytes([0x04]) + b'b\x00')
+open(sys.argv[1] + '_two_units_valid.elf', 'wb').write(make_elf_from_info(make_unit(bytes([0x04]) + b'a\x00') + second_unit))
+open(sys.argv[1] + '_two_units_string.elf', 'wb').write(make_elf_from_info(make_unit(bytes([0x04]) + b'a') + second_unit))
+open(sys.argv[1] + '_two_units_data4.elf', 'wb').write(make_elf_from_info(make_unit(bytes([0x05, 0x01, 0x00])) + second_unit))
+open(sys.argv[1] + '_two_units_nested_string.elf', 'wb').write(make_elf_from_info(make_unit(bytes([0x02, 0x06]) + b'x') + second_unit))
 PYEOF
 
 for kind in '' '_nested'; do
@@ -70,3 +92,9 @@ for kind in '' '_nested'; do
     $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('${prefix}${kind}_wraparound.elf', DWARF)" 2>&1 | grep -o -m1 'CANNOT_PARSE_DWARF'
     rm -f "${prefix}${kind}_valid.elf" "${prefix}${kind}_invalid.elf" "${prefix}${kind}_wraparound.elf"
 done
+
+$CLICKHOUSE_LOCAL -q "SELECT tag, name FROM file('${prefix}_two_units_valid.elf', DWARF) ORDER BY offset"
+for kind in string data4 nested_string; do
+    $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('${prefix}_two_units_${kind}.elf', DWARF)" 2>&1 | grep -o -m1 'CANNOT_PARSE_DWARF'
+done
+rm -f "${prefix}"_two_units_*.elf

@@ -6,3 +6,8 @@ variable	location	exprloc
 variable	name	exprloc
 CANNOT_PARSE_DWARF
 CANNOT_PARSE_DWARF
+compile_unit	a
+compile_unit	b
+CANNOT_PARSE_DWARF
+CANNOT_PARSE_DWARF
+CANNOT_PARSE_DWARF
