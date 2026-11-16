@@ -44,7 +44,7 @@ std::string algorithmToString(UInt32 algorithm)
 /// The same limit as in the reference implementation.
 constexpr size_t MAX_TYPE_NESTING_DEPTH = 2000;
 
-std::unique_ptr<Type> convertType(const VectorWithMemoryTracking<Proto::Type> & types, UInt64 index, UInt64 & next_id, size_t depth)
+std::unique_ptr<Type> convertType(const std::vector<Proto::Type> & types, UInt64 index, UInt64 & next_id, size_t depth)
 {
     checkStackSize();
 
@@ -114,13 +114,13 @@ std::unique_ptr<Type> convertType(const VectorWithMemoryTracking<Proto::Type> & 
     return result;
 }
 
-void selectChildren(VectorWithMemoryTracking<bool> & selected, const Type & type)
+void selectChildren(std::vector<bool> & selected, const Type & type)
 {
     for (UInt64 c = type.getColumnId(); c <= type.getMaximumColumnId(); ++c)
         selected[c] = true;
 }
 
-bool selectParents(VectorWithMemoryTracking<bool> & selected, const Type & type)
+bool selectParents(std::vector<bool> & selected, const Type & type)
 {
     size_t id = type.getColumnId();
     bool result = selected[id];
@@ -236,7 +236,7 @@ UInt64 Type::assignIds(UInt64 start)
     return next;
 }
 
-void Type::toProto(VectorWithMemoryTracking<Proto::Type> & out) const
+void Type::toProto(std::vector<Proto::Type> & out) const
 {
     size_t index = out.size();
     if (index != column_id)
@@ -308,7 +308,7 @@ std::unique_ptr<Type> Type::createUnionType()
     return std::make_unique<Type>(UNION);
 }
 
-std::unique_ptr<Type> Type::fromProto(const VectorWithMemoryTracking<Proto::Type> & types)
+std::unique_ptr<Type> Type::fromProto(const std::vector<Proto::Type> & types)
 {
     if (types.empty())
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC file footer is corrupt: it has no types");
@@ -321,7 +321,7 @@ std::unique_ptr<Type> Type::fromProto(const VectorWithMemoryTracking<Proto::Type
     return root;
 }
 
-std::unique_ptr<Type> Type::buildSelectedType(const Type & type, const VectorWithMemoryTracking<bool> & selected)
+std::unique_ptr<Type> Type::buildSelectedType(const Type & type, const std::vector<bool> & selected)
 {
     if (!selected.at(type.column_id))
         return nullptr;
@@ -349,13 +349,13 @@ std::unique_ptr<Type> Type::buildSelectedType(const Type & type, const VectorWit
     return result;
 }
 
-VectorWithMemoryTracking<bool> selectColumnsByTypeIds(const Type & root, const VectorWithMemoryTracking<UInt64> & type_ids)
+std::vector<bool> selectColumnsByTypeIds(const Type & root, const std::vector<UInt64> & type_ids)
 {
-    VectorWithMemoryTracking<bool> selected(root.getMaximumColumnId() + 1, false);
+    std::vector<bool> selected(root.getMaximumColumnId() + 1, false);
 
     /// Find the types by ids with a walk over the tree.
-    VectorWithMemoryTracking<const Type *> by_id(selected.size());
-    VectorWithMemoryTracking<const Type *> stack{&root};
+    std::vector<const Type *> by_id(selected.size());
+    std::vector<const Type *> stack{&root};
     while (!stack.empty())
     {
         const Type * type = stack.back();

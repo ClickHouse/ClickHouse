@@ -35,7 +35,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/extractTablesFilter.h>
@@ -335,15 +334,13 @@ public:
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
-        , totals_context(Context::createCopy(context_))
+        , context_without_sequential_consistency(Context::createCopy(context_))
         , tables_filter(std::move(tables_filter_))
     {
-        /// Table sizes are reported approximately, so there is no need to pay for a Keeper round trip
-        /// or a data lake metadata read per table.
+        /// Table sizes are reported approximately, so there is no need to pay for a Keeper round trip per table.
         Settings settings = context_->getSettingsCopy();
         settings[Setting::select_sequential_consistency] = 0;
-        totals_context->setSettings(settings);
-        totals_context->setTotalsWithoutStorageAccess(true);
+        context_without_sequential_consistency->setSettings(settings);
 
         size_t size = tables_->size();
         tables.reserve(size);
@@ -458,15 +455,6 @@ protected:
 
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
-        const bool need_to_check_access_for_columns = !access->isGranted(AccessType::SHOW_COLUMNS);
-
-        /// The name of another table is `SHOW TABLES`-grade information about that table, so it is
-        /// checked against that table, not against the row being emitted.
-        auto is_dependency_visible = [&](const StorageID & dependency_id)
-        {
-            return !need_to_check_access_for_databases
-                || access->isGranted(AccessType::SHOW_TABLES, dependency_id.database_name, dependency_id.table_name);
-        };
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -487,14 +475,8 @@ protected:
                         const auto * alias = table.second->as<StorageAlias>();
                         const bool can_expose_metadata
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
-                        const bool can_show_columns_temp
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
                         const bool can_expose_declared_definition
                             = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
-                        /// As for a persistent alias below, the CREATE query is checked against the declared
-                        /// target rather than the whole chain.
-                        const bool can_show_declared_columns_temp
-                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -547,7 +529,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_declared_definition && can_show_declared_columns_temp && temp_db
+                            ASTPtr ast = can_expose_declared_definition && temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -557,28 +539,28 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        const bool is_data_lake = table.second->isDataLake();
+
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(
-                                    res_columns, can_expose_metadata && can_show_columns_temp ? table.second : nullptr, res_index);
+                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot = can_expose_metadata && can_show_columns_temp
-                                    ? table.second->getInMemoryMetadataPtr(context, false)
-                                    : nullptr;
+                                const auto metadata_snapshot
+                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(totals_context))
+                                    if (auto total_rows = is_data_lake ? std::nullopt : table.second->totalRows(context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -596,7 +578,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(totals_context))
+                                    if (auto total_bytes = is_data_lake ? std::nullopt : table.second->totalBytes(context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -674,27 +656,6 @@ protected:
                     = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
                 const bool can_expose_declared_definition
                     = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
-
-                /// A table's schema -- its columns, their types, and any expression, index or view
-                /// parameter defined over them -- is `SHOW COLUMNS`-grade information, which is the
-                /// privilege `DESCRIBE` and `SHOW CREATE TABLE` require for the same object.
-                const bool can_show_columns = !need_to_check_access_for_columns
-                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
-
-                /// The CREATE query is the alias's own stored definition, which may carry its declared
-                /// target's columns inlined, so the declared target is checked rather than the whole chain.
-                const bool can_show_declared_columns = !need_to_check_access_for_columns
-                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {})));
-
-                /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
-                /// imply, so on a row visible through `SHOW TABLES` that privilege also makes a dictionary's CREATE
-                /// query readable. A non-null configuration holds exactly for a `CREATE DICTIONARY` object.
-                const auto * storage_dictionary = table ? table->as<StorageDictionary>() : nullptr;
-                const bool can_show_create_query = can_show_declared_columns
-                    || (storage_dictionary && storage_dictionary->getConfiguration()
-                        && access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, table_name));
 
                 TableLockHolder lock;
 
@@ -782,8 +743,6 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
-                            if (!is_dependency_visible(view_id))
-                                continue;
                             views_table_name_array.push_back(view_id.table_name);
                             views_database_name_array.push_back(view_id.database_name);
                         }
@@ -807,15 +766,9 @@ protected:
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = can_expose_declared_definition && can_show_create_query
+                    auto rendered = can_expose_declared_definition
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
-
-                    /// The dictionary disjunct is decided on the object the iterator captured, while
-                    /// the rendering resolves the name again. Emit it only when that one rendering is
-                    /// itself a dictionary, as `SHOW CREATE DICTIONARY` requires.
-                    if (!can_show_declared_columns && !rendered->is_dictionary)
-                        rendered = renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(rendered->create_table_query);
@@ -831,11 +784,11 @@ protected:
 
                 // parameterized view parameters
                 if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, can_expose_metadata && can_show_columns ? table : nullptr, res_index);
+                    fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
                 auto insert_expression_or_default = [&](const ASTPtr & expression_ptr)
                 {
-                    if (can_show_columns && expression_ptr)
+                    if (expression_ptr)
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -857,8 +810,7 @@ protected:
                     insert_expression_or_default(metadata_snapshot ? metadata_snapshot->getUniqueKeyAST() : nullptr);
 
                 if (columns_mask[src_index++])
-                    fillSkippingIndicesTypes(
-                        res_columns, can_show_columns ? StorageMetadataPtr(metadata_snapshot) : nullptr, res_index);
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
 
                 if (columns_mask[src_index++])
                 {
@@ -869,11 +821,13 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
+                const bool is_data_lake = table && table->isDataLake();
+
                 if (columns_mask[src_index++])
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(totals_context) : std::nullopt;
+                        auto total_rows = table && !is_data_lake ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -892,7 +846,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(totals_context) : std::nullopt;
+                        auto total_bytes = table && !is_data_lake ? table->totalBytes(context_without_sequential_consistency) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -912,7 +866,7 @@ protected:
                     try
                     {
                         auto total_bytes_uncompressed = can_expose_metadata
-                            ? table->totalBytesUncompressed(totals_context->getSettingsRef())
+                            ? table->totalBytesUncompressed(context_without_sequential_consistency->getSettingsRef())
                             : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
@@ -1029,8 +983,6 @@ protected:
                     dependencies_tables.reserve(dependencies.size());
                     for (const auto & dependency : dependencies)
                     {
-                        if (!is_dependency_visible(dependency))
-                            continue;
                         dependencies_databases.push_back(dependency.database_name);
                         dependencies_tables.push_back(dependency.table_name);
                     }
@@ -1041,8 +993,6 @@ protected:
                     dependents_tables.reserve(dependents.size());
                     for (const auto & dependent : dependents)
                     {
-                        if (!is_dependency_visible(dependent))
-                            continue;
                         dependents_databases.push_back(dependent.database_name);
                         dependents_tables.push_back(dependent.table_name);
                     }
@@ -1069,11 +1019,8 @@ protected:
                     if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
                     {
                         const auto target_id = mv->getTargetTableId();
-                        if (is_dependency_visible(target_id))
-                        {
-                            target_database = target_id.database_name;
-                            target_table = target_id.table_name;
-                        }
+                        target_database = target_id.database_name;
+                        target_table = target_id.table_name;
                     }
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(target_database);
@@ -1103,7 +1050,7 @@ private:
     DatabaseTablesCursor databases_cursor;
     NameSet tables;
     ContextPtr context;
-    ContextMutablePtr totals_context;
+    ContextMutablePtr context_without_sequential_consistency;
     bool done = false;
     TablesFilter tables_filter;
 };

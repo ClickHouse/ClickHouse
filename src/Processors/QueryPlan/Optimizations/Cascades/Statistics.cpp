@@ -1,6 +1,4 @@
 #include <mutex>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -16,7 +14,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/split.hpp>
 
@@ -36,7 +33,7 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
     for (const auto & column : column_statistics)
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
             << " avg_bytes: " << column.second.avg_bytes << "\n";
-    UnorderedSetWithMemoryTracking<const void *> visited_classes;
+    std::unordered_set<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
@@ -76,7 +73,7 @@ Float64 estimateRowWidthFromHeader(const Block & header)
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
-Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics)
+Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
 {
     Float64 total = 0;
     for (const auto & column : header)
@@ -162,7 +159,7 @@ private:
     }
 
     mutable std::mutex table_statistics_lock;
-    mutable UnorderedMapWithMemoryTracking<String, RelationStats> parsed_table_statistics TSA_GUARDED_BY(table_statistics_lock);
+    mutable std::unordered_map<String, RelationStats> parsed_table_statistics TSA_GUARDED_BY(table_statistics_lock);
     const String statistics_hint_json;
 };
 
@@ -187,7 +184,7 @@ OptimizerStatisticsPtr createEmptyStatistics()
 }
 
 
-UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
+std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
     const auto total_rows_opt = storage.totalRows(read_step.getContext());
@@ -226,7 +223,7 @@ UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const R
     }
 
     const auto & header = *read_step.getOutputHeader();
-    UnorderedMapWithMemoryTracking<String, Float64> widths;
+    std::unordered_map<String, Float64> widths;
     for (const auto & column_name : read_step.getAllColumnNames())
     {
         auto size_it = column_sizes.find(column_name);
@@ -241,7 +238,7 @@ UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const R
     return widths;
 }
 
-UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
+std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
 {
     Float64 type_width_sum = 0;
     for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
@@ -249,7 +246,7 @@ UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledTo
     const Float64 scale = type_width_sum > 0 ? row_bytes / type_width_sum : 1.0;
 
     const auto & header = *read_step.getOutputHeader();
-    UnorderedMapWithMemoryTracking<String, Float64> widths;
+    std::unordered_map<String, Float64> widths;
     for (const auto & column_name : read_step.getAllColumnNames())
         if (const auto * header_column = header.findByName(column_name))
             widths[column_name] = estimateColumnWidthFromType(*header_column->type) * scale;
@@ -266,47 +263,8 @@ void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_s
     statistics.physical_read_bytes = physical_rows * statistics.estimated_bytes_per_row;
 }
 
-/// Statistics of a read from object storage, or of a filter over one, from the data lake metadata of the read.
-static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(QueryPlan::Node & node, const ReadFromObjectStorageStep & read_step)
-{
-    const auto estimate = read_step.getOrCreateDataLakeReadEstimate();
-    /// Without an estimate the read keeps the default statistics
-    if (!estimate || !estimate->rows)
-        return std::nullopt;
-
-    const auto rows = Float64(*estimate->rows);
-    auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
-
-    ExpressionStatistics stats;
-    /// A filter that the estimate cannot account for keeps at most the rows of the remaining files, as the selected
-    /// rows bound a MergeTree read.
-    stats.estimated_row_count = relation_stats.estimated_rows ? Float64(*relation_stats.estimated_rows) : rows;
-    stats.column_statistics = std::move(relation_stats.column_stats);
-
-    /// The manifests give no uncompressed sizes, so every column has the width of its type.
-    const auto & header = *read_step.getOutputHeader();
-    for (const auto & column : header)
-    {
-        auto & column_stats = stats.column_statistics[column.name];
-        if (column_stats.avg_bytes == 0)
-            column_stats.avg_bytes = estimateColumnWidthFromType(*column.type);
-    }
-    stats.estimated_bytes_per_row = estimateRowWidth(header, stats.column_statistics);
-    /// Pruning drops only files that cannot match, so the remaining files bound the read.
-    stats.max_row_count = std::max(stats.estimated_row_count, rows);
-    /// The scan also reads the deleted rows; they are left out, so this is the cost of reading the live rows.
-    fillPhysicalReadBytes(stats, rows);
-    return stats;
-}
-
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
 {
-    if (const auto * object_storage_read = typeid_cast<const ReadFromObjectStorageStep *>(node.step.get()))
-        return estimateObjectStorageReadStatistics(node, *object_storage_read);
-    if (typeid_cast<FilterStep *>(node.step.get()) && node.children.size() == 1)
-        if (const auto * object_storage_read = typeid_cast<const ReadFromObjectStorageStep *>(node.children[0]->step.get()))
-            return estimateObjectStorageReadStatistics(node, *object_storage_read);
-
     std::optional<ExpressionStatistics> stats;
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get());

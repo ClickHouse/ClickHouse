@@ -4,14 +4,12 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/glue/model/Column.h>
-#include <aws/glue/model/Table.h>
-#include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
 
+#include <Common/CacheBase.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -79,13 +77,12 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
@@ -98,30 +95,25 @@ public:
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
-    /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
-    static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
+    /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
+    /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
+    /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
+    static String resolveTimestampTypeFromMetadata(
+        const Poco::JSON::Object::Ptr & metadata_object,
+        const String & column_name,
+        const String & glue_column_type);
 
-    /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
-    static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
+    using FieldTypes = std::unordered_map<String, String>;
+
+    static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
+
+    static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
 
 private:
-    /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
-    /// Columns are rebuilt from `new_schema` if given, otherwise from the current schema of `new_metadata`.
-    static Aws::Glue::Model::TableInput buildUpdatedTableInput(
-        const Aws::Glue::Model::Table & existing,
-        const String & new_metadata_path,
-        const Poco::JSON::Object::Ptr & new_schema,
-        const Poco::JSON::Object::Ptr & new_metadata);
-
-    /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
-    /// Returns `false` if the pointer no longer names `base_catalog_metadata_location`.
-    bool commitTableUpdate(
-        const String & namespace_name,
-        const String & table_name,
-        const String & new_metadata_path,
-        const String & base_catalog_metadata_location,
-        const Poco::JSON::Object::Ptr & new_schema,
-        const Poco::JSON::Object::Ptr & new_metadata) const;
+    struct FieldTypesWeightFunction
+    {
+        size_t operator()(const FieldTypes & field_types) const;
+    };
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
@@ -135,6 +127,11 @@ private:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
+    /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
+    /// This method allows to clarify the actual type of the timestamp column.
+    /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
+    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
+
     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
     struct ObjectStorageWithPath
@@ -145,6 +142,8 @@ private:
     };
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
+
+    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
 };
 
 }

@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'Cómo LibreChat sirve como interfaz de chat y agentes del stack de datos agentic'
+doc_type: 'guide'
+keywords: ['stack de datos agentic', 'LibreChat', 'chat', 'interfaz', 'MCP']
+---
+
+LibreChat es la **interfaz de chat y agentes** del [Stack de Datos Agentic](/es/products/agentic-data-stack/overview). En lugar de escribir SQL, el usuario hace una pregunta en lenguaje natural y un agente la responde.
+
+El agente funciona a través del servidor MCP de ClickHouse para inspeccionar sus bases de datos y tablas, ejecutar consultas de solo lectura y elaborar una respuesta a partir de los resultados. El stack se encarga de conectar todo por usted, por lo que LibreChat consulta sus datos desde el primer inicio de sesión. Implemente el stack completo con la [guía de configuración de Docker](/es/products/agentic-data-stack/docker-setup).
+
+<div id="capabilities">
+  ## Capacidades de LibreChat
+</div>
+
+| Capacidad                                                                                                      | Lo que hace                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Crear un agente a partir de tus datos](https://www.librechat.ai/docs/features/agents)                         | Crea un agente reutilizable para una pregunta recurrente. Hay dos opciones para que entienda ClickHouse: darle **Instructions** que describan tu esquema y las tablas que prefieres, y añadir el servidor MCP **ClickHouse-Local** para que pueda listar bases de datos y tablas, y ejecutar consultas de solo lectura. |
+| [Conectar más servidores MCP](https://www.librechat.ai/docs/features/mcp)                                      | El agente no se limita a ClickHouse. Añade cualquier servidor MCP desde la configuración de MCP de LibreChat para que un solo chat pueda acceder a otras bases de datos, API internas o herramientas SaaS.                                                                                                              |
+| [Generar gráficos y visualizaciones](https://www.librechat.ai/docs/features/artifacts)                         | Pídele al agente que visualice tus resultados; por ejemplo, &quot;Grafica los 10 productos principales por ingresos&quot;, y te devolverá un gráfico interactivo que podrás explorar y compartir. Las visualizaciones usan LibreChat Artifacts, que se habilita por agente.                                             |
+| [Ejecutar código con el intérprete de código](https://www.librechat.ai/docs/features/code_interpreter)         | Además de SQL, el agente puede ejecutar código en un sandbox seguro para transformar o analizar tus resultados, por ejemplo, convirtiendo una consulta en un archivo o en una métrica calculada.                                                                                                                        |
+| [Ejecutar consultas largas en segundo plano](https://www.librechat.ai/docs/features/resumable_streams)         | Una consulta puede tardar un poco, y no tienes que esperar. Con streams reanudables, inicia una generación, cambia a otra conversación y vuelve cuando la respuesta esté lista.                                                                                                                                         |
+| [Compartir un análisis como un enlace de solo lectura](https://www.librechat.ai/docs/features/shareable_links) | Comparte una conversación como un enlace de solo lectura para que otros puedan revisar un análisis sin volver a ejecutarlo. La vista compartida incluye las llamadas a herramientas y el SQL detrás de cada respuesta, lo que ofrece una cadena de custodia clara de cómo se produjo el resultado.                      |
+| [Controlar el acceso a los servidores MCP](https://www.librechat.ai/docs/features/access_control)              | En una implementación para equipos, el control de acceso basado en roles determina quién puede usar, crear y compartir servidores MCP y agentes, y con qué nivel (Viewer, Editor u Owner).                                                                                                                              |
+
+<div id="in-the-stack">
+  ## En el stack
+</div>
+
+LibreChat viene preconfigurado mediante `librechat.yaml`, por lo que funciona desde el primer momento:
+
+* El [servidor MCP de ClickHouse](/es/products/agentic-data-stack/components/mcp-server) está registrado como origen de herramientas, por lo que el agente puede explorar y consultar ClickHouse sin configuración adicional.
+* Cada conversación se registra en [Langfuse](/es/products/agentic-data-stack/components/langfuse) para observabilidad, capturando prompts, llamadas a herramientas, respuestas, coste y latencia.
+* El [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel) (puerto 3081) es una UI basada en navegador para cambiar esta configuración (endpoints, servidores MCP y ajustes del agente) sin editar `librechat.yaml` manualmente.
+
+Para conectar el servidor MCP de ClickHouse a una instancia standalone de LibreChat, consulta la guía oficial: [Using ClickHouse MCP server with LibreChat](/es/guides/use-cases/ai-ml/MCP/librechat). Para consultar la documentación completa de LibreChat, consulta la [documentación de LibreChat](https://www.librechat.ai/docs).
+
+<Info>
+  **¿Prefieres una experiencia gestionada?** ClickHouse Cloud ofrece [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents) (Beta): una experiencia de agente alojada y sin configuración, construida sobre la misma base, con las funciones de creación de agentes disponibles a través de la consola de Cloud.
+</Info>

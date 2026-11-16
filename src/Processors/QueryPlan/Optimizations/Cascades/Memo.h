@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Common/Logger.h>
 
@@ -30,7 +29,7 @@ public:
 
 private:
     LoggerPtr log;
-    VectorWithMemoryTracking<GroupPtr> groups_by_id;
+    std::vector<GroupPtr> groups_by_id;
     OptimizerContext context;
 };
 

@@ -1,7 +1,5 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/FormatFactorySettings.h>
-#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -34,9 +32,6 @@ STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, IMPL
 
 void DataLakeStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    for (const auto & change : settings_ast.changes)
-        if (change.name == "disk")
-            DiskFromAST::ensureDiskIsNotInline(change.value);
     impl->applyChanges(settings_ast.changes);
 }
 
@@ -53,11 +48,6 @@ bool DataLakeStorageSettings::isChanged(std::string_view name) const
 bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
 {
     return DataLakeStorageSettingsImpl::hasBuiltin(name);
-}
-
-std::string_view DataLakeStorageSettings::resolveName(std::string_view name)
-{
-    return DataLakeStorageSettingsTraits::resolveName(name);
 }
 
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)

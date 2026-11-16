@@ -208,7 +208,6 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
-        bool supports_reset_parser{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
         /// If true, the output can contain arbitrary bytes that are not guaranteed to be valid UTF-8 text
@@ -352,10 +351,8 @@ public:
     bool checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
-    /// `supports_reset_parser`: `IInputFormat::resetParser` resets every per-input field, so the format
-    /// can be reused for the next input. Otherwise `StreamingFormatExecutor` creates a new one for each input.
-    void registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser = false);
-    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser = false);
+    void registerInputFormat(const String & name, InputCreator input_creator);
+    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
@@ -416,9 +413,6 @@ public:
         const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
-    /// The same check for a read whose files can have any format, such as the data files of a data
-    /// lake snapshot: it allows parallelizing only when every format would.
-    bool checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
@@ -441,7 +435,6 @@ public:
     void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
     void registerSplitter(const String & format, BucketSplitterCreator splitter);
     BucketSplitter getSplitter(const String & format);
-    bool checkIfFormatHasSplitter(const String & format) const;
 
 private:
     FormatsDictionary dict;

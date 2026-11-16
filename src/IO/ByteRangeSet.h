@@ -4,8 +4,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -27,13 +25,6 @@ public:
     void remove(ByteRange range);
 
     ByteRangeSet intersect(ByteRange range) const;
-
-    /// End of the interval that holds `offset`, or of the next interval if it starts at most `max_lead` bytes
-    /// after `offset`; `nullopt` otherwise.
-    std::optional<size_t> intervalEndAhead(size_t offset, size_t max_lead) const;
-
-    /// The set with every gap up to `max_gap` filled.
-    ByteRangeSet mergeGapsUpTo(size_t max_gap) const;
 
     void shift(size_t delta);
 

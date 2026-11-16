@@ -3,7 +3,6 @@
 #include <Core/SortDescription.h>
 
 #include <optional>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -60,8 +59,8 @@ public:
     /// Passes every column through, so it drops what its child drops and needs nothing more, except the
     /// columns `WITH TIES` compares rows by.
     bool canRemoveUnusedColumns() const override { return true; }
-    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     /// A `Limit` at the replica-output boundary is a shard limit, so its output is replicated, not
     /// partitioned: every replica emits up to `limit` rows and ships all of them.

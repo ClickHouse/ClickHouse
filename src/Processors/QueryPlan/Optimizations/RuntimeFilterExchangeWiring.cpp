@@ -21,10 +21,6 @@
 #endif
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -40,12 +36,12 @@ String taskBucketId(const DistributedQueryTask & task)
 /// True when `from_stage` already depends on `to_stage` (directly or through other stages).
 /// Delivery would add the reverse edge and cycle.
 bool stageDependsOnTransitively(
-    const UnorderedMapWithMemoryTracking<String, StageDependencies> & stage_depends_on,
+    const std::unordered_map<String, std::unordered_map<String, String>> & stage_depends_on,
     const String & from_stage,
     const String & to_stage)
 {
-    UnorderedSetWithMemoryTracking<String> seen;
-    VectorWithMemoryTracking<String> queue;
+    std::unordered_set<String> seen;
+    std::vector<String> queue;
     queue.push_back(from_stage);
     seen.insert(from_stage);
     for (size_t i = 0; i < queue.size(); ++i)
@@ -73,7 +69,7 @@ struct RuntimeFilterApplication
 /// Collects every `__applyFilter` call in the DAG. Only FUNCTION nodes count, so a leftover alias whose
 /// computation was pushed further down is ignored. Matching uses the label's value, a random key that
 /// cannot collide across plan builds.
-void collectRuntimeFilterApplications(const ActionsDAG & dag, VectorWithMemoryTracking<RuntimeFilterApplication> & out)
+void collectRuntimeFilterApplications(const ActionsDAG & dag, std::vector<RuntimeFilterApplication> & out)
 {
     for (const auto & dag_node : dag.getNodes())
     {
@@ -110,7 +106,7 @@ void collectRuntimeFilterApplications(const ActionsDAG & dag, VectorWithMemoryTr
 }
 
 /// FilterStep predicates and scan PREWHEREs are where pushdown leaves the applications.
-void collectStepApplications(const IQueryPlanStep & step, VectorWithMemoryTracking<RuntimeFilterApplication> & out)
+void collectStepApplications(const IQueryPlanStep & step, std::vector<RuntimeFilterApplication> & out)
 {
     if (const auto * filter_step = typeid_cast<const FilterStep *>(&step))
         collectRuntimeFilterApplications(filter_step->getExpression(), out);
@@ -144,17 +140,17 @@ struct FilterConsumerSite
 };
 
 /// Filter key -> stage -> apply sites in that stage.
-using FilterConsumerSites = UnorderedMapWithMemoryTracking<String, MapWithMemoryTracking<String, VectorWithMemoryTracking<FilterConsumerSite>>>;
+using FilterConsumerSites = std::unordered_map<String, std::map<String, std::vector<FilterConsumerSite>>>;
 
 /// Collects the filters that can be sent to other tasks and the sites that apply each filter. The
 /// producers keep the plan traversal order: the filter keys are random, and ordering by them would
 /// give different exchange names on each run.
-void collectProducersAndSites(DistributedQueryPlan & distributed_plan, VectorWithMemoryTracking<FilterProducer> & producers, FilterConsumerSites & sites)
+void collectProducersAndSites(DistributedQueryPlan & distributed_plan, std::vector<FilterProducer> & producers, FilterConsumerSites & sites)
 {
-    UnorderedMapWithMemoryTracking<String, size_t> producer_index;
+    std::unordered_map<String, size_t> producer_index;
     for (auto & [stage_name, stage] : distributed_plan.stages)
     {
-        VectorWithMemoryTracking<QueryPlan::Node *> stack = {stage.query_plan_fragment.getRootNode()};
+        std::vector<QueryPlan::Node *> stack = {stage.query_plan_fragment.getRootNode()};
         while (!stack.empty())
         {
             auto * node = stack.back();
@@ -177,7 +173,7 @@ void collectProducersAndSites(DistributedQueryPlan & distributed_plan, VectorWit
                     producers[it->second] = std::move(producer);
             }
 
-            VectorWithMemoryTracking<RuntimeFilterApplication> applications;
+            std::vector<RuntimeFilterApplication> applications;
             collectStepApplications(*node->step, applications);
             /// Keep every site: the stage is admitted if any site admits. The filter is still
             /// delivered once per stage and read by all its sites.
@@ -291,14 +287,14 @@ struct ReceivingStage
 
 /// The stages, other than the build stage, that get the filter. A stage gets it if any of its sites
 /// admits it. A tiny or stats-less site must not veto a sibling that would prune.
-VectorWithMemoryTracking<ReceivingStage> selectReceivingStages(
+std::vector<ReceivingStage> selectReceivingStages(
     const DistributedQueryPlan & distributed_plan,
     const FilterProducer & producer,
-    const MapWithMemoryTracking<String, VectorWithMemoryTracking<FilterConsumerSite>> & sites_by_stage,
+    const std::map<String, std::vector<FilterConsumerSite>> & sites_by_stage,
     const TransportBudget & budget,
     ExchangeDescription::Kind kind)
 {
-    VectorWithMemoryTracking<ReceivingStage> receivers;
+    std::vector<ReceivingStage> receivers;
     for (const auto & [stage_name, sites] : sites_by_stage)
     {
         /// The build stage reads the filter from the task's own lookup.
@@ -351,7 +347,7 @@ public:
         const FilterProducer & producer_,
         const RuntimeFilterGeometry & geometry_,
         ExchangeDescription::Kind kind_,
-        VectorWithMemoryTracking<ReceivingStage> receivers_)
+        std::vector<ReceivingStage> receivers_)
         : distributed_plan(distributed_plan_)
         , producer(producer_)
         , geometry(geometry_)
@@ -391,14 +387,14 @@ private:
     const FilterProducer & producer;
     const RuntimeFilterGeometry & geometry;
     const ExchangeDescription::Kind kind;
-    const VectorWithMemoryTracking<ReceivingStage> receivers;
+    const std::vector<ReceivingStage> receivers;
 
-    VectorWithMemoryTracking<size_t> level_sizes;
+    std::vector<size_t> level_sizes;
     Strings level_exchanges; /// The input exchange of each level.
     Strings level_stages;
     Strings broadcast_exchanges; /// One per receiving stage.
 
-    VectorWithMemoryTracking<DistributedQueryTask> & buildTasks() { return distributed_plan.stages.at(producer.stage).tasks; }
+    std::vector<DistributedQueryTask> & buildTasks() { return distributed_plan.stages.at(producer.stage).tasks; }
 
     void addExchange(const String & name, size_t source_bucket_count, size_t destination_bucket_count)
     {
@@ -426,7 +422,7 @@ private:
     {
         const String & child_stage = level == 0 ? producer.stage : level_stages[level - 1];
         addExchange(level_exchanges[level], child_buckets.size(), level_sizes[level]);
-        distributed_plan.stage_depends_on[level_stages[level]].push_back({child_stage, level_exchanges[level]});
+        distributed_plan.stage_depends_on[level_stages[level]][child_stage] = level_exchanges[level];
 
         auto outputs = levelOutputs(level);
         DistributedQueryStage stage;
@@ -451,13 +447,13 @@ private:
     }
 
     /// An inner level sends to its parent level; the root sends to every receiving task.
-    VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> levelOutputs(size_t level) const
+    std::vector<MergeRuntimeFiltersStep::Output> levelOutputs(size_t level) const
     {
         if (level + 1 < level_sizes.size())
             return {{level_exchanges[level + 1], /*destination_buckets=*/{}}};
 
         chassert(level_sizes[level] == 1);
-        VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> outputs;
+        std::vector<MergeRuntimeFiltersStep::Output> outputs;
         for (size_t index = 0; index < receivers.size(); ++index)
         {
             Strings destination_buckets;
@@ -469,7 +465,7 @@ private:
     }
 
     DistributedQueryTask makeMergeTask(
-        size_t level, size_t index, const Strings & child_buckets, const VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> & outputs) const
+        size_t level, size_t index, const Strings & child_buckets, const std::vector<MergeRuntimeFiltersStep::Output> & outputs) const
     {
         const String bucket = toString(index);
         DistributedQueryTask task;
@@ -497,7 +493,7 @@ private:
                 task.input_exchange_streams.push_back(std::move(stream));
             }
             if (receiver.has_completion_edge)
-                distributed_plan.stage_depends_on[receiver.name].push_back({level_stages.back(), broadcast_exchanges[index]});
+                distributed_plan.stage_depends_on[receiver.name][level_stages.back()] = broadcast_exchanges[index];
         }
     }
 };
@@ -506,7 +502,7 @@ private:
 
 void wireRuntimeFilterExchangeTopology(DistributedQueryPlan & distributed_plan, size_t & next_exchange_id, ExchangeDescription::Kind kind)
 {
-    VectorWithMemoryTracking<FilterProducer> producers;
+    std::vector<FilterProducer> producers;
     FilterConsumerSites sites;
     collectProducersAndSites(distributed_plan, producers, sites);
 

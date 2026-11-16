@@ -16,7 +16,6 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -27,11 +26,6 @@
 #include <ranges>
 #include <set>
 #include <unordered_set>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -119,7 +113,7 @@ bool readsAsJoinLeftIt(const MergedPlanDAG & merged, const ActionsDAG::Node * re
 NodeSet findMaskedValues(const MergedPlanDAG & merged, const LazyFrontier & frontier)
 {
     NodeSet masked;
-    VectorWithMemoryTracking<const ActionsDAG::Node *> stack(merged.getOutputs().begin(), merged.getOutputs().end());
+    std::vector<const ActionsDAG::Node *> stack(merged.getOutputs().begin(), merged.getOutputs().end());
     for (const auto & node : merged.getDAG().getNodes())
     {
         if (!isComputedAbove(frontier.at(&node)))
@@ -151,16 +145,16 @@ NodeSet findMaskedValues(const MergedPlanDAG & merged, const LazyFrontier & fron
 ActionsDAG buildAboveLimitDAG(
     const MergedPlanDAG & merged,
     const LazyFrontier & frontier,
-    const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & positions,
-    const UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> & masks,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & positions,
+    const std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> & masks,
     const NodeSet & masked,
     const Block & header,
     const ContextPtr & context)
 {
     ActionsDAG dag(header.getColumnsWithTypeAndName());
     const auto inputs = dag.getInputs();
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> copies;
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> masked_copies;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> copies;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> masked_copies;
 
     /// The copy of `value` that `reader` reads, or that the subtree outputs for a null `reader`.
     const auto copy_for = [&](const ActionsDAG::Node * reader, const ActionsDAG::Node * value)
@@ -179,7 +173,7 @@ ActionsDAG buildAboveLimitDAG(
 
     for (const auto * output : merged.getOutputs())
     {
-        VectorWithMemoryTracking<Frame> stack{{output}};
+        std::vector<Frame> stack{{output}};
         while (!stack.empty())
         {
             auto & frame = stack.back();
@@ -294,16 +288,16 @@ struct ColumnCopy
 /// pads.
 ActionsDAG makeAboveReadDAG(
     const Block & read_header,
-    const VectorWithMemoryTracking<size_t> & index_positions,
-    const VectorWithMemoryTracking<size_t> & consumed_positions,
+    const std::vector<size_t> & index_positions,
+    const std::vector<size_t> & consumed_positions,
     const String & index_name,
     bool nullable,
-    const VectorWithMemoryTracking<ColumnCopy> & copies)
+    const std::vector<ColumnCopy> & copies)
 {
     ActionsDAG dag(read_header.getColumnsWithTypeAndName());
     const auto inputs = dag.getInputs();
 
-    VectorWithMemoryTracking<bool> is_consumed(inputs.size(), false);
+    std::vector<bool> is_consumed(inputs.size(), false);
     for (size_t position : consumed_positions)
         is_consumed.at(position) = true;
 
@@ -386,7 +380,7 @@ void appendOutputToStep(IQueryPlanStep & step, const ActionsDAG::Node & step_nod
             name, step.getName(), former_header->dumpStructure(), header.dumpStructure());
 }
 
-/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter, ArrayJoin and JoinStepLogical ->
+/// Rebuilds `Limit -> Sorting -> tree of Expression, Filter, BuildRuntimeFilter and JoinStepLogical ->
 /// sources` so that the columns the frontier defers are read for the rows the `LIMIT` returns only.
 ///
 /// The main branch is the original plan with fewer columns: every step is kept, with its own expressions
@@ -408,12 +402,12 @@ public:
     JoinPlanRebuild(
         const MergedPlanDAG & merged_,
         const LazyFrontier & frontier_,
-        const VectorWithMemoryTracking<bool> & lazy_sources_,
-        const UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> & mask_sources_,
+        const std::vector<bool> & lazy_sources_,
+        const std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> & mask_sources_,
         const NodeSet & masked_values_,
         ContextPtr context_,
         QueryPlan::Node * chain_top_,
-        const VectorWithMemoryTracking<size_t> & sort_key_positions_)
+        const std::vector<size_t> & sort_key_positions_)
         : merged(merged_)
         , frontier(frontier_)
         , lazy_sources(lazy_sources_)
@@ -480,16 +474,8 @@ public:
 
             const auto & origin = merged.getOrigin(value);
             Carrying carrying{.value = value, .name = makeCarriedName(carried.size())};
-            /// An alias has the values of what it names, so the step outputting an alias of the value outputs the value,
-            /// as an `ARRAY JOIN` does its elements.
             const auto & values = merged.step_outputs.at(origin.plan_node);
-            const auto output_it = std::ranges::find_if(values, [value](const auto * output)
-            {
-                while (output != value && output->type == ActionsDAG::ActionType::ALIAS)
-                    output = output->children.front();
-                return output == value;
-            });
-            if (output_it != values.end())
+            if (const auto output_it = std::ranges::find(values, value); output_it != values.end())
                 carrying.position = output_it - values.begin();
             else if (origin.step_node
                 && (typeid_cast<const ExpressionStep *>(origin.plan_node->step.get())
@@ -509,7 +495,7 @@ public:
     /// Moves to the main read the columns meant for a lazy read that the pruning of the plan keeps, `unneeded_of` says
     /// which; each read on its own. Returns false where an object storage read cannot be split for the rest.
     bool keepColumnsThePruningKeeps(
-        const UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> & unneeded_of, NodeSet & kept_by_read)
+        const std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> & unneeded_of, NodeSet & kept_by_read)
     {
         for (auto it = lazy_by_source.begin(); it != lazy_by_source.end();)
         {
@@ -583,7 +569,7 @@ public:
         /// more than that. What each column of the block holds is followed from here on, so that the
         /// expression above the `LIMIT` can bind by position.
         const auto & outputs = merged.getOutputs();
-        VectorWithMemoryTracking<Slot> slots;
+        std::vector<Slot> slots;
         {
             const auto & header = *main_plan.getCurrentHeader();
             ActionsDAG projection(header.getColumnsWithTypeAndName());
@@ -687,7 +673,7 @@ public:
             /// The lazy read returns its columns in the order it reads them from storage rather than in the order of the
             /// header of the source, so each is matched with an input it was chosen for by name. Inputs of the same name are
             /// the same column of storage, so which of them takes which column does not matter.
-            VectorWithMemoryTracking<bool> is_bound(lazy.inputs.size(), false);
+            std::vector<bool> is_bound(lazy.inputs.size(), false);
             for (const auto & column : *lazy_plan.getCurrentHeader())
             {
                 size_t input = 0;
@@ -704,7 +690,7 @@ public:
                 main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, makeRowIndexName(source));
 
             QueryPlan joined;
-            QueryPlanPtrs plans;
+            std::vector<QueryPlanPtr> plans;
             plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
             plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
             joined.unitePlans(std::move(join_lazy_columns), std::move(plans));
@@ -719,8 +705,8 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Lazy materialization expected {} columns above the LIMIT, got {}", slots.size(), header.dumpNames());
 
-            UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> positions;
-            UnorderedMapWithMemoryTracking<size_t, size_t> mask_position_of_source;
+            std::unordered_map<const ActionsDAG::Node *, size_t> positions;
+            std::unordered_map<size_t, size_t> mask_position_of_source;
             for (size_t position = 0; position < slots.size(); ++position)
             {
                 const auto & slot = slots[position];
@@ -730,7 +716,7 @@ public:
                     mask_position_of_source.emplace(slot.source, position);
             }
 
-            UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> mask_slots;
+            std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_slots;
             for (const auto & [padded_side, source] : mask_sources)
                 mask_slots.emplace(padded_side, mask_position_of_source.at(source));
 
@@ -757,8 +743,8 @@ private:
         /// The source columns the main read keeps, by name, for an object storage read; the positions of the ones the lazy
         /// read fetches, for a MergeTree read; and the inputs standing for them.
         NameSet eager_names;
-        VectorWithMemoryTracking<size_t> positions;
-        VectorWithMemoryTracking<const ActionsDAG::Node *> inputs;
+        std::vector<size_t> positions;
+        std::vector<const ActionsDAG::Node *> inputs;
 
         /// Set by `apply`.
         std::unique_ptr<LazilyReadFromMergeTree> merge_tree_reading;
@@ -770,10 +756,10 @@ private:
     /// The nodes between `chain_top` and the sources, the ones the walk building the merged DAG entered, top-down, the
     /// sources included, with the right subtree of a node before the left one, so that in reverse they come bottom-up,
     /// left to right.
-    VectorWithMemoryTracking<QueryPlan::Node *> collectNodes() const
+    std::vector<QueryPlan::Node *> collectNodes() const
     {
-        VectorWithMemoryTracking<QueryPlan::Node *> top_down_nodes;
-        VectorWithMemoryTracking<QueryPlan::Node *> stack{chain_top};
+        std::vector<QueryPlan::Node *> top_down_nodes;
+        std::vector<QueryPlan::Node *> stack{chain_top};
         while (!stack.empty())
         {
             auto * node = stack.back();
@@ -809,7 +795,7 @@ private:
                 /// well: the main read is pruned of them anyway, and a column of storage read for several positions is
                 /// left out of the read only if none of them is needed. The inputs of a source follow its header.
                 const auto & inputs = merged.sources[source].inputs;
-                VectorWithMemoryTracking<size_t> unneeded;
+                std::vector<size_t> unneeded;
                 for (size_t position = 0; position < inputs.size(); ++position)
                 {
                     if (!isComputedBelow(frontier.at(inputs[position])))
@@ -846,7 +832,7 @@ private:
             }
 
             lazy.kind = LazySource::Kind::ObjectStorage;
-            VectorWithMemoryTracking<const ActionsDAG::Node *> candidates;
+            std::vector<const ActionsDAG::Node *> candidates;
             for (const auto * input : merged.sources[source].inputs)
             {
                 const auto placed = frontier.at(input);
@@ -905,7 +891,7 @@ private:
     struct Assembled
     {
         QueryPlan plan;
-        VectorWithMemoryTracking<size_t> dropped_positions;
+        std::vector<size_t> dropped_positions;
         /// Whether this rebuild put a step of its own on top of the plan - the row index of a read, the copies of carried
         /// columns - which is merged into the step above when that can take it.
         bool has_added_step_on_top = false;
@@ -940,9 +926,9 @@ private:
     /// What each node between `chain_top` and the sources, `top_down_nodes`, need not output, top-down, as `assemble`
     /// prunes them: what the step above does not need of it, less the columns values are carried from. The chain hands
     /// over the sort keys and the copies of the values crossing the `LIMIT`; its header is the outputs of the merged DAG.
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> findUnneededColumns(const VectorWithMemoryTracking<QueryPlan::Node *> & top_down_nodes) const
+    std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> findUnneededColumns(const std::vector<QueryPlan::Node *> & top_down_nodes) const
     {
-        VectorWithMemoryTracking<size_t> chain_top_unneeded;
+        std::vector<size_t> chain_top_unneeded;
         auto next_sort_key = sort_key_positions.begin();
         for (size_t position = 0; position < merged.getOutputs().size(); ++position)
         {
@@ -953,7 +939,7 @@ private:
         }
 
         /// A node a value is carried from keeps the column it is copied from.
-        UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> unneeded_of{{chain_top, std::move(chain_top_unneeded)}};
+        std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, std::move(chain_top_unneeded)}};
         for (auto * node : top_down_nodes)
         {
             auto & node_unneeded = unneeded_of.at(node);
@@ -980,7 +966,7 @@ private:
         const auto top_down_nodes = collectNodes();
         const auto unneeded_of = findUnneededColumns(top_down_nodes);
 
-        UnorderedMapWithMemoryTracking<const QueryPlan::Node *, Assembled> assembled;
+        std::unordered_map<const QueryPlan::Node *, Assembled> assembled;
         for (auto * node : top_down_nodes | std::views::reverse)
         {
             const auto & node_unneeded = unneeded_of.at(node);
@@ -990,7 +976,7 @@ private:
                 continue;
             }
 
-            VectorWithMemoryTracking<Assembled> children;
+            std::vector<Assembled> children;
             for (auto * child : node->children)
             {
                 auto child_it = assembled.find(child);
@@ -1008,9 +994,9 @@ private:
 
     /// The copies of the values carried from the columns `node` outputs, positions of its former header, which the steps
     /// above pass through. A read makes them with its row index.
-    VectorWithMemoryTracking<ColumnCopy> copiesOfCarriedColumns(const QueryPlan::Node * node, const VectorWithMemoryTracking<size_t> & dropped_positions) const
+    std::vector<ColumnCopy> copiesOfCarriedColumns(const QueryPlan::Node * node, const std::vector<size_t> & dropped_positions) const
     {
-        VectorWithMemoryTracking<ColumnCopy> copies;
+        std::vector<ColumnCopy> copies;
         const auto it = carried_from.find(node);
         if (it == carried_from.end())
             return copies;
@@ -1044,12 +1030,12 @@ private:
     }
 
     /// Prunes and assembles the step of a node on top of its assembled children.
-    Assembled assembleStep(QueryPlan::Node * node, const VectorWithMemoryTracking<size_t> & unneeded, VectorWithMemoryTracking<Assembled> & children)
+    Assembled assembleStep(QueryPlan::Node * node, const std::vector<size_t> & unneeded, std::vector<Assembled> & children)
     {
         auto * step = node->step.get();
 
         Assembled result;
-        VectorWithMemoryTracking<IQueryPlanStep::PrunedInput> pruned;
+        std::vector<IQueryPlanStep::PrunedInput> pruned;
         for (size_t child = 0; child < children.size(); ++child)
             pruned.push_back(prunedInputOf(children[child], step->getInputHeaders()[child]->columns()));
         result.dropped_positions = step->removeUnusedColumns(unneeded, pruned).dropped_output_positions;
@@ -1078,7 +1064,7 @@ private:
         }
         else
         {
-            QueryPlanPtrs plans;
+            std::vector<QueryPlanPtr> plans;
             for (auto & child : children)
                 plans.emplace_back(std::make_unique<QueryPlan>(std::move(child.plan)));
             result.plan.unitePlans(std::move(node->step), std::move(plans));
@@ -1086,7 +1072,7 @@ private:
         return result;
     }
 
-    Assembled assembleSource(QueryPlan::Node * node, size_t source, const VectorWithMemoryTracking<size_t> & unneeded, QueryPlan::Nodes & nodes)
+    Assembled assembleSource(QueryPlan::Node * node, size_t source, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
         Assembled result;
@@ -1103,7 +1089,7 @@ private:
         if (merge_tree && merge_tree->canRemoveUnusedColumns())
         {
             /// The read drops what nothing below the `LIMIT` needs, and hands the columns read lazily to a lazy read.
-            static const VectorWithMemoryTracking<size_t> no_positions;
+            static const std::vector<size_t> no_positions;
             const auto & lazy_positions = lazy ? lazy->positions : no_positions;
             /// Both in order, so they are followed at once.
             auto next_unneeded = unneeded.begin();
@@ -1164,8 +1150,8 @@ private:
         }
 
         /// The columns the row index is computed from, and the ones of them the read did not produce before.
-        VectorWithMemoryTracking<size_t> index_positions;
-        VectorWithMemoryTracking<size_t> consumed_positions;
+        std::vector<size_t> index_positions;
+        std::vector<size_t> consumed_positions;
         if (merge_tree)
         {
             const auto offsets = merge_tree->addStartingPartOffsetAndPartOffset();
@@ -1224,15 +1210,15 @@ private:
 
     const MergedPlanDAG & merged;
     const LazyFrontier & frontier;
-    const VectorWithMemoryTracking<bool> & lazy_sources;
-    const UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> & mask_sources;
+    const std::vector<bool> & lazy_sources;
+    const std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> & mask_sources;
     const NodeSet & masked_values;
     ContextPtr context;
 
     QueryPlan::Node * const chain_top;
-    const VectorWithMemoryTracking<size_t> & sort_key_positions;
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, size_t> source_numbers;
-    MapWithMemoryTracking<size_t, LazySource> lazy_by_source;
+    const std::vector<size_t> & sort_key_positions;
+    std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
+    std::map<size_t, LazySource> lazy_by_source;
 
     /// What a column of the block holds from the columns crossing the `LIMIT` on: a value of the merged DAG, the row index
     /// of a source, or the mask a source gives.
@@ -1262,24 +1248,22 @@ private:
     /// By the node each value is carried from, in the order of the values.
     /// The carried values, in the order of the merged DAG, which is the order their copies cross the `LIMIT` in, and by the
     /// node each is carried from, in the same order.
-    VectorWithMemoryTracking<Carrying> carried;
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<size_t>> carried_from;
+    std::vector<Carrying> carried;
+    std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> carried_from;
 
     /// The row index of every source that has one, either for a lazy read or for a mask.
-    SetWithMemoryTracking<size_t> sources_with_row_index;
+    std::set<size_t> sources_with_row_index;
     /// The sources whose row index gives a mask, from `mask_sources`.
-    SetWithMemoryTracking<size_t> sources_with_mask;
+    std::set<size_t> sources_with_mask;
     NameSet added_names;
 };
 
-/// Whether a step can produce a block of totals: `WITH TOTALS`, a remote read, whose query can have it, or a read of a
-/// cached result that has it. Such a block goes through the joins up to the `LIMIT` with no rows to read lazily, so it
-/// would reach the expression above the `LIMIT` without the columns read lazily; and a value computed below a join is
-/// that join's default in it, which recomputing the value above the `LIMIT` would not give.
+/// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
+/// goes through the joins up to the `LIMIT` with no rows to read lazily, so it would reach the expression above the
+/// `LIMIT` without the columns read lazily; and a value computed below a join is that join's default in it, which
+/// recomputing the value above the `LIMIT` would not give.
 bool canProduceTotals(const IQueryPlanStep & step)
 {
-    if (const auto * cache_read = typeid_cast<const ReadFromQueryResultCacheStep *>(&step))
-        return cache_read->hasTotals();
     return typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ReadFromRemote *>(&step)
         || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
 }
@@ -1289,7 +1273,7 @@ bool canProduceTotals(const IQueryPlanStep & step)
 /// that step.
 bool subtreeCanProduceTotals(const QueryPlan::Node & node)
 {
-    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&node};
+    std::vector<const QueryPlan::Node *> stack{&node};
     while (!stack.empty())
     {
         const auto * current = stack.back();
@@ -1313,7 +1297,7 @@ bool mayDeferOverJoins(const QueryPlan::Node & chain_top, const QueryPlanOptimiz
     bool has_join = false;
     bool has_lazy_source = false;
 
-    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&chain_top};
+    std::vector<const QueryPlan::Node *> stack{&chain_top};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -1389,7 +1373,7 @@ bool optimizeLazyMaterialization3(
     if (merged.sources.size() < 2)
         return false;
 
-    VectorWithMemoryTracking<bool> lazy_sources(merged.sources.size(), false);
+    std::vector<bool> lazy_sources(merged.sources.size(), false);
     for (size_t source = 0; source < merged.sources.size(); ++source)
         lazy_sources[source] = canReadLazily(*merged.sources[source].plan_node, settings);
 
@@ -1398,7 +1382,7 @@ bool optimizeLazyMaterialization3(
 
     /// The sort keys are needed below the LIMIT whatever else is deferred.
     const auto & outputs = merged.getOutputs();
-    VectorWithMemoryTracking<size_t> sort_key_positions;
+    std::vector<size_t> sort_key_positions;
     for (const auto & description : sorting_step ? sorting_step->getSortDescription() : SortDescription{})
     {
         const auto it = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == description.column_name; });
@@ -1411,7 +1395,7 @@ bool optimizeLazyMaterialization3(
 
     /// A padded side can be masked by the row index of a MergeTree source on it, with no other padded side in between:
     /// that index is NULL exactly at the rows its join, or a join above it, left unmatched.
-    UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> mask_candidates;
+    std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_candidates;
     ContextPtr context;
     for (size_t source = 0; source < merged.sources.size(); ++source)
     {
@@ -1426,7 +1410,7 @@ bool optimizeLazyMaterialization3(
         }
     }
 
-    UnorderedSetWithMemoryTracking<const MergedPlanDAG::PaddedSide *> masked_padded_sides;
+    std::unordered_set<const MergedPlanDAG::PaddedSide *> masked_padded_sides;
     for (const auto & [padded_side, source] : mask_candidates)
         masked_padded_sides.insert(padded_side);
 
@@ -1436,7 +1420,7 @@ bool optimizeLazyMaterialization3(
 
     /// Only the masks the masked values use are computed.
     const auto masked_values = findMaskedValues(merged, frontier);
-    UnorderedMapWithMemoryTracking<const MergedPlanDAG::PaddedSide *, size_t> mask_sources;
+    std::unordered_map<const MergedPlanDAG::PaddedSide *, size_t> mask_sources;
     for (const auto * node : masked_values)
         if (isPaddedRecomputation(merged, frontier, node))
             mask_sources.emplace(merged.getNearestPaddedSide(node), mask_candidates.at(merged.getNearestPaddedSide(node)));

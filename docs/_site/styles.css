@@ -101,7 +101,6 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-image-sm,
 .ch-image-md,
 .ch-image-lg {
-    display: block;
     width: 100%;
     margin-inline: auto;
 }
@@ -123,14 +122,6 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-image-lg img {
     width: 100%;
     height: auto;
-}
-
-.ch-image-background-white img {
-    background-color: white;
-}
-
-.ch-image-background-black img {
-    background-color: rgb(31 31 28);
 }
 /* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
 .ch-mcp-icon {
@@ -156,8 +147,8 @@ html {
 }
 
 /* Override Mintlify prose link color rules for CTA buttons.
-   Light: html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) — specificity (0,4,2)
-   Dark:  .dark .prose a:not(.card):not(.card *):not(.ch-product-availability *)           — specificity (0,4,1)
+   Light: html:not(.dark) .prose a:not(.card):not(.card *) — specificity (0,4,2)
+   Dark:  .dark .prose a:not(.card):not(.card *)           — specificity (0,4,1)
    We beat both by appending .ch-btn-* to the exact same selector → +1 class. */
 
 /* Primary — light: white text on black bg; dark: black text on yellow bg */
@@ -868,11 +859,6 @@ details.accordion > summary,
     margin-left: 0 !important;
 }
 
-/* Highlight the product selector chevron in dark mode. */
-.dark #sidebar .nav-dropdown-trigger > svg {
-    color: #FDFF75 !important;
-}
-
 /* Product selector trigger button text size */
 .nav-dropdown-products-selector-trigger .truncate,
 .nav-dropdown-products-selector-trigger span.truncate {
@@ -1491,65 +1477,6 @@ html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.c
     background-color: #1c1c1c;
 }
 
-/* Tier cards on the Managed Postgres pricing page. */
-.ch-tier-cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin: 24px 0;
-}
-
-@media (max-width: 768px) {
-    .ch-tier-cards {
-        grid-template-columns: 1fr;
-    }
-}
-
-.ch-tier-card {
-    padding: 20px;
-    border: 1px solid #e6e7e9;
-    border-top: 3px solid #161517;
-    border-radius: 8px;
-    background-color: #f7f7f7;
-}
-
-.ch-tier-card .ch-tier-card-title {
-    margin-bottom: 8px;
-    font-size: 1.125rem;
-    font-weight: 600;
-    text-align: center;
-}
-
-.ch-tier-card .ch-tier-card-description {
-    min-height: 3.5em;
-    margin: 0 0 16px;
-    color: #696e79;
-    font-size: 0.85rem;
-    text-align: center;
-}
-
-.ch-tier-card .ch-tier-card-lead {
-    margin: 0 0 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.ch-tier-card .ch-tier-card-list {
-    margin: 0;
-    padding-left: 20px;
-    font-size: 0.9rem;
-}
-
-.dark .ch-tier-card {
-    border-color: #2b2b2b;
-    border-top-color: #fdff75;
-    background-color: #191919;
-}
-
-.dark .ch-tier-card .ch-tier-card-description {
-    color: #8c8c8c;
-}
-
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta,
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
     border: 1px solid #fdff75 !important;
@@ -1840,26 +1767,13 @@ button.rounded-xl {
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
    black, then invert() sets an exact grey — identical in every browser. The four
    colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
-   part of this grey family and are excluded. The ClickHouse Observability
-   mark is the ClickHouse logo, so it is excluded too; light mode inverts it
-   below instead of flattening it to grey. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-clickhouse-observability"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
-}
-
-/* Observability ships as white artwork, so invert it on a light sidebar.
-   It is excluded from the grey filter above, which would otherwise override
-   this. ClickStack ships as dark ink, so invert that one in dark mode. */
-html:not(.dark) img[src*="icon-clickhouse-observability.svg"] {
-    filter: invert(1);
-}
-.dark img[src*="clickstack-icon-dark.svg"],
-:is(.dark) img[src*="clickstack-icon-dark.svg"] {
-    filter: invert(1);
 }
 
 /* ClickPipes categories grid - 4 columns on desktop, 2 on mobile */
@@ -1921,26 +1835,26 @@ body.clickpipes_home .hero-text {
 
 /* Prose links: colored without underline by default, underline appears on hover.
    Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
-html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
+html:not(.dark) .prose a:not(.card):not(.card *) {
     color: #135be6 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
+html:not(.dark) .prose a:not(.card):not(.card *):hover {
     color: #135be6 !important;
     text-decoration: underline !important;
 }
 
-.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *),
-:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
+.dark .prose a:not(.card):not(.card *),
+:is(.dark) .prose a:not(.card):not(.card *) {
     color: #FAFF69 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover,
-:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
+.dark .prose a:not(.card):not(.card *):hover,
+:is(.dark) .prose a:not(.card):not(.card *):hover {
     color: #FAFF69 !important;
     text-decoration: underline !important;
     opacity: 1;
@@ -2939,15 +2853,10 @@ button.nav-tabs-item:focus {
 
 /* Target use case images specifically by their filenames */
 html:not(.dark) img[src*="rt-analytics"],
-html:not(.dark) img[src*="observability"]:not([src*="icon-clickhouse-observability"]),
+html:not(.dark) img[src*="observability"],
 html:not(.dark) img[src*="data-warehousing"],
 html:not(.dark) img[src*="machine-learning"] {
     background-color: #d1d5db !important;
-}
-
-/* Opt-out for transparent diagrams that ship their own light-mode variant */
-html:not(.dark) img.ch-transparent[src] {
-    background-color: transparent !important;
 }
 
 /* ============================================
@@ -3232,6 +3141,23 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
     top: 10px !important;
 }
 
+/* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
+   of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
+    border-radius: 8px !important;
+}
+
+/* External link arrow on nav dropdown items: black in light, white in dark */
+.nav-dropdown-item .lucide-arrow-up-right {
+    color: #000 !important;
+    stroke: #000 !important;
+    stroke-width: 3 !important;
+}
+.dark .nav-dropdown-item .lucide-arrow-up-right {
+    color: #FAFF69 !important;
+    stroke: #FAFF69 !important;
+}
+
 /* Hide language-picker flag icons. Some country flags (e.g. Russia) are
    politically sensitive given current geopolitics — language choice is not
    meant to imply national affiliation. We hide the wrapper div (not just
@@ -3248,10 +3174,18 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 .nav-dropdown-item:has(img[src$="section-header.svg"]) {
     pointer-events: none;
     cursor: default;
+    padding: 8px !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    font-weight: 700 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    color: #111827 !important;
     background: transparent !important;
 }
 .dark .nav-dropdown-item:has(img[src$="section-header.svg"]),
 :is(.dark) .nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    color: #ffffff !important;
     background: transparent !important;
 }
 /* Hide the placeholder icon and its hover background */
@@ -3263,11 +3197,12 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     background: transparent !important;
 }
 
-/* Two-column layout for top-nav dropdowns that use section headers. Browsers
-   don't allow `:has()` inside `:has()`, so the presence of a section-header
-   icon gates the layout. Items before the second header land in column 1; the
-   second header and everything after it land in column 2. */
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) {
+/* Two-column layout for the Solutions dropdown. Browsers don't allow
+   `:has()` inside `:has()`, so we gate on "menu contains a section-header
+   img" — only Solutions has those, so the targeting is unique. Items before
+   the second header land in column 1; the second header and everything
+   after it land in column 2. Mirrors `clickhouse.com/clickhouse`. */
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
     display: grid !important;
     grid-template-columns: 1fr 1fr;
     column-gap: 8px;
@@ -3281,218 +3216,22 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     background-position: 50% 12px;
     background-repeat: no-repeat;
 }
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])),
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) {
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]),
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
     background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.1));
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item {
     grid-column: 2;
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="section-header.svg"]) {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="section-header.svg"]) {
     grid-column: 1;
 }
 /* Pin the second header (the one with no following header sibling) to row 1
    so column 2 starts at the top of the panel instead of below column 1. */
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item:has(img[src$="section-header.svg"]):not(:has(~ .nav-dropdown-item img[src$="section-header.svg"])) {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]):not(:has(~ .nav-dropdown-item img[src$="section-header.svg"])) {
     grid-row: 1;
 }
 
-/* The Databases dropdown is a compact product menu rather than a two-column
-   taxonomy. The ClickHouse documentation sections form an indented list below
-   the product; Managed Postgres links directly to its overview. */
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) {
-    display: flex !important;
-    flex-direction: column;
-    align-items: stretch;
-    min-width: 280px;
-    padding: 8px !important;
-    background-image: none;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item {
-    grid-column: auto;
-    grid-row: auto;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
-    display: flex !important;
-    align-items: center;
-    gap: 8px;
-    pointer-events: none;
-    cursor: default;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img {
-    display: block !important;
-    width: 18px;
-    height: 18px;
-    filter: grayscale(1);
-    opacity: 0.85;
-}
-/* The four ClickHouse documentation sections precede the Postgres product
-   item, which lets us indent exactly those links without affecting other
-   top-nav menus. */
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) {
-    display: flex !important;
-    align-items: center;
-    gap: 8px;
-    min-height: auto !important;
-    padding: 6px 8px 6px 34px !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) img {
-    display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
-    display: flex !important;
-    align-items: center;
-    gap: 8px;
-    min-height: auto !important;
-    margin-top: 8px;
-    font-size: 0 !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
-    display: block !important;
-    order: 0;
-    width: 18px;
-    height: 18px;
-    filter: grayscale(1);
-    opacity: 0.85;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) > *:not(img) {
-    display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
-    content: "Managed Postgres";
-    display: block;
-    order: 1;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img {
-    filter: brightness(0) invert(1);
-    opacity: 0.85;
-}
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img,
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
-    filter: brightness(0) invert(1);
-    opacity: 0.85;
-}
-
-/* Keep the Products layout coupled to the Security destination. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) {
-    display: grid !important;
-    grid-template-columns: repeat(3, max-content) !important;
-    grid-template-rows: 32px 32px 48px 48px 32px;
-    grid-auto-flow: row !important;
-    align-content: start;
-    justify-content: start;
-    column-gap: 24px !important;
-    row-gap: 0;
-    width: fit-content !important;
-    min-width: 0 !important;
-    max-width: calc(100vw - 32px) !important;
-    padding: 16px !important;
-    background-image: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item {
-    grid-row: auto !important;
-    grid-column: 3 !important;
-    align-self: start;
-    min-height: auto !important;
-    margin: 0;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
-    grid-column: 1 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 4):nth-child(-n + 7) {
-    grid-column: 2 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(4),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) {
-    grid-row: 1 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
-    grid-row: 2 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(10) {
-    grid-row: 3 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
-    grid-row: 4 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
-    grid-row: 5 !important;
-}
-/* Partner wordmarks have a separate line beneath their product names. Pull the
-   Open source items back into the compact rows that follow them. */
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
-    transform: translateY(-16px);
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
-    transform: translateY(-32px);
-    display: grid !important;
-    grid-template-columns: max-content 14px;
-    column-gap: 6px;
-    align-items: center;
-    justify-self: start;
-    width: fit-content !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) > svg {
-    grid-column: 2;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
-    align-items: flex-start;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])):not(:nth-child(6)):not(:nth-child(7)) img {
-    display: none !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) img,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) img {
-    display: block !important;
-    width: 14px;
-    height: 14px;
-    margin-top: 0;
-    object-fit: contain;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) {
-    display: grid !important;
-    grid-template-columns: 14px max-content 14px;
-    grid-template-rows: 20px 14px;
-    column-gap: 6px;
-    row-gap: 2px;
-    align-items: center;
-    min-width: 0;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div {
-    grid-column: 1 / 3;
-    grid-row: 1;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6)::before,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7)::before {
-    grid-column: 2;
-    grid-row: 2;
-    color: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 14px;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6)::before {
-    content: "langfuse";
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7)::before {
-    content: "runreveal";
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg {
-    grid-column: 3;
-    grid-row: 1;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > img,
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > img {
-    grid-column: 1;
-    grid-row: 2;
-}
 /* Horizontal separator in the Integrations top-nav dropdown, between the
    "Ecosystem" entry and the section entries (ClickPipes / Language clients /
    Connectors) below it. Mintlify has no built-in divider, so we add a bottom
@@ -3588,6 +3327,49 @@ html:not(.dark) .card a {
    hinting that the link leaves the docs site */
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
+}
+
+/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
+   with one small, unboxed external-link glyph. */
+a.nav-dropdown-item[href^="https://langfuse.com/docs"],
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #9ca3af !important;
+    opacity: 0.6 !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #2563eb !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    color: #71717a !important;
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
 }
 
 /* ============================================
@@ -3896,45 +3678,6 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 td:has(> .integration-table-logo) {
     white-space: nowrap;
 }
-/* Availability belongs below the title, including the title's AI action. */
-div:has(> #ch-product-availability) {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-}
-
-div:has(> #ch-product-availability) > #ch-page-ask-row {
-    width: 100%;
-}
-
-:is(#ch-product-availability, .ch-product-availability) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  font-size: 12px;
-  line-height: 20px;
-}
-:is(#ch-product-availability, .ch-product-availability) a {
-  border: 1px solid #d1d1d1;
-  border-radius: 999px;
-  padding: 3px 10px;
-  color: inherit !important;
-  text-decoration: none;
-  font-weight: 500;
-}
-:is(#ch-product-availability, .ch-product-availability) a:hover { text-decoration: underline; }
-:is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
-  background: #f7f8d8;
-  border-color: #999c4b;
-  color: #393c16 !important;
-}
-.dark :is(#ch-product-availability, .ch-product-availability) a { border-color: #555; }
-.dark :is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
-  background: #292b1c;
-  border-color: #60622e;
-  color: #fdff75 !important;
-}
 
 /* Ask AI is a separate docs-assistant action rather than a second search
    control. The gradient edge originates at the top left and gets one short
@@ -4189,106 +3932,4 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 @media (prefers-reduced-motion: reduce) {
     .ch-ask-ai-button::before,
     .ch-ask-ai-button::after { animation: none; }
-}
-
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
-[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(5) > div > span {
-    font-size: 0 !important;
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before {
-    content: "Cloud";
-}
-[role="menu"]:has(.nav-dropdown-item[href$="/clickstack/observability"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
-    content: "Observability";
-}
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="/products/agentic-data-stack/overview"] {
-    display: none !important;
-}
-
-/* Shared top-navigation presentation. Menu-specific rules above only arrange
-   products, section headings, icons, and partner captions. */
-:root {
-    --ch-nav-text: #374151;
-    --ch-nav-strong: #111827;
-    --ch-nav-muted: #6b7280;
-    --ch-nav-hover: rgba(17, 24, 39, 0.05);
-    --ch-nav-active: rgba(17, 24, 39, 0.08);
-}
-.dark {
-    --ch-nav-text: #b3b3b3;
-    --ch-nav-strong: #ffffff;
-    --ch-nav-muted: #a3a3a3;
-    --ch-nav-hover: rgba(255, 255, 255, 0.05);
-    --ch-nav-active: rgba(255, 255, 255, 0.08);
-}
-[role="menu"]:has(> .nav-dropdown-item) {
-    border-radius: 8px !important;
-}
-.nav-dropdown-item {
-    color: var(--ch-nav-text) !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
-    line-height: 20px !important;
-    padding: 6px 8px !important;
-    border-radius: 4px !important;
-}
-/* Menu links use text labels; retain only the Databases product marks. */
-.nav-dropdown-item > img:not([src$="icon-clickhouse.svg"]):not([src$="icon-postgres.svg"]) {
-    display: none !important;
-}
-.nav-dropdown-item > div > span,
-.nav-dropdown-item > span {
-    color: inherit !important;
-    font-size: inherit !important;
-    font-weight: inherit !important;
-    line-height: inherit !important;
-}
-.nav-dropdown-item:is(:hover, :focus-visible, [data-highlighted]) {
-    color: var(--ch-nav-strong) !important;
-    background: var(--ch-nav-hover) !important;
-}
-.nav-dropdown-item[aria-current] {
-    color: var(--ch-nav-strong) !important;
-    background: var(--ch-nav-active) !important;
-}
-.nav-dropdown-item:has(img[src$="section-header.svg"]),
-[role="menu"]:has(img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
-    color: var(--ch-nav-strong) !important;
-    font-weight: 700 !important;
-    background: transparent !important;
-    text-transform: none;
-    letter-spacing: normal;
-}
-.nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
-    color: var(--ch-nav-strong) !important;
-    font-weight: 700 !important;
-}
-/* Preserve the abbreviated labels while inheriting the shared state colors. */
-.nav-dropdown-item::before,
-.nav-dropdown-item > div > span::before {
-    color: inherit;
-    font-size: 14px;
-    font-weight: inherit;
-    line-height: 20px;
-}
-.nav-dropdown-item > div > span::after {
-    color: var(--ch-nav-muted);
-}
-.nav-dropdown-item[href^="https://"] > svg:last-child {
-    display: block !important;
-    align-self: center;
-    width: 12px !important;
-    height: 12px !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: none !important;
-    box-shadow: none !important;
-    fill: none !important;
-    color: inherit !important;
-    opacity: 0.65 !important;
-}
-.nav-dropdown-item[href^="https://"]:is(:hover, :focus-visible, [data-highlighted]) > svg:last-child {
-    opacity: 1 !important;
-    transform: translate(1px, -1px);
 }

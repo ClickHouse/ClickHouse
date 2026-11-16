@@ -6,6 +6,8 @@ description: 'Overview of ClickHouse Government offering'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 ## Overview {#overview}
 
 ClickHouse Government is a self-deployed package consisting of the same proprietary version of ClickHouse that runs on ClickHouse Cloud and our ClickHouse Operator, configured for separation of compute and storage and hardened to meet the rigorous demands of government agencies and public sector organizations. 
@@ -24,7 +26,7 @@ The following features differentiate ClickHouse Government from self-managed ope
 - Proprietary cloud features such as [shared merge tree](/products/cloud/features/infrastructure/shared-merge-tree) and [warehouse](/products/cloud/features/infrastructure/warehouses) functionality
 - ClickHouse database and operator versions fully tested and validated in ClickHouse Cloud
 - [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) documentation to accelerate your Authorization to Operate (ATO)
-- API for programmatic operations, including backups and scaling operations
+- API for prgrammatic operations, including backups and scaling operations
 
 ## Architecture {#architecture}
 
@@ -32,15 +34,7 @@ ClickHouse Government is fully self-contained within your deployment environment
 
 <br />
 
-<div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![ClickHouse Government Architecture](/images/cloud/reference/private-gov-architecture.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Government Architecture" background='black'/>
 
 <br />
 
