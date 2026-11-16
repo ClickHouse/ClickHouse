@@ -166,8 +166,12 @@ void addPartitionColumnsToChunk(
     {
         const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
 
-        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, hive_format_settings))->convertToFullColumnIfConst();
-        chunk.addColumn(std::move(chunk_column));
+        const auto & type = column.getTypeInStorage();
+        ColumnPtr chunk_column = type->createColumnConst(
+            chunk.getNumRows(), convertPartitionValueToType(value, *type, column.getNameInStorage(), path, hive_format_settings));
+        if (column.isSubcolumn())
+            chunk_column = type->getSubcolumn(column.getSubcolumnName(), chunk_column);
+        chunk.addColumn(chunk_column->convertToFullColumnIfConst());
     }
 }
 
