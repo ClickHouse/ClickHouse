@@ -35,10 +35,10 @@ SELECT * FROM values('referenced_data_file String, deleted_rows Array(UInt64)',
     ('data/b.parquet', [200, 100]), ('data/a.parquet', [2]), ('data/b.parquet', [100, 300]), ('data/a.parquet', [1]))
 "
 $CLICKHOUSE_LOCAL -q "
-SELECT blob_type, snapshot_id, sequence_number, fields, offset, length, properties FROM file('$OUT/two.puffin', PuffinMetadata)
+SELECT blob_type, snapshot_id, sequence_number, fields, offset, length, properties FROM file('$OUT/two.puffin', PuffinMetadata) ORDER BY offset
 "
 $CLICKHOUSE_LOCAL -q "
-SELECT referenced_data_file, deleted_rows FROM file('$OUT/two.puffin', Puffin)
+SELECT referenced_data_file, deleted_rows FROM file('$OUT/two.puffin', Puffin) ORDER BY referenced_data_file
 "
 
 echo "--- a file with several deletion vectors is copied as is ---"
@@ -48,10 +48,10 @@ SELECT * FROM file('$OUT/two.puffin', Puffin)
 "
 $CLICKHOUSE_LOCAL -q "
 SELECT
-    (SELECT groupArray((referenced_data_file, deleted_rows)) FROM file('$OUT/two_copy.puffin', Puffin))
-    = (SELECT groupArray((referenced_data_file, deleted_rows)) FROM file('$OUT/two.puffin', Puffin)),
-    (SELECT groupArray((offset, length, properties)) FROM file('$OUT/two_copy.puffin', PuffinMetadata))
-    = (SELECT groupArray((offset, length, properties)) FROM file('$OUT/two.puffin', PuffinMetadata))
+    (SELECT arraySort(groupArray((referenced_data_file, deleted_rows))) FROM file('$OUT/two_copy.puffin', Puffin))
+    = (SELECT arraySort(groupArray((referenced_data_file, deleted_rows))) FROM file('$OUT/two.puffin', Puffin)),
+    (SELECT arraySort(groupArray((offset, length, properties))) FROM file('$OUT/two_copy.puffin', PuffinMetadata))
+    = (SELECT arraySort(groupArray((offset, length, properties))) FROM file('$OUT/two.puffin', PuffinMetadata))
 "
 
 echo "--- one position per row: unsorted duplicates, positions above 2^32, boundary position ---"
