@@ -74,7 +74,7 @@ public:
 
     /// For a value that is neither a number nor a string, the batch search compares with `IColumn::compareAt`,
     /// which orders NaN and NULL nested in the value differently than `add`.
-    bool canOptimizeEqualKeysRanges() const override
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override
     {
         return !std::is_same_v<Data, SingleValueDataGeneric> && !std::is_same_v<Data, SingleValueDataGenericWithColumn>;
     }
