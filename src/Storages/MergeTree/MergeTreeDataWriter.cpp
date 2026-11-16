@@ -3,6 +3,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -122,6 +123,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char packed_part_finalization_throw_before_waiting_for_earlier_part[];
 }
 
 namespace
@@ -441,6 +448,19 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
 
 }
 
+size_t getMaxPendingBytesOfPackedFinalization(const MergeTreeData & data)
+{
+    return (*data.getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+}
+
+void onWaitingForEarlierPackedFinalization()
+{
+    fiu_do_on(FailPoints::packed_part_finalization_throw_before_waiting_for_earlier_part,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before waiting for the finalization of an earlier packed part");
+    });
+}
+
 void MergeTreeTemporaryPart::cancel()
 {
     for (auto & stream : streams)
@@ -449,12 +469,25 @@ void MergeTreeTemporaryPart::cancel()
         stream.finalizer.cancel();
     }
 
+    /// A started finalization may have already uploaded the archive; only the transaction knows
+    /// its blobs. A no-op for a part whose transaction was already committed.
+    if (finalization_started)
+    {
+        /// Projections share the transaction of the part: stop their uploads before it removes the blobs.
+        for (const auto & [_, projection] : part->getProjectionParts())
+            projection->getDataPartStorage().cancelPrecommitTransaction();
+        part->getDataPartStorage().undoTransaction();
+    }
+
     /// The part is trying to delete leftovers here
     part.reset();
 }
 
-void MergeTreeTemporaryPart::finalize()
+void MergeTreeTemporaryPart::startFinalization()
 {
+    if (finalization_started)
+        return;
+
     for (auto & stream : streams)
         stream.finalizer.finish();
 
@@ -462,12 +495,38 @@ void MergeTreeTemporaryPart::finalize()
     auto file_order_hint = part->getPreferredFileOrder();
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
-    part->getDataPartStorage().precommitTransaction();
+    /// Set before the first upload starts, so `cancel` also undoes a partially started finalization.
+    finalization_started = true;
+    part->getDataPartStorage().startPrecommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
-        projection->getDataPartStorage().precommitTransaction();
+        projection->getDataPartStorage().startPrecommitTransaction();
     }
+}
+
+size_t MergeTreeTemporaryPart::getPendingFinalizationBytes() const
+{
+    size_t bytes = part->getDataPartStorage().getPendingPrecommitBytes();
+    for (const auto & [_, projection] : part->getProjectionParts())
+        bytes += projection->getDataPartStorage().getPendingPrecommitBytes();
+    return bytes;
+}
+
+void MergeTreeTemporaryPart::waitFinalization() const
+{
+    if (!finalization_started)
+        return;
+
+    part->getDataPartStorage().precommitTransaction();
+    for (const auto & [_, projection] : part->getProjectionParts())
+        projection->getDataPartStorage().precommitTransaction();
+}
+
+void MergeTreeTemporaryPart::finalize()
+{
+    startFinalization();
+    waitFinalization();
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
