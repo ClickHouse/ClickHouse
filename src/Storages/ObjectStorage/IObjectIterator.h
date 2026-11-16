@@ -242,7 +242,7 @@ public:
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
-    ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
+    [[nodiscard]] ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;
 
     const ObjectIterator iterator;
     StorageObjectStorageConfigurationPtr configuration;
