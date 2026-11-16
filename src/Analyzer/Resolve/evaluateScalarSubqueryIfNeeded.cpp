@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/StreamMode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -46,6 +47,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_STREAM;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
 }
 
@@ -99,6 +101,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
+    if (getStreamMode(node).unbounded_input)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Cannot evaluate scalar subquery over an unbounded STREAM");
 
     /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
     restoreReplacedTableStoragesIfNeeded(node);
