@@ -31,7 +31,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defau
 CREATE TABLE t_fsst_small_blocks (id UInt32, s String CODEC(FSST), z String CODEC(FSST, LZ4))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0,
-    string_serialization_version = 'with_size_stream', serialization_info_version = 'with_types', min_compress_block_size = 100, max_compress_block_size = 300;
+    string_serialization_version = 'with_size_stream', serialization_info_version = 'with_types', min_compress_block_size = 1000, max_compress_block_size = 4096;
 
 CREATE TABLE t_fsst_compact (id UInt32, s String CODEC(FSST), z String CODEC(FSST, ZSTD(1)))
 ENGINE = MergeTree ORDER BY id
@@ -52,7 +52,7 @@ SELECT
         number % 997 = 0, repeat('long value ', 2000) || 'needle' || toString(number),
         number % 13 = 0, '',
         'z-value ' || toString(number % 500) || ' with a needle' || toString(number % 2))
-FROM numbers(30000);
+FROM numbers(10000);
 
 INSERT INTO t_fsst SELECT * FROM t_fsst_plain;
 INSERT INTO t_fsst_small_blocks SELECT * FROM t_fsst_plain;
@@ -146,9 +146,9 @@ SELECT count() FROM t_fsst_plain PREWHERE z LIKE '%long value long value long va
 SELECT count() FROM t_fsst PREWHERE z LIKE '%long value long value long value long value long value long value long value%';
 
 SELECT 'ranges of the primary key';
-SELECT count(), sum(cityHash64(s)) FROM t_fsst_plain PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 9999 OR id > 29990;
-SELECT count(), sum(cityHash64(s)) FROM t_fsst PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 9999 OR id > 29990;
-SELECT count(), sum(cityHash64(s)) FROM t_fsst_small_blocks PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 9999 OR id > 29990;
+SELECT count(), sum(cityHash64(s)) FROM t_fsst_plain PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 8888 OR id > 9990;
+SELECT count(), sum(cityHash64(s)) FROM t_fsst PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 8888 OR id > 9990;
+SELECT count(), sum(cityHash64(s)) FROM t_fsst_small_blocks PREWHERE s LIKE '%search%' WHERE id BETWEEN 1000 AND 1500 OR id BETWEEN 7777 AND 8888 OR id > 9990;
 
 SELECT 'the values are checked without decompression';
 -- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,

@@ -149,8 +149,9 @@ bool CompressionCodecFSST::parseBlock(
         pos += codes_size;
         UInt64 num_boundaries = 0;
         pos = readVarUInt(num_boundaries, pos, end - pos);
-        /// Every boundary takes at least one byte.
-        if (num_boundaries > static_cast<size_t>(end - pos))
+        /// The positions of the boundaries strictly increase within the codes, and the boundaries within the decoded data,
+        /// and every boundary takes at least one byte. So the number is bounded before the memory is reserved for them.
+        if (num_boundaries > codes_size || num_boundaries > decompressed_size || num_boundaries > static_cast<size_t>(end - pos))
             throw Exception(error_code, "Cannot decompress FSST-encoded data: the index of the values is too large ({})", num_boundaries);
 
         block.boundary_code_positions.reserve(num_boundaries);

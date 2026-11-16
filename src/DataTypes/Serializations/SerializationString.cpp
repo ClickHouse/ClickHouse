@@ -894,7 +894,10 @@ static NO_INLINE void deserializeBinaryFilteredFromFSST(
 
                 ++values_checked;
 
-                /// The codes of the value: `[begin, end)`.
+                /// The codes of the value: `[begin, end)`. A value that is rejected is skipped by the index, without walking over
+                /// its codes, so they are not validated: a selective read does not validate the data it skips, as with the other
+                /// ways to skip data (by indexes, by `PREWHERE` for the other columns); the block checksum detects corruption.
+                /// A value that is decoded is checked against the index, so the index cannot make it read wrong codes.
                 const size_t begin = cursor.code_pos;
                 size_t end = begin;
                 if (value_size)
