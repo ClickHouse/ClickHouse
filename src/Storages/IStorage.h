@@ -304,6 +304,12 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    /// Same as above, but publishes an already built object instead of deep-copying it.
+    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
+    {
+        metadata.set(std::move(metadata_));
+    }
+
     void setInMemoryMetadataComment(const String & comment)
     {
         auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
@@ -773,7 +779,7 @@ public:
     {
         /// Number of entries left to check.
         /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
+        [[nodiscard]] virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
     };
 

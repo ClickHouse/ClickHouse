@@ -86,7 +86,7 @@ public:
 
     void add(const Row & partition_value);
 
-    const std::vector<FieldSummary> & getFields() const { return fields; }
+    [[nodiscard]] const std::vector<FieldSummary> & getFields() const { return fields; }
 
 private:
     std::vector<FieldSummary> fields;
@@ -217,13 +217,13 @@ public:
     ~IcebergInsertCommitter();
 
     /// The metadata the files must be written with.
-    Int64 getSchemaId() const { return current_schema_id; }
-    const Poco::JSON::Object::Ptr & getSchema() const { return current_schema; }
-    Int64 getPartitionSpecId() const { return partition_spec_id; }
+    [[nodiscard]] Int64 getSchemaId() const { return current_schema_id; }
+    [[nodiscard]] const Poco::JSON::Object::Ptr & getSchema() const { return current_schema; }
+    [[nodiscard]] Int64 getPartitionSpecId() const { return partition_spec_id; }
     ChunkPartitioner * getPartitioner() { return partitioner ? &*partitioner : nullptr; }
-    const KeyDescription & getSortDescription() const { return sort_description; }
+    [[nodiscard]] const KeyDescription & getSortDescription() const { return sort_description; }
     FileNamesGenerator & getFileNamesGenerator() { return filename_generator; }
-    const std::shared_ptr<const Iceberg::IcebergPathResolver> & getPathResolver() const { return path_resolver; }
+    [[nodiscard]] const std::shared_ptr<const Iceberg::IcebergPathResolver> & getPathResolver() const { return path_resolver; }
 
     void addFiles(const std::vector<IcebergPartitionFilesPtr> & new_files);
     void commit();
