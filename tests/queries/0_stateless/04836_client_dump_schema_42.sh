@@ -81,6 +81,15 @@ CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64) PRIMARY KEY id
     SOURCE(CLICKHOUSE(QUERY 'SELECT id, v FROM merge(''d'', ''^zzz_src\$'') WHERE {condition}'))
     LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
 
+echo '--- an eager dictionary comes after the view its attribute expression reads ---'
+round_trip dictionary_expression "
+CREATE DATABASE d;
+CREATE TABLE d.base (id UInt64, v UInt64) ENGINE = Memory;
+CREATE VIEW d.zzz_src AS SELECT id FROM d.base;
+CREATE DICTIONARY d.aaa_dict (id UInt64, v UInt64 EXPRESSION (SELECT max(id) FROM d.zzz_src)) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(DB 'd' TABLE 'base'))
+    LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 0);"
+
 # The dump runs on default settings here, unlike the source and the target.
 echo '--- a minmax index that is a Variant without lossy numeric promotion ---'
 rm -rf "$work/src" "$work/dst"
@@ -99,3 +108,40 @@ CREATE DATABASE d;
 SET allow_reserved_column_names = 1;
 CREATE TABLE d.t (_part String, x UInt64) ENGINE = MergeTree ORDER BY x;"
 grep -c '^SET allow_reserved_column_names = 1;' "$work/reserved_name.sql"
+
+# Loads a source with an executable dictionary and the given table, and tells whether the dump ran the dictionary command.
+dump_with_executable_dictionary() {
+    rm -rf "$work/src" "$work/ran"
+    $CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+    CREATE DATABASE d;
+    CREATE DICTIONARY d.rules (k UInt64, v UInt64) PRIMARY KEY k
+        SOURCE(EXECUTABLE(COMMAND 'echo ran >> $work/ran; echo 1,7' FORMAT 'CSV')) LAYOUT(FLAT()) LIFETIME(0);
+    CREATE TABLE d.t $1;"
+    rm -f "$work/ran"
+    $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > /dev/null 2> "$work/executable.err"
+    echo "dump rc=$?"
+    grep -o 'Code: 48' "$work/executable.err" | head -1
+    if [ -e "$work/ran" ]; then echo 'FAIL: the dictionary command ran'; else echo 'the dictionary command did not run'; fi
+}
+
+echo '--- a TTL or a projection that would load a dictionary is refused ---'
+dump_with_executable_dictionary "(ts DateTime, x UInt64) ENGINE = MergeTree ORDER BY ts
+    TTL ts DELETE WHERE x = dictGetUInt64('d.rules', 'v', toUInt64(1))"
+dump_with_executable_dictionary "(ts DateTime, x UInt64 TTL ts + toIntervalDay(dictGetUInt64('d.rules', 'v', toUInt64(1))))
+    ENGINE = MergeTree ORDER BY ts"
+dump_with_executable_dictionary "(ts DateTime, x UInt64, PROJECTION p (SELECT x + dictGetUInt64('d.rules', 'v', toUInt64(1)) ORDER BY x))
+    ENGINE = MergeTree ORDER BY ts"
+
+echo '--- a TTL that looks a column up in a dictionary is dumped ---'
+dump_with_executable_dictionary "(ts DateTime, x UInt64) ENGINE = MergeTree ORDER BY ts
+    TTL ts DELETE WHERE x = dictGetUInt64('d.rules', 'v', x)"
+
+echo '--- a MaterializedPostgreSQL database loaded without its replication is dumped without a crash ---'
+rm -rf "$work/src"
+$CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+CREATE DATABASE pg ENGINE = Atomic;
+CREATE TABLE pg.t (a Int32, b String) ENGINE = MergeTree ORDER BY a;"
+sed "s/^ENGINE = Atomic/ENGINE = MaterializedPostgreSQL('127.0.0.1:1', 'pgdb', 'u', 'p')/" "$work/src/metadata/pg.sql" > "$work/pg.sql"
+mv "$work/pg.sql" "$work/src/metadata/pg.sql"
+$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema > /dev/null 2> "$work/pg.err"
+if [ $? -lt 128 ]; then echo 'no crash'; else echo 'FAIL: the dump crashed'; fi

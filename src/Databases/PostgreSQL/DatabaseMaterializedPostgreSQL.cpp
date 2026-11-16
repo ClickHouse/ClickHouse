@@ -389,7 +389,8 @@ void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsC
 
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    if (!local_context->hasQueryContext())
+    /// With `load_tables_readonly` there is no replication handler to ask, so the stored definition is returned.
+    if (!local_context->hasQueryContext() || getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
 
     /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every

@@ -16,6 +16,9 @@ dictionary_where: replay rc=0
 --- an eager dictionary comes after the table its source QUERY with a condition placeholder reads through merge ---
 dictionary_query: dump rc=0
 dictionary_query: replay rc=0
+--- an eager dictionary comes after the view its attribute expression reads ---
+dictionary_expression: dump rc=0
+dictionary_expression: replay rc=0
 --- a minmax index that is a Variant without lossy numeric promotion ---
 lossy_index: dump rc=0
 1
@@ -24,3 +27,18 @@ lossy_index: replay rc=0
 reserved_name: dump rc=0
 reserved_name: replay rc=0
 1
+--- a TTL or a projection that would load a dictionary is refused ---
+dump rc=210
+Code: 48
+the dictionary command did not run
+dump rc=210
+Code: 48
+the dictionary command did not run
+dump rc=210
+Code: 48
+the dictionary command did not run
+--- a TTL that looks a column up in a dictionary is dumped ---
+dump rc=0
+the dictionary command did not run
+--- a MaterializedPostgreSQL database loaded without its replication is dumped without a crash ---
+no crash

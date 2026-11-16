@@ -41,6 +41,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1331,7 +1332,7 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
 }
 
 /// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
-ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
+ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary, const ASTExpressionList * attributes)
 {
     const auto * source = dictionary.source;
     if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
@@ -1358,10 +1359,17 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
         else if (equalsCaseInsensitive(pair->first, "where"))
             where = value;
     }
-    /// The table form runs a SELECT of the table with its WHERE, which can read other tables too.
+    /// The table form selects the attribute expressions from the table with its WHERE, and all of them can read other tables.
     if (query.empty() && !table.empty())
-        query = "SELECT 1 FROM " + (database.empty() ? "" : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table)
-            + (where.empty() ? "" : " WHERE " + where);
+    {
+        String expressions;
+        if (attributes)
+            for (const auto & child : attributes->children)
+                if (const auto * attribute = child->as<ASTDictionaryAttributeDeclaration>(); attribute && attribute->expression)
+                    expressions += (expressions.empty() ? "(" : ", (") + attribute->expression->formatWithSecretsOneLine() + ")";
+        query = "SELECT " + (expressions.empty() ? "1" : expressions) + " FROM "
+            + (database.empty() ? "" : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table) + (where.empty() ? "" : " WHERE " + where);
+    }
     if (query.empty())
         return nullptr;
     try
@@ -2697,7 +2705,7 @@ std::vector<TableInfo> resolveTables(
             const auto * create = create_ast->as<ASTCreateQuery>();
             if (create && create->dictionary)
             {
-                select_ast = localDictionarySourceQuery(*create->dictionary);
+                select_ast = localDictionarySourceQuery(*create->dictionary, create->dictionary_attributes_list);
                 if (!select_ast)
                     continue;
             }

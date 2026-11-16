@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -124,6 +125,13 @@ bool readsColumn(const ASTFunction & call)
     return false;
 }
 
+/// Whether folding the call loads a dictionary or runs a user-defined function.
+bool runsWhenFolded(const ASTFunction & call, const ContextPtr & context)
+{
+    return Poco::toLower(call.name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call.name)
+        || UserDefinedExecutableFunctionFactory::has(call.name, context);
+}
+
 /// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
 void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
 {
@@ -139,16 +147,40 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
         {
             const IAST * node = stack.back();
             stack.pop_back();
-            if (const auto * call = node->as<ASTFunction>(); call
-                && (Poco::toLower(call->name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call->name)
-                    || UserDefinedExecutableFunctionFactory::has(call->name, context))
-                && !(per_row && readsColumn(*call)))
+            if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !(per_row && readsColumn(*call)))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
                     backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
             for (const auto & child : node->children)
                 stack.push_back(child.get());
         }
+    }
+}
+
+/// With `load_tables_readonly`, refuses a TTL or a projection whose call on constants would be folded the same way.
+void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+    std::vector<const IAST *> stack;
+    if (create.storage && create.storage->ttl_table)
+        stack.push_back(create.storage->ttl_table);
+    if (create.columns_list && create.columns_list->projections)
+        stack.push_back(create.columns_list->projections);
+    if (create.columns_list && create.columns_list->columns)
+        for (const auto & column : create.columns_list->columns->children)
+            if (const auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getTTL())
+                stack.push_back(declaration->getTTL().get());
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage());
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
     }
 }
 
@@ -182,6 +214,7 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     if (ast_create_query.storage)
         checkArgumentsLoadPassively(ast_create_query.storage->engine, ast_create_query, context);
+    checkExpressionsLoadPassively(ast_create_query, context);
 
     if (ast_create_query.as_table_function)
     {
