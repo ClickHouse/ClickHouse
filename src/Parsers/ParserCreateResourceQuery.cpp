@@ -187,7 +187,7 @@ CREATE [OR REPLACE] RESOURCE [IF NOT EXISTS] name [ON CLUSTER cluster] (access_m
 | `READ ANY DISK`, `WRITE ANY DISK` | Reads from or writes to any disk | v24.11.0 |
 | `MASTER THREAD`, `WORKER THREAD` | CPU, see [CPU scheduling](/concepts/features/configuration/server-config/workload-scheduling#cpu_scheduling) | v25.4.0 |
 | `QUERY` | Query slots, see [Query slot scheduling](/concepts/features/configuration/server-config/workload-scheduling#query_scheduling) | v25.6.0 |
-| `MEMORY RESERVATION` | Memory, see [Memory reservations](/concepts/features/configuration/server-config/workload-scheduling#memory-reservations) | v26.7.0 |
+| `MEMORY RESERVATION` | Memory, see [Memory reservations](/concepts/features/configuration/server-config/workload-scheduling#memory-reservations) | v26.6.2 |
 
 The access modes of one resource must be of one kind: disk, CPU threads, `QUERY` or `MEMORY RESERVATION`. Each of `MASTER THREAD`, `WORKER THREAD`, `QUERY` and `MEMORY RESERVATION` belongs to at most one resource. `CREATE OR REPLACE RESOURCE` cannot change the kind of a resource: drop it and create it again.
 
