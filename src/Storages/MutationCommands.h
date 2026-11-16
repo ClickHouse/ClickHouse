@@ -60,7 +60,7 @@ struct MutationCommand
     /// const). The parsed AST is *not* cached on the `MutationCommand`, so
     /// callers that access several sub-trees of the same command should hoist
     /// the result into a local. Returns nullptr if `ast_text` is empty.
-    boost::intrusive_ptr<const ASTAlterCommand> ast() const;
+    [[nodiscard]] boost::intrusive_ptr<const ASTAlterCommand> ast() const;
 
     /// RAII handle for editing the AST of a `MutationCommand` in place. The
     /// constructor parses a mutable copy of `ast_text`. To publish edits, call
@@ -80,7 +80,7 @@ struct MutationCommand
 
         ASTAlterCommand & operator*() const { return *ast; }
         ASTAlterCommand * operator->() const { return ast.get(); }
-        ASTAlterCommand * get() const { return ast.get(); }
+        [[nodiscard]] ASTAlterCommand * get() const { return ast.get(); }
 
         /// Serialize the (possibly modified) AST back into `owner.ast_text`.
         /// May throw.
@@ -130,11 +130,11 @@ struct MutationCommand
         UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     /// This command shouldn't stick with other commands
-    bool isBarrierCommand() const;
-    bool isPureMetadataCommand() const;
-    bool isEmptyCommand() const;
-    bool isDropOrRename() const;
-    bool affectsAllColumns() const;
+    [[nodiscard]] bool isBarrierCommand() const;
+    [[nodiscard]] bool isPureMetadataCommand() const;
+    [[nodiscard]] bool isEmptyCommand() const;
+    [[nodiscard]] bool isDropOrRename() const;
+    [[nodiscard]] bool affectsAllColumns() const;
 };
 
 /// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
@@ -147,25 +147,25 @@ std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCom
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    [[nodiscard]] boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);
-    std::string toString(bool with_pure_metadata_commands) const;
-    bool hasNonEmptyMutationCommands() const;
+    [[nodiscard]] std::string toString(bool with_pure_metadata_commands) const;
+    [[nodiscard]] bool hasNonEmptyMutationCommands() const;
 
-    bool hasAnyUpdateCommand() const;
-    bool hasOnlyUpdateCommands() const;
+    [[nodiscard]] bool hasAnyUpdateCommand() const;
+    [[nodiscard]] bool hasOnlyUpdateCommands() const;
 
     /// True if the set contains `ALTER TABLE ... REWRITE PARTS`, which rewrites every column of
     /// the part from scratch and therefore may also change the part format.
-    bool hasRewritePartsCommand() const;
+    [[nodiscard]] bool hasRewritePartsCommand() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
-    bool containBarrierCommand() const;
-    NameSet getAllUpdatedColumns() const;
+    [[nodiscard]] bool containBarrierCommand() const;
+    [[nodiscard]] NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
