@@ -45,5 +45,7 @@ k4	2
 2
 --- an external tags table has no cache, because it can lose rows the cache cannot see ---
 1
+--- an external metric families table has no cache, because it can lose rows the cache cannot see ---
+1
 --- an inner tags table with a TTL has no cache, because the TTL removes rows the cache cannot see ---
 2
