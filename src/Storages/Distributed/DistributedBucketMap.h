@@ -68,7 +68,7 @@ struct DistributedBucketMap
     static DistributedBucketMap createEven(UInt64 buckets, size_t num_shards);
 
     static DistributedBucketMap parse(const String & data);
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
 private:
     void validateAndBuildSlots();
