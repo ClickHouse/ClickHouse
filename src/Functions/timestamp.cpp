@@ -37,6 +37,8 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty time and a zero-filled FixedString, the defaults behind a NULL, cannot be parsed.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override
     {
@@ -50,7 +52,8 @@ public:
         auto col_result = ColumnDateTime64::create(input_rows_count, DATETIME_SCALE);
         ColumnDateTime64::Container & vec_result = col_result->getData();
 
-        const IColumn * col_timestamp = arguments[0].column.get();
+        const ColumnPtr col_timestamp_full = arguments[0].column->convertToFullColumnIfConst();
+        const IColumn * col_timestamp = col_timestamp_full.get();
 
         if (const ColumnString * col_timestamp_string = checkAndGetColumn<ColumnString>(col_timestamp))
         {
@@ -104,7 +107,8 @@ public:
         if (arguments.size() == 1)
             return col_result;
 
-        const IColumn * col_time = arguments[1].column.get();
+        const ColumnPtr col_time_full = arguments[1].column->convertToFullColumnIfConst();
+        const IColumn * col_time = col_time_full.get();
 
         if (const ColumnString * col_time_string = checkAndGetColumn<ColumnString>(col_time))
         {
