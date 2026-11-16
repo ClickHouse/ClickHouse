@@ -121,15 +121,14 @@ String calculateStoredName(const QueryTreeNodePtr & node)
         case QueryTreeNodeType::FUNCTION:
         {
             const auto & function_node = node->as<FunctionNode &>();
-            const auto * function_ast = node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
 
             const auto & arguments = function_node.getArguments().getNodes();
             Strings argument_names(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
-                /// the analysis replaces the right side of IN, and the name of a subquery has the hash of its AST
-                if (function_ast && isTableExpressionNodeType(arguments[i]->getNodeType()))
-                    argument_names[i] = function_ast->arguments->children.at(i)->getColumnName();
+                /// only the AST has this name: the hash of the AST of a subquery; the analysis replaces the right side of IN
+                if (isTableExpressionNodeType(arguments[i]->getNodeType()) && node->hasOriginalAST())
+                    argument_names[i] = node->getOriginalAST()->as<ASTFunction &>().arguments->children.at(i)->getColumnName();
                 else
                     argument_names[i] = calculateStoredName(arguments[i]);
             }
