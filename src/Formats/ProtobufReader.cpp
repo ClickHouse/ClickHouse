@@ -280,13 +280,28 @@ template UInt64 ProtobufReader::readFixed<UInt64>();
 template Float32 ProtobufReader::readFixed<Float32>();
 template Float64 ProtobufReader::readFixed<Float64>();
 
+namespace
+{
+
+/// The length of a field is declared by the input: the destination grows as the bytes arrive (geometrically), so that a
+/// huge length without the bytes fails on the missing data instead of allocating for it first.
+constexpr size_t max_string_chunk_size = 1 << 20;
+
+}
+
 void ProtobufReader::readString(String & str)
 {
     if (unlikely(cursor > field_end))
         throwUnknownFormat();
     size_t length = field_end - cursor;
-    str.resize(length);
-    readBinary(reinterpret_cast<char*>(str.data()), length);
+    str.clear();
+    while (str.size() < length)
+    {
+        const size_t old_size = str.size();
+        const size_t chunk_size = std::min(max_string_chunk_size, length - old_size);
+        str.resize(old_size + chunk_size);
+        readBinary(str.data() + old_size, chunk_size);
+    }
 }
 
 void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
@@ -294,9 +309,14 @@ void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
     if (unlikely(cursor > field_end))
         throwUnknownFormat();
     size_t length = field_end - cursor;
-    size_t old_size = str.size();
-    str.resize(old_size + length);
-    readBinary(reinterpret_cast<char*>(str.data() + old_size), length);
+    const size_t end_size = str.size() + length;
+    while (str.size() < end_size)
+    {
+        const size_t old_size = str.size();
+        const size_t chunk_size = std::min(max_string_chunk_size, end_size - old_size);
+        str.resize(old_size + chunk_size);
+        readBinary(reinterpret_cast<char*>(str.data() + old_size), chunk_size);
+    }
 }
 
 void ProtobufReader::readBinary(void* data, size_t size)
