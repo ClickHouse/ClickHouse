@@ -196,6 +196,9 @@ std::map<String, Documentation> ParserExplainQuery::getDocumentation() const
     documentation["EXPLAIN"] =
     {
         .description = String(R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 Shows the execution plan of a statement.
 
 <div class='vimeo-container'>
@@ -219,6 +222,8 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN CURRENT TRANSACTION [FORMAT ...]
 ```
 
 Example:
@@ -257,6 +262,7 @@ Union
 - `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
 - `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
 - `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
+- `CURRENT TRANSACTION` - The transaction of the current session.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -1688,6 +1694,48 @@ Estimation:
 
 `marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `read_ratio` is those marks over the base-table marks, so `0.02x` is fifty times less work and `15x` is fifteen times more. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
 
+### EXPLAIN CURRENT TRANSACTION {#explain-current-transaction}
+
+Introduced in: v22.4.0
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Note>
+This statement is part of an experimental feature set.
+Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+Shows the [transaction](/reference/statements/transactions) of the current session: its identifier, state and snapshot.
+A read-only transaction is marked `readonly`. For a transaction that changed data, the output lists per table the parts that the transaction creates and removes, and its mutations.
+Outside a transaction, the output is `<no current transaction>`.
+`EXPLAIN CURRENT TRANSACTION` also works after a query of the transaction failed, and then shows the state `ROLLED_BACK`.
+Settings are not supported and throw an `UNKNOWN_SETTING` exception.
+
+**Example**
+
+```sql title="Query"
+SET async_insert = 0;
+BEGIN TRANSACTION;
+INSERT INTO t VALUES (1);
+EXPLAIN CURRENT TRANSACTION FORMAT TSVRaw;
+```
+
+```text title="Response"
+(105, 33, 42343455-b083-479e-b5d5-d50cf2ec2f58, 3) state: RUNNING, snapshot: 105, affects 1 tables:
+	default.t (95eb57a8-1f63-45f7-81f8-74436fc9d63a):
+		creating parts:
+			all_1_1_0
+```
+
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.
@@ -1726,8 +1774,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+EXPLAIN CURRENT TRANSACTION [FORMAT ...]
 )",
-        .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
+        .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS", "BEGIN TRANSACTION"},
     };
 
     return documentation;

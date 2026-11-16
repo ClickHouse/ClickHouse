@@ -91,10 +91,10 @@ public:
 
     /// Whether a URI parameter carries a PromQL expression. Such parameters are hidden in the request URI recorded in spans,
     /// because `query_masking_rules` are not applied to it.
-    virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
+    [[nodiscard]] virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
-    virtual bool sendsJSONErrors() const { return false; }
+    [[nodiscard]] virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -160,7 +160,7 @@ public:
 
     /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
     /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
-    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+    [[nodiscard]] virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -478,9 +478,9 @@ class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 public:
     using ImplWithContext::ImplWithContext;
 
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+    [[nodiscard]] bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
-    bool sendsJSONErrors() const override { return true; }
+    [[nodiscard]] bool sendsJSONErrors() const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
@@ -501,7 +501,7 @@ public:
         return !reserved_param_names.contains(name);
     }
 
-    bool isQueryTextParameter(const String & name) const override
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override
     {
         /// Case-insensitive, like the `params->get` lookups above.
         return Poco::icompare(name, "query") == 0 || Poco::icompare(name, "match[]") == 0;
@@ -509,7 +509,7 @@ public:
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
     /// with 0 (the default) meaning no limit.
-    UInt64 getLimitParam() const
+    [[nodiscard]] UInt64 getLimitParam() const
     {
         String limit_param = params->get("limit", "");
         if (limit_param.empty())
@@ -713,7 +713,7 @@ private:
     }
 
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
-    Int64 getMetadataLimitParam(const String & name) const
+    [[nodiscard]] Int64 getMetadataLimitParam(const String & name) const
     {
         String value = params->get(name, "");
         if (value.empty())
@@ -791,10 +791,10 @@ public:
             current_impl->onException();
     }
 
-    bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+    [[nodiscard]] bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
 
     /// The request URI is recorded before `current_impl` is selected, so the PromQL parameters are hidden for any endpoint.
-    bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,

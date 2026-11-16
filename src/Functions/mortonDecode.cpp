@@ -276,7 +276,7 @@ struct MortonNDCompressDecoder
         return std::make_tuple(extractField(code >> I)...);
     }
 
-    constexpr auto Decode(UInt64 code) const { return decodeImpl(code, std::make_index_sequence<Dimensions>{}); }
+    [[nodiscard]] constexpr auto Decode(UInt64 code) const { return decodeImpl(code, std::make_index_sequence<Dimensions>{}); }
 };
 
 /// Both decoders are GF(2)-linear bit maps, so agreement on the 64 single-bit codes implies
@@ -347,7 +347,7 @@ public:
         return std::make_shared<FunctionMortonDecode>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -376,7 +376,7 @@ public:
         return value;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         EXECUTE()
     }

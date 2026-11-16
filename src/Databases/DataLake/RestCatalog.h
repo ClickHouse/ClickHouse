@@ -118,7 +118,7 @@ public:
         std::string default_snapshot_loading_mode;
         std::string override_snapshot_loading_mode;
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
 
     /// Credentials together with the catalog configuration they resolve to

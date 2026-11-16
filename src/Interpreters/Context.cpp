@@ -2962,7 +2962,7 @@ namespace
     public:
         bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
-        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        [[nodiscard]] WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
     };
 }
 
@@ -6372,6 +6372,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// These take the context mutex themselves.
+    clearPageCache();
+    clearColumnsCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do
@@ -7092,7 +7096,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::duration nextStep() const
+    [[nodiscard]] std::chrono::steady_clock::duration nextStep() const
     {
         std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
         if (deadline)
