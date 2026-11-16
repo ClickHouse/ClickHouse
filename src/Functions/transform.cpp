@@ -790,6 +790,17 @@ namespace
         const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
+        /// An entry is only indexed if the cast value compares equal to the entry it was cast from,
+        /// which rejects an entry the cast cannot represent. That check cannot be applied to a
+        /// String/FixedString pair: `accurateEquals` compares a `StringView` Field, so the padded
+        /// cast value never compares equal to the unpadded entry, in either direction, and every
+        /// entry would be dropped even though the two are equal the way `=` compares them
+        /// (`toFixedString('ab', 4) = 'ab'`). The cast itself still rejects an entry it cannot
+        /// represent — a `String` longer than the `FixedString` width throws `TOO_LARGE_STRING_SIZE`
+        /// — and the cast value is what the lookup table is keyed on and what `=` compares against.
+        const bool cast_checked_string_padding = isStringOrFixedString(removeLowCardinalityAndNullable(from_type))
+            && isStringOrFixedString(removeLowCardinalityAndNullable(from_array_nested_type));
+
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -797,7 +808,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || cast_checked_string_padding || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -820,7 +831,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || cast_checked_string_padding || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -833,7 +844,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (cast_checked_enum_membership || cast_checked_string_padding || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);
