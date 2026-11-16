@@ -39,6 +39,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char column_aggregate_function_ensureOwnership_exception[];
+    extern const char column_aggregate_function_expand_exception[];
 }
 
 
@@ -408,6 +409,13 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (selected < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 
+    bool inject_memory_limit_exceeded = false;
+    /// Avoid checking failpoint in a loop, since it uses atomic's
+    fiu_do_on(FailPoints::column_aggregate_function_expand_exception,
+    {
+        inject_memory_limit_exceeded = true;
+    });
+
     /// The destructor destroys every state in `data`, so `data` must never hold a pointer to a state
     /// that is not created. Build the expanded array aside and publish it only when it is complete.
     Container new_data;
@@ -428,6 +436,13 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
             {
                 new_data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
                 func->create(new_data[index]);
+
+                /// Throw after a state is created, so that the cleanup has something to destroy.
+                if (unlikely(inject_memory_limit_exceeded))
+                {
+                    ++index;
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
+                }
             }
         }
     }
