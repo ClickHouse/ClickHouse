@@ -205,6 +205,13 @@ bool needCastFromString(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
 }
 
+/// Return true if the text of a `Field` of this type is not cast back from `String` to the same value:
+/// a `DateTime64` / `Time64` value is printed as a decimal, which a cast from `String` parses as date-time text.
+bool needExactLiteral(const DataTypePtr & type)
+{
+    return !needCastFromString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isDateTime64(t) || isTime64(t); });
+}
+
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.
 /// String literals don't need CAST to support substitutions in simple queries
 /// that don't support expressions (such as CREATE USER).
@@ -212,6 +219,13 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
+    if (needExactLiteral(data_type))
+    {
+        auto column = data_type->createColumn();
+        column->insert(literal);
+        return makeCastToTypeNameAST(
+            columnConstantToExactLiteralAST(std::move(column), 0, data_type, /*date_time_as_numbers=*/true), data_type->getName());
+    }
     return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
 }
 
