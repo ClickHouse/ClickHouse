@@ -644,5 +644,21 @@ SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenL
 SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS use_skip_indexes = 0;
 SELECT 'subcolumn index tuple position all', count() FROM tab WHERE hasAllTokenLike(t.1, ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple negative position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, -1), 'prod%');
+SELECT 'subcolumn index tuple negative position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, -1), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple negative position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, -1), 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple negative position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, -1), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple negative position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, -1), ['env:prod%']);
+SELECT 'subcolumn index tuple negative position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, -1), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple negative position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, -1), ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple negative position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, -1), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple signed position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, toInt64(1)), 'prod%');
+SELECT 'subcolumn index tuple signed position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, toInt64(1)), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple signed position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, toInt64(1)), 'prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple signed position any', count() FROM tab WHERE hasAnyTokenLike(tupleElement(t, toInt64(1)), 'prod%') SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+SELECT 'subcolumn index tuple signed position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, toInt64(1)), ['env:prod%']);
+SELECT 'subcolumn index tuple signed position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, toInt64(1)), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumn index tuple signed position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, toInt64(1)), ['env:prod%']) SETTINGS use_skip_indexes = 0;
+SELECT 'subcolumn index tuple signed position all', count() FROM tab WHERE hasAllTokenLike(tupleElement(t, toInt64(1)), ['env:prod%']) SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;

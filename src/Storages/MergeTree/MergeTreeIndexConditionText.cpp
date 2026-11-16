@@ -2469,6 +2469,16 @@ static std::optional<String> getTupleElementSubcolumnName(const String & tuple_c
         name = element.safeGet<String>();
     else if (element.getType() == Field::Types::UInt64 && element.safeGet<UInt64>() >= 1 && element.safeGet<UInt64>() <= names.size())
         name = names[element.safeGet<UInt64>() - 1];
+    else if (element.getType() == Field::Types::Int64)
+    {
+        /// A negative position counts from the end of the tuple.
+        const Int64 index = element.safeGet<Int64>();
+        const Int64 size = names.size();
+        if (index >= 1 && index <= size)
+            name = names[index - 1];
+        else if (index < 0 && index >= -size)
+            name = names[size + index];
+    }
 
     /// A dotted element name can also be read as a nested path.
     if (name.empty() || name.contains('.'))
