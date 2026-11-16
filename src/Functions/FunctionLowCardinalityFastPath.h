@@ -107,13 +107,13 @@ public:
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ false);
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ true);
     }
 
 private:
-    ColumnPtr executeImplCommon(
+    [[nodiscard]] ColumnPtr executeImplCommon(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         if (auto result = Base::tryExecuteLowCardinality(arguments, result_type, input_rows_count))

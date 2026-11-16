@@ -226,13 +226,13 @@ public:
 
     /// `impl` can be a higher-order function that evaluates a user lambda, and a lambda body may
     /// reference a set that the plan has not built yet, so a dry run must reach `impl` as a dry run.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ true);
     }
 
 private:
-    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         auto nested_arguments = arguments;
         extractNestedTypesAndColumns(nested_arguments);
