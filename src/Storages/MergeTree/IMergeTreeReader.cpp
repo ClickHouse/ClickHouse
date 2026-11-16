@@ -101,9 +101,13 @@ IMergeTreeReader::IMergeTreeReader(
                 || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested_offsets_setting));
         if (column_and_serialization_in_part.frozen && !dropped)
         {
-            /// The subcolumn is taken from a one-row constant, so the whole frozen type is never materialized.
+            /// The subcolumn is taken from one row, so the whole frozen type is never materialized. A marker stands for
+            /// `insert(getDefault())`, the value the writer checks before skipping; for `JSON` it differs from
+            /// `createColumnConstWithDefaultValue`.
             const auto & frozen_type = column_to_read.getTypeInStorage();
-            ColumnPtr default_row = frozen_type->createColumnConstWithDefaultValue(1);
+            auto default_value = frozen_type->createColumn();
+            default_value->insert(frozen_type->getDefault());
+            ColumnPtr default_row = std::move(default_value);
             if (column_to_read.isSubcolumn())
                 default_row = frozen_type->getSubcolumn(column_to_read.getSubcolumnName(), default_row);
             frozen_columns.push_back(
