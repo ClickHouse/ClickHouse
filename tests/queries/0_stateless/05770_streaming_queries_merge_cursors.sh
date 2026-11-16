@@ -33,7 +33,7 @@ echo "--- merge table function, with cursor"
 $STREAMING_CLIENT -q "SELECT _table, a FROM merge('^t[12]\$') STREAM BOUNDED CURSOR $CURSOR ORDER BY ALL"
 
 echo "--- a table without STREAM support"
-$STREAMING_CLIENT -q "CREATE TABLE t3 (a UInt64) ENGINE = Memory"
+$STREAMING_CLIENT -q "CREATE TABLE t3 (a UInt64) ENGINE = Log"
 $STREAMING_CLIENT -q "SELECT a FROM merge('^t[13]\$') STREAM BOUNDED" 2>&1 | grep -o -m1 "ILLEGAL_STREAM"
 
 echo "--- unbounded, with cursor"
