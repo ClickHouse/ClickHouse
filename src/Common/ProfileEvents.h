@@ -104,6 +104,9 @@ namespace ProfileEvents
         Count load(Event event) const;
         void fetchAdd(Event event, Count amount, int32_t cpu);
 
+        /// Whether `candidate` is this instance or one of its parents.
+        bool isInChain(const Counters * candidate) const;
+
     public:
 
         VariableContext level = VariableContext::Thread;
@@ -125,9 +128,11 @@ namespace ProfileEvents
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
-        /// Increments this instance and its parents except the global counters. For counts that have
-        /// already reached the global counters through another chain, so that they are not counted twice.
-        void incrementNoTraceExceptGlobal(Event event, Count amount);
+        /// Adds the counts of `source` to this instance and its parents, except the common ancestors of both chains:
+        /// they have already received the counts through the chain of `source`. For a transfer between two chains,
+        /// e.g. the profile events of a merge, which its own thread group adds to the global counters, to the query
+        /// that ran the merge. Every counter of the two chains then has the counts once.
+        void addExceptCommonAncestors(const Counters & source);
 
         struct Snapshot
         {

@@ -15,6 +15,7 @@
 #include <cfloat>
 #include <random>
 #include <ranges>
+#include <vector>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -2425,12 +2426,36 @@ void Counters::incrementNoTrace(Event event, Count amount)
     } while (current != nullptr);
 }
 
-void Counters::incrementNoTraceExceptGlobal(Event event, Count amount)
+bool Counters::isInChain(const Counters * candidate) const
 {
-    const int32_t cpu = PerCPU::getCurrentCPU();
-    for (Counters * current = this; current != nullptr && current->level != VariableContext::Global;
+    for (const Counters * current = this; current != nullptr; current = current->parent.load(std::memory_order_acquire))
+        if (current == candidate)
+            return true;
+    return false;
+}
+
+void Counters::addExceptCommonAncestors(const Counters & source)
+{
+    /// This instance and its parents up to the first one in the chain of `source`. That one and its parents
+    /// have already received the counts of `source`.
+    std::vector<Counters *> targets;
+    for (Counters * current = this; current != nullptr && !source.isInChain(current);
          current = current->parent.load(std::memory_order_acquire))
-        current->fetchAdd(event, amount, cpu);
+        targets.push_back(current);
+
+    if (targets.empty())
+        return;
+
+    const Snapshot snapshot = source.getPartiallyAtomicSnapshot();
+    const int32_t cpu = PerCPU::getCurrentCPU();
+    for (Event i = Event(0); i < num_counters; ++i)
+    {
+        const Count amount = snapshot[i];
+        if (amount == 0)
+            continue;
+        for (Counters * target : targets)
+            target->fetchAdd(i, amount, cpu);
+    }
 }
 
 void Counters::incrementSignalSafe(Event event, Count amount)

@@ -123,19 +123,76 @@ TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
     EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }
 
-/// `incrementNoTraceExceptGlobal` is for counts that have already reached `global_counters` through another
-/// chain, like the profile events of a merge, which its own thread group adds to the global counters, when
-/// they are also transferred to the query that ran the merge: every level but the global one receives them.
-TEST(ProfileEvents, IncrementExceptGlobalSkipsGlobalCounters)
+/// `addExceptCommonAncestors` transfers the counts of one chain to another, like the profile events of a merge,
+/// which its own thread group adds to its parents, to the query that ran the merge. Every counter of the two
+/// chains must have the counts once, whatever the common ancestors of the chains are. The chains have their own
+/// root instead of `global_counters`, so that the test does not depend on other users of the global counters.
+TEST(ProfileEvents, AddExceptCommonAncestors)
 {
-    const ProfileEvents::Count global_before = ProfileEvents::global_counters[ProfileEvents::SelectQuery];
+    using ProfileEvents::Counters;
+    const auto event = ProfileEvents::SelectQuery;
 
-    ProfileEvents::Counters user(VariableContext::User, &ProfileEvents::global_counters);
-    ProfileEvents::Counters query(VariableContext::Process, &user);
+    /// The chain of the task joins the chain of the query at the root: query -> user -> root, task -> root.
+    {
+        Counters root(VariableContext::Global, nullptr);
+        Counters user(VariableContext::User, &root);
+        Counters query(VariableContext::Process, &user);
+        Counters task(VariableContext::Process, &root);
 
-    query.incrementNoTraceExceptGlobal(ProfileEvents::SelectQuery, 5);
+        task.increment(event, 5);
+        query.addExceptCommonAncestors(task);
 
-    EXPECT_EQ(query[ProfileEvents::SelectQuery], 5);
-    EXPECT_EQ(user[ProfileEvents::SelectQuery], 5);
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::SelectQuery], global_before);
+        EXPECT_EQ(query[event], 5);
+        EXPECT_EQ(user[event], 5);
+        EXPECT_EQ(root[event], 5);
+        EXPECT_EQ(task[event], 5);
+    }
+
+    /// The chain of the task joins the chain of the query below the root: query -> user -> background -> root,
+    /// task -> background -> root.
+    {
+        Counters root(VariableContext::Global, nullptr);
+        Counters background(VariableContext::Process, &root);
+        Counters user(VariableContext::User, &background);
+        Counters query(VariableContext::Process, &user);
+        Counters task(VariableContext::Process, &background);
+
+        task.increment(event, 5);
+        query.addExceptCommonAncestors(task);
+
+        EXPECT_EQ(query[event], 5);
+        EXPECT_EQ(user[event], 5);
+        EXPECT_EQ(background[event], 5);
+        EXPECT_EQ(root[event], 5);
+    }
+
+    /// The task has no parent: every counter of the query chain receives the counts.
+    {
+        Counters root(VariableContext::Global, nullptr);
+        Counters user(VariableContext::User, &root);
+        Counters query(VariableContext::Process, &user);
+        Counters task(VariableContext::Process, nullptr);
+
+        task.increment(event, 5);
+        query.addExceptCommonAncestors(task);
+
+        EXPECT_EQ(query[event], 5);
+        EXPECT_EQ(user[event], 5);
+        EXPECT_EQ(root[event], 5);
+    }
+
+    /// The task is a child of the query: the whole query chain has already received the counts.
+    {
+        Counters root(VariableContext::Global, nullptr);
+        Counters user(VariableContext::User, &root);
+        Counters query(VariableContext::Process, &user);
+        Counters task(VariableContext::Process, &query);
+
+        task.increment(event, 5);
+        query.addExceptCommonAncestors(task);
+
+        EXPECT_EQ(query[event], 5);
+        EXPECT_EQ(user[event], 5);
+        EXPECT_EQ(root[event], 5);
+    }
 }

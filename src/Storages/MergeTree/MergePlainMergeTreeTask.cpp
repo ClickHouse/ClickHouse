@@ -126,13 +126,8 @@ void MergePlainMergeTreeTask::prepare()
     {
         if (query_thread_group)
         {
-            auto task_thread_group = (*merge_list_entry)->thread_group;
-            auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
-
-            /// The thread group of the task has already added these counts to the global counters.
-            auto & query_counters = query_thread_group->performance_counters;
-            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
-                query_counters.incrementNoTraceExceptGlobal(i, task_counters_snapshot[i]);
+            /// The thread group of the task has already added its counts to its parents, e.g. the global counters.
+            query_thread_group->performance_counters.addExceptCommonAncestors((*merge_list_entry)->thread_group->performance_counters);
         }
     };
 
