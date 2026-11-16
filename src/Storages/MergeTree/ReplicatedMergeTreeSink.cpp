@@ -233,9 +233,17 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             if (storage.is_readonly && storage.shutdown_prepared_called)
                 throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
-            quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
-
             Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
+            replicas_number = replicas.size();
+
+            /// With only the writing replica registered, majority quorum is the same as explicit quorum 1.
+            if (!required_quorum_size && replicas_number == 1 && replicas.front() == storage.replica_name)
+            {
+                required_quorum_size = 0;
+                return;
+            }
+
+            quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
 
             Strings exists_paths;
             exists_paths.reserve(replicas.size());
@@ -257,7 +265,6 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
                     keeper_error = error;
             }
 
-            replicas_number = replicas.size();
             size_t quorum_size = getQuorumSize(replicas_number);
 
             if (active_replicas < quorum_size)
