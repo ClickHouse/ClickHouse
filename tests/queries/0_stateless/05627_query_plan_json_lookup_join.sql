@@ -1,4 +1,7 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-parallel-replicas
+-- no-parallel-replicas: the fold below does not happen there. The right side is read as
+-- `ReadFromMemoryStorage` and joined by a plain `Join`, and the plan gains a
+-- `ReadFromRemoteParallelReplicas` and a `Union`, so there is no `FilledJoin` to assert on.
 
 -- A join whose right side is a `Join`-engine table is planned as a `JoinStepLogicalLookup` holding
 -- the plan that reads it, and optimization turns the pair into a `FilledJoin` against the prepared
