@@ -1897,7 +1897,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    setPropertiesAndResetSerializationHints(new_metadata, old_metadata);
 
     try
     {
@@ -1906,7 +1906,9 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        /// Hints too, otherwise the revert pairs old column types with the new-typed hints the
+        /// publish above built. Safe here because this function never calls `changeSettings`.
+        setPropertiesAndResetSerializationHints(old_metadata, new_metadata);
         throw;
     }
 }
@@ -6935,11 +6937,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
     }
 
-    {
-        auto parts_lock = lockParts();
-        resetSerializationHints(parts_lock);
-    }
-
     return true;
 }
 
@@ -9358,6 +9355,14 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
+
+    /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
+    /// cached for the whole query. Anything analyzed before this point may have cached one: the pruning
+    /// analysis in `allocateBlockNumbersInAffectedPartitions`, or the validation of `IN` operands in
+    /// `InterpreterUpdateQuery`. Such a snapshot predates the wait for committing inserts above, so the
+    /// parts that arrived during the wait would be invisible to the update and their rows would stay
+    /// unchanged. Discard it, so that the update and its subqueries share a snapshot taken now.
+    discardSharedStorageSnapshot(context_copy);
 
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 

@@ -496,7 +496,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         }
 
         deleteFilesFromS3(client.get(), bucket, keys, if_exists,
-                          s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
+                          s3_capabilities, settings_ptr->request_settings, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                           ProfileEvents::DiskS3DeleteObjects,
                           &successful_keys);
@@ -833,6 +833,9 @@ void S3ObjectStorage::applyNewSettings(
         apply_config_settings();
         apply_endpoint_settings();
     }
+
+    for (const auto & [name, value] : options.explicit_request_settings)
+        modified_settings->request_settings.setByName(name, value);
 
     if (context->getSettingsRef()[Setting::s3_validate_request_settings])
     {
