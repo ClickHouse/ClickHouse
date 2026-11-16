@@ -990,7 +990,7 @@ String getWrittenTypeName(const IDataType & type)
         {
             /// An array of objects is read as `Array(JSON)`, but an empty one as `Array(Dynamic)`.
             const String element = getWrittenTypeName(*assert_cast<const DataTypeArray &>(type).getNestedType());
-            return element.empty() || element == "JSON" ? "" : "Array(Dynamic)";
+            return element.empty() || element == "JSON" || element.starts_with("Array(") ? "" : "Array(Dynamic)";
         }
         default:
             return {};
@@ -1046,7 +1046,7 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
             written_variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local)));
         const size_t member = std::find_if(
             written_types.begin(), written_types.end(), [&](const auto & t) { return t->equals(*written_type); }) - written_types.begin();
-        variants[local] = castColumn({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
+        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
         local_to_global[local] = static_cast<ColumnVariant::Discriminator>(member);
     }
     return ColumnVariant::create(written_variant.getLocalDiscriminatorsPtr(), written_variant.getOffsetsPtr(), variants, local_to_global);

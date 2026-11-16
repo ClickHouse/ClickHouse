@@ -19,6 +19,9 @@ so they cannot be told apart
 so they cannot be told apart
 cannot be read back
 cannot be read back
+cannot be read back
+--- A value that does not fit the member is not converted silently
+CANNOT_CONVERT_TYPE
 --- Time64 out of the range of a time of day
 a variant time is a time of day
 --- Nesting depth counts the enclosing containers
