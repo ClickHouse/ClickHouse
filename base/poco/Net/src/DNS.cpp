@@ -17,7 +17,9 @@
 #include "Poco/Net/SocketAddress.h"
 #include "Poco/Environment.h"
 #include "Poco/NumberFormatter.h"
+#include "Poco/NumberParser.h"
 #include "Poco/RWLock.h"
+#include "Poco/String.h"
 #include "Poco/TextIterator.h"
 #include "Poco/TextConverter.h"
 #include "Poco/UTF8Encoding.h"
@@ -25,8 +27,12 @@
 #include "Poco/Unicode.h"
 #include <algorithm>
 #include <cerrno>
+#include <exception>
 #include <cstring>
+#include <fstream>
 #include <new>
+#include <optional>
+#include <sstream>
 #include <vector>
 
 #include <ares.h>
@@ -119,6 +125,7 @@ public:
 	/// Runs the event loop until all the queries of the channel complete.
 	void wait()
 	{
+		rethrowCallbackException();
 		std::vector<ares_fd_events_t> events;
 		while (ares_queue_active_queries(_channel) > 0)
 		{
@@ -150,32 +157,51 @@ public:
 
 			/// With no events, this processes the timeouts.
 			ares_process_fds(_channel, events.data(), events.size(), ARES_PROCESS_FLAG_NONE);
+			rethrowCallbackException();
 		}
 	}
 
 private:
+	/// An exception must not unwind through the frames of c-ares: it would skip its cleanup and leak the socket.
+	/// It is stored and rethrown after the c-ares function returns, and the destructor releases the channel.
 	static void socketStateCallback(void* data, ares_socket_t socket, int readable, int writable)
 	{
-		auto& fds = static_cast<AresChannel*>(data)->_fds;
-		auto it = std::find_if(fds.begin(), fds.end(), [socket](const pollfd& fd) { return fd.fd == socket; });
-
-		if (!readable && !writable)
+		auto* self = static_cast<AresChannel*>(data);
+		try
 		{
-			if (it != fds.end())
-				fds.erase(it);
-			return;
-		}
+			auto& fds = self->_fds;
+			auto it = std::find_if(fds.begin(), fds.end(), [socket](const pollfd& fd) { return fd.fd == socket; });
 
-		if (it == fds.end())
-		{
-			fds.push_back(pollfd{socket, 0, 0});
-			it = std::prev(fds.end());
+			if (!readable && !writable)
+			{
+				if (it != fds.end())
+					fds.erase(it);
+				return;
+			}
+
+			if (it == fds.end())
+			{
+				fds.push_back(pollfd{socket, 0, 0});
+				it = std::prev(fds.end());
+			}
+			it->events = static_cast<short>((readable ? POLLIN : 0) | (writable ? POLLOUT : 0));
 		}
-		it->events = static_cast<short>((readable ? POLLIN : 0) | (writable ? POLLOUT : 0));
+		catch (...)
+		{
+			if (!self->_callbackException)
+				self->_callbackException = std::current_exception();
+		}
+	}
+
+	void rethrowCallbackException()
+	{
+		if (_callbackException)
+			std::rethrow_exception(_callbackException);
 	}
 
 	ares_channel_t* _channel = nullptr;
 	std::vector<pollfd> _fds;
+	std::exception_ptr _callbackException;
 };
 
 
@@ -236,20 +262,90 @@ void configuredAddressFamilies(bool& seenIPv4, bool& seenIPv6)
 }
 
 
-/// Parses an IPv4 or IPv6 address literal, including the all-zero IPv6 address `::` that `IPAddress::tryParse` rejects.
+/// Parses an IPv4 or IPv6 address literal, including what `IPAddress::tryParse` rejects: the all-zero IPv6
+/// address `::` and a numeric zone index (`fe80::1%2`; it accepts only interface names, such as `fe80::1%eth0`).
 bool tryParseAddressLiteral(const std::string& hostname, IPAddress& address)
 {
 	if (IPAddress::tryParse(hostname, address))
 		return true;
 #if defined(POCO_HAVE_IPv6)
+	const auto percent = hostname.find('%');
+	const std::string addressPart = hostname.substr(0, percent);
 	struct in6_addr address6;
-	if (inet_pton(AF_INET6, hostname.c_str(), &address6) == 1)
+	if (inet_pton(AF_INET6, addressPart.c_str(), &address6) != 1)
+		return false;
+
+	Poco::UInt32 scope = 0;
+	if (percent != std::string::npos)
 	{
-		address = IPAddress(&address6, sizeof(address6));
-		return true;
+		const std::string zone = hostname.substr(percent + 1);
+		unsigned index = 0;
+		if (zone.empty()
+			|| !std::all_of(zone.begin(), zone.end(), [](unsigned char c) { return c >= '0' && c <= '9'; })
+			|| !NumberParser::tryParseUnsigned(zone, index))
+			return false;
+		scope = index;
 	}
-#endif
+	address = IPAddress(&address6, sizeof(address6), scope);
+	return true;
+#else
 	return false;
+#endif
+}
+
+
+/// The lines of the hosts file that contain a name.
+struct HostsFileEntry
+{
+	/// The first name of the first line that contains the name.
+	std::string canonicalName;
+	HostEntry::AddressList addresses;
+};
+
+
+/// Looks up a name in the hosts file as the glibc does: only the lines that contain the name count.
+/// c-ares merges the lines that share a name or an address into one entry, so with
+/// "127.0.0.1 localhost", "::1 localhost" and "127.0.0.1 myhost", it resolves `myhost` to `::1` too,
+/// with `localhost` as the canonical name. The file is the one that c-ares reads.
+std::optional<HostsFileEntry> lookupHostsFile(const std::string& hostname)
+{
+	std::ifstream file("/etc/hosts");
+	if (!file.is_open())
+		return std::nullopt;
+
+	std::optional<HostsFileEntry> result;
+	std::string line;
+	while (std::getline(file, line))
+	{
+		line.erase(std::find(line.begin(), line.end(), '#'), line.end());
+		std::istringstream tokens(line);
+		std::string addressString;
+		if (!(tokens >> addressString))
+			continue;
+
+		IPAddress address;
+		if (!IPAddress::tryParse(addressString, address))
+			continue;
+
+		std::string firstName;
+		std::string name;
+		bool matches = false;
+		while (tokens >> name)
+		{
+			if (firstName.empty())
+				firstName = name;
+			if (Poco::icompare(name, hostname) == 0)
+				matches = true;
+		}
+		if (!matches)
+			continue;
+
+		if (!result)
+			result.emplace(HostsFileEntry{firstName, {}});
+		if (std::find(result->addresses.begin(), result->addresses.end(), address) == result->addresses.end())
+			result->addresses.push_back(address);
+	}
+	return result;
 }
 
 
@@ -281,13 +377,22 @@ struct NameInfoResult
 {
 	int status = ARES_SUCCESS;
 	std::string host;
+	/// See `AresChannel::socketStateCallback`.
+	std::exception_ptr exception;
 
 	static void callback(void* arg, int status, int /*timeouts*/, char* node, char* /*service*/)
 	{
 		auto* self = static_cast<NameInfoResult*>(arg);
 		self->status = status;
-		if (status == ARES_SUCCESS && node)
-			self->host = node;
+		try
+		{
+			if (status == ARES_SUCCESS && node)
+				self->host = node;
+		}
+		catch (...)
+		{
+			self->exception = std::current_exception();
+		}
 	}
 };
 
@@ -364,7 +469,20 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 #endif
 	}
 
-	/// The canonical name is the target of the last CNAME, or the primary name of an alias in `/etc/hosts`.
+	/// A name from the hosts file keeps only the addresses of its own lines, in the order of c-ares (RFC 6724).
+	if (auto hostsFileEntry = lookupHostsFile(hostname))
+	{
+		const auto& listed = hostsFileEntry->addresses;
+		std::erase_if(addresses, [&listed](const IPAddress& address)
+		{
+			return std::find(listed.begin(), listed.end(), address) == listed.end();
+		});
+		if (addresses.empty())
+			throwAresError(ARES_ENODATA, hostname);
+		return HostEntry(hostsFileEntry->canonicalName, addresses);
+	}
+
+	/// The canonical name is the target of the last CNAME.
 	std::string name = response.result->name ? response.result->name : hostname;
 	for (const struct ares_addrinfo_cname* cname = response.result->cnames; cname; cname = cname->next)
 	{
@@ -387,6 +505,9 @@ HostEntry DNS::hostByAddress(const IPAddress& address, unsigned hintFlags)
 			ARES_NI_LOOKUPHOST | ARES_NI_NAMEREQD, &NameInfoResult::callback, &response);
 		channel.wait();
 	}
+
+	if (response.exception)
+		std::rethrow_exception(response.exception);
 
 	if (response.status != ARES_SUCCESS)
 		throwAresError(response.status, address.toString());
