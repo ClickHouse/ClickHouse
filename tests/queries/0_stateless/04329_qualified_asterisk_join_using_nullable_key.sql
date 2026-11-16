@@ -17,8 +17,6 @@ INSERT INTO t_jn1 VALUES (0, 'a'), (1, 'b'), (2, 'c');
 INSERT INTO t_jn2 VALUES (0, 'd'), (1, 'e'), (3, 'f');
 INSERT INTO t_jn3 VALUES (0, 'g'), (2, 'h'), (4, 'i');
 
-SET enable_analyzer = 1;
-
 -- The aggregation over the qualified matcher used to throw a Bad cast exception.
 SELECT count() FROM
 (

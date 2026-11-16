@@ -41,12 +41,20 @@ inline void reverseMemcpy(void * dst, const void * src, size_t size)
     }
 }
 
+/// For integers the byte order is flipped with `std::byteswap` on top of a plain load or store: compilers lower that
+/// to a single `movbe`/`bswap`/`rev`, while the byte loop of `reverseMemcpy` depends on the compiler re-discovering
+/// the idiom from eight byte loads, which clang 23 no longer does (it vectorizes them into a dozen shuffles instead).
 template <std::endian endian, typename T>
 inline T unalignedLoadEndian(const void * address)
 {
     T res {};
     if constexpr (std::endian::native == endian)
         memcpy(&res, address, sizeof(res));
+    else if constexpr (std::is_integral_v<T>)
+    {
+        memcpy(&res, address, sizeof(res));
+        res = std::byteswap(res);
+    }
     else
         reverseMemcpy(&res, address, sizeof(res));
     return res;
@@ -59,6 +67,11 @@ inline void unalignedStoreEndian(void * address, T & src)
     static_assert(std::is_trivially_copyable_v<T>);
     if constexpr (std::endian::native == endian)
         memcpy(address, &src, sizeof(src));
+    else if constexpr (std::is_integral_v<T>)
+    {
+        const T swapped = std::byteswap(src);
+        memcpy(address, &swapped, sizeof(swapped));
+    }
     else
         reverseMemcpy(address, &src, sizeof(src));
 }
@@ -82,6 +95,19 @@ template <typename T>
 inline T unalignedLoadBigEndian(const void * address)
 {
     return unalignedLoadEndian<std::endian::big, T>(address);
+}
+
+/// Loads a value from its `size` least significant bytes, at most `sizeof(T)`, in big-endian order. The other
+/// bytes of the value are zero.
+template <typename T>
+inline T unalignedLoadBigEndian(const void * address, size_t size)
+{
+    T res {};
+    if constexpr (std::endian::native == std::endian::big)
+        memcpy(reinterpret_cast<char *>(&res) + sizeof(res) - size, address, size);
+    else
+        reverseMemcpy(&res, address, size);
+    return res;
 }
 
 

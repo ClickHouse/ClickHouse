@@ -18,7 +18,6 @@
 -- Every arm prints values, and each deferred arm is paired with the undeferred ground truths (filter
 -- not deferred, and no distributed plan) which must agree with it.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

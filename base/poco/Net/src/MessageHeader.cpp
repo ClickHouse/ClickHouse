@@ -67,6 +67,20 @@ void MessageHeader::write(std::ostream& ostr) const
 }
 
 
+void MessageHeader::write(std::string& out) const
+{
+	NameValueCollection::ConstIterator it = begin();
+	while (it != end())
+	{
+		out.append(it->first);
+		out.append(": ", 2);
+		out.append(it->second);
+		out.append("\r\n", 2);
+		++it;
+	}
+}
+
+
 void MessageHeader::read(std::istream& istr)
 {
 	static const int eof = std::char_traits<char>::eof();

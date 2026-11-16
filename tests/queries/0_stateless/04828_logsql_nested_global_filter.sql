@@ -18,7 +18,7 @@ INSERT INTO logs_04828 VALUES
     ('2024-01-01 04:00:00', 'other web error', 'error', 'web', 'u5'),
     ('2024-01-01 05:00:00', 'api error by u2', 'error', 'api', 'u2');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04828';
 SET dialect = 'logsql';
 

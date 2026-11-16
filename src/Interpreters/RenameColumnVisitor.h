@@ -6,16 +6,28 @@
 namespace DB
 {
 
+class ASTIdentifier;
+class ColumnsDescription;
+
 /// Data for RenameColumnVisitor which traverse tree and rename all columns with
 /// name column_name to rename_to
 struct RenameColumnData
 {
     String column_name;
     String rename_to;
+    /// Also rename the column in a reference to its subcolumn, such as `column_name.x`. This is for the key expressions of
+    /// a table: a column that holds a subcolumn of a key cannot be renamed in `MergeTree`, but can in a data lake (`Iceberg`),
+    /// which refers to the key fields by id.
+    bool rename_subcolumns = false;
+    /// With `rename_subcolumns`: the columns of the table. A name `column_name.x` is renamed only if it is not a column of
+    /// the table itself.
+    const ColumnsDescription * columns = nullptr;
     /// Compound identifiers bind a lambda parameter through their first part; aliases are lambda-scoped.
     bool new_analyzer_binding = false;
     /// Parameters of the enclosing lambdas.
     Names lambda_parameters = {};
+
+    void visit(ASTIdentifier & identifier, ASTPtr & ast) const;
 };
 
 struct RenameColumnMatcher

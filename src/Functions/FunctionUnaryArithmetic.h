@@ -53,7 +53,7 @@ struct UnaryOperationImpl
 
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -86,7 +86,7 @@ struct FixedStringUnaryOperationImpl
 
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -114,7 +114,7 @@ struct StringUnaryOperationReduceImpl
 
     static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
@@ -193,21 +193,52 @@ public:
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Per-Op opt-in to declarative signatures:
+    /// - `Op<UInt8>::signature` (authoritative): the DSL drives type-checking
+    ///   and return-type resolution.
+    /// - `Op<UInt8>::signature_documentation` (docs-only): surfaced via
+    ///   `system.functions` but the long-form `getReturnTypeImpl(DataTypes)`
+    ///   stays authoritative — used when the legacy dispatch isn't expressible
+    ///   in the DSL (e.g. `negate` routing tuples to `tupleNegate`).
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (requires { Op<UInt8>::signature; })
+            return Op<UInt8>::signature;
+        else if constexpr (requires { Op<UInt8>::signature_documentation; })
+            return Op<UInt8>::signature_documentation;
+        else
+            return {};
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Like `BinaryArithmeticOverloadResolver`, only `signature` (authoritative)
+        /// drives the DSL path; `signature_documentation` is bypassed so the legacy
+        /// `getReturnTypeImpl(DataTypes)` runs.
+        if constexpr (requires { Op<UInt8>::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);
     }
@@ -286,7 +317,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Special case when the function is negate, argument is tuple.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
@@ -429,7 +460,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (1 != arguments.size())
             return false;
@@ -497,12 +528,12 @@ public:
     }
 #endif
 
-    bool hasInformationAboutMonotonicity() const override
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
     }

@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
@@ -213,9 +214,44 @@ void RenameColumnMatcher::visit(ASTPtr & ast, Data & data)
         std::ranges::move(getLambdaParameters(*lambda), std::back_inserter(lambda_data.lambda_parameters));
         RenameColumnVisitor{lambda_data}.visit(lambda->arguments->children[1]);
     }
+    else if (auto * identifier = ast->as<ASTIdentifier>())
+        data.visit(*identifier, ast);
+}
+
+void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
+{
     // TODO(ilezhankin): make proper rename
-    else if (isRenamedReference(*ast, data))
-        ast->as<ASTIdentifier &>().setShortName(data.rename_to);
+    std::optional<String> identifier_column_name = IdentifierSemantic::getColumnName(identifier);
+    if (!identifier_column_name || findBindingParameter(identifier, lambda_parameters, new_analyzer_binding))
+        return;
+
+    if (identifier_column_name == column_name)
+    {
+        identifier.setShortName(rename_to);
+    }
+    else if (rename_subcolumns && identifier_column_name->starts_with(column_name + "."))
+    {
+        /// `column_name.x` (written as a compound identifier, or as one part as the key expressions built from the metadata
+        /// of a data lake are written) is a subcolumn unless the table has a physical column with this name, such as
+        /// `MergeTree` with `share_nested_offsets = 0`.
+        if (columns && columns->has(*identifier_column_name))
+            return;
+
+        if (identifier.compound())
+        {
+            if (identifier.name_parts[0] != column_name)
+                return;
+            auto name_parts = identifier.name_parts;
+            name_parts[0] = rename_to;
+            auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
+            renamed->setAlias(identifier.tryGetAlias());
+            ast = std::move(renamed);
+        }
+        else
+        {
+            identifier.setShortName(rename_to + identifier_column_name->substr(column_name.size()));
+        }
+    }
 }
 
 RenameColumnConflicts::RenameColumnConflicts(const RenameColumnData & data_)
@@ -245,7 +281,7 @@ void RenameColumnConflicts::addScope(const std::vector<std::pair<ASTPtr, String>
     if (!conflict.empty())
         return;
 
-    ScopeChecker checker(RenameColumnData{column_name, rename_to, new_analyzer_binding, {}});
+    ScopeChecker checker(RenameColumnData{.column_name = column_name, .rename_to = rename_to, .new_analyzer_binding = new_analyzer_binding});
     for (const auto & [ast, where] : expressions)
         checker.collect(ast, where);
     for (const auto & [ast, where] : expressions)

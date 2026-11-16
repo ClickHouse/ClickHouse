@@ -46,7 +46,7 @@ public:
             created_directories.insert(*snapshot_path);
     }
 
-    std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
+    [[nodiscard]] std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
     {
         auto resolved = path.string();
 
@@ -75,7 +75,7 @@ public:
         return NormalizedPath{resolved};
     }
 
-    bool isCreatedByTransaction(const NormalizedPath & path) const
+    [[nodiscard]] bool isCreatedByTransaction(const NormalizedPath & path) const
     {
         return created_directories.contains(path);
     }
@@ -268,6 +268,11 @@ void UncommittedState::markDirectoryExplicit(const std::string & path)
 std::optional<DirectoryRemoteInfo> UncommittedState::getDirectoryRemoteInfo(const std::string & path) const
 {
     return tx_snapshot->getDirectoryRemoteInfo(path);
+}
+
+bool UncommittedState::existsFileOrDirectory(const std::string & path) const
+{
+    return tx_snapshot->existsDirectory(path) || tx_snapshot->existsFile(path);
 }
 
 std::shared_ptr<Preconditions> UncommittedState::getTxPreconditions() const

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: a DDL entry is executed with the `dialect` of the session, so `clickhouse_json` fails to parse the SQL text, https://github.com/ClickHouse/ClickHouse/issues/123323
 # Malformed JSON AST: a function without an `arguments` list inside a projection expression slot
 # (`query` for a SELECT projection, `index` for an INDEX projection) must be rejected with BAD_ARGUMENTS.
 

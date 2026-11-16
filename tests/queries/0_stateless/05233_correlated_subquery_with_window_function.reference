@@ -1,0 +1,54 @@
+a correlated subquery in the SELECT list next to a window function
+1	3
+2	3
+3	2
+4	2
+5	3
+6	3
+7	2
+8	2
+9	3
+10	3
+the same with a plain window function, for comparison
+1	3
+2	3
+3	2
+4	2
+5	3
+6	3
+7	2
+8	2
+9	3
+10	3
+an outer WHERE below the window function
+1	3
+2	3
+3	2
+4	2
+5	3
+6	3
+a correlated subquery in QUALIFY
+0	1
+1	2
+4	5
+5	6
+8	9
+9	10
+the same QUALIFY with a plain window function, for comparison
+0	1
+1	2
+4	5
+5	6
+8	9
+9	10
+a correlated EXISTS in QUALIFY
+0	0
+1	1
+4	4
+5	5
+8	8
+9	9
+a correlated subquery in the SELECT list with a QUALIFY below it
+0	3
+1	3
+2	2
