@@ -375,9 +375,8 @@ void StorageRunner::commitThread()
         std::vector<QueueItem> batch_items;
 
         QueueItem read_item;
-        /// Generators keep refilling the queue while we pop, so draining "until empty" can grow one
-        /// batch without bound (keeping all its requests and responses alive) whenever the storage
-        /// processes reads slower than the generators produce them. Take at most one queue's worth.
+        /// Cap the batch at the queue capacity: generators refill each freed slot while we pop, and nothing
+        /// is processed until the loop exits, so popping until empty can grow the batch without bound.
         while (batch.size() < input_queue_size && read_queue->tryPop(read_item))
         {
             DB::KeeperRequestForSession rfs;
