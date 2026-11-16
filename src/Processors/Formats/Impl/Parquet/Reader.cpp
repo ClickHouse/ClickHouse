@@ -112,18 +112,6 @@ static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
     return major < 2;
 }
 
-/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
-/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
-/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
-/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
-template <typename E>
-static int thriftEnumToInt(const E & e)
-{
-    std::underlying_type_t<E> v;
-    memcpy(&v, &e, sizeof(v));
-    return static_cast<int>(v);
-}
-
 /// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
 /// 0 if there is none.
 static size_t memoryLimitOfCurrentThread()
@@ -4252,7 +4240,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, page.num_values, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.

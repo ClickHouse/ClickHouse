@@ -1856,6 +1856,19 @@ void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
+namespace
+{
+
+const ColumnObject & getSourceObjectColumn(const IColumn & source, const ColumnObject & column, std::string_view operation)
+{
+    const auto * source_object = typeid_cast<const ColumnObject *>(&source);
+    if (!source_object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Object, but {}", operation, column.getName(), source.getName());
+    return *source_object;
+}
+
+}
+
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
@@ -1878,8 +1891,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
     };
 
+    /// The later loop over `source_columns` relies on this check.
     for (const auto & source_column : source_columns)
-        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
+        add_dynamic_paths(getSourceObjectColumn(*source_column, *this, "squashing"));
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
@@ -2029,7 +2043,8 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     UnorderedMapWithMemoryTracking<String, size_t> path_to_total_number_of_non_null_values;
     for (const auto & source_column : source_columns)
     {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
+        /// The later loops over `source_columns` rely on this check.
+        const auto & source_object = getSourceObjectColumn(*source_column, *this, "merge");
         /// During deserialization from MergeTree we will have statistics from the whole
         /// data part with number of non null values for each dynamic path.
         const auto & source_statistics = source_object.getOrCalculateStatistics();
@@ -2135,7 +2150,7 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
-    const auto & source_object = assert_cast<const ColumnObject &>(source);
+    const auto & source_object = getSourceObjectColumn(source, *this, "dynamic structure");
 
     for (auto & [path, column] : typed_paths)
         column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
@@ -2190,6 +2205,10 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+
+    /// The loops over `source_columns` below rely on this check.
+    for (const auto & source_column : source_columns)
+        getSourceObjectColumn(*source_column, *this, "statistics");
 
     /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
     /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.

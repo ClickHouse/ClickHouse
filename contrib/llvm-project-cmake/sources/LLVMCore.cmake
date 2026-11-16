@@ -7,6 +7,7 @@ set(LLVMCORE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/IR/AutoUpgrade.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/BasicBlock.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/BuiltinGCs.cpp
+    ${LLVM_SOURCE_DIR}/lib/IR/BundleAttributes.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/Comdat.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/ConstantFold.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/ConstantFPRange.cpp
@@ -60,6 +61,7 @@ set(LLVMCORE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/IR/PassManager.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/PassRegistry.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/PassTimingInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/IR/PatternMatch.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/PrintPasses.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/ProfDataUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/ProfileSummary.cpp
@@ -79,5 +81,6 @@ set(LLVMCORE_SOURCES
     ${LLVM_SOURCE_DIR}/lib/IR/ValueSymbolTable.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/VectorTypeUtils.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/Verifier.cpp
+    ${LLVM_SOURCE_DIR}/lib/IR/VerifierAMDGPU.cpp
     ${LLVM_SOURCE_DIR}/lib/IR/VFABIDemangler.cpp
 )

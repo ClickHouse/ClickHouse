@@ -320,23 +320,7 @@ void AggregatedDataVariants::convertToTwoLevel()
     }
 }
 
-bool AggregatedDataVariants::canIndexCells() const
-{
-    switch (type)
-    {
-    #define M(NAME) \
-        case Type::NAME: \
-            return IterableCells<decltype(NAME)::element_type::Data>;
-
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-
-    #undef M
-        default:
-            return false;
-    }
-}
-
-void AggregatedDataVariants::setCellIndex(CellIndex && index)
+void AggregatedDataVariants::setCellIndex(AggregationCellIndex && index)
 {
     ProfileEvents::increment(ProfileEvents::AggregationIndexedTables);
     cell_index = std::move(index);
