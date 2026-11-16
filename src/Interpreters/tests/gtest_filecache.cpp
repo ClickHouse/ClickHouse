@@ -4735,6 +4735,13 @@ try
         }
         assert_uniform(cache, 1, {first, second, third});
         assert_uniform(cache, 2, {first, second, third});
+
+        /// A cancelled walk returns nothing; one that is not cancelled is not affected by the flag.
+        std::atomic<bool> cancelled{true};
+        for (const auto order : {Order::COLDEST, Order::HOTTEST, Order::RANDOM})
+            assert_observed(cache.observeFilesystemCache(10, 100, order, &cancelled), {});
+        cancelled = false;
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST, &cancelled), {first, second, third});
     }
 
     /// SLRU

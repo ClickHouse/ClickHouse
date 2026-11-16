@@ -97,13 +97,17 @@ void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
 }
 
 FileSegmentSummaryInfoList
-IFileCachePriority::observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order)
+IFileCachePriority::observeFilesystemCache(
+    UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, const std::atomic<bool> * cancellation_flag)
 {
     if (query_max_elements == 0)
         return {};
 
     FileSegmentSummaryInfos result;
+    result.cancellation_flag = cancellation_flag;
     iterate(query_max_elements, query_max_total_size, query_order, QueueEntryType::None, result);
+    if (result.isCancelled())
+        return {};
     if (query_order != IterationOrder::RANDOM)
         return std::move(result.infos);
 

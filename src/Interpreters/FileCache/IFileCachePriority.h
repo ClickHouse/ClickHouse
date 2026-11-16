@@ -268,8 +268,12 @@ public:
     /// `query_max_elements`: Upper bound on returned rows
     /// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
     /// `query_order`: Defines the order on returned rows
-    FileSegmentSummaryInfoList
-    observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order);
+    /// `cancellation_flag`: if not `nullptr`, the walk stops once it is set, and the result is incomplete.
+    FileSegmentSummaryInfoList observeFilesystemCache(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        const std::atomic<bool> * cancellation_flag = nullptr);
 
     /// Each concrete implementation of IFileCachePriority should know better how to implement this
     /// Adds the file segments of this queue to `result`, which may already hold the segments of previous sub-queues

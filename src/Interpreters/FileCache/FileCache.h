@@ -251,7 +251,10 @@ public:
 
     /// See `IFileCachePriority::observeFilesystemCache`.
     FileSegmentSummaryInfoList observeFilesystemCache(
-        UInt64 query_max_elements, UInt64 query_max_total_size, IFileCachePriority::IterationOrder query_order);
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IFileCachePriority::IterationOrder query_order,
+        const std::atomic<bool> * cancellation_flag = nullptr);
 
     IFileCachePriority::Type getEvictionPolicyType();
 

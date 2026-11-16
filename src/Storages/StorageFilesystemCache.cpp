@@ -52,7 +52,7 @@ protected:
     Chunk generate() override
     {
         if (!infos)
-            infos = cache->observeFilesystemCache(query_max_elements, query_max_total_size, query_order);
+            infos = cache->observeFilesystemCache(query_max_elements, query_max_total_size, query_order, &getCancellationFlag());
 
         if (next_row == infos->size())
             return {};

@@ -2719,10 +2719,13 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
 }
 
 FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
-    UInt64 query_max_elements, UInt64 query_max_total_size, IFileCachePriority::IterationOrder query_order)
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IFileCachePriority::IterationOrder query_order,
+    const std::atomic<bool> * cancellation_flag)
 {
     assertInitialized();
-    return main_priority->observeFilesystemCache(query_max_elements, query_max_total_size, query_order);
+    return main_priority->observeFilesystemCache(query_max_elements, query_max_total_size, query_order, cancellation_flag);
 }
 
 IFileCachePriority::Type FileCache::getEvictionPolicyType()

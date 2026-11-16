@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cctype>
 #include <unordered_set>
 #include <vector>
@@ -110,6 +111,11 @@ namespace DB
         /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.
         /// The next sub-queue (SLRU's second one, Split's system one) is then not walked at all.
         bool limit_reached{false};
+        /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`, so that the priority lock
+        /// is released without walking the rest of the queue. The result is incomplete then. `nullptr` if the walk cannot be cancelled.
+        const std::atomic<bool> * cancellation_flag = nullptr;
+
+        bool isCancelled() const { return cancellation_flag && cancellation_flag->load(std::memory_order_relaxed); }
         /// `RANDOM` only: the number of segments seen so far that can be returned (segments for which
         /// `tryGetSummaryInfo` fails are not counted), which all sub-queues sample from as one reservoir.
         UInt64 seen = 0;

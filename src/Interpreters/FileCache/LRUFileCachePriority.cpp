@@ -375,7 +375,7 @@ void LRUFileCachePriority::iterate(
 
     /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
     /// an aggregation of system cache and data cache in the case of SplitFileCachePriority.
-    if (result.limit_reached)
+    if (result.limit_reached || result.isCancelled())
         return;
 
     UInt64 next_priority_rank = result.infos.size() + 1;
@@ -450,10 +450,17 @@ void LRUFileCachePriority::iterate(
         return result.infos.size() < query_max_elements;
     };
 
+    /// Checking the cancellation flag on every entry is not needed: a cancelled query only has to release the priority lock soon.
+    static constexpr size_t check_cancellation_every = 1024;
+
     auto add_entries = [&](auto && entries)
     {
+        size_t walked = 0;
         for (const auto & entry : entries)
         {
+            if (++walked % check_cancellation_every == 0 && result.isCancelled())
+                return;
+
             if (!add_entry(entry))
             {
                 result.limit_reached = true;
