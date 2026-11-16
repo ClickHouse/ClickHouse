@@ -72,6 +72,24 @@ SELECT toInt8(assumeNotNull(materialize([CAST('y', 'Nullable(Enum8(\'x\' = 1, \'
 SELECT toInt8(assumeNotNull(map('a', CAST('y', 'Nullable(Enum8(\'x\' = 1, \'y\' = 2))'))[toString(number)])) FROM numbers(1);
 SELECT id, toInt8(assumeNotNull(mn['k'])) FROM t_enum_elem_buckets ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
 
+SELECT 'null index';
+SELECT i, toInt8(assumeNotNull(arr[i])), toInt8(assumeNotNull([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')][i])),
+    toInt8(assumeNotNull(arr_t[i]).1), toInt8(assumeNotNull(arr_j[i]).a)
+FROM
+(
+    SELECT
+        materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr,
+        materialize([tuple(CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'), 1)]) AS arr_t,
+        materialize([CAST('{"a":"y"}', 'JSON(a Enum8(\'x\' = 1, \'y\' = 2))')]) AS arr_j,
+        arrayJoin([CAST(NULL, 'Nullable(UInt64)'), 1, 5]) AS i
+)
+ORDER BY i NULLS FIRST SETTINGS enable_lazy_columns_replication = 0;
+SELECT k, toInt8(assumeNotNull(m[k])), toInt8(assumeNotNull(map('a', CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'))[k]))
+FROM (SELECT materialize(map('a', CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)'))) AS m, arrayJoin([CAST(NULL, 'Nullable(String)'), 'a', 'b']) AS k)
+ORDER BY k NULLS FIRST SETTINGS enable_lazy_columns_replication = 0;
+SELECT i, toInt8(assumeNotNull(arr[i])) FROM (SELECT materialize([CAST('y', 'Enum8(\'x\' = 1, \'y\' = 2)')]) AS arr)
+ARRAY JOIN [CAST(NULL, 'Nullable(UInt64)'), 1, 5] AS i ORDER BY i NULLS FIRST SETTINGS enable_lazy_columns_replication = 1;
+
 DROP TABLE t_enum_elem;
 DROP TABLE t_enum_elem_buckets;
 DROP TABLE t_enum_elem_memory;

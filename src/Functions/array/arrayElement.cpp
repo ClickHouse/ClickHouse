@@ -141,6 +141,24 @@ public:
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
+    /// `masked_rows`: see `NullMapBuilder::initMask`.
+    [[nodiscard]] ColumnPtr executeMasked(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const;
+
+    /// Without a mask, the virtual `executeImpl`, which `FunctionWithLowCardinalityFastPath` overrides.
+    [[nodiscard]] ColumnPtr recurse(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const
+    {
+        return masked_rows ? executeMasked(arguments, result_type, input_rows_count, masked_rows)
+                           : executeImpl(arguments, result_type, input_rows_count);
+    }
+
     ColumnPtr perform(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -244,7 +262,11 @@ private:
      *  Currently implemented just as linear search in array.
      *  However, optimizations are possible.
      */
-    [[nodiscard]] ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    [[nodiscard]] ColumnPtr executeMap(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const UInt8 * masked_rows) const;
 
     /** For a JSON (Object) column, extract the combined subcolumn for the given key.
       */
@@ -339,8 +361,14 @@ public:
 
     ColumnPtr getNullMapColumnPtr() && { return std::move(sink_null_map_holder); }
 
+    /// Rows the caller makes NULL afterwards (a NULL index): a missing element there keeps the column default.
+    void initMask(const UInt8 * mask_) { mask = mask_; }
+    const UInt8 * getMask() const { return mask; }
+    bool isMasked(size_t row) const { return mask && mask[row]; }
+
 private:
     const UInt8 * src_null_map = nullptr;
+    const UInt8 * mask = nullptr;
     UInt8 * sink_null_map = nullptr;
     MutableColumnPtr sink_null_map_holder;
     size_t index = 0;
@@ -438,7 +466,7 @@ struct ArrayElementNumImpl
             }
             else
             {
-                result[i] = default_value;
+                result[i] = builder.isMasked(i) ? T() : default_value;
                 builder.update();
             }
 
@@ -989,7 +1017,7 @@ struct ArrayElementGenericImpl
             }
             else
             {
-                insertTypeDefault(result, type, trivial_default);
+                insertTypeDefault(result, type, trivial_default || builder.isMasked(i));
                 builder.update();
             }
 
@@ -1588,7 +1616,7 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         }
         else
         {
-            insertTypeDefault(*res, *result_type, trivial_default);
+            insertTypeDefault(*res, *result_type, trivial_default || builder.isMasked(i));
             builder.update();
         }
     }
@@ -1880,7 +1908,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
         temporary_results[0] = array_of_tuple_section;
 
         auto type = getReturnTypeImpl({temporary_results[0].type, temporary_results[1].type});
-        auto col = executeImpl(temporary_results, type, input_rows_count);
+        auto col = recurse(temporary_results, type, input_rows_count, builder.getMask());
         result_tuple_columns[i] = removeNullableIfNeeded(col, tuple_types[i]);
     }
 
@@ -2286,7 +2314,7 @@ String FunctionArrayElement<mode>::escapeJSONKeyIfNeeded(const String & key) con
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeMap(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const UInt8 * masked_rows) const
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
@@ -2343,7 +2371,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
         = {{values_array, std::make_shared<DataTypeArray>(type_map.getValueType()), ""},
            {std::move(indices_column), std::make_shared<DataTypeNumber<UInt64>>(), ""}};
 
-    return executeImpl(new_arguments, result_type, input_rows_count);
+    return recurse(new_arguments, result_type, input_rows_count, masked_rows);
 }
 
 template <ArrayElementExceptionMode mode>
@@ -3287,12 +3315,19 @@ ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
     if (index.getType() != Field::Types::String)
         return nullptr;
 
-    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
+    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count, nullptr));
 }
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    return executeMasked(arguments, result_type, input_rows_count, nullptr);
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeMasked(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const UInt8 * masked_rows) const
 {
     /// A replicated column can arrive in either position.
     if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
@@ -3323,7 +3358,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             /// without turning the result into Nullable.
             auto nested_arguments = arguments;
             nested_arguments[1] = columnGetNested(arguments[1]);
-            auto result = executeImpl(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count);
+            const UInt8 * index_null_map = nullptr;
+            if (result_type->isNullable() && !isColumnConst(*arguments[1].column))
+                index_null_map = assert_cast<const ColumnNullable &>(*arguments[1].column).getNullMapData().data();
+            auto result = recurse(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count, index_null_map);
             /// `Nullable` inside `LowCardinality` lives in the dictionary, so the promotion is a dictionary
             /// rewrite, not an added null map. The only source that declares such a result here is a JSON
             /// path, and its key must be a constant `String`, so no NULL index row needs merging.
@@ -3361,7 +3399,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
     if (col_map || col_const_map)
-        return executeMap(arguments, result_type, input_rows_count);
+        return executeMap(arguments, result_type, input_rows_count, masked_rows);
 
     /// Array-of-indices mode: arr1[arr2] where arr2 is Array(Int*)
     if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
@@ -3393,6 +3431,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     if (!is_array_of_nullable)
     {
         ArrayImpl::NullMapBuilder<mode> builder;
+        builder.initMask(masked_rows);
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
         if (builder && res->canBeInsideNullable())
@@ -3403,6 +3442,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     /// Perform initializations.
     ArrayImpl::NullMapBuilder<mode> builder;
+    builder.initMask(masked_rows);
     ColumnsWithTypeAndName source_columns;
 
     const DataTypePtr & input_type
