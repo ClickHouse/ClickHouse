@@ -75,7 +75,7 @@ public:
 
     const SharedPartColumns & operator*() const { return *bundle; }
     const SharedPartColumns * operator->() const { return bundle.get(); }
-    const SharedPartColumns * get() const { return bundle.get(); }
+    [[nodiscard]] const SharedPartColumns * get() const { return bundle.get(); }
 
 private:
     friend class MergeTreeData;

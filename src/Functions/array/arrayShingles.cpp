@@ -20,14 +20,14 @@ public:
     static constexpr auto name = "arrayShingles";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShingles>(); }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array(T), Integer) -> Array(Array(T))"; }
+    [[nodiscard]] String getSignatureString() const override { return "(Array(T), Integer) -> Array(Array(T))"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!col_array)

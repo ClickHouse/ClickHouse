@@ -59,13 +59,13 @@ public:
 
     BlockIO loadAll() override;
 
-    bool supportsSelectiveLoad() const override { return true; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return true; }
 
-    bool isModified() const override { return true; }
+    [[nodiscard]] bool isModified() const override { return true; }
 
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override
+    [[nodiscard]] DictionarySourcePtr clone() const override
     {
         return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
     }
@@ -76,7 +76,7 @@ public:
 
     BlockIO loadUpdatedAll() override;
 
-    String toString() const override;
+    [[nodiscard]] String toString() const override;
 
 private:
     void maybeAllowFiltering(String & query) const;

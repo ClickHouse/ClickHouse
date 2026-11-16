@@ -106,7 +106,7 @@ public:
         std::unordered_set<String> timestamp_writer_paths;
     };
     SchemaResult getSchemaResult();
-    const DB::Names & getPartitionColumns() const { return partition_columns; }
+    [[nodiscard]] const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
     struct Field;
@@ -680,7 +680,7 @@ struct DeltaJSONSchemaVisitor
     std::exception_ptr exception;
     bool has_char_varchar = false;
 
-    const std::vector<Node> & listAt(size_t id) const
+    [[nodiscard]] const std::vector<Node> & listAt(size_t id) const
     {
         auto it = lists.find(id);
         if (it == lists.end())
@@ -696,7 +696,7 @@ struct DeltaJSONSchemaVisitor
         return it->second;
     }
 
-    Poco::Dynamic::Var buildType(const Node & node) const
+    [[nodiscard]] Poco::Dynamic::Var buildType(const Node & node) const
     {
         checkStackSize();
         switch (node.kind)
@@ -733,7 +733,7 @@ struct DeltaJSONSchemaVisitor
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unhandled Delta schema node kind");
     }
 
-    Poco::JSON::Array::Ptr buildFields(size_t list_id) const
+    [[nodiscard]] Poco::JSON::Array::Ptr buildFields(size_t list_id) const
     {
         Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
         for (const auto & node : listAt(list_id))
