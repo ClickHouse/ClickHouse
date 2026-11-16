@@ -1,6 +1,7 @@
 -- a merge of projection parts chooses the format and a constant granule from the bytes that these parts store, not from a block in memory
 -- with `single_stream` a string stores its length in one byte, in memory it takes eight bytes of offset
 -- the twin tables have the projection materialized and show the read that the optimizer selects
+-- fixed merge block size and batch sorting queue: tiny random merge blocks make the real projection merges slow under the thread fuzzer
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0;
@@ -9,7 +10,7 @@ SELECT '-- a constant granule from the stored bytes';
 CREATE TABLE t_est (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 1, string_serialization_version = 'single_stream',
-        auto_statistics_types = '';
+        auto_statistics_types = '', merge_max_block_size = 8192, merge_use_batch_sorting_queue = 1;
 CREATE TABLE t_real AS t_est;
 ALTER TABLE t_real ADD PROJECTION p_k (SELECT a, b, s ORDER BY intDiv(b, 10));
 INSERT INTO t_est SELECT number, number % 100, 'x' FROM numbers(1500);
@@ -55,7 +56,8 @@ WHERE match(trim(explain), '^Granules:');
 SELECT '-- a merged part of a sparse column: a part does not record which of the parts it merged were sparse';
 CREATE TABLE s_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 0.5, auto_statistics_types = '';
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 0.5, auto_statistics_types = '',
+        merge_max_block_size = 8192, merge_use_batch_sorting_queue = 1;
 CREATE TABLE s_real AS s_est;
 ALTER TABLE s_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
 INSERT INTO s_est SELECT number, number % 100, 0 FROM numbers(1500);
@@ -78,7 +80,8 @@ DROP TABLE s_est;
 DROP TABLE s_real;
 CREATE TABLE s_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 0.5, auto_statistics_types = '';
+        use_const_adaptive_granularity = 1, ratio_of_defaults_for_sparse_serialization = 0.5, auto_statistics_types = '',
+        merge_max_block_size = 8192, merge_use_batch_sorting_queue = 1;
 CREATE TABLE s_real AS s_est;
 ALTER TABLE s_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
 INSERT INTO s_est SELECT number, number % 100, 0 FROM numbers(1500);
