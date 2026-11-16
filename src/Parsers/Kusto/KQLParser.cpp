@@ -465,7 +465,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
                         expect(KQLTokenType::Colon);
                         const KQLToken & column_type_token = current();
                         const String column_type = Poco::toLower(String(expectIdentifierName()));
-                        resolveScalarType(column_type_token, column_type);
+                        (void)resolveScalarType(column_type_token, column_type);
 
                         for (const TabularColumn & declared : parameter.tabular_columns)
                             if (declared.name == column)
@@ -486,7 +486,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
             {
                 const KQLToken & type_token = current();
                 const String type = Poco::toLower(String(expectIdentifierName()));
-                resolveScalarType(type_token, type);
+                (void)resolveScalarType(type_token, type);
                 parameter.type = type;
                 seen_scalar = true;
 

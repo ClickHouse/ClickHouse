@@ -65,9 +65,9 @@ public:
         Node(const Node &) = default;
         virtual ~Node() = default;
         virtual Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const = 0;
-        virtual String dumpNode(const PrometheusQueryTree & tree, size_t indent) const = 0;
-        virtual String toString(const PrometheusQueryTree & tree) const = 0;
-        virtual int getPrecedence() const { return 0; }
+        [[nodiscard]] virtual String dumpNode(const PrometheusQueryTree & tree, size_t indent) const = 0;
+        [[nodiscard]] virtual String toString(const PrometheusQueryTree & tree) const = 0;
+        [[nodiscard]] virtual int getPrecedence() const { return 0; }
     };
 
     /// A scalar literal, i.e. a floating-point or an integer number.
@@ -82,9 +82,9 @@ public:
         std::optional<Int64> duration_ms;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
-        int getPrecedence() const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] int getPrecedence() const override;
     };
 
     /// A string literal.
@@ -95,8 +95,8 @@ public:
         String string;
         StringLiteral() { node_type = NodeType::StringLiteral; result_type = ResultType::STRING; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// An instant selector.
@@ -107,8 +107,8 @@ public:
         MatcherList matchers;
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// A range selector.
@@ -117,11 +117,11 @@ public:
     {
     public:
         DurationType range{};
-        const InstantSelector * getInstantSelector() const { return &typeid_cast<const InstantSelector &>(*children.at(0)); }
+        [[nodiscard]] const InstantSelector * getInstantSelector() const { return &typeid_cast<const InstantSelector &>(*children.at(0)); }
         RangeSelector() { node_type = NodeType::RangeSelector; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// Represents a subquery, i.e. <expression>[<range>:<step>]. Here step can be omitted, but the colon always presents.
@@ -132,12 +132,12 @@ public:
     public:
         DurationType range{};
         std::optional<DurationType> step;
-        const Node * getExpression() const { return children.at(0); }
+        [[nodiscard]] const Node * getExpression() const { return children.at(0); }
         Subquery() { node_type = NodeType::Subquery; result_type = ResultType::RANGE_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
-        int getPrecedence() const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] int getPrecedence() const override;
     };
 
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
@@ -154,12 +154,12 @@ public:
         AtModifier at_modifier = AtModifier::None;
         std::optional<TimestampType> at_timestamp;
         std::optional<DurationType> offset_value;
-        const Node * getExpression() const { return children.at(0); }
-        bool hasAtModifier() const { return at_modifier != AtModifier::None; }
+        [[nodiscard]] const Node * getExpression() const { return children.at(0); }
+        [[nodiscard]] bool hasAtModifier() const { return at_modifier != AtModifier::None; }
         Offset() { node_type = NodeType::Offset; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// A function with parameters in parentheses.
@@ -170,11 +170,11 @@ public:
     {
     public:
         String function_name;
-        const std::vector<const Node *> & getArguments() const { return children; }
+        [[nodiscard]] const std::vector<const Node *> & getArguments() const { return children; }
         Function() { node_type = NodeType::Function; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     /// An unary operator: either +<argument> or -<argument>.
@@ -182,12 +182,12 @@ public:
     {
     public:
         String operator_name;
-        const Node * getArgument() const { return children.at(0); }
+        [[nodiscard]] const Node * getArgument() const { return children.at(0); }
         UnaryOperator() { node_type = NodeType::UnaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
-        int getPrecedence() const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] int getPrecedence() const override;
     };
 
     /// A binary operator: <left-argument> <operation-name> on(<on-labels>) group_left(<extra-labels>) <right-argument>
@@ -204,14 +204,14 @@ public:
         bool group_right = false;
         Strings extra_labels;
         bool bool_modifier = false;
-        const Node * getLeftArgument() const { return children.at(0); }
-        const Node * getRightArgument() const { return children.at(1); }
+        [[nodiscard]] const Node * getLeftArgument() const { return children.at(0); }
+        [[nodiscard]] const Node * getRightArgument() const { return children.at(1); }
         BinaryOperator() { node_type = NodeType::BinaryOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
-        int getPrecedence() const override;
-        bool isRightAssociative() const;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] int getPrecedence() const override;
+        [[nodiscard]] bool isRightAssociative() const;
     };
 
     /// An aggregation operator: <operator-name> [by (<by-labels>) | without (<without-labels>)] (<arguments>)
@@ -225,11 +225,11 @@ public:
         bool by = false;
         bool without = false;
         Strings labels;
-        const std::vector<const Node *> & getArguments() const { return children; }
+        [[nodiscard]] const std::vector<const Node *> & getArguments() const { return children; }
         AggregationOperator() { node_type = NodeType::AggregationOperator; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
-        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
-        String toString(const PrometheusQueryTree & tree) const override;
+        [[nodiscard]] String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        [[nodiscard]] String toString(const PrometheusQueryTree & tree) const override;
     };
 
     PrometheusQueryTree() = default;
@@ -253,23 +253,23 @@ public:
     /// If it isn't successful the function sets `error_pos` and `error_message` and returns false.
     bool tryParse(std::string_view promql_query_, UInt32 time_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
 
-    bool empty() const { return node_list.empty(); }
-    size_t size() const { return node_list.size(); }
+    [[nodiscard]] bool empty() const { return node_list.empty(); }
+    [[nodiscard]] size_t size() const { return node_list.size(); }
 
     /// Returns the root node.
-    const Node * getRoot() const { return root; }
+    [[nodiscard]] const Node * getRoot() const { return root; }
 
     /// Returns the promql query which was parsed to build this tree.
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Returns the type of the query's returning value.
-    ResultType getResultType() const;
+    [[nodiscard]] ResultType getResultType() const;
 
     /// Returns the scale used for timestamps and durations.
-    UInt32 getTimeScale() const { return time_scale; }
+    [[nodiscard]] UInt32 getTimeScale() const { return time_scale; }
 
     /// Dumps the tree to string as a tree for debugging purposes.
-    String dumpTree() const;
+    [[nodiscard]] String dumpTree() const;
 
 private:
     std::vector<std::unique_ptr<Node>> node_list;

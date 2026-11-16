@@ -121,10 +121,10 @@ public:
     template <typename Table, typename PartitionOf>
     AggregationCellIndex(Table & table, size_t num_partitions_, PartitionOf && partition_of);
 
-    size_t numPartitions() const { return num_partitions; }
+    [[nodiscard]] size_t numPartitions() const { return num_partitions; }
 
     /// The cells of the partitions from `first_partition` to `end_partition`.
-    size_t cellCount(size_t first_partition, size_t end_partition) const
+    [[nodiscard]] size_t cellCount(size_t first_partition, size_t end_partition) const
     {
         size_t count = 0;
         for (size_t key_class = 0; key_class < key_classes; ++key_class)

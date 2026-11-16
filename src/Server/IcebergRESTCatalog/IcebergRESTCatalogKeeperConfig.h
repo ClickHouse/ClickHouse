@@ -15,10 +15,10 @@ struct IcebergRESTCatalogKeeperConfig
     /// Parent node of all warehouse nodes.
     String zookeeper_path;
 
-    String warehousePath(const String & warehouse_name) const;
+    [[nodiscard]] String warehousePath(const String & warehouse_name) const;
 
     /// The Keeper session that holds the catalog state.
-    zkutil::ZooKeeperPtr getZooKeeper(const Context & context) const;
+    [[nodiscard]] zkutil::ZooKeeperPtr getZooKeeper(const Context & context) const;
 };
 
 IcebergRESTCatalogKeeperConfig getIcebergRESTCatalogKeeperConfig(const Context & context);
