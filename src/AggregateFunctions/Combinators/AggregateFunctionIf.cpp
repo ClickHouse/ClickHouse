@@ -20,9 +20,11 @@ namespace ErrorCodes
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "If"; }
+    [[nodiscard]] String getName() const override { return "If"; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -43,7 +45,7 @@ public:
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
@@ -103,7 +105,7 @@ private:
     }
 
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -222,7 +224,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }
@@ -279,7 +281,7 @@ private:
 
 public:
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Base::getName();
     }
@@ -447,9 +449,33 @@ public:
         addBatchImpl<true>(row_begin, row_end, places, place_offset, columns, arena);
     }
 
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        /// The generic implementation calls `add` row by row, which is slow for some nested functions
+        /// (example: the conversion of `Variant` arguments). Resolve the places and add the rows in one batch instead.
+        PaddedPODArray<AggregateDataPtr> places(row_end);
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            AggregateDataPtr & place = map[key[i]];
+            if (unlikely(!place))
+                init(place);
+            places[i] = place;
+        }
+
+        addBatchImpl<true>(row_begin, row_end, places.data(), place_offset, columns, arena);
+    }
+
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
     }

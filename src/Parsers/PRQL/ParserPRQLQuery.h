@@ -20,7 +20,7 @@ public:
     {
     }
 
-    const char * getName() const override { return "PRQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "PRQL Statement"; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

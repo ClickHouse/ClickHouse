@@ -141,12 +141,12 @@ public:
         return std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), /* buffer_size = */ buffer_size);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    [[nodiscard]] std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
     }
 
-    String describeFilePath() const override
+    [[nodiscard]] String describeFilePath() const override
     {
         return fmt::format("fscache://{}", segment_holder->front().getPath());
     }
@@ -301,7 +301,7 @@ public:
         return disk->writeFile(path_to_file, buffer_size);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    [[nodiscard]] std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
         settings.local_fs_settings.buffer_size = buffer_size_;
@@ -311,12 +311,12 @@ public:
         return disk->readFile(path_to_file, settings);
     }
 
-    String describeFilePath() const override
+    [[nodiscard]] String describeFilePath() const override
     {
         return fmt::format("disk({})://{}/{}", disk->getName(), disk->getPath(), path_to_file);
     }
 
-    const DiskPtr & getDisk() const override
+    [[nodiscard]] const DiskPtr & getDisk() const override
     {
         return disk;
     }
@@ -403,7 +403,7 @@ TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_
     : ReadBuffer(nullptr, 0)
     , compressed_buf(std::move(in_))
 {
-    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
 }
 
 bool TemporaryDataReadBuffer::nextImpl()
@@ -414,7 +414,7 @@ bool TemporaryDataReadBuffer::nextImpl()
         set(compressed_buf->position(), 0);
         return false;
     }
-    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
     return true;
 }
 

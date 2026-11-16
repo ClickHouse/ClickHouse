@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LazilyReadFromFile.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/LazyReadFromFileSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>

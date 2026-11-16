@@ -110,7 +110,7 @@ static UInt32 fieldToScale(const Field & field, const std::string & type_functio
 class TypeFunctionLeastSupertype : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         DataTypes types;
         types.reserve(args.size());
@@ -119,7 +119,7 @@ public:
         return Value(getLeastSupertype(types));
     }
 
-    std::string name() const override { return "leastSupertype"; }
+    [[nodiscard]] std::string name() const override { return "leastSupertype"; }
 };
 
 /// `leastSupertypeOrVariant(T1, T2, ...)` — like `leastSupertype` but, when the inputs
@@ -129,7 +129,7 @@ public:
 class TypeFunctionLeastSupertypeOrVariant : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         DataTypes types;
         types.reserve(args.size());
@@ -138,13 +138,13 @@ public:
         return Value(getLeastSupertypeOrVariant(types));
     }
 
-    std::string name() const override { return "leastSupertypeOrVariant"; }
+    [[nodiscard]] std::string name() const override { return "leastSupertypeOrVariant"; }
 };
 
 class TypeFunctionArray : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwContainerTypeFunctionNeedsElement("Array");
@@ -153,13 +153,13 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeArray>(args.front().type())));
     }
 
-    std::string name() const override { return "Array"; }
+    [[nodiscard]] std::string name() const override { return "Array"; }
 };
 
 class TypeFunctionTuple : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             return Value(DataTypePtr(std::make_shared<DataTypeTuple>(DataTypes{})));
@@ -190,7 +190,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeTuple>(elems)));
     }
 
-    std::string name() const override { return "Tuple"; }
+    [[nodiscard]] std::string name() const override { return "Tuple"; }
 };
 
 /// Attach a name to a type. Only meaningful inside the Tuple type-function — flows through
@@ -198,7 +198,7 @@ public:
 class TypeFunctionNamedField : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "NamedField requires exactly 2 arguments (name, type)");
@@ -207,26 +207,26 @@ public:
         return res;
     }
 
-    std::string name() const override { return "NamedField"; }
+    [[nodiscard]] std::string name() const override { return "NamedField"; }
 };
 
 class TypeFunctionMap : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function Map requires exactly 2 arguments (key, value)");
         return Value(DataTypePtr(std::make_shared<DataTypeMap>(args[0].type(), args[1].type())));
     }
 
-    std::string name() const override { return "Map"; }
+    [[nodiscard]] std::string name() const override { return "Map"; }
 };
 
 class TypeFunctionFixedString : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwParametricTypeFunctionNeedsValue("FixedString", "size");
@@ -235,14 +235,14 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeFixedString>(args.front().field().safeGet<UInt64>())));
     }
 
-    std::string name() const override { return "FixedString"; }
+    [[nodiscard]] std::string name() const override { return "FixedString"; }
 };
 
 /// Creates DateTime with specified time zone.
 class TypeFunctionDateTime : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() > 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function DateTime");
@@ -251,14 +251,14 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeDateTime>(args.front().field().safeGet<String>())));
     }
 
-    std::string name() const override { return "DateTime"; }
+    [[nodiscard]] std::string name() const override { return "DateTime"; }
 };
 
 /// Creates DateTime64 with specified scale and optional time zone.
 class TypeFunctionDateTime64 : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwParametricTypeFunctionNeedsValue("DateTime64", "scale");
@@ -270,14 +270,14 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale, args[1].field().safeGet<String>())));
     }
 
-    std::string name() const override { return "DateTime64"; }
+    [[nodiscard]] std::string name() const override { return "DateTime64"; }
 };
 
 /// Creates Time64 with specified scale.
 class TypeFunctionTime64 : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwParametricTypeFunctionNeedsValue("Time64", "scale");
@@ -286,7 +286,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeTime64>(fieldToScale(args.front().field(), name()))));
     }
 
-    std::string name() const override { return "Time64"; }
+    [[nodiscard]] std::string name() const override { return "Time64"; }
 };
 
 /// Extracts the scale of a DateTime64 / Time64, or DataTypeDateTime64::default_scale if the
@@ -294,7 +294,7 @@ public:
 class TypeFunctionScaleOf : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function scaleOf");
@@ -306,7 +306,7 @@ public:
         return Value(Field(static_cast<UInt64>(DataTypeDateTime64::default_scale)));
     }
 
-    std::string name() const override { return "scaleOf"; }
+    [[nodiscard]] std::string name() const override { return "scaleOf"; }
 };
 
 /// Extracts the explicit time zone name of a DateTime / DateTime64 argument, or the empty
@@ -317,7 +317,7 @@ public:
 class TypeFunctionTimezoneOf : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function timezoneOf");
@@ -329,14 +329,14 @@ public:
         return Value(Field(std::string()));
     }
 
-    std::string name() const override { return "timezoneOf"; }
+    [[nodiscard]] std::string name() const override { return "timezoneOf"; }
 };
 
 /// max(a, b) over UInt64 constants.
 class TypeFunctionMax : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function max");
@@ -345,7 +345,7 @@ public:
         return Value(Field(std::max(a, b)));
     }
 
-    std::string name() const override { return "max"; }
+    [[nodiscard]] std::string name() const override { return "max"; }
 };
 
 /// Resolve a const-string type name to a `DataType`. Used in signatures of
@@ -355,7 +355,7 @@ public:
 class TypeFunctionTypeFromString : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function typeFromString");
@@ -364,7 +364,7 @@ public:
         return Value(factory.get(args.front().field().safeGet<String>()));
     }
 
-    std::string name() const override { return "typeFromString"; }
+    [[nodiscard]] std::string name() const override { return "typeFromString"; }
 };
 
 /// `subcolumnTypeOf(T, const name)` — looks up the type of a named subcolumn
@@ -376,7 +376,7 @@ public:
 class TypeFunctionSubcolumnTypeOf : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function subcolumnTypeOf takes 2 arguments");
@@ -385,7 +385,7 @@ public:
         return Value(container->getSubcolumnType(name));  // throws `ILLEGAL_COLUMN` if absent
     }
 
-    std::string name() const override { return "subcolumnTypeOf"; }
+    [[nodiscard]] std::string name() const override { return "subcolumnTypeOf"; }
 };
 
 class TypeFunctionDifference : public ITypeFunction
@@ -426,7 +426,7 @@ private:
     }
 
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function difference");
@@ -443,7 +443,7 @@ public:
         return Value(res);
     }
 
-    std::string name() const override { return "difference"; }
+    [[nodiscard]] std::string name() const override { return "difference"; }
 };
 
 /// `additionMultiplicationResult(A, B)` — the result type of multiplying then summing values of
@@ -475,7 +475,7 @@ private:
     }
 
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -493,7 +493,7 @@ public:
         return Value(res);
     }
 
-    std::string name() const override { return "additionMultiplicationResult"; }
+    [[nodiscard]] std::string name() const override { return "additionMultiplicationResult"; }
 };
 
 /// `arraySumResult(T)` — the element type of `arraySum` / `arrayCumSum` /
@@ -505,7 +505,7 @@ public:
 class TypeFunctionArraySumResult : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function arraySumResult");
@@ -539,7 +539,7 @@ public:
         return Value(res);
     }
 
-    std::string name() const override { return "arraySumResult"; }
+    [[nodiscard]] std::string name() const override { return "arraySumResult"; }
 };
 
 /// `arrayDifferenceResult(T)` — the element type of `arrayDifference` over an array of `T`.
@@ -551,7 +551,7 @@ public:
 class TypeFunctionArrayDifferenceResult : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function arrayDifferenceResult");
@@ -583,7 +583,7 @@ public:
         return Value(res);
     }
 
-    std::string name() const override { return "arrayDifferenceResult"; }
+    [[nodiscard]] std::string name() const override { return "arrayDifferenceResult"; }
 };
 
 /// `rangeResult(A1, [A2], [A3])` — the result type of `range`. Mirrors `FunctionRange::getReturnTypeImpl`:
@@ -595,7 +595,7 @@ public:
 class TypeFunctionRangeResult : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty() || args.size() > 3)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function rangeResult");
@@ -621,7 +621,7 @@ public:
         return Value(std::make_shared<DataTypeArray>(getLeastSupertype(arg_types)));
     }
 
-    std::string name() const override { return "rangeResult"; }
+    [[nodiscard]] std::string name() const override { return "rangeResult"; }
 };
 
 /// `Decimal(precision, scale)` — builds a Decimal type from two const values, choosing
@@ -632,7 +632,7 @@ public:
 class TypeFunctionDecimal : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         /// The scale comes from a const argument; on the types-only fallback its value is
         /// unavailable, so only the precision literal reaches us — report that cleanly.
@@ -645,7 +645,7 @@ public:
         return Value(createDecimal<DataTypeDecimal>(precision, scale));
     }
 
-    std::string name() const override { return "Decimal"; }
+    [[nodiscard]] std::string name() const override { return "Decimal"; }
 };
 
 /// `dateTimeFromScale(scale, [tz])` — the result type of `toDateTime` when the scale is given as a
@@ -654,7 +654,7 @@ public:
 class TypeFunctionDateTimeFromScale : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwParametricTypeFunctionNeedsValue("dateTimeFromScale", "scale");
@@ -674,7 +674,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale)));
     }
 
-    std::string name() const override { return "dateTimeFromScale"; }
+    [[nodiscard]] std::string name() const override { return "dateTimeFromScale"; }
 };
 
 /// `timeFromScale(scale)` — the result type of `toTime` when the scale is given as a const argument:
@@ -682,7 +682,7 @@ public:
 class TypeFunctionTimeFromScale : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throwParametricTypeFunctionNeedsValue("timeFromScale", "scale");
@@ -695,7 +695,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeTime64>(scale)));
     }
 
-    std::string name() const override { return "timeFromScale"; }
+    [[nodiscard]] std::string name() const override { return "timeFromScale"; }
 };
 
 /// `sizeOfValueInMemory(T)` — the fixed in-memory size (in bytes) of a value of type T, as a UInt64
@@ -705,21 +705,21 @@ public:
 class TypeFunctionSizeOfValueInMemory : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function sizeOfValueInMemory");
         return Value(Field(static_cast<UInt64>(args.front().type()->getSizeOfValueInMemory())));
     }
 
-    std::string name() const override { return "sizeOfValueInMemory"; }
+    [[nodiscard]] std::string name() const override { return "sizeOfValueInMemory"; }
 };
 
 /// If the type was already Nullable, return it as is.
 class TypeFunctionNullable : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Nullable");
@@ -730,13 +730,13 @@ public:
         return Value(makeNullableOrLowCardinalityNullable(args.front().type()));
     }
 
-    std::string name() const override { return "Nullable"; }
+    [[nodiscard]] std::string name() const override { return "Nullable"; }
 };
 
 class TypeFunctionLowCardinality : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function LowCardinality");
@@ -748,14 +748,14 @@ public:
             return Value(DataTypePtr(std::make_shared<DataTypeLowCardinality>(type)));
     }
 
-    std::string name() const override { return "LowCardinality"; }
+    [[nodiscard]] std::string name() const override { return "LowCardinality"; }
 };
 
 /// Extract the underlying dictionary type of a LowCardinality(T). Used by lowCardinalityKeys.
 class TypeFunctionDictionaryTypeOf : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function dictionaryTypeOf");
@@ -767,14 +767,14 @@ public:
         return Value(lc->getDictionaryType());
     }
 
-    std::string name() const override { return "dictionaryTypeOf"; }
+    [[nodiscard]] std::string name() const override { return "dictionaryTypeOf"; }
 };
 
 
 class TypeFunctionTuplesHaveSameSize : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() <= 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function tuplesHaveSameSize");
@@ -797,7 +797,7 @@ public:
         return Value(Field(UInt64(1)));
     }
 
-    std::string name() const override { return "tuplesHaveSameSize"; }
+    [[nodiscard]] std::string name() const override { return "tuplesHaveSameSize"; }
 };
 
 
@@ -807,7 +807,7 @@ public:
 class TypeFunctionRemoveNullable : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function removeNullable");
@@ -815,7 +815,7 @@ public:
         return Value(removeNullable(args.front().type()));
     }
 
-    std::string name() const override { return "removeNullable"; }
+    [[nodiscard]] std::string name() const override { return "removeNullable"; }
 };
 
 
@@ -825,7 +825,7 @@ public:
 class TypeFunctionNull : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (!args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function NULL takes no arguments");
@@ -833,7 +833,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())));
     }
 
-    std::string name() const override { return "NULL"; }
+    [[nodiscard]] std::string name() const override { return "NULL"; }
 };
 
 
@@ -935,7 +935,7 @@ namespace
 class TypeFunctionNativeNumber : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 3)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -946,7 +946,7 @@ public:
         return Value(constructNativeNumber(bits, is_signed, is_floating));
     }
 
-    std::string name() const override { return "nativeNumber"; }
+    [[nodiscard]] std::string name() const override { return "nativeNumber"; }
 };
 
 
@@ -955,7 +955,7 @@ public:
 class TypeFunctionMakeSigned : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeSigned takes 1 argument");
@@ -967,7 +967,7 @@ public:
         return Value(constructNativeNumber(bits, /*signed*/ true, nativeNumberIsFloating(type)));
     }
 
-    std::string name() const override { return "makeSigned"; }
+    [[nodiscard]] std::string name() const override { return "makeSigned"; }
 };
 
 
@@ -977,7 +977,7 @@ public:
 class TypeFunctionMakeUnsigned : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeUnsigned takes 1 argument");
@@ -992,7 +992,7 @@ public:
         return Value(constructNativeNumber(bits, /*signed*/ false, /*floating*/ false));
     }
 
-    std::string name() const override { return "makeUnsigned"; }
+    [[nodiscard]] std::string name() const override { return "makeUnsigned"; }
 };
 
 
@@ -1003,7 +1003,7 @@ public:
 class TypeFunctionNextLargerNativeBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function nextLargerNativeBits takes 1 argument");
@@ -1013,7 +1013,7 @@ public:
         return Value(Field(n));
     }
 
-    std::string name() const override { return "nextLargerNativeBits"; }
+    [[nodiscard]] std::string name() const override { return "nextLargerNativeBits"; }
 };
 
 
@@ -1022,7 +1022,7 @@ public:
 class TypeFunctionMaxBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         UInt64 result = 0;
         for (const auto & arg : args)
@@ -1030,7 +1030,7 @@ public:
         return Value(Field(result));
     }
 
-    std::string name() const override { return "maxBits"; }
+    [[nodiscard]] std::string name() const override { return "maxBits"; }
 };
 
 
@@ -1039,7 +1039,7 @@ public:
 class TypeFunctionMaxSignedBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         UInt64 result = 0;
         for (const auto & arg : args)
@@ -1048,7 +1048,7 @@ public:
         return Value(Field(result));
     }
 
-    std::string name() const override { return "maxSignedBits"; }
+    [[nodiscard]] std::string name() const override { return "maxSignedBits"; }
 };
 
 
@@ -1057,7 +1057,7 @@ public:
 class TypeFunctionMaxUnsignedBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         UInt64 result = 0;
         for (const auto & arg : args)
@@ -1066,7 +1066,7 @@ public:
         return Value(Field(result));
     }
 
-    std::string name() const override { return "maxUnsignedBits"; }
+    [[nodiscard]] std::string name() const override { return "maxUnsignedBits"; }
 };
 
 
@@ -1074,7 +1074,7 @@ public:
 class TypeFunctionMaxIntegerBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         UInt64 result = 0;
         for (const auto & arg : args)
@@ -1083,7 +1083,7 @@ public:
         return Value(Field(result));
     }
 
-    std::string name() const override { return "maxIntegerBits"; }
+    [[nodiscard]] std::string name() const override { return "maxIntegerBits"; }
 };
 
 
@@ -1091,7 +1091,7 @@ public:
 class TypeFunctionMaxFloatingBits : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         UInt64 result = 0;
         for (const auto & arg : args)
@@ -1100,7 +1100,7 @@ public:
         return Value(Field(result));
     }
 
-    std::string name() const override { return "maxFloatingBits"; }
+    [[nodiscard]] std::string name() const override { return "maxFloatingBits"; }
 };
 
 
@@ -1109,7 +1109,7 @@ public:
 class TypeFunctionAnySigned : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (nativeNumberIsSigned(arg.type()))
@@ -1117,7 +1117,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anySigned"; }
+    [[nodiscard]] std::string name() const override { return "anySigned"; }
 };
 
 
@@ -1125,7 +1125,7 @@ public:
 class TypeFunctionAnyFloating : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (nativeNumberIsFloating(arg.type()))
@@ -1133,7 +1133,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anyFloating"; }
+    [[nodiscard]] std::string name() const override { return "anyFloating"; }
 };
 
 /// `anyFloat64(T1, T2, ...)` — predicate type function that returns `1` if
@@ -1143,7 +1143,7 @@ public:
 class TypeFunctionAnyFloat64 : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (WhichDataType(arg.type()).isFloat64())
@@ -1151,7 +1151,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anyFloat64"; }
+    [[nodiscard]] std::string name() const override { return "anyFloat64"; }
 };
 
 /// `anyBool(T1, T2, ...)` — predicate type function that returns `1` if any
@@ -1162,7 +1162,7 @@ public:
 class TypeFunctionAnyBool : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (arg.type()->getName() == "Bool")
@@ -1170,7 +1170,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anyBool"; }
+    [[nodiscard]] std::string name() const override { return "anyBool"; }
 };
 
 /// `anyNullable(T1, T2, ...)` — predicate type function that returns `1` if
@@ -1178,7 +1178,7 @@ public:
 class TypeFunctionAnyNullable : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (arg.type()->isNullable())
@@ -1186,7 +1186,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anyNullable"; }
+    [[nodiscard]] std::string name() const override { return "anyNullable"; }
 };
 
 /// `concatTuples(T1, T2, ...)` — concatenates the element lists of the given
@@ -1197,7 +1197,7 @@ public:
 class TypeFunctionConcatTuples : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         DataTypes flat_elems;
         Strings flat_names;
@@ -1226,7 +1226,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeTuple>(flat_elems)));
     }
 
-    std::string name() const override { return "concatTuples"; }
+    [[nodiscard]] std::string name() const override { return "concatTuples"; }
 };
 
 /// `makeNullableIfCanBe(T)` — wraps `T` in `Nullable` if `T->canBeInsideNullable()`,
@@ -1236,7 +1236,7 @@ public:
 class TypeFunctionMakeNullableIfCanBe : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function makeNullableIfCanBe takes 1 argument");
@@ -1247,7 +1247,7 @@ public:
         return Value(type);
     }
 
-    std::string name() const override { return "makeNullableIfCanBe"; }
+    [[nodiscard]] std::string name() const override { return "makeNullableIfCanBe"; }
 };
 
 /// `mostSubtype(T1, T2, ...)` — finds the most specific common type. Used by
@@ -1260,7 +1260,7 @@ public:
 class TypeFunctionMostSubtype : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         DataTypes types;
         types.reserve(args.size());
@@ -1273,7 +1273,7 @@ public:
         return Value(getMostSubtype(types, /* throw_if_result_is_nothing */ true));
     }
 
-    std::string name() const override { return "mostSubtype"; }
+    [[nodiscard]] std::string name() const override { return "mostSubtype"; }
 };
 
 /// `innermostArrayElement(T)` — for a (possibly nested) Array type, returns the
@@ -1282,7 +1282,7 @@ public:
 class TypeFunctionInnermostArrayElement : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function innermostArrayElement takes 1 argument");
@@ -1298,7 +1298,7 @@ public:
         return Value(current);
     }
 
-    std::string name() const override { return "innermostArrayElement"; }
+    [[nodiscard]] std::string name() const override { return "innermostArrayElement"; }
 };
 
 /// `reverseTuple(T)` — flips the element order of a Tuple, preserving names if
@@ -1307,7 +1307,7 @@ public:
 class TypeFunctionReverseTuple : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function reverseTuple takes 1 argument");
@@ -1330,7 +1330,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeTuple>(reversed_elems)));
     }
 
-    std::string name() const override { return "reverseTuple"; }
+    [[nodiscard]] std::string name() const override { return "reverseTuple"; }
 };
 
 
@@ -1342,7 +1342,7 @@ public:
 class TypeFunctionIsFloat32OrSmaller : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function isFloat32OrSmaller takes 1 argument");
@@ -1352,7 +1352,7 @@ public:
         return Value(Field(UInt64{small_float ? 1u : 0u}));
     }
 
-    std::string name() const override { return "isFloat32OrSmaller"; }
+    [[nodiscard]] std::string name() const override { return "isFloat32OrSmaller"; }
 };
 
 
@@ -1360,7 +1360,7 @@ public:
 class TypeFunctionAnyInteger : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         for (const auto & arg : args)
             if (nativeNumberIsInteger(arg.type()))
@@ -1368,7 +1368,7 @@ public:
         return Value(Field(UInt64{0}));
     }
 
-    std::string name() const override { return "anyInteger"; }
+    [[nodiscard]] std::string name() const override { return "anyInteger"; }
 };
 
 
@@ -1380,7 +1380,7 @@ public:
 class TypeFunctionSelectIf : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 3)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Type function selectIf takes 3 arguments: (cond, then, else)");
@@ -1388,7 +1388,7 @@ public:
         return cond ? args[1] : args[2];
     }
 
-    std::string name() const override { return "selectIf"; }
+    [[nodiscard]] std::string name() const override { return "selectIf"; }
 };
 
 
@@ -1398,7 +1398,7 @@ public:
 class TypeFunctionIntervalType : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function IntervalType");
@@ -1411,7 +1411,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeInterval>(kind)));
     }
 
-    std::string name() const override { return "IntervalType"; }
+    [[nodiscard]] std::string name() const override { return "IntervalType"; }
 };
 
 
@@ -1421,7 +1421,7 @@ public:
 class TypeFunctionAggregateFunctionReturnType : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1434,7 +1434,7 @@ public:
         return Value(af->getReturnType());
     }
 
-    std::string name() const override { return "aggregateFunctionReturnType"; }
+    [[nodiscard]] std::string name() const override { return "aggregateFunctionReturnType"; }
 };
 
 
@@ -1444,7 +1444,7 @@ public:
 class TypeFunctionAggregateFunctionType : public ITypeFunction
 {
 public:
-    Value apply(const Values & args) const override
+    [[nodiscard]] Value apply(const Values & args) const override
     {
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1465,7 +1465,7 @@ public:
         return Value(DataTypePtr(std::make_shared<DataTypeAggregateFunction>(std::move(func), std::move(arg_types), std::move(params))));
     }
 
-    std::string name() const override { return "AggregateFunction"; }
+    [[nodiscard]] std::string name() const override { return "AggregateFunction"; }
 };
 
 
