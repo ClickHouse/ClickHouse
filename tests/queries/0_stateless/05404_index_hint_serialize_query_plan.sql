@@ -69,10 +69,13 @@ SELECT sum(b), count() FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT sum(b) FROM t_index_hint_serialized WHERE indexHint(a IN (SELECT number FROM numbers(10))));
 
 -- A shipped read maps the column identifiers back, including `numbers` on the broadcast side of a shipped join.
+-- A randomized join order can keep the join local.
 SELECT sum(a), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 0;
 SELECT sum(a), count() FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 1;
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 FROM (EXPLAIN SELECT sum(a) FROM t_index_hint_serialized WHERE indexHint(a < 10) SETTINGS parallel_replicas_local_plan = 0);
-SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3) SETTINGS parallel_replicas_local_plan = 0;
-SELECT countIf(explain ILIKE '%JoinLogical%') > 0 FROM (EXPLAIN SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3) SETTINGS parallel_replicas_local_plan = 0);
+SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3)
+    SETTINGS parallel_replicas_local_plan = 0, query_plan_optimize_join_order_randomize = 0;
+SELECT countIf(explain ILIKE '%JoinLogical%') > 0 FROM (EXPLAIN SELECT count(), sum(r.a) FROM t_index_hint_serialized AS r INNER JOIN numbers(100000) AS l ON l.number = r.a WHERE indexHint(l.number < 3)
+    SETTINGS parallel_replicas_local_plan = 0, query_plan_optimize_join_order_randomize = 0);
 
 DROP TABLE t_index_hint_serialized;
