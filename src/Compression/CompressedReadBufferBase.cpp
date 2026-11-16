@@ -125,40 +125,43 @@ void CompressedReadBufferBase::validateChecksum(const char * data, size_t size, 
     throw Exception::createDeprecated(message.str(), error_code);
 }
 
-static void readHeaderAndGetCodecAndSize(
-    const char * compressed_buffer,
-    UInt8 header_size,
-    CompressionCodecPtr & codec,
-    size_t & size_decompressed,
-    size_t & size_compressed_without_checksum,
-    bool allow_different_codecs,
-    bool external_data)
+void CompressedReadBufferBase::setCodec(UInt8 method)
 {
-    uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
-
-    if (!codec)
+    if (!codec || method != codec->getMethodByte())
     {
-        codec = CompressionCodecFactory::instance().get(method);
-    }
-    else if (method != codec->getMethodByte())
-    {
-        if (allow_different_codecs)
-        {
-            codec = CompressionCodecFactory::instance().get(method);
-        }
-        else
+        if (codec && !allow_different_codecs)
         {
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
                             "byte 0x{}, previous method byte 0x{}",
                             getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
         }
+
+        if (cached_codec && cached_codec->getMethodByte() == method)
+        {
+            codec.swap(cached_codec);
+        }
+        else
+        {
+            auto next_codec = CompressionCodecFactory::instance().get(method);
+            if (codec && (codec->isNone() || next_codec->isNone()))
+                cached_codec = std::move(codec);
+            else
+                cached_codec.reset();
+            codec = std::move(next_codec);
+        }
     }
 
     if (external_data)
         codec->setExternalDataFlag();
+}
 
-    size_compressed_without_checksum = codec->readCompressedBlockSize(compressed_buffer);
-    size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
+void CompressedReadBufferBase::readHeaderAndGetCodecAndSize(
+    const char * compressed_buffer_, UInt8 header_size, size_t & size_decompressed, size_t & size_compressed_without_checksum)
+{
+    setCodec(ICompressionCodec::readMethod(compressed_buffer_));
+
+    size_compressed_without_checksum = codec->readCompressedBlockSize(compressed_buffer_);
+    size_decompressed = codec->readDecompressedBlockSize(compressed_buffer_);
 
     /// This is for clang static analyzer.
     chassert(size_decompressed > 0);
@@ -196,11 +199,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         readHeaderAndGetCodecAndSize(
             compressed_in->position() + sizeof(Checksum),
             header_size,
-            codec,
             size_decompressed,
-            size_compressed_without_checksum,
-            allow_different_codecs,
-            external_data);
+            size_compressed_without_checksum);
         compressed_in->position() += size_header_plus_checksum;
     }
     else
@@ -213,11 +213,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         readHeaderAndGetCodecAndSize(
             own_compressed_buffer.data() + sizeof(Checksum),
             header_size,
-            codec,
             size_decompressed,
-            size_compressed_without_checksum,
-            allow_different_codecs,
-            external_data);
+            size_compressed_without_checksum);
     }
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
@@ -253,46 +250,24 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
-static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
-                                  bool allow_different_codecs, bool external_data)
+void CompressedReadBufferBase::readHeaderAndGetCodec(const char * compressed_buffer_, size_t size_decompressed)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-    uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
-
-    if (!codec)
-    {
-        codec = CompressionCodecFactory::instance().get(method);
-    }
-    else if (codec->getMethodByte() != method)
-    {
-        if (allow_different_codecs)
-        {
-            codec = CompressionCodecFactory::instance().get(method);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
-                            "byte 0x{}, previous method byte 0x{}",
-                            getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
-        }
-    }
-
-    if (external_data)
-        codec->setExternalDataFlag();
+    setCodec(ICompressionCodec::readMethod(compressed_buffer_));
 }
 
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed);
     LZ4::StatisticsHintScope hint_scope(statistics_hint);
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
 void CompressedReadBufferBase::decompress(BufferBase::WorkingBuffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+    readHeaderAndGetCodec(compressed_buffer, size_decompressed);
 
     if (codec->isNone())
     {
