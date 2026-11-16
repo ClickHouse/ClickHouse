@@ -6,8 +6,6 @@ title: '将 Amazon S3 集成到 ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 S3 ClickPipe 提供了一种全托管且具备高韧性的方式，可将 Amazon S3 和兼容 S3 的对象存储中的数据摄取到 ClickHouse Cloud。它同时支持 **一次性** 和 **持续摄取**，并具备精确一次语义。
 
 S3 ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
@@ -189,7 +187,15 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
 
 要使用[访问密钥](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 ID (例如 `AKIAIOSFODNN7EXAMPLE`) 和秘密访问密钥 (例如 `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) 。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="S3 ClickPipes 的 IAM 凭证" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![S3 ClickPipes 的 IAM 凭证](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+
+</Frame>
+
+</div>
 
 <div id="iam-role">
   #### IAM role
@@ -197,7 +203,15 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
 
 如需使用[基于角色的访问](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `IAM role`。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="S3 ClickPipes 的 IAM 身份验证" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![S3 ClickPipes 的 IAM 身份验证](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+
+</Frame>
+
+</div>
 
 请按照[本指南](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)[创建角色](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)，并为其配置 S3 访问所需的信任策略。然后，在 `IAM role ARN` 中填写 IAM role ARN。
 
@@ -242,7 +256,15 @@ ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的
 | `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)的方式推送到已附加的视图。                         |
 | `Use cluster function`               | true    | 是否在多个节点上并行处理文件。                                                                                                            |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 高级设置" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickPipes 高级设置](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### 扩缩容

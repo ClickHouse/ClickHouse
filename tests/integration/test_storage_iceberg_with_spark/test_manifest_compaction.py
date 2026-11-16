@@ -1922,7 +1922,7 @@ def test_optimize_manifest_parent_summary_missing_totals(
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
 
-    # The newly-written manifest-only snapshot must carry the missing totals as "0".
+    # The newly-written manifest-only snapshot must keep the missing totals absent.
     default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -1935,8 +1935,8 @@ def test_optimize_manifest_parent_summary_missing_totals(
         f"Expected operation='replace', got: {summary.get('operation')}"
     )
     for stripped in stripped_fields:
-        assert summary.get(stripped) == "0", (
-            f"Expected {stripped}='0' on the new manifest-only snapshot, "
+        assert stripped not in summary, (
+            f"Expected {stripped} to stay absent on the new manifest-only snapshot, "
             f"got: {summary.get(stripped)!r}"
         )
 

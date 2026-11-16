@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 供 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表引擎和 `cluster` 表函数使用的集群配置。
 
@@ -30,13 +28,11 @@ doc_type: 'reference'
 * [集群发现](/zh/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Replicated 数据库引擎](/zh/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 允许在与 URL 相关的存储引擎和表函数中使用的主机列表。
 
-添加带有 `\<host\>` xml tag 的主机时：
+添加带有 `\<host\>` xml 标签 的主机时：
 
 * 应与 URL 中的写法完全一致，因为主机名会在 DNS resolution 之前进行检查。例如：`<host>clickhouse.com</host>`
 * 如果在 URL 中显式指定了端口，则会将 host:port 作为一个整体进行检查。例如：`<host>clickhouse.com:80</host>`
@@ -44,11 +40,23 @@ doc_type: 'reference'
 * 如果将主机指定为 IP 地址，则会按 URL 中指定的内容进行检查。例如：`[2a02:6b8:a::a]`。
 * 如果存在重定向且已启用对重定向的支持，则会检查每一次重定向 (location field) 。
 
+使用 `\<host_regexp\>` xml 标签添加正则表达式时，将使用 RE2 引擎对整个主机进行匹配。例如：`<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+使用 `\<s3_bucket\>` xml 标签添加单个 S3 存储桶时，格式为 `host/bucket` 或 `host:port/bucket`：
+
+* 适用于端点由多方共享的场景，例如路径风格的 AWS endpoint `s3.us-west-2.amazonaws.com`：若放行整个主机，则该主机上的所有桶都会被允许。
+* 桶名取自解析后的 S3 URL，因此该条目可同时匹配 `https://s3.us-west-2.amazonaws.com/my-bucket/...` 和 `https://my-bucket.s3.us-west-2.amazonaws.com/...`。
+* 仅适用于 S3 URL：`s3` 表函数和引擎、`S3` 数据库引擎、到 `S3` 的 `BACKUP`/`RESTORE`，以及在 SQL 中通过 `disk` 函数创建的 S3 磁盘。
+* 在 SQL 中创建的 S3 磁盘会在执行创建它的查询时接受检查。对于在设置该列表之前就已存在的磁盘，或由不含此检查的版本创建的磁盘，服务器启动时仍会照常加载 (包括已删除但尚未彻底清除的表) ，因此 `UNDROP TABLE` 依然可用；服务器会在日志和 `system.warnings` 中报告此情况。
+* S3 返回的永久 (301) 重定向同样会依据桶条目进行检查，但临时 (307) 重定向仅按主机检查，因此当列表中只包含 `\<s3_bucket\>` 条目时，此类重定向会被拒绝。
+
 例如：
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 

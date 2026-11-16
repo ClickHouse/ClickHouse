@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Эти настройки задают параметры сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 Конфигурация кластеров, используемых движком таблицы [Distributed](/ru/reference/engines/table-engines/special/distributed) и табличной функцией `cluster`.
 
@@ -30,9 +28,7 @@ doc_type: 'reference'
 * [Обнаружение кластера](/ru/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Движок базы данных Replicated](/ru/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 Список хостов, которые разрешено использовать в связанных с URL движках хранения и табличных функциях.
 
@@ -44,11 +40,23 @@ doc_type: 'reference'
 * если хост указан как IP-адрес, то он проверяется в том виде, в котором указан в URL. Например: `[2a02:6b8:a::a]`.
 * если есть перенаправления и их поддержка включена, то проверяется каждое перенаправление (поле location).
 
+При добавлении регулярного выражения с помощью XML-тега `\<host_regexp\>` используется движок RE2, а сопоставление выполняется по всему имени хоста. Например: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+При добавлении отдельного S3 бакета с помощью XML-тега `\<s3_bucket\>` в виде `host/bucket` или `host:port/bucket`:
+
+* это полезно, когда конечной точкой пользуются многие стороны, например конечная точка AWS с адресацией в стиле пути `s3.us-west-2.amazonaws.com`: если разрешить весь хост, станут доступны все бакеты на нём.
+* бакет извлекается из разобранного S3 URL, поэтому запись совпадает как с `https://s3.us-west-2.amazonaws.com/my-bucket/...`, так и с `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+* это относится только к S3 URL: табличным функциям и движкам `s3`, движку баз данных `S3`, `BACKUP`/`RESTORE` в `S3`, а также S3-дискам, созданным в SQL с помощью функции `disk`.
+* S3-диск, созданный в SQL, проверяется в момент выполнения создающего его запроса. Диск, который уже существовал на момент задания списка или был создан версией без этой проверки, по-прежнему загружается при запуске сервера — в том числе для таблицы, которая была удалена, но ещё не стёрта окончательно, поэтому `UNDROP TABLE` продолжает работать; при этом сервер сообщает об этом в журнале и в `system.warnings`.
+* постоянное перенаправление (301), возвращённое S3, также проверяется по записям бакетов, однако временное перенаправление (307) проверяется только по хосту, поэтому оно отклоняется, если список содержит только записи `\<s3_bucket\>`.
+
 Например:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 

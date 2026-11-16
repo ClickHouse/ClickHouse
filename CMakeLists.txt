@@ -123,17 +123,6 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
-option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
-if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
-endif ()
-
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -378,8 +367,9 @@ if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
     if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
-        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
+        set (LINK_TIME_TRACE_GRANULARITY 50000 CACHE STRING "Minimum duration in microseconds of an event recorded in the linker time trace (lld --time-trace-granularity)")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
+        set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace -Wl,--time-trace-granularity=${LINK_TIME_TRACE_GRANULARITY}")
     endif ()
 endif ()
 
@@ -420,6 +410,81 @@ if (ARCH_AMD64 AND NOT SANITIZE)
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign the return address in the prologue and authenticate it before returning, so that
+    # overwriting a saved return address cannot redirect control flow. `paciasp` and `autiasp`
+    # live in the `NOP` encoding space: they are real operations on a core implementing
+    # `FEAT_PAuth` (ARMv8.3 and later, which covers Graviton3 and Graviton4) and decode as no-ops
+    # on older cores, so one binary still runs everywhere - just unprotected on the older ones.
+    # That holds only for code compiled for a target without `FEAT_PAuth`, which is our baseline
+    # (`cmake/cpu_features.cmake`). In a function compiled for ARMv8.3 or later, through `-march`
+    # or a `target` attribute, clang folds `autiasp; ret` into `retaa`, which raises SIGILL on the
+    # older cores. Such functions have to opt out with `target("branch-protection=none")`, as
+    # the ARMv8.3+ targets in our fork of SimSIMD do, and the compatibility check fails the
+    # `arm_release` package if a `retaa` or `retab` is left anywhere in it. Opting out a whole
+    # library instead does not work: a callee whose branch protection differs from the caller's
+    # is not inlined, and under ThinLTO that fails the `vectorize(enable)` loops in usearch.
+    # Leaf functions are left unsigned, which is the default and free, because they do not spill
+    # the return address to the stack.
+    # `bti` is deliberately left out. The linker keeps the BTI property only when every input
+    # object carries it, including hand-written assembly and every contrib, so enabling it needs
+    # its own audit; without one it would cost code size and enforce nothing.
+    #
+    # Sanitizer builds are excluded, because a signed return address on the stack is only
+    # readable by an unwinder that strips the signature, and the sanitizer runtimes shipped with
+    # the toolchain do not. `compiler-rt`'s frame-pointer unwinder collects the allocation and
+    # deallocation stacks behind every ASan and LSan report, and its `STRIP_PAC_PC` is the
+    # identity unless `compiler-rt` itself was compiled with `-mbranch-protection`. Signed frames
+    # then reach the reports verbatim: the signature occupies the bits above the virtual address,
+    # so most of the frames of a report symbolize to `<unknown module>` (17 of 21 in the one that
+    # this was measured on, against 1 of 26 for the same report on master). It is also a memory
+    # leak in disguise - `paciasp` mixes `SP` into the signature, so one call site produces a
+    # different value at every stack depth and each one takes a fresh entry in the stack depot,
+    # which is never freed.
+    #
+    # What this covers is the code the compiler generates from the C and C++ sources it is given,
+    # plus the assembly sources that opt in themselves through the feature macro it defines, so
+    # anything compiled with a flag set of its own, assembled without that opt-in, or built by
+    # another compiler keeps unsigned return addresses:
+    #   - the in-tree `compiler-rt` runtimes. `contrib/compiler-rt-cmake` filters the inherited
+    #     flags down to an allowlist (`_compiler_rt_keep_re`) which drops the hardening ones, and
+    #     that is also why their unwinder does not strip the signature: `sanitizer_ptrauth.h` keys
+    #     stripping on `__ARM_FEATURE_PAC_DEFAULT`, which is precisely what this flag defines, so
+    #     adding it to that allowlist is what it would take to sign them and to make sanitizer
+    #     builds readable again.
+    #   - raw `.s` inputs and prebuilt libraries. The flag is a code-generation option and says
+    #     nothing about an input that is assembled rather than compiled: a `.s` file assembles to a
+    #     byte-identical object with and without it, so `longjmp.s` and `syscall.s` under
+    #     `base/glibc-compatibility/musl/aarch64` stay unsigned, as does every prebuilt library we
+    #     link. Under `USE_MUSL` the one return address that musl's `aarch64` assembly keeps in
+    #     memory, `x30` in a `jmp_buf`, is signed by hand in `contrib/musl` (`setjmp.s`,
+    #     `longjmp.s`, `sigsetjmp.s`) with `paciasp` and `autiasp` unconditionally; the rest of that
+    #     set never spills `x30` (`dlsym.s` passes it on as a value, `clone.s` saves a function
+    #     pointer, not a return address). Preprocessed `.S` sources can opt in on their own, though, because `COMPILER_FLAGS`
+    #     also feeds `CMAKE_ASM_FLAGS` below and the flag defines `__ARM_FEATURE_PAC_DEFAULT`: 13 of
+    #     the 19 AArch64 OpenSSL sources the build assembles include `crypto/arm_arch.h`, where that
+    #     macro expands `AARCH64_SIGN_LINK_REGISTER` and `AARCH64_VALIDATE_LINK_REGISTER` to
+    #     `paciasp` and `autiasp`, so they do get signed returns and the PAC property note - by
+    #     their own `#if`, not because the flag instruments them.
+    #   - the `boost::context` switch trampolines (`jump_arm64_aapcs_elf_gas.S`,
+    #     `make_arm64_aapcs_elf_gas.S`, `ontop_arm64_aapcs_elf_gas.S`), which key only BTI off the
+    #     feature macros. They save `x30` into the suspended fiber's stack and resume through it
+    #     with a plain `ret`, so a stackful-coroutine continuation stays unsigned. Signing it cannot
+    #     reuse `paciasp` either, because the continuation is resumed on a different `SP` from the
+    #     one it was saved on; it wants a modifier that survives the switch, in its own change.
+    #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
+    #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
+    #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
+    #     needs `std` built from source with the same flag - non-sanitizer builds do not pass
+    #     `-Zbuild-std` - or an explicit `-Cunsafe-allow-abi-mismatch=branch-protection`.
+    #
+    # Our own unwinding is unaffected: `StackTrace` and jemalloc's profiler go through
+    # `unw_backtrace`, whose DWARF-based stepper follows `DW_CFA_AARCH64_negate_ra_state`, and
+    # the frame-pointer walk that `StackTrace::tryCapture` uses under TSan is abseil's, which
+    # strips the signature with `xpaclri` unconditionally.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
 endif()
 
 # Puts a canary between the locals and the return address and checks it before returning, so that an
@@ -835,11 +900,6 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
-
-# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
-    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
-endif ()
 
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
