@@ -265,11 +265,12 @@ TEST(SerializationIsColumnCompatible, TupleChecksNestedElements)
         DataTypes{DataTypeFactory::instance().get("String"), DataTypeFactory::instance().get("String")},
         /*has_explicit_names=*/true);
 
-    const auto plain_tuple = ColumnTuple::create(Columns{ColumnString::create(), ColumnString::create()});
+    const auto plain_tuple_type = DataTypeFactory::instance().get("Tuple(s String, t String)");
+    const auto plain_tuple = plain_tuple_type->createColumn();
     EXPECT_FALSE(serialization->isColumnCompatible(*plain_tuple));
 
     /// The tuple the readers create through the serialization is accepted.
-    const auto wrapped_tuple = serialization->wrapColumnForDeserialization(plain_tuple->cloneEmpty());
+    const auto wrapped_tuple = serialization->createColumnForDeserialization(*plain_tuple_type);
     EXPECT_TRUE(serialization->isColumnCompatible(*wrapped_tuple));
 
     EXPECT_FALSE(serialization->isColumnCompatible(*ColumnString::create()));
