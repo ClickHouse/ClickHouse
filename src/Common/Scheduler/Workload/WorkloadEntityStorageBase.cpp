@@ -301,12 +301,12 @@ struct EntityChange
     ASTPtr after; /// Entity after change (DROP if not set)
 
     /// True if the change drops the entity and creates a new one (the cost unit changes)
-    bool recreates() const
+    [[nodiscard]] bool recreates() const
     {
         return before && after && resourceUnitChanged(before, after);
     }
 
-    std::vector<IWorkloadEntityStorage::Event> toEvents() const
+    [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{key.type, key.name, {}}};

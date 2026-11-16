@@ -72,7 +72,7 @@ public:
 
     /// The groups with the `limit` largest counts so far, or all of them while there are fewer, in no particular
     /// order. Which of the groups with equal counts at the smallest are kept is unspecified.
-    const std::vector<Group> & getGroups() const { return groups; }
+    [[nodiscard]] const std::vector<Group> & getGroups() const { return groups; }
 
 private:
     template <bool copy_key>

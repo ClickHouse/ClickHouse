@@ -53,12 +53,12 @@ struct PerformanceStatistics
         double count = 0;
         double sum = 0;
 
-        double adjustedCount() const
+        [[nodiscard]] double adjustedCount() const
         {
             return count - NUM_INVOCATIONS_TO_THROW_OFF;
         }
 
-        double mean() const
+        [[nodiscard]] double mean() const
         {
             return sum / adjustedCount();
         }
@@ -66,7 +66,7 @@ struct PerformanceStatistics
         /// For better convergence, we don't use proper estimate of stddev.
         /// We want to eventually separate between two algorithms even in case
         ///  when there is no statistical significant difference between them.
-        double sigma() const
+        [[nodiscard]] double sigma() const
         {
             return mean() / adjustedCount();
         }
