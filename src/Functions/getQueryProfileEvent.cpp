@@ -29,19 +29,19 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetQueryProfileEvent>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-    bool useDefaultImplementationForConstants() const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
     /// The value changes while the query runs, so it must be read during execution, not during query analysis.
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(const String) -> UInt64"; }
+    [[nodiscard]] String getSignatureString() const override { return "(const String) -> UInt64"; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -49,11 +49,11 @@ public:
                 getName(), arguments[0].type->getName());
 
         /// Validate the name early, so that an unknown event is reported during query analysis.
-        getEvent(arguments);
+        std::ignore = getEvent(arguments);
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ProfileEvents::Event event = getEvent(arguments);
 
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    ProfileEvents::Event getEvent(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ProfileEvents::Event getEvent(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * column = arguments[0].column.get();
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
