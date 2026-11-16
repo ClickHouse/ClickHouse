@@ -1746,7 +1746,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                  "Processed file {}. Total processed files: {}, processed rows: {}, processed bytes: {}",
                  path, progress->processed_files.load(), progress->processed_rows.load(), progress->processed_bytes.load());
 
-        bool read_got_response = false;
+        [[maybe_unused]] bool read_got_response = false;
         if (auto * read_buf = reader.readBuffer())
         {
             if (const auto * provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buf))
