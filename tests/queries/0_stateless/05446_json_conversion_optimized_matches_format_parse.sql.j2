@@ -77,7 +77,6 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('accepted: removed DateTime64(0)', 'JSON(a DateTime64(0))', 'JSON', ['{"a": "2024-01-15 12:30:00"}']) }}
 {{ check('accepted: removed String holding a date', 'JSON(a String)', 'JSON', ['{"a": "2024-01-15"}']) }}
 {{ check('accepted: removed empty Array', 'JSON(a Array(Int8))', 'JSON', ['{"a": []}']) }}
-{{ check('accepted: removed Float64 NaN', 'JSON(a Float64)', 'JSON', ['{"a": "nan"}']) }}
 
 -- A missing or absent typed path must get the destination type's default, which is not physical zero for
 -- an Enum. Cover a new Enum path absent in a whole block and in some rows, from dynamic and shared data,
@@ -140,6 +139,25 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check("new Float64 from an integer beyond its exact range", "JSON", "JSON(a Float64)", ['{"a": 9007199254740993}', '{"a": 5}']) }}
 {{ check("new Float64 from an integer within its exact range", "JSON", "JSON(a Float64)", ['{"a": 5}', '{"a": -7}']) }}
 {{ check("new Float32 from an integer beyond its exact range", "JSON", "JSON(a Float32)", ['{"a": 16777217}']) }}
+
+-- The same rule for a typed path whose type changes: values that convert exactly keep the CAST, the
+-- others are parsed, which truncates and rounds where a CAST would wrap or reject.
+{{ check("changed Int64 to Int8 in range", "JSON(a Int64)", "JSON(a Int8)", ['{"a": 1}', '{"a": -128}', '{"a": 127}', '{}']) }}
+{{ check("changed Int64 to UInt16 in range", "JSON(a Int64)", "JSON(a UInt16)", ['{"a": 65535}', '{"a": 0}']) }}
+{{ check("changed Int32 to Int64", "JSON(a Int32)", "JSON(a Int64)", ['{"a": -2147483648}', '{"a": 5}']) }}
+{{ check("changed Float32 to Float64", "JSON(a Float32)", "JSON(a Float64)", ['{"a": 0.5}', '{"a": -3}']) }}
+{{ check("changed Float64 to Int64 with a fraction", "JSON(a Float64)", "JSON(a Int64)", ['{"a": 1.5}', '{"a": -2.5}', '{"a": 3}']) }}
+{{ check("changed Int64 to Float64 beyond its exact range", "JSON(a Int64)", "JSON(a Float64)", ['{"a": 9007199254740993}', '{"a": 5}']) }}
+{{ check("changed String to Int8", "JSON(a String)", "JSON(a Int8)", ['{"a": "12"}', '{"a": "-128"}']) }}
+{{ check("changed String to Int64 with a fraction", "JSON(a String)", "JSON(a Int64)", ['{"a": "1.5"}']) }}
+{{ check("changed Array(Int64) to Array(Int8)", "JSON(a Array(Int64))", "JSON(a Array(Int8))", ['{"a": [1, -2]}', '{"a": []}']) }}
+{{ check("changed Nullable(Int64) to Nullable(Int8)", "JSON(a Nullable(Int64))", "JSON(a Nullable(Int8))", ['{"a": 5}', '{"a": null}']) }}
+{{ check("changed Array(Int64) to Array(String)", "JSON(a Array(Int64))", "JSON(a Array(String))", ['{"a": [1, 2]}']) }}
+
+-- JSON text writes inf and nan as strings, so the parser infers String for them.
+{{ check("removed Float64 with inf and nan", "JSON(a Float64)", "JSON", ['{"a": "inf"}', '{"a": "-inf"}', '{"a": "nan"}', '{"a": 1.5}']) }}
+{{ check("removed Float64 with inf to shared data", "JSON(max_dynamic_paths = 0, a Float64)", "JSON(max_dynamic_paths = 0)", ['{"a": "inf"}']) }}
+{{ check("removed Array(Float32) with nan", "JSON(a Array(Float32))", "JSON", ['{"a": ["nan", 1]}']) }}
 
 -- DateTime and DateTime64 are serialized according to date_time_output_format, which the CAST to String
 -- does not implement.

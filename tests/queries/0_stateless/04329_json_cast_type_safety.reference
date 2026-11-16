@@ -214,14 +214,16 @@ optimized:	2024-01-15
 format_parse:	42
 format_parse:	2024-01-15
 --- Mixed Int64+Date dynamic → Int32 typed (Date not castable to Int → fallback) ---
---- Overflow: Int64(300) → UInt8 typed ---
---- Overflow: Int64(-1) → UInt32 typed ---
---- Overflow: Int64(2147483648) → Int32 typed ---
---- Overflow: Float64(1.5) → Int32 typed (non-exact) ---
---- Overflow: String("300") → UInt8 typed ---
---- Overflow: String("-1") → UInt32 typed ---
---- Overflow: String("99999999999") → Int32 typed ---
---- Overflow: String("-200") → Int8 typed ---
+--- Out of range: Int64(300) → UInt8 typed ---
+--- Out of range: Int64(-1) → UInt32 typed ---
+--- Out of range: Int64(2147483648) → Int32 typed ---
+--- Fractional Float64(1.5) → Int32 typed: truncated on both paths ---
+optimized:	1
+format_parse:	1
+--- Out of range: String("300") → UInt8 typed ---
+--- Out of range: String("-1") → UInt32 typed ---
+--- Out of range: String("99999999999") → Int32 typed ---
+--- Out of range: String("-200") → Int8 typed ---
 --- accurateCastOrNull: type mismatch returns NULL ---
 \N
 --- accurateCastOrNull: valid conversion returns value ---

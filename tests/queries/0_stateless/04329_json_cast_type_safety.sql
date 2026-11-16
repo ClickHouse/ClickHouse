@@ -360,65 +360,73 @@ SELECT 'format_parse:', (data::JSON(a Int32)).a FROM t ORDER BY data.b::Int64 SE
 DROP TABLE t;
 
 -- ============================================================================
--- 10. Overflow behavior: accurateCast is stricter than format+parse
--- The optimized path throws on overflow where format+parse may silently wrap.
+-- 10. Out-of-range values: the optimized path matches format+parse
+-- An out-of-range number is rejected with INCORRECT_DATA on both paths, not
+-- wrapped; a fractional value is truncated on both, as the parser does.
 -- ============================================================================
 
-SELECT '--- Overflow: Int64(300) → UInt8 typed ---';
+SELECT '--- Out of range: Int64(300) → UInt8 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": 300, "b": 1}');
--- The optimized path uses accurateCast which throws on overflow.
-SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: Int64(-1) → UInt32 typed ---';
+SELECT '--- Out of range: Int64(-1) → UInt32 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": -1, "b": 1}');
-SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: Int64(2147483648) → Int32 typed ---';
+SELECT '--- Out of range: Int64(2147483648) → Int32 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": 2147483648, "b": 1}');
-SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: Float64(1.5) → Int32 typed (non-exact) ---';
+SELECT '--- Fractional Float64(1.5) → Int32 typed: truncated on both paths ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": 1.5, "b": 1}');
-SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT 'optimized:', (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1;
+SELECT 'format_parse:', (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 0;
 DROP TABLE t;
 
-SELECT '--- Overflow: String("300") → UInt8 typed ---';
+SELECT '--- Out of range: String("300") → UInt8 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": "300", "b": 1}');
-SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a UInt8)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: String("-1") → UInt32 typed ---';
+SELECT '--- Out of range: String("-1") → UInt32 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": "-1", "b": 1}');
-SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a UInt32)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: String("99999999999") → Int32 typed ---';
+SELECT '--- Out of range: String("99999999999") → Int32 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": "99999999999", "b": 1}');
-SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a Int32)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
-SELECT '--- Overflow: String("-200") → Int8 typed ---';
+SELECT '--- Out of range: String("-200") → Int8 typed ---';
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": "-200", "b": 1}');
-SELECT (data::JSON(a Int8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT (data::JSON(a Int8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+SELECT (data::JSON(a Int8)).a FROM t SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
 DROP TABLE t;
 
 -- ============================================================================

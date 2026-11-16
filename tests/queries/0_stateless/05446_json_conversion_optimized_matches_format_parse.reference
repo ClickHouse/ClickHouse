@@ -2,8 +2,6 @@ accepted: removed DateTime64(0)	1	{"a":"2024-01-15 12:30:00.000000000"} {\'a\':\
 accepted: removed DateTime64(0)	0	{"a":"2024-01-15 12:30:00"} {\'a\':\'DateTime\'} {}
 accepted: removed Decimal32 whole number	1	{"a":5} {\'a\':\'Float64\'} {}
 accepted: removed Decimal32 whole number	0	{"a":5} {\'a\':\'Int64\'} {}
-accepted: removed Float64 NaN	1	{"a":null} {\'a\':\'Float64\'} {}
-accepted: removed Float64 NaN	0	{} {} {}
 accepted: removed Float64 whole number	1	{"a":5} {\'a\':\'Float64\'} {}
 accepted: removed Float64 whole number	0	{"a":5} {\'a\':\'Int64\'} {}
 accepted: removed String holding a date	1	{"a":"2024-01-15"} {\'a\':\'String\'} {}

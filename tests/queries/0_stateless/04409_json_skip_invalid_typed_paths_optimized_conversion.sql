@@ -39,7 +39,7 @@ SELECT '--- Without skip_invalid (should throw) ---';
 DROP TABLE IF EXISTS t_throw;
 CREATE TABLE t_throw (data JSON(a String)) ENGINE = Memory;
 INSERT INTO t_throw VALUES ('{"a":"bad"}');
-SELECT data::JSON(a UInt32) FROM t_throw; -- { serverError CANNOT_PARSE_TEXT }
+SELECT data::JSON(a UInt32) FROM t_throw; -- { serverError INCORRECT_DATA }
 DROP TABLE t_throw;
 
 -- Case 5: Verify optimized path matches the legacy format+parse path.

@@ -1,5 +1,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/NaNUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -2323,6 +2324,36 @@ bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
     return true;
 }
 
+template <typename T>
+bool hasNonFiniteValues(const IColumn & column)
+{
+    for (const auto & value : assert_cast<const ColumnVector<T> &>(column).getData())
+    {
+        if (!isFinite(value))
+            return true;
+    }
+    return false;
+}
+
+/// True if a floating-point column holds inf or nan. JSON text writes them as strings, so the parser
+/// infers String for them, while a CAST keeps the float type.
+bool hasNonFiniteFloats(const IColumn & column, const IDataType & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return hasNonFiniteFloats(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType());
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        return hasNonFiniteFloats(assert_cast<const ColumnArray &>(column).getData(), *array_type->getNestedType());
+
+    switch (type.getTypeId())
+    {
+        case TypeIndex::BFloat16: return hasNonFiniteValues<BFloat16>(column);
+        case TypeIndex::Float32: return hasNonFiniteValues<Float32>(column);
+        case TypeIndex::Float64: return hasNonFiniteValues<Float64>(column);
+        default: return false;
+    }
+}
+
 /// With read_datetime_number_as_raw_value the parser reads an integer as raw DateTime64 ticks and
 /// rejects some numbers for DateTime, while CAST reads every number as seconds.
 bool parsesDateTimeNumbersUnlikeCast(const DataTypePtr & to_type, const FormatSettings & format_settings)
@@ -2353,12 +2384,12 @@ bool isDynamicElementToTypedCastSafe(
     };
 
     /// From numeric (Int64, UInt64, Float64, Bool in Dynamic) →
-    /// to Int*/UInt*/Float*/Bool/String. accurateCast handles overflow.
+    /// to Int*/UInt*/Float*/Bool/String.
     /// Exception: Float64 → Float32 narrowing is excluded because accurateCast
     /// rejects precision loss (the round-trip Float64→Float32→Float64 is not exact),
     /// while format+parse handles it correctly via text serialization.
-    /// Mixing a float with an integer stays here but is only safe for values that convert exactly,
-    /// which allValuesCastExactly checks against the data.
+    /// A conversion that can lose a value stays here but is only safe for values that convert exactly,
+    /// which castMatchesParse checks against the data.
     if (isIntOrFloat(*from_inner) && (isIntOrFloat(*to_inner) || isStringOrFixedString(*to_inner)))
     {
         if (isFloat(*from_inner) && isFloat(*to_inner)
@@ -2414,38 +2445,59 @@ bool isDynamicElementToTypedCastSafe(
     return false;
 }
 
-/// True for the numeric pairs where accurateCast is stricter than JSON parsing: the parser keeps the
-/// range check but drops the exactness one, so it truncates a fractional value into an integer and
-/// rounds an integer that a float cannot hold, where accurateCast rejects both.
-bool castIsStricterThanParse(const IDataType & from, const IDataType & to)
+/// True if every value of `from` is exactly representable in `to`.
+bool isLosslessNumericWidening(const IDataType & from, const IDataType & to)
 {
-    return (isFloat(from) && isNativeInteger(to)) || (isNativeInteger(from) && isFloat(to));
+    const size_t from_size = from.getSizeOfValueInMemory();
+    const size_t to_size = to.getSizeOfValueInMemory();
+
+    if (isNativeUInt(from) && isNativeUInt(to))
+        return to_size >= from_size;
+    if (isNativeInteger(from) && isNativeInt(to))
+        return isNativeInt(from) ? to_size >= from_size : to_size > from_size;
+    /// The integer has to fit into the mantissa: 8 bits for BFloat16, 24 for Float32, 53 for Float64.
+    if (isNativeInteger(from) && isFloat(to))
+        return from_size <= to_size / 2;
+    if (isFloat(from) && isFloat(to))
+        return to_size >= from_size;
+    return false;
 }
 
-/// True if every value converts exactly, which is what makes the pairs above reproduce format+parse.
-/// The answer comes from the data rather than the types so that ordinary numbers keep the fast path;
-/// accurateCastOrNull reports per value exactly what accurateCast would reject.
-bool allValuesCastExactly(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
+/// True if a CAST of these values gives what parsing their JSON text gives. For a number the parser checks
+/// the range but not exactness, while a CAST wraps or rejects, so the two agree only on values that convert
+/// exactly; checking that per value keeps ordinary numbers on the CAST. A number parsed from the text of a
+/// date or an address, or an array from a non-array, never matches the CAST.
+bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
 {
-    auto to_inner = removeNullable(to);
-
-    /// Only the pairs isDynamicElementToTypedCastSafe accepted get here, so an array is matched by an array.
-    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
-    {
-        const auto & to_array = assert_cast<const DataTypeArray &>(*to_inner);
-        const auto & col_array = assert_cast<const ColumnArray &>(*column);
-        return allValuesCastExactly(col_array.getDataPtr(), from_array->getNestedType(), to_array.getNestedType());
-    }
+    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from.get()))
+        return castMatchesParse(column->convertToFullColumnIfLowCardinality(), from_low_cardinality->getDictionaryType(), to);
 
     /// A null has no value to convert, and the rows under it hold the nested default, which converts.
     if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get()))
     {
         const auto & col_nullable = assert_cast<const ColumnNullable &>(*column);
-        return allValuesCastExactly(col_nullable.getNestedColumnPtr(), from_nullable->getNestedType(), to_inner);
+        return castMatchesParse(col_nullable.getNestedColumnPtr(), from_nullable->getNestedType(), to);
     }
 
-    if (!castIsStricterThanParse(*from, *to_inner))
+    auto to_inner = removeNullable(removeLowCardinality(to));
+
+    if (const auto * to_array = typeid_cast<const DataTypeArray *>(to_inner.get()))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+        if (!from_array)
+            return false;
+        const auto & col_array = assert_cast<const ColumnArray &>(*column);
+        return castMatchesParse(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (!isNumber(*to_inner) || from->equals(*to_inner))
         return true;
+
+    if (isNumber(*from) && isLosslessNumericWidening(*from, *to_inner))
+        return true;
+
+    if (!isNumber(*from) && !isStringOrFixedString(*from))
+        return false;
 
     auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
     const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
@@ -2471,7 +2523,7 @@ bool canCastDynamicToTyped(
             continue;
         if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type, format_settings))
             return false;
-        if (!allValuesCastExactly(variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], dest_type))
+        if (!castMatchesParse(variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], dest_type))
             return false;
     }
     return true;
@@ -3177,8 +3229,11 @@ ColumnPtr convertObjectColumns(
                     }
                 }
 
-                dst_typed_columns[path]
-                    = castColumnWithSettings({src_col, src_type, ""}, to_tp, convert_settings, CastType::nonAccurate);
+                if (castMatchesParse(src_col, src_type, to_tp))
+                    dst_typed_columns[path]
+                        = castColumnWithSettings({src_col, src_type, ""}, to_tp, convert_settings, CastType::nonAccurate);
+                else
+                    dst_typed_columns[path] = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/false);
             }
         }
     }
@@ -3273,7 +3328,8 @@ ColumnPtr convertObjectColumns(
         auto promoted = needsFormatParseFallback(it_type->second, format_settings)
             ? nullptr
             : getPromotedTypeForDynamic(it_type->second, format_settings);
-        if (promoted && !fitsIntoMaxScaleDateTime64(*it_col->second, *it_type->second))
+        if (promoted
+            && (!fitsIntoMaxScaleDateTime64(*it_col->second, *it_type->second) || hasNonFiniteFloats(*it_col->second, *it_type->second)))
             promoted = nullptr;
         if (promoted)
         {
