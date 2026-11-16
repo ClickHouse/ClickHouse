@@ -750,7 +750,9 @@ private:
     /// Queues removal of the registered changelog and all retained recovery copies for its range.
     std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
         uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
-    /// Removes retained recovery copies synchronously during startup cleanup.
+    /// Removes retained recovery copies synchronously: during startup cleanup, and before `writeAt`
+    /// rewrites the registered changelog of the range. A rewritten changelog can be renamed by a later
+    /// rotation, and a stale copy under the old name would compete with it on restart.
     void removeRetainedChangelogCopies(uint64_t from_log_index, ChangelogFileDescription & registered);
     /// Whether a retained recovery copy of the range occupies `path` on `disk`. A move there would
     /// overwrite it, and it may be the only complete copy of the range: for example, when the

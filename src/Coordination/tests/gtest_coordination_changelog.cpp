@@ -5402,11 +5402,11 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetaine
     ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(recovered.getNextEntryIndex(), 26);
 
-    /// The first rewrite appends to the registered changelog on the latest disk and keeps the
-    /// retained copy.
+    /// The first rewrite appends to the registered changelog on the latest disk and removes the
+    /// retained copy, which it supersedes.
     recovered.writeAt(15, getLogEntry("rewrite_15", 2));
     recovered.flush();
-    EXPECT_TRUE(regular_disk->existsFile(String(duplicated_path)));
+    EXPECT_FALSE(regular_disk->existsFile(String(duplicated_path)));
     EXPECT_TRUE(latest_disk->existsFile(String(duplicated_path)));
 
     /// The second rewrite finalizes the registered changelog under another name and removes it
@@ -5420,6 +5420,67 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetaine
         EXPECT_FALSE(disk->existsFile("changelog_21_30.bin"));
     }
     EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+}
+
+TYPED_TEST(CoordinationChangelogTest, RewriteOfRetainedCopyRangeSurvivesSizeRotationAndRestart)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    /// A rewrite into the registered changelog of a range with a retained recovery copy, followed by
+    /// a size rotation that renames the rewritten changelog. The stale copy keeps the old name, so if
+    /// it survived, restart could select it and silently revert the rewritten entry.
+    for (const uint64_t startup_read_max_streams : {1, 4})
+    {
+        SCOPED_TRACE(fmt::format("startup_read_max_streams = {}", startup_read_max_streams));
+        ChangelogDirTest regular("./logs_rewrite_retained_copy_rotation_regular");
+        ChangelogDirTest latest("./logs_rewrite_retained_copy_rotation_latest");
+        DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+        DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+        DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .startup_read_max_streams = startup_read_max_streams,
+        };
+        constexpr std::string_view duplicated_path = "changelog_11_20.bin";
+
+        this->keeper_context->setLogDisk(regular_disk);
+        this->keeper_context->setLatestLogDisk(regular_disk);
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            for (uint64_t index = 1; index <= 25; ++index)
+                writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+            writer.flush();
+        }
+        regular_disk->copyFile(String(duplicated_path), *latest_disk, String(duplicated_path), {});
+
+        /// Startup selects the latest-disk copy and retains the regular one. The rewritten entry grows
+        /// the changelog beyond `max_size`, so the next entry rotates it to `changelog_11_15.bin` on
+        /// the regular disk, next to the old name of the retained copy.
+        settings.max_size = regular_disk->getFileSize(String(duplicated_path));
+        this->keeper_context->setLatestLogDisk(latest_disk);
+        {
+            DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+            EXPECT_EQ(recovered.getNextEntryIndex(), 26);
+
+            recovered.writeAt(15, getLogEntry("rewrite_15", 2));
+            recovered.appendEntry(16, getLogEntry("entry_16", 2));
+            recovered.flush();
+        }
+        EXPECT_FALSE(regular_disk->existsFile(String(duplicated_path)));
+        EXPECT_FALSE(latest_disk->existsFile(String(duplicated_path)));
+        EXPECT_TRUE(regular_disk->existsFile("changelog_11_15.bin"));
+
+        DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(restarted.getNextEntryIndex(), 17);
+        EXPECT_EQ(restarted.entryAt(14)->get_term(), 1);
+        EXPECT_EQ(restarted.entryAt(15)->get_term(), 2);
+        EXPECT_EQ(restarted.entryAt(16)->get_term(), 2);
+    }
 }
 
 TYPED_TEST(CoordinationChangelogTest, StartupKeepsRetainedCopyOfBrokenSelectedChangelog)

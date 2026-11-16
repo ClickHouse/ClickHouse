@@ -4820,6 +4820,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             /// we create a new file starting with the required index
             if (description->broken_at_end)
             {
+                /// The new changelog starting at `index` supersedes the retained copies from `index` on,
+                /// and the selected changelog wins over them for the entries before it.
+                removeRetainedChangelogCopies(description->from_log_index, *description);
                 LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
                 current_writer->rotate(index);
             }
@@ -4829,6 +4832,10 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                 auto latest_log_disk = getLatestLogDisk();
                 if (log_disk != latest_log_disk)
                     moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context);
+
+                /// The registered changelog is now at its final location, so a retained recovery copy
+                /// that a move landed on is recognized as the registered file itself.
+                removeRetainedChangelogCopies(description->from_log_index, *description);
 
                 LOG_INFO(log, "Writing into {}", description->path);
                 current_writer->setFile(std::move(description), WriteMode::Append);
@@ -4845,6 +4852,10 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                     std::make_move_iterator(pending_removes.end()));
                 itr = existing_changelogs.erase(itr);
             }
+        }
+        else
+        {
+            removeRetainedChangelogCopies(current_writer->getStartIndex(), *current_writer->getCurrentFileDescription());
         }
     }
 
@@ -5323,9 +5334,9 @@ void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index, Changelog
             duplicate->path,
             duplicate->disk->getName(),
             from_log_index);
-        duplicate->disk->removeFileIfExists(duplicate->path);
+        removeKeeperFileIfExists(duplicate->disk, duplicate->path);
         if (duplicate->recovery_marker_path)
-            duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
+            removeKeeperFileIfExists(duplicate->disk, *duplicate->recovery_marker_path);
     }
     retained_duplicate_changelogs.erase(duplicate_it);
 }
