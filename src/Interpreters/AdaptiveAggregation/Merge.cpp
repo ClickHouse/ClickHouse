@@ -118,7 +118,7 @@ namespace
     {
         const bool * alive_bins;
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
     };
 
     /// The filter of the best groups of a count-first unit: their hashes, sorted, and a bitset on 12 bits of them. A
@@ -137,12 +137,12 @@ namespace
                 bits[(hash >> 6) & 63] |= UInt64{1} << (hash & 63);
         }
 
-        bool ALWAYS_INLINE contains(UInt64 hash) const
+        [[nodiscard]] bool ALWAYS_INLINE contains(UInt64 hash) const
         {
             return ((bits[(hash >> 6) & 63] >> (hash & 63)) & 1) && std::binary_search(hashes.begin(), hashes.end(), hash);
         }
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
 
     private:
         const DB::PaddedPODArray<UInt64> & hashes;
@@ -292,7 +292,7 @@ namespace
 
         /// The record counts of the bucket's partitions, in the producers' chunks and in their spill streams. A
         /// producer keeps the counts of consecutive partitions together, so the producers are read one after another.
-        std::vector<size_t> recordsOfPartitions() const
+        [[nodiscard]] std::vector<size_t> recordsOfPartitions() const
         {
             const size_t partitions = session.layout.partitionsPerBucket();
             std::vector<size_t> records(partitions);
@@ -354,7 +354,7 @@ namespace
         }
 
     private:
-        DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
+        [[nodiscard]] DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
         {
             return session.spilled_partitions[first_partition + sub];
         }
@@ -464,7 +464,7 @@ namespace
         }
 
         /// How many source cells `unit` has.
-        size_t count(size_t unit) const
+        [[nodiscard]] size_t count(size_t unit) const
         {
             const size_t unit_first_partition = first_partition + unit * partitions_per_unit;
             size_t cells = routed[unit].size();

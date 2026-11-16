@@ -93,7 +93,7 @@ public:
         /// Set only by the order-preserving probe.
         std::shared_ptr<OrderedProbeState> ordered_state{};
 
-        bool empty() const { return block.empty(); }
+        [[nodiscard]] bool empty() const { return block.empty(); }
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
