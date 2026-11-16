@@ -210,13 +210,6 @@ static void skipEndOfLine(ReadBuffer & in, bool allow_cr_end_of_line)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
 }
 
-static bool isCRAtEndOfRow(PeekableReadBuffer & in)
-{
-    PeekableReadBufferCheckpoint checkpoint(in, true);
-    ++in.position();
-    return in.eof() || *in.position() == '\n';
-}
-
 /// Skip `whitespace` symbols allowed in CSV.
 static inline void skipWhitespacesAndTabs(ReadBuffer & in, const bool & allow_whitespace_or_tab_as_delimiter)
 {

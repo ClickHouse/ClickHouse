@@ -35,13 +35,6 @@ static void checkForCarriageReturn(ReadBuffer & in)
             "\nor else enable setting 'input_format_tsv_crlf_end_of_line'");
 }
 
-static bool isCRAtEndOfRow(PeekableReadBuffer & in)
-{
-    PeekableReadBufferCheckpoint checkpoint(in, true);
-    ++in.position();
-    return in.eof() || *in.position() == '\n';
-}
-
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     SharedHeader header_,
     ReadBuffer & in_,
