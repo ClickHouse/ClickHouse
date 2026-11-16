@@ -25,7 +25,7 @@ To collect logs and metrics from both each node and the cluster itself, we'll ne
 
 ### Creating an API key secret {#create-api-key-secret}
 
-Create a new Kubernetes secret with the [ingestion API Key](/clickstack/ingesting-data/opentelemetry#sending-otel-data) from HyperDX. This will be used by the components installed below to securely ingest into your ClickStack OTel collector:
+Create a new Kubernetes secret with the [ingestion API Key](/clickstack/ingesting-data/opentelemetry#sending-otel-data) from ClickStack UI. This will be used by the components installed below to securely ingest into your ClickStack OTel collector:
 
 ```shell
 kubectl create secret generic hyperdx-secret \
@@ -409,7 +409,7 @@ helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-c
 ```
 
 Now the metrics, logs and Kubernetes events from your Kubernetes cluster should
-now appear inside HyperDX.
+now appear inside ClickStack UI.
 
 ## Forwarding resource tags to pods (Recommended) {#forwarding-resouce-tags-to-pods}
 

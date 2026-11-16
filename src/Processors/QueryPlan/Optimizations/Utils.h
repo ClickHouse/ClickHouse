@@ -8,6 +8,7 @@
 
 #include <type_traits>
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -76,12 +77,19 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
 /// The `ActionsDAG` of an `ExpressionStep` or `FilterStep`, otherwise `nullptr`.
 [[nodiscard]] const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step);
+
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
@@ -93,7 +101,7 @@ enum class FilterResult
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
 /// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
-using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
 
 [[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
 

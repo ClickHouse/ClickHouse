@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
@@ -24,8 +26,6 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <list>
-#include <vector>
 
 #include <fmt/format.h>
 
@@ -121,7 +121,7 @@ struct Metadata
     UInt32 count = 0;
     UInt8 offset_size = 0;
 
-    std::string_view getName(UInt32 id) const
+    [[nodiscard]] std::string_view getName(UInt32 id) const
     {
         if (id >= count)
             throw Exception(
@@ -189,7 +189,7 @@ public:
             path_regexps_to_skip.emplace_back(regexp);
     }
 
-    bool shouldSkip(const String & path) const
+    [[nodiscard]] bool shouldSkip(const String & path) const
     {
         if (type.getPathsToSkip().contains(path))
             return true;
@@ -206,7 +206,7 @@ public:
         return false;
     }
 
-    const DataTypePtr * findTypedPath(const String & path) const
+    [[nodiscard]] const DataTypePtr * findTypedPath(const String & path) const
     {
         const auto & typed_paths = type.getTypedPaths();
         auto it = typed_paths.find(path);
@@ -215,8 +215,8 @@ public:
 
 private:
     const DataTypeObject & type;
-    std::vector<String> sorted_paths_to_skip;
-    std::list<re2::RE2> path_regexps_to_skip;
+    VectorWithMemoryTracking<String> sorted_paths_to_skip;
+    ListWithMemoryTracking<re2::RE2> path_regexps_to_skip;
     bool use_partial_match;
 };
 
@@ -232,12 +232,12 @@ struct ObjectLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    UInt32 fieldId(std::string_view data, UInt32 i) const
+    [[nodiscard]] UInt32 fieldId(std::string_view data, UInt32 i) const
     {
         return readUnsigned(data, ids_pos + size_t(i) * id_size, id_size);
     }
 
-    size_t valuePos(std::string_view data, UInt32 i) const
+    [[nodiscard]] size_t valuePos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
@@ -264,7 +264,7 @@ struct ArrayLayout
     size_t offsets_pos = 0;
     size_t values_pos = 0;
 
-    size_t elementPos(std::string_view data, UInt32 i) const
+    [[nodiscard]] size_t elementPos(std::string_view data, UInt32 i) const
     {
         return values_pos + readUnsigned(data, offsets_pos + size_t(i) * offset_size, offset_size);
     }
@@ -506,7 +506,7 @@ void insertObjectPaths(
     ColumnObject & column,
     const JSONPathsFilter * filter,
     size_t prev_size,
-    std::vector<SharedDataValue> & shared_data_values)
+    VectorWithMemoryTracking<SharedDataValue> & shared_data_values)
 {
     const ObjectLayout layout = parseObjectLayout(data, pos, value_header);
 
@@ -579,7 +579,7 @@ void decodeObjectIntoJSON(
 {
     const size_t prev_size = column.size();
 
-    std::vector<SharedDataValue> shared_data_values;
+    VectorWithMemoryTracking<SharedDataValue> shared_data_values;
     insertObjectPaths(data, pos, value_header, context, depth, "", true, column, filter, prev_size, shared_data_values);
 
     /// Paths in shared data must be sorted.

@@ -92,6 +92,8 @@ class HashJoinMethods
 {
 public:
     /// Inserts clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its own lock.
+    /// If set, `prebuilt_keys[row]` is the key of each row that the slot scatter routed, built with the key getter's
+    /// `buildAllKeys`.
     static BuildResult insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
@@ -102,7 +104,8 @@ public:
         const Sizes & key_sizes,
         UInt32 stored_block_no,
         ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask);
+        const JoinCommon::JoinMask & join_mask,
+        const PaddedPODArray<UInt128> * prebuilt_keys);
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 

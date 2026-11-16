@@ -60,19 +60,19 @@ public:
     }
 
     /** Get value by index. */
-    Value at(size_t n) const
+    [[nodiscard]] Value at(size_t n) const
     {
         return operator[](n);
     }
 
     /** Number of columns. */
-    size_t size() const { return res->getNumFields(); }
+    [[nodiscard]] size_t size() const { return res->getNumFields(); }
 
     /** Is it empty? Such an object is used to indicate the end of the result
       * when using UseQueryResult. Or it means that the object is not initialized.
       * You can use bool conversion instead.
       */
-    bool empty() const { return row == nullptr; }
+    [[nodiscard]] bool empty() const { return row == nullptr; }
 
     /** Conversion to bool.
       * (More precisely - to a type that converts to bool, and with which you can do almost nothing else.)

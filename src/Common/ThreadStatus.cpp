@@ -123,7 +123,7 @@ struct ThreadStack
 
         return size;
     }
-    void * getData() const { return data; }
+    [[nodiscard]] void * getData() const { return data; }
 
 private:
     void * data = nullptr;
@@ -232,6 +232,12 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     chassert(current_thread == this);
     return thread_group;
+}
+
+bool ThreadStatus::hasThreadGroup() const
+{
+    chassert(current_thread == this);
+    return thread_group != nullptr;
 }
 
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept

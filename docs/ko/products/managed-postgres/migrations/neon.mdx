@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: 'Neon에서 ClickHouse Managed Postgres로 마이그레이션'
 description: 'Neon의 PostgreSQL 데이터를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 알아보세요'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -64,7 +63,16 @@ ClickPipes를 사용하면 수 테라바이트 규모의 Postgres 데이터베�
 Neon은 즉각적인 copy-on-write 브랜치를 제공합니다. ClickHouse Managed Postgres는 local NVMe storage를 사용하여 빠르고 예측 가능하며 안정적인 Postgres 성능을 제공합니다.
 대신 브랜치 생성은 즉시 완료되지 않고, [Point-in-Time Recovery(PITR)](/ko/products/managed-postgres/backup-and-restore)를 통해 독립적인 배포로 생성됩니다. 일반적으로 몇 분 이내에 사용할 수 있습니다.
 
-일상적인 개발에는 실제 데이터를 대표하면서 민감 정보를 제거한 production 데이터를 담은 소규모 ClickHouse Managed Postgres 개발 데이터베이스(예: 수 기가바이트 규모)를 유지하고, 필요할 때마다 여기에서 PITR 브랜치를 생성하는 방식을 권장합니다. 브랜치 생성과 정리는 공식 CLI인 [clickhousectl](/ko/concepts/features/interfaces/cli)이나 [OpenAPI](/ko/products/managed-postgres/openapi), [Terraform](/ko/products/managed-postgres/terraform)을 통해 자동화할 수 있습니다.
+일상적인 개발에는 실제 데이터를 대표하면서 민감 정보를 제거한 운영 환경 데이터를 담은 소규모 ClickHouse Managed Postgres 개발 데이터베이스(예: 수 기가바이트 규모)를 유지하고, 필요할 때마다 여기에서 PITR 브랜치를 생성하는 방식을 권장합니다. 브랜치 생성과 정리는 공식 CLI인 [clickhousectl](/ko/concepts/features/interfaces/cli), [OpenAPI](/ko/products/managed-postgres/openapi) 또는 [Terraform](/ko/products/managed-postgres/terraform)을 통해 자동화할 수 있습니다. clickhousectl과 API Key를 사용하면 브랜치는 특정 시점 복원을 통해 새 서비스로 생성됩니다:
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore`는 새 서비스의 ID를 반환하지만 비밀번호는 반환하지 않으므로, 브랜치가 `running` 상태가 되면 `reset-password`로 비밀번호를 설정하십시오. `--ip-allow` 규칙이나 `--block-public-access`를 지정하지 않으면 브랜치에는 소스의 현재 IPv4 액세스 규칙이 그대로 적용됩니다. `delete`는 브랜치와 해당 데이터를 영구적으로 삭제합니다.
 
 일부 고객은 이 방식으로 수백 개의 개발 환경을 관리하고 있습니다. ClickHouse는 fork 및 sandbox 사용 경험을 지속적으로 개선하고 있습니다. [branching 문서](/ko/products/managed-postgres/branching)를 참조하십시오.
 
@@ -96,7 +104,7 @@ ClickHouse Managed Postgres는 기본적으로 500개의 직접(direct) Postgres
 * 애플리케이션 측 연결 풀링을 사용합니다.
 * 최대 5,000개의 클라이언트 연결을 지원하는 번들 PgBouncer 인스턴스를 사용합니다.
 * 더 많은 직접 연결이 필요하면 `max_connections` 값을 늘립니다.
-  * `max_connections`는 **Settings → Edit parameters**에서 변경할 수 있습니다. 일부 변경 사항은 재시작이 필요합니다. [구성 문서](/ko/products/managed-postgres/settings#changing-configuration)를 참조하십시오.
+  * `max_connections`는 **Settings → Edit parameters**에서 변경하거나 `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000` 명령으로 변경할 수 있습니다. 일부 변경 사항은 재시작이 필요하며, 재시작은 `clickhousectl cloud postgres restart <postgres-id>` 명령으로 실행할 수 있습니다. [구성 문서](/ko/products/managed-postgres/settings#changing-configuration)를 참조하십시오.
 
 ### 마이그레이션 중 스키마 변경 {#schema-changes}
 

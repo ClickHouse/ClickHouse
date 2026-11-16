@@ -7,6 +7,7 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <Core/ResultColumnOrigin.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ protected:
     size_t payload_size = 0;
     VectorWithMemoryTracking<String> serialized;
 
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
@@ -109,7 +110,7 @@ public:
     bool is_comm_field_list_response = false;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 

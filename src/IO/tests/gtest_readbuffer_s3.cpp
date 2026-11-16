@@ -113,7 +113,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
     /// Like the body of a real response, reads straight into the memory of the caller: this
     /// buffer has no memory of its own, so the default `readBig` would see an empty buffer.
@@ -193,7 +193,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
 private:
     bool nextImpl() override
@@ -230,7 +230,7 @@ struct ClientFake : DB::S3::Client
                   true,
                   true,
                   true,
-                  false,
+                  DB::HTTPConnectionGroupType::STORAGE,
                   {},
                   /* request_throttler = */ {},
                   "http"),
