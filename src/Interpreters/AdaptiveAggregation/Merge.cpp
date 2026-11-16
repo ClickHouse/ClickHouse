@@ -1414,13 +1414,16 @@ void Aggregator::releaseAdaptiveMergeSources(ManyAggregatedDataVariants & data, 
     };
 
     /// A job per `adaptive_release_producers_per_job` items, one of them on this thread. The runner is declared last,
-    /// so it joins its jobs before anything they use goes.
+    /// so it joins its jobs before anything they use goes. It reserves the tracking of the jobs before scheduling any,
+    /// because a job that the pool accepted but the runner failed to track would not be joined.
     const size_t jobs = std::min<size_t>(params.max_threads, items / adaptive_release_producers_per_job);
     ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    runner.reserve(jobs);
     for (size_t job = 1; job < jobs; ++job)
         runner.enqueueAndKeepTrack([&release] { release(); }, Priority{});
+    /// `release` returns once every item is taken, so the jobs that have not started by then have nothing to do.
     release();
-    runner.waitForAllToFinishAndRethrowFirstError();
+    runner.cancelScheduledAndWaitForStartedAndRethrowFirstError();
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
