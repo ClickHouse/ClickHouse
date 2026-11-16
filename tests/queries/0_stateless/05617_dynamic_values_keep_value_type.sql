@@ -83,3 +83,20 @@ SELECT t, dynamicType(t.x.d) FROM values('t Tuple(x Tuple(n UInt8, d Dynamic))',
 -- Numbers keep the type `Dynamic` stored them with before.
 SELECT toString(d), dynamicType(d) FROM values('d Dynamic', toUInt64(42));
 SELECT toString(t.2), dynamicType(t.2) FROM values('t Tuple(UInt8, Dynamic)', (1, toUInt64(5)));
+
+-- Types inside `Nullable` and `Variant` destinations, and a `Dynamic` source holding a composite, are kept as by `CAST`.
+SET allow_experimental_variant_type = 1, allow_suspicious_variant_types = 1;
+SELECT toString(j), dynamicType(j.d) FROM values('j Nullable(JSON)', CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON));
+SELECT toString(v), dynamicType(variantElement(v, 'JSON').d) FROM values('v Variant(JSON, String)', CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON));
+SELECT toString(v), dynamicType(variantElement(v, 'Array(Dynamic)')[1]) FROM values('v Variant(Array(Dynamic), String)', [CAST(toDate('2020-01-01') AS Dynamic)]);
+SELECT toString(a), dynamicType(a[1]) FROM values('a Array(Dynamic)', CAST([CAST(toDate('2020-01-01') AS Dynamic)] AS Dynamic));
+
+DROP TABLE IF EXISTS t_dynamic_values_variant;
+CREATE TABLE t_dynamic_values_variant (id UInt8, d Dynamic, v Variant(JSON, String), w Variant(Array(Dynamic), String)) ENGINE = Memory;
+INSERT INTO t_dynamic_values_variant SETTINGS input_format_values_deduce_templates_of_expressions = 0 VALUES
+    (1, CAST(toUInt16(42) AS Variant(Date, UInt16)), CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON), [CAST(toDate('2020-01-01') AS Dynamic)]);
+INSERT INTO t_dynamic_values_variant SELECT
+    2, CAST(toUInt16(42) AS Variant(Date, UInt16)), CAST(map('d', CAST(toDate('2020-01-01') AS Dynamic)) AS JSON), [CAST(toDate('2020-01-01') AS Dynamic)];
+SELECT id, toString(d), dynamicType(d), dynamicType(variantElement(v, 'JSON').d), dynamicType(variantElement(w, 'Array(Dynamic)')[1]) FROM t_dynamic_values_variant ORDER BY id;
+DROP TABLE t_dynamic_values_variant;
+SELECT toString(d), dynamicType(d) FROM values('d Dynamic', CAST(toUInt16(42) AS Variant(Date, UInt16)));
