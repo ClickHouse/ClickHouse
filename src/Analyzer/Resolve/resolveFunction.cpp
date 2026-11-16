@@ -3159,7 +3159,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 current_scope = current_scope->parent_scope;
             }
 
-            /// Without an alias the inlined call names the columns, so calls with different arguments get different names.
             if (untuple_alias.empty())
                 untuple_alias = inlined_call_projection_name;
 
