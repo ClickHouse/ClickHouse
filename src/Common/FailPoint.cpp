@@ -87,6 +87,7 @@ static struct InitFiu
     ONCE(smt_detach_part_replica_set_change_before_commit) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \
     ONCE(smt_sleep_in_constructor) \
+    ONCE(cache_dictionary_update_sleep) \
     ONCE(meta_in_keeper_create_metadata_failure) \
     ONCE(smt_insert_retry_timeout) \
     ONCE(smt_insert_fake_hardware_error) \
