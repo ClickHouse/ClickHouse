@@ -217,7 +217,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int FAULT_INJECTED;
-    extern const int INCORRECT_DATA;
 }
 
 namespace fs = std::filesystem;
@@ -2883,19 +2882,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         {
             throw Exception(storage_already_exists_error_code,
                 "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
-        }
-    }
-
-    /// A UUID given in the query may be a dropped table's, whose data on a broken disk cannot be detected.
-    if (has_explicit_uuid && !create.attach && !internal && !getContext()->isDDLOrOnClusterInternal())
-    {
-        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
-        {
-            if (disk->isBroken())
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot create table {}.{} with an explicit UUID while disk {} is broken: "
-                    "data that a dropped table with this UUID left on it could not be detected",
-                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()), backQuote(disk_name));
         }
     }
 

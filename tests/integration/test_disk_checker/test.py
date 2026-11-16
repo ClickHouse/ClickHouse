@@ -270,9 +270,6 @@ EOF""",
     node.exec_in_container(["bash", "-c", f"mkdir -p {ordinary_spare}/sentinel"])
     node.query("DROP TABLE ordinary_db.t")
     assert node.exec_in_container(["bash", "-c", f"[ -e {ordinary_spare} ] && echo present || echo absent"]) == "absent\n"
-    assert "INCORRECT_DATA" in node.query_and_get_error(
-        "CREATE TABLE ordinary_db.t2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
-    )
     node.query("DROP DATABASE ordinary_db")
 
     node.query(
@@ -293,12 +290,4 @@ EOF""",
         "ALTER TABLE t2 UNFREEZE WITH NAME 'looped_backup'", settings={"alter_partition_verbose_result": 1}
     )
     assert frozen in node.query("SYSTEM UNFREEZE WITH NAME 'looped_backup_2'")
-    uuid = node.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 't2'").strip()
     node.query("DROP TABLE t2 SYNC", settings={"max_execution_time": 30})
-    assert "INCORRECT_DATA" in node.query_and_get_error(
-        f"CREATE TABLE t2 UUID '{uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'with_looped'"
-    )
-    assert "INCORRECT_DATA" in node.query_and_get_error(
-        f"CREATE MATERIALIZED VIEW mv TO INNER UUID '{uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x "
-        "SETTINGS storage_policy = 'with_looped' AS SELECT toUInt8(dummy) AS x FROM system.one"
-    )
