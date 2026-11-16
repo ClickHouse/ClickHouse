@@ -22,8 +22,7 @@ TEMPLATE = f"""<clickhouse>
             <merged_s3>
                 <type>s3</type>
                 <endpoint>{MINIO}/merged_disk/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                DISK_CREDENTIALS
                 DISK_SETTINGS
             </merged_s3>
             OTHER_DISKS
@@ -47,10 +46,16 @@ def started_cluster():
         cluster.shutdown()
 
 
-def configure(disk="", s3="", restart=True, other_disks=""):
+DISK_CREDENTIALS = "<access_key_id>minio</access_key_id><secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>"
+
+
+def configure(
+    disk="", s3="", restart=True, other_disks="", credentials=DISK_CREDENTIALS
+):
     node.replace_config(
         CONFIG_PATH,
-        TEMPLATE.replace("DISK_SETTINGS", disk)
+        TEMPLATE.replace("DISK_CREDENTIALS", credentials)
+        .replace("DISK_SETTINGS", disk)
         .replace("S3_SETTINGS", s3)
         .replace("OTHER_DISKS", other_disks),
     )
@@ -126,7 +131,7 @@ def test_disk_reload_with_contradicting_endpoint_section_keeps_disk_settings(
     contradicting = endpoint(
         "d", "merged_disk", f"<min_upload_part_size>{64 * MIB}</min_upload_part_size>"
     )
-    not_applied = "The new S3 settings of disk merged_s3 were not applied"
+    not_applied = "The new S3 request settings of disk merged_s3 were not applied"
     # Each section is valid alone, the merged settings are not.
     configure(disk=disk, s3=contradicting)
 
@@ -165,6 +170,44 @@ def test_disk_reload_with_contradicting_endpoint_section_keeps_disk_settings(
     configure(disk=disk, s3=contradicting, restart=False)
     node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
     write_and_merge_on_disk("t_s3")
+
+
+def test_disk_reload_with_invalid_request_settings_applies_new_credentials(
+    started_cluster,
+):
+    not_applied = "The new S3 request settings of disk merged_s3 were not applied"
+    revoked = "<access_key_id>revoked</access_key_id><secret_access_key>revoked</secret_access_key>"
+    configure()
+    node.query("DROP TABLE IF EXISTS t_cred SYNC")
+    node.query(
+        "CREATE TABLE t_cred (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = 'merged_s3'"
+    )
+    node.query("INSERT INTO t_cred VALUES (1)")
+
+    # Invalid merged with the endpoint section, then invalid in the disk section alone.
+    for disk, s3 in [
+        (
+            f"<s3_max_upload_part_size>{32 * MIB}</s3_max_upload_part_size>",
+            endpoint(
+                "d",
+                "merged_disk",
+                f"<min_upload_part_size>{64 * MIB}</min_upload_part_size>",
+            ),
+        ),
+        (f"<s3_max_upload_part_size>{8 * MIB}</s3_max_upload_part_size>", ""),
+    ]:
+        configure(disk=disk, s3=s3, restart=False, credentials=revoked)
+        node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
+        # The disk no longer signs its requests with the previous credentials.
+        error = node.query_and_get_error("INSERT INTO t_cred VALUES (2)")
+        assert "The Access Key Id you provided does not exist" in error
+
+        configure(disk=disk, s3=s3, restart=False)
+        node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
+        node.query("INSERT INTO t_cred VALUES (2)")
+
+    assert node.query("SELECT count() FROM t_cred").strip() == "3"
+    node.query("DROP TABLE t_cred SYNC")
 
 
 def test_data_lake_on_disk_takes_query_settings_on_top(started_cluster):

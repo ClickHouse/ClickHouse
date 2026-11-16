@@ -793,11 +793,12 @@ void S3ObjectStorage::applyNewSettings(
     const ApplyNewSettingsOptions & options)
 {
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
+    const bool validate_settings = context->getSettingsRef()[Setting::s3_validate_request_settings];
 
-    /// A table is validated below, with the query settings on top.
+    /// A table and a disk reload are validated below.
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(),
-        /* validate_settings */ for_disk_s3 && context->getSettingsRef()[Setting::s3_validate_request_settings]);
+        /* validate_settings */ for_disk_s3 && !options.validate_merged_settings && validate_settings);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
@@ -837,19 +838,21 @@ void S3ObjectStorage::applyNewSettings(
     for (const auto & [name, value] : options.explicit_request_settings)
         modified_settings->request_settings.setByName(name, value);
 
-    if (context->getSettingsRef()[Setting::s3_validate_request_settings])
+    if (validate_settings)
     {
         if (options.validate_merged_settings)
         {
             try
             {
+                settings_from_config->request_settings.validateUploadSettings();
                 modified_settings->request_settings.validateUploadSettings();
             }
             catch (const Exception & e)
             {
-                /// Not rethrown: the rest of the config reload must still be applied.
-                LOG_ERROR(log, "The new S3 settings of disk {} were not applied, it keeps its current settings: {}", disk_name, e.message());
-                return;
+                /// Not rethrown: the rest of the config reload must still be applied, including the new authentication
+                /// settings of this disk, so its client is rebuilt below.
+                LOG_ERROR(log, "The new S3 request settings of disk {} were not applied, it keeps its current ones: {}", disk_name, e.message());
+                modified_settings->request_settings = S3::S3RequestSettings(s3_settings.get()->request_settings);
             }
         }
         else if (!for_disk_s3 && context->hasQueryContext() && !context->isBackgroundContext())
