@@ -51,11 +51,11 @@ public:
     {
         Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
 
-        Position begin() const { return begin_pos; }
-        Position end() const { return end_pos; }
-        size_t size() const { return size_t(end_pos - begin_pos); }
+        [[nodiscard]] Position begin() const { return begin_pos; }
+        [[nodiscard]] Position end() const { return end_pos; }
+        [[nodiscard]] size_t size() const { return size_t(end_pos - begin_pos); }
         void resize(size_t size) { end_pos = begin_pos + size; }
-        bool empty() const { return size() == 0; }
+        [[nodiscard]] bool empty() const { return size() == 0; }
 
         void swap(Buffer & other) noexcept
         {
@@ -97,10 +97,10 @@ public:
 
         operator const Buffer &() const { return buffer; } /// NOLINT(google-explicit-constructor)
 
-        Position begin() const { return buffer.begin(); }
-        Position end() const { return buffer.end(); }
-        size_t size() const { return buffer.size(); }
-        bool empty() const { return buffer.empty(); }
+        [[nodiscard]] Position begin() const { return buffer.begin(); }
+        [[nodiscard]] Position end() const { return buffer.end(); }
+        [[nodiscard]] size_t size() const { return buffer.size(); }
+        [[nodiscard]] bool empty() const { return buffer.empty(); }
 
         void resize(size_t size)
         {
@@ -147,7 +147,7 @@ public:
             std::swap(padded_end, other.padded_end);
         }
 
-        bool isPadded() const { return padded_end != nullptr; }
+        [[nodiscard]] bool isPadded() const { return padded_end != nullptr; }
 
     private:
         struct PaddedTag
@@ -192,7 +192,7 @@ public:
     }
 
     /// get buffer
-    const Buffer & internalBuffer() const { return internal_buffer; }
+    [[nodiscard]] const Buffer & internalBuffer() const { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
     WorkingBuffer & buffer() { return working_buffer; }
@@ -201,10 +201,10 @@ public:
     Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    size_t offset() const { return size_t(pos - working_buffer.begin()); }
+    [[nodiscard]] size_t offset() const { return size_t(pos - working_buffer.begin()); }
 
     /// How many bytes are available for read/write
-    size_t available() const { return size_t(working_buffer.end() - pos); }
+    [[nodiscard]] size_t available() const { return size_t(working_buffer.end() - pos); }
 
     void swap(BufferBase & other) noexcept
     {
@@ -214,12 +214,12 @@ public:
     }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
-    size_t count() const { return bytes + offset(); }
+    [[nodiscard]] size_t count() const { return bytes + offset(); }
 
     /** Check that there is more bytes in buffer after cursor. */
-    bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
+    [[nodiscard]] bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
 
-    bool isPadded() const { return working_buffer.isPadded(); }
+    [[nodiscard]] bool isPadded() const { return working_buffer.isPadded(); }
 
 protected:
     template <PaddedBufferStorage Storage>

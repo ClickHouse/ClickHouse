@@ -15,7 +15,7 @@ class MockReader : public CacheReader
 {
 public:
     explicit MockReader(ByteRange r_) : r(r_) {}
-    ByteRange range() const override { return r; }
+    [[nodiscard]] ByteRange range() const override { return r; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:
     ByteRange r;
@@ -27,9 +27,9 @@ class MockWriter : public CacheWriter
 public:
     explicit MockWriter(ByteRange r_, bool whole_ = false) : r(r_), frontier(r_.offset), whole(whole_) {}
     void commit(ByteRange c) { frontier = c.end(); }   /// a prefix `[r.offset, c.end())`
-    ByteRange range() const override { return r; }
-    size_t committed() const override { return frontier; }
-    bool fillsWholeSegment() const override { return whole; }
+    [[nodiscard]] ByteRange range() const override { return r; }
+    [[nodiscard]] size_t committed() const override { return frontier; }
+    [[nodiscard]] bool fillsWholeSegment() const override { return whole; }
     size_t write(ChainedBuffers, const FillRole &) override { return 0; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:

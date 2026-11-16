@@ -13,7 +13,7 @@ public:
     virtual ~IReadBufferMetadataProvider() = default;
 
     /// Return metadata identified by name, if supported by the buffer.
-    virtual std::optional<Field> getMetadata(const String & name) const = 0;
+    [[nodiscard]] virtual std::optional<Field> getMetadata(const String & name) const = 0;
 };
 
 }
